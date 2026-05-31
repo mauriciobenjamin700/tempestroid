@@ -126,7 +126,13 @@ class App(Generic[S]):
         if self._rebuild_scheduled:
             return
         self._rebuild_scheduled = True
-        self._loop().call_soon(self._rebuild)
+        # If scheduling fails (e.g. a closed loop), clear the flag so a later
+        # call can retry — otherwise the app would be wedged with no rebuilds.
+        try:
+            self._loop().call_soon(self._rebuild)
+        except RuntimeError:
+            self._rebuild_scheduled = False
+            raise
 
     def _rebuild(self) -> None:
         """Rebuild the tree, diff against the current one, and apply patches."""
