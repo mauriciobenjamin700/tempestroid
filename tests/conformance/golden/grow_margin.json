@@ -11,7 +11,7 @@
   "qt": {
     "align_col": null,
     "align_row": null,
-    "qss_container": "margin: 16.0px 16.0px 16.0px 16.0px",
-    "qss_leaf": "margin: 16.0px 16.0px 16.0px 16.0px"
+    "qss_container": "",
+    "qss_leaf": ""
   }
 }

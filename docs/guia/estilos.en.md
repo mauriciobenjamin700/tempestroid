@@ -119,13 +119,8 @@ The same `Style` feeds both translators; the **conformance suite** (phase D) pin
 both with golden snapshots to prevent silent divergence.
 
 - **Qt** (`Style → Qt`): padding becomes QSS on leaves and `contentsMargins` on
-  containers (no double-count); `margin` becomes a QSS box-model rule;
-  `justify`/`align` `START/CENTER/END` become Qt alignment flags, while
-  `SPACE_BETWEEN/AROUND/EVENLY` are realized in the renderer with stretch spacers
-  and `STRETCH` is the default cross-axis fill; `grow` becomes the layout stretch
-  factor. Fixed `width`/`height`/`aspect_ratio` become
-  `setFixedWidth`/`setFixedHeight`; `text_align`, `max_lines`, `text_overflow`
-  and `line_height` are honoured by a custom `QLabel` (`QTextLayout` text layout).
+  containers (no double-count); `justify`/`align` `START/CENTER/END` become Qt
+  alignment flags; `grow` becomes the layout stretch factor.
 - **Compose** (`to_compose(style)`): emits a serializable spec the Kotlin host
   turns into `Modifier` / `Arrangement` / `Alignment`.
 

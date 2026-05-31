@@ -121,14 +121,8 @@ O mesmo `Style` alimenta os dois tradutores; a **suíte de conformidade** (fase 
 fixa ambos com *golden snapshots* para impedir divergência silenciosa.
 
 - **Qt** (`Style → Qt`): *padding* vira QSS nos *leaves* e `contentsMargins` nos
-  containers (sem dupla contagem); `margin` vira regra QSS de box-model;
-  `justify`/`align` `START/CENTER/END` viram flags de alinhamento Qt, enquanto
-  `SPACE_BETWEEN/AROUND/EVENLY` são realizados no renderizador com *spacers* de
-  *stretch* e `STRETCH` é o preenchimento padrão do eixo cruzado; `grow` vira
-  fator de *stretch*. `width`/`height`/`aspect_ratio` fixos viram
-  `setFixedWidth`/`setFixedHeight`; `text_align`, `max_lines`, `text_overflow` e
-  `line_height` são honrados por um `QLabel` customizado (layout de texto via
-  `QTextLayout`).
+  containers (sem dupla contagem); `justify`/`align` `START/CENTER/END` viram
+  flags de alinhamento Qt; `grow` vira fator de *stretch* do layout.
 - **Compose** (`to_compose(style)`): emite uma *spec* serializável que o host
   Kotlin transforma em `Modifier` / `Arrangement` / `Alignment`.
 

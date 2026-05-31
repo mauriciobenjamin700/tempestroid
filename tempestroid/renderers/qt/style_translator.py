@@ -97,14 +97,13 @@ def _qss_radius_rules(radius: float | Corners) -> list[str]:
 def to_qss(style: Style | None, *, with_padding: bool) -> str:
     """Render the paint/typography/box parts of a style as a QSS rule body.
 
-    Flex layout (direction/justify/align/grow) and gap are *not* QSS — they are
-    applied to the parent ``QBoxLayout`` instead (see :func:`layout_alignment` and
-    the renderer). ``opacity``/``shadow`` are applied as ``QGraphicsEffect``s by
-    the renderer, and ``letter_spacing`` via ``QFont``, so they are not emitted
-    here either. ``margin`` *is* emitted as a QSS box-model rule (outer spacing,
-    distinct from ``padding``). Padding is included only for leaf widgets;
-    containers express padding via ``contentsMargins`` to avoid double-counting —
-    margin has no such conflict, so it is always emitted.
+    Flex layout (direction/justify/align/grow), gap, and margin are *not* QSS —
+    they are applied to the parent ``QBoxLayout`` instead (see
+    :func:`layout_alignment` and the renderer). ``opacity``/``shadow`` are applied
+    as ``QGraphicsEffect``s by the renderer, and ``letter_spacing`` via ``QFont``,
+    so they are not emitted here either. Padding is included only for leaf
+    widgets; containers express padding via ``contentsMargins`` to avoid
+    double-counting.
 
     Args:
         style: The style to translate, or ``None``.
@@ -128,11 +127,6 @@ def to_qss(style: Style | None, *, with_padding: bool) -> str:
         edge = style.padding
         rules.append(
             f"padding: {edge.top}px {edge.right}px {edge.bottom}px {edge.left}px"
-        )
-    if style.margin is not None:
-        edge = style.margin
-        rules.append(
-            f"margin: {edge.top}px {edge.right}px {edge.bottom}px {edge.left}px"
         )
     if style.font_family is not None:
         rules.append(f"font-family: {style.font_family}")
