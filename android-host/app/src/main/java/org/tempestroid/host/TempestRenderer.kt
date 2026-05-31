@@ -49,6 +49,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneOffset
 import org.json.JSONObject
@@ -170,7 +205,23 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
 
         "Input" -> RenderInput(node, style, onEvent)
 
+        "TextArea" -> RenderTextArea(node, style, onEvent)
+
         "Checkbox" -> RenderCheckbox(node, style, onEvent)
+
+        "Switch" -> RenderSwitch(node, style, onEvent)
+
+        "Slider" -> RenderSlider(node, style, onEvent)
+
+        "ProgressBar" -> RenderProgressBar(node, style)
+
+        "Spinner" -> RenderSpinner(node, style)
+
+        "Image" -> RenderImage(node, style)
+
+        "Icon" -> RenderIcon(node, style)
+
+        "ScrollView" -> RenderScrollView(node, style, onEvent)
 
         "DatePicker" -> RenderDatePicker(node, style, onEvent)
 
@@ -301,6 +352,183 @@ private fun displayName(context: Context, uri: Uri): String? {
         }
     }
     return null
+}
+
+/** A multi-line text field; each edit sends a `TextChangeEvent` to Python. */
+@Composable
+private fun RenderTextArea(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val rows = (node.props["rows"] as? Number)?.toInt() ?: 3
+    OutlinedTextField(
+        value = node.props["value"] as? String ?: "",
+        onValueChange = { text ->
+            handlerToken(node, "on_change")?.let {
+                onEvent(it, JSONObject().put("value", text).toString())
+            }
+        },
+        modifier = baseModifier(style),
+        placeholder = { Text(node.props["placeholder"] as? String ?: "") },
+        minLines = rows.coerceAtLeast(1),
+        singleLine = false,
+    )
+}
+
+/** A labelled boolean switch; toggling sends a `ToggleEvent`. */
+@Composable
+private fun RenderSwitch(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    Row(
+        modifier = baseModifier(style),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Switch(
+            checked = node.props["checked"] as? Boolean ?: false,
+            onCheckedChange = { checked ->
+                handlerToken(node, "on_change")?.let {
+                    onEvent(it, JSONObject().put("checked", checked).toString())
+                }
+            },
+        )
+        Text(text = node.props["label"] as? String ?: "")
+    }
+}
+
+/** A numeric slider over `[min_value, max_value]`; moving it sends a `SlideEvent`. */
+@Composable
+private fun RenderSlider(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val min = (node.props["min_value"] as? Number)?.toFloat() ?: 0f
+    val max = (node.props["max_value"] as? Number)?.toFloat() ?: 100f
+    val value = (node.props["value"] as? Number)?.toFloat() ?: min
+    val step = (node.props["step"] as? Number)?.toFloat() ?: 0f
+    // Compose `steps` counts the divisions *between* endpoints (0 = continuous).
+    val steps =
+        if (step > 0f && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0)
+        else 0
+    Slider(
+        value = value.coerceIn(min, max),
+        onValueChange = { v ->
+            handlerToken(node, "on_change")?.let {
+                onEvent(it, JSONObject().put("value", v.toDouble()).toString())
+            }
+        },
+        modifier = baseModifier(style),
+        valueRange = min..max,
+        steps = steps,
+    )
+}
+
+/** A linear progress bar: indeterminate, or determinate over `value` in `[0, 1]`. */
+@Composable
+private fun RenderProgressBar(node: TempestNode, style: Map<String, Any?>) {
+    val indeterminate = node.props["indeterminate"] as? Boolean ?: false
+    if (indeterminate) {
+        LinearProgressIndicator(modifier = baseModifier(style))
+    } else {
+        val value = ((node.props["value"] as? Number)?.toFloat() ?: 0f).coerceIn(0f, 1f)
+        LinearProgressIndicator(progress = { value }, modifier = baseModifier(style))
+    }
+}
+
+/** An indeterminate activity spinner, optionally sized to `size` dp. */
+@Composable
+private fun RenderSpinner(node: TempestNode, style: Map<String, Any?>) {
+    val size = (node.props["size"] as? Number)?.toFloat()
+    val modifier =
+        if (size != null) baseModifier(style).size(size.dp) else baseModifier(style)
+    CircularProgressIndicator(modifier = modifier)
+}
+
+/** An image loaded from `src` (URL/asset) via Coil, scaled per `fit`. */
+@Composable
+private fun RenderImage(node: TempestNode, style: Map<String, Any?>) {
+    val scale = when (node.props["fit"] as? String) {
+        "cover" -> ContentScale.Crop
+        "fill" -> ContentScale.FillBounds
+        else -> ContentScale.Fit
+    }
+    AsyncImage(
+        model = node.props["src"] as? String,
+        contentDescription = node.props["alt"] as? String,
+        modifier = sizeModifier(style),
+        contentScale = scale,
+    )
+}
+
+/** A named Material icon (`name`), falling back to the name as text if unknown. */
+@Composable
+private fun RenderIcon(node: TempestNode, style: Map<String, Any?>) {
+    val name = node.props["name"] as? String ?: ""
+    val size = (node.props["size"] as? Number)?.toFloat()
+    val vector = iconFor(name)
+    if (vector != null) {
+        val modifier =
+            if (size != null) baseModifier(style).size(size.dp) else baseModifier(style)
+        Icon(
+            imageVector = vector,
+            contentDescription = name,
+            tint = colorOf(style, "color") ?: Color.Unspecified,
+            modifier = modifier,
+        )
+    } else {
+        // Unknown name: mirror the Qt simulator, which shows the name as text.
+        Text(text = name, modifier = baseModifier(style))
+    }
+}
+
+/** Map a Material-Icons name to a bundled vector, or `null` to fall back to text. */
+private fun iconFor(name: String): ImageVector? = when (name.lowercase()) {
+    "add" -> Icons.Filled.Add
+    "back", "arrow_back" -> Icons.Filled.ArrowBack
+    "check" -> Icons.Filled.Check
+    "close" -> Icons.Filled.Close
+    "delete" -> Icons.Filled.Delete
+    "done" -> Icons.Filled.Done
+    "edit" -> Icons.Filled.Edit
+    "email" -> Icons.Filled.Email
+    "favorite" -> Icons.Filled.Favorite
+    "home" -> Icons.Filled.Home
+    "info" -> Icons.Filled.Info
+    "lock" -> Icons.Filled.Lock
+    "menu" -> Icons.Filled.Menu
+    "notifications" -> Icons.Filled.Notifications
+    "person" -> Icons.Filled.Person
+    "play", "play_arrow" -> Icons.Filled.PlayArrow
+    "search" -> Icons.Filled.Search
+    "settings" -> Icons.Filled.Settings
+    "share" -> Icons.Filled.Share
+    "cart", "shopping_cart" -> Icons.Filled.ShoppingCart
+    "star" -> Icons.Filled.Star
+    "warning" -> Icons.Filled.Warning
+    else -> null
+}
+
+/** A scrollable column (or row when `horizontal`) of children. */
+@Composable
+private fun RenderScrollView(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val horizontal = node.props["horizontal"] as? Boolean ?: false
+    if (horizontal) {
+        Row(modifier = baseModifier(style).horizontalScroll(rememberScrollState())) {
+            node.children.forEach { RenderNode(it, onEvent) }
+        }
+    } else {
+        Column(modifier = baseModifier(style).verticalScroll(rememberScrollState())) {
+            node.children.forEach { RenderNode(it, onEvent) }
+        }
+    }
 }
 
 /**

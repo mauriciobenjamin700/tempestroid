@@ -232,4 +232,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    // Named Material icons for the `Icon` widget (string name -> vector glyph).
+    implementation("androidx.compose.material:material-icons-extended")
+    // Async image loading for the `Image` widget (URL/asset src).
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }

@@ -124,15 +124,14 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`form`](examples/form/app.py) | The value-bearing inputs (`Input` / `Checkbox` / `DatePicker` / `FilePicker`) + their typed change events. |
 | [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
 
-The framework and the Qt simulator support the full widget set, including the
-value-bearing inputs and the utility widgets (`Slider` / `Switch` /
-`ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`). The
-device (Compose) renderer renders `Text` / `Button` / `Column` / `Row` /
-`Container` / `SafeArea` (insetting against the real `WindowInsets.safeDrawing`)
-plus the value widgets `Input` / `Checkbox` / `DatePicker` /
-`FilePicker` (with their typed change events); the remaining utility widgets stay
-empty-box on device until the Kotlin host grows the matching cases (see
-[`examples/README.md`](examples/README.md)).
+The framework and the Qt simulator support the full widget set. The device
+(Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /
+`SafeArea` (insetting against the real `WindowInsets.safeDrawing`) / `Stack` /
+`GestureDetector`, the value widgets `Input` / `TextArea` / `Checkbox` /
+`Switch` / `Slider` / `DatePicker` / `FilePicker` (with their typed change
+events), and the presentation/utility widgets `ProgressBar` / `Spinner` /
+`Image` (via Coil) / `Icon` (named Material icons) / `ScrollView`. See
+[`examples/README.md`](examples/README.md).
 
 ---
 
