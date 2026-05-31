@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
@@ -25,6 +26,8 @@ from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_res
 from tempestroid.widgets import Widget
 
 __all__ = ["JniBridge", "run_device", "run_device_file"]
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 S = TypeVar("S")
 

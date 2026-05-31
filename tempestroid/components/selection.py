@@ -131,7 +131,7 @@ class RadioGroup(Component):
             style=merge_style(default, self.style),
             children=[
                 Button(
-                    label=f"{'◉' if index == self.selected else '○'}  {label}",
+                    label=("◉" if index == self.selected else "○") + f"  {label}",
                     on_click=self._handler(index),
                     key=f"radio-{index}",
                     style=Style(
