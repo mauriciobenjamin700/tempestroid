@@ -14,6 +14,7 @@ reconciler diffs and the renderers apply. Always import from the package level:
 | `Row` | Stacks children horizontally. | `children: list[Widget]` |
 | `Container` | Wraps a single child. | `child: Widget \| None` |
 | `ScrollView` | Scrollable area. | `horizontal: bool`, `child` |
+| `SafeArea` | Insets its child past the system bars + notch. | `child`, `edges: list[SafeAreaEdge]` (default all) |
 
 ```python
 from tempestroid import Button, Column, Row, ScrollView, Style, Text
