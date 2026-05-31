@@ -1,0 +1,17 @@
+{
+  "compose": {
+    "margin": {
+      "bottom": 16.0,
+      "left": 16.0,
+      "right": 16.0,
+      "top": 16.0
+    },
+    "weight": 1.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

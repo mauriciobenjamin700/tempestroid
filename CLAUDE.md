@@ -93,7 +93,8 @@ Tracks `docs/plan.md`. Update the table when a phase opens/closes; keep the
 | B4 | Compose renderer (native): render the serialized tree, apply patches, route taps | ✅ done | on-device: Compose renders the mount tree (Text/Button/Column + style spec → Modifier/Arrangement), applies patch batches (recomposes), and a real button tap → `dispatchEvent` → handler → patch → UI updates (`count` 0→4 by tapping; verified by screenshot) |
 | B5 | dev server + QR (LAN code-push + log relay) | ✅ done | on-device: `tempest serve <app>` (over `adb reverse`) pushes the app source; the device's code-push client polls, fetches, re-execs and hot-restarts the `DeviceApp` — editing+saving the file live-reloaded the device UI without an APK rebuild (verified by screenshot) |
 | B6 | native capabilities (notifications) | ✅ done | on-device: a `notify()` call from a Python handler → `native` command over the bridge → `NativeModules`/`NotificationModule` → a system notification posts (verified via `dumpsys notification` + the shade). The `native` envelope + module-router is the template for further capabilities (camera, etc.) |
-| C / D | Polish (`new`/`build`/`run`, stateful hot reload) / conformance golden snapshots | ⬜ todo | per `docs/plan.md` |
+| C | Polish: `tempest new`/`build`/`run` + stateful hot reload | ⬜ todo | per `docs/plan.md` |
+| D | Conformance golden snapshots (Qt vs Compose) | ✅ done | `tests/conformance/` pins both `Style` translators: golden snapshots of `to_compose` + `to_qss`/`layout_alignment` for canonical styles (regenerate with `UPDATE_GOLDEN=1`), plus a per-field coverage-parity table that fails if either translator starts/stops handling a field without updating the documented divergences |
 
 **Trilho B status:** research done (`docs/research/`), decisions fixed (CPython
 3.14 official + hand-rolled JNI + cibuildwheel + Compose DIY). **B0/B1/B2 are

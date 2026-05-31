@@ -1,0 +1,12 @@
+{
+  "compose": {
+    "alignment": "end",
+    "arrangement": "end"
+  },
+  "qt": {
+    "align_col": 66,
+    "align_row": 66,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

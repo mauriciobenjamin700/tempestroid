@@ -1,0 +1,14 @@
+{
+  "compose": {
+    "fontFamily": "Roboto",
+    "fontSize": 18.0,
+    "fontWeight": 700,
+    "textAlign": "center"
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "font-family: Roboto; font-size: 18.0px; font-weight: 700",
+    "qss_leaf": "font-family: Roboto; font-size: 18.0px; font-weight: 700"
+  }
+}

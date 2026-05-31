@@ -276,7 +276,8 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | A5 | `tempest dev`: watcher, hot restart, command loop | ✅ |
 | A6 | Typed event contract + introspection | ✅ |
 | B0–B6 | Android runtime: CPython 3.14 arm64, native wheels, Kotlin host, JNI bridge, Compose renderer, LAN code-push, native capabilities | ✅ |
-| C / D | Polish (`new`/`build`/`run`, stateful hot reload) / conformance snapshots | ⬜ |
+| C | Polish: `new`/`build`/`run` + stateful hot reload | ⬜ |
+| D | Conformance golden snapshots (Qt vs Compose) | ✅ |
 
 ---
 

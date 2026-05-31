@@ -1,0 +1,13 @@
+{
+  "compose": {
+    "alignment": "center",
+    "arrangement": "center",
+    "gap": 12.0
+  },
+  "qt": {
+    "align_col": 132,
+    "align_row": 132,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}
