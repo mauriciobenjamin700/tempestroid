@@ -25,6 +25,10 @@ def test_widget_catalog_lists_all_widgets():
         "Spinner",
         "Stack",
         "GestureDetector",
+        "Navigator",
+        "TabView",
+        "TabBar",
+        "RouteDrawer",
     }
 
 
@@ -56,6 +60,7 @@ def test_event_catalog_lists_events():
         "FileSelectEvent",
         "LongPressEvent",
         "SwipeEvent",
+        "RouteChangeEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

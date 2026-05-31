@@ -5,6 +5,14 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -31,12 +39,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -227,8 +242,235 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
 
         "FilePicker" -> RenderFilePicker(node, style, onEvent)
 
+        "Navigator" -> RenderNavigator(node, style, onEvent)
+
+        "TabView" -> RenderTabView(node, style, onEvent)
+
+        "TabBar" -> RenderTabBar(node, style, onEvent)
+
+        "RouteDrawer" -> RenderRouteDrawer(node, style, onEvent)
+
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
+        }
+    }
+}
+
+/**
+ * A navigation-stack host that animates the swap of its single top screen — the
+ * Kotlin counterpart of the Qt `_NavHost` (Navigator path, no tab strip).
+ *
+ * The top screen is `node.children[0]`. A push/pop is observed as that child's
+ * `key` (or, lacking a key, the `depth` prop) changing; the slide direction comes
+ * from the delta of `depth` against the last depth seen (deeper → push, slide in
+ * from the right; shallower → pop, slide in from the left). The `transition` prop
+ * picks the animation: `"fade"` cross-fades, `"none"` swaps instantly, anything
+ * else (default `"slide"`) slides horizontally.
+ */
+@Composable
+private fun RenderNavigator(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val child = node.children.firstOrNull()
+    val depth = (node.props["depth"] as? Number)?.toInt() ?: 0
+    val transition = node.props["transition"] as? String ?: "slide"
+    // Remember the last depth to tell a push (deeper) from a pop (shallower); the
+    // initial render has no previous screen, so it must not animate a direction.
+    var lastDepth by remember { mutableStateOf(depth) }
+    val forward = depth >= lastDepth
+    // Drive AnimatedContent off a stable per-screen key so a same-typed screen
+    // swap (diffed as an Update on this Navigator) still triggers the animation.
+    val targetKey = child?.key ?: "depth:$depth"
+    Box(modifier = baseModifier(style)) {
+        AnimatedContent(
+            targetState = targetKey,
+            transitionSpec = {
+                when (transition) {
+                    "fade" -> fadeIn() togetherWith fadeOut()
+                    "none" -> EnterTransition.None togetherWith ExitTransition.None
+                    else -> {
+                        val sign = if (forward) 1 else -1
+                        (slideInHorizontally { full -> sign * full } togetherWith
+                            slideOutHorizontally { full -> -sign * full })
+                    }
+                }
+            },
+            label = "navigator",
+        ) { key ->
+            // Render the current top screen; `key` keys the slot so Compose keeps
+            // the outgoing and incoming subtrees distinct during the transition.
+            if (child != null && key == targetKey) {
+                RenderNode(child, onEvent)
+            }
+        }
+    }
+    // Record the depth *after* this composition so the next swap compares against it.
+    LaunchedEffect(depth) { lastDepth = depth }
+}
+
+/**
+ * A tabbed host: a [TabRow] strip above the active tab's content — the Kotlin
+ * counterpart of the Qt `_NavHost` with a tab strip plus `_TabBarWidget`.
+ *
+ * `tabs` are the labels, `active` the selected index, and `node.children[0]` the
+ * active tab's content. Tapping tab `i` emits the same `RouteChangeEvent` payload
+ * as the Qt `_TabBarWidget._make_tap`: `{"name": label, "params": {"index": i}}`.
+ */
+@Composable
+private fun RenderTabView(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val active = (node.props["active"] as? Number)?.toInt() ?: 0
+    val child = node.children.firstOrNull()
+    Column(modifier = baseModifier(style)) {
+        TabStrip(node, active, onEvent)
+        AnimatedContent(
+            targetState = active,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "tabview",
+        ) { selected ->
+            // The content is built by Python for the active tab; key the slot by
+            // the selected index so a tab swap cross-fades the new content.
+            if (child != null && selected == active) {
+                RenderNode(child, onEvent)
+            }
+        }
+    }
+}
+
+/**
+ * A standalone tab strip (no content) — the Kotlin counterpart of the Qt
+ * `_TabBarWidget` used on its own. Same tap payload as [RenderTabView].
+ */
+@Composable
+private fun RenderTabBar(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val active = (node.props["active"] as? Number)?.toInt() ?: 0
+    Box(modifier = baseModifier(style)) {
+        TabStrip(node, active, onEvent)
+    }
+}
+
+/**
+ * Render the shared tab strip for [RenderTabView]/[RenderTabBar].
+ *
+ * Reads `tabs` (labels) and highlights `active`. Tapping tab `i` with label
+ * `label` fires `handlerToken(node, "on_change")` with the
+ * `RouteChangeEvent`-shaped JSON `{"name": label, "params": {"index": i}}`.
+ */
+@Composable
+private fun TabStrip(
+    node: TempestNode,
+    active: Int,
+    onEvent: (String, String) -> Unit,
+) {
+    @Suppress("UNCHECKED_CAST")
+    val tabs = (node.props["tabs"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+    if (tabs.isEmpty()) return
+    val selected = active.coerceIn(0, tabs.size - 1)
+    TabRow(selectedTabIndex = selected) {
+        tabs.forEachIndexed { index, label ->
+            Tab(
+                selected = index == selected,
+                onClick = {
+                    handlerToken(node, "on_change")?.let { token ->
+                        val payload = JSONObject()
+                            .put("name", label)
+                            .put("params", JSONObject().put("index", index))
+                        onEvent(token, payload.toString())
+                    }
+                },
+                text = { Text(text = label) },
+            )
+        }
+    }
+}
+
+/**
+ * A drawer-as-route host: main content with a slide-over side panel — the Kotlin
+ * counterpart of the Qt `_DrawerHost`, realized with Material3's
+ * [ModalNavigationDrawer].
+ *
+ * The open/closed state lives in Python (`node.props["open"]`); a unidirectional
+ * [LaunchedEffect] drives the internal [rememberDrawerState] to match, so the
+ * Compose-internal drag/scrim never fights the declared state. `node.children[0]`
+ * is the content, `node.children[1]` is the drawer panel. Dismissing the drawer
+ * (scrim tap or back gesture) emits `{"name": "drawer", "params": {"open": false}}`
+ * so the Python handler can flip the flag.
+ */
+@Composable
+private fun RenderRouteDrawer(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val open = node.props["open"] as? Boolean ?: false
+    val content = node.children.getOrNull(0)
+    val drawer = node.children.getOrNull(1)
+    val drawerState = rememberDrawerState(
+        initialValue = if (open) DrawerValue.Open else DrawerValue.Closed,
+    )
+    // Unidirectional sync: the declared `open` flag drives the internal state.
+    LaunchedEffect(open) {
+        if (open) drawerState.open() else drawerState.close()
+    }
+    // A user-driven dismiss (scrim tap / back) settles the internal state to
+    // Closed; when that happens while Python still declares it open, report the
+    // toggle-off so the declarative flag follows the gesture. Keying on
+    // currentValue re-runs the effect each time the drawer settles.
+    LaunchedEffect(drawerState.currentValue) {
+        snapshotIsClosedThenReport(
+            isClosed = drawerState.currentValue == DrawerValue.Closed,
+            declaredOpen = open,
+            node = node,
+            onEvent = onEvent,
+        )
+    }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                if (drawer != null) RenderNode(drawer, onEvent)
+            }
+        },
+        modifier = baseModifier(style),
+    ) {
+        Box(modifier = Modifier) {
+            if (content != null) RenderNode(content, onEvent)
+        }
+    }
+}
+
+/**
+ * Report a user-driven drawer dismiss back to Python.
+ *
+ * When the internal drawer state has become closed while Python still believes it
+ * is open (a scrim tap or back gesture), emit the toggle-off `RouteChangeEvent`.
+ *
+ * @param isClosed whether the internal drawer state is currently closed.
+ * @param declaredOpen the open flag Python last declared.
+ * @param node the RouteDrawer node (for its `on_change` handler token).
+ * @param onEvent the event sink back to Python.
+ */
+private fun snapshotIsClosedThenReport(
+    isClosed: Boolean,
+    declaredOpen: Boolean,
+    node: TempestNode,
+    onEvent: (String, String) -> Unit,
+) {
+    if (isClosed && declaredOpen) {
+        handlerToken(node, "on_change")?.let { token ->
+            val payload = JSONObject()
+                .put("name", "drawer")
+                .put("params", JSONObject().put("open", false))
+            onEvent(token, payload.toString())
         }
     }
 }

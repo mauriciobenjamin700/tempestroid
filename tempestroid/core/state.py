@@ -19,6 +19,7 @@ from typing import Generic, TypeVar
 
 from tempestroid.core.ir import Node, Patch
 from tempestroid.core.reconciler import build, diff
+from tempestroid.navigation import NavStack, Route
 from tempestroid.widgets import Widget
 
 __all__ = ["App"]
@@ -33,6 +34,13 @@ class App(Generic[S]):
     handlers that call :meth:`set_state` (sync or from inside an ``async``
     handler). This avoids any circular dependency between the view and the app.
 
+    The app also owns a :class:`~tempestroid.navigation.NavStack` (``self.nav``),
+    independent of the generic state ``S``. The ``view`` reads ``app.nav.top`` to
+    decide which screen to build; :meth:`push`/:meth:`pop`/:meth:`replace`/
+    :meth:`reset` mutate the stack and schedule the same coalesced rebuild as a
+    state change, so navigation flows through the existing diff with no new patch
+    kind.
+
     Type Args:
         S: The application state type.
     """
@@ -42,15 +50,20 @@ class App(Generic[S]):
         state: S,
         view: Callable[[App[S]], Widget],
         apply_patches: Callable[[list[Patch]], None],
+        nav: NavStack | None = None,
     ) -> None:
         """Initialize the app.
 
         Args:
             state: The initial application state.
-            view: Builds the widget tree from the app (reads ``app.state``).
+            view: Builds the widget tree from the app (reads ``app.state`` and
+                ``app.nav.top``).
             apply_patches: Renderer callback that applies a patch list.
+            nav: The initial navigation stack. Defaults to a fresh
+                :class:`~tempestroid.navigation.NavStack` with the root route.
         """
         self.state: S = state
+        self.nav: NavStack = nav if nav is not None else NavStack()
         self._view: Callable[[App[S]], Widget] = view
         self._apply: Callable[[list[Patch]], None] = apply_patches
         self._current: Node | None = None
@@ -116,6 +129,54 @@ class App(Generic[S]):
         """
         if mutate is not None:
             mutate(self.state)
+        self.request_rebuild()
+
+    def push(self, route: Route) -> None:
+        """Push a route onto the navigation stack and request a rebuild.
+
+        Args:
+            route: The destination route to navigate to.
+        """
+        self.nav.stack.append(route)
+        self.request_rebuild()
+
+    def pop(self) -> bool:
+        """Pop the top route, returning to the previous screen.
+
+        At the root (a single route on the stack) this is a no-op: the stack is
+        left untouched so the host can take its default back action (e.g. close
+        the app on Android).
+
+        Returns:
+            ``True`` if a route was popped, ``False`` if already at the root.
+        """
+        if not self.nav.can_pop:
+            return False
+        self.nav.stack.pop()
+        self.request_rebuild()
+        return True
+
+    def replace(self, route: Route) -> None:
+        """Replace the top route in place (no stack-depth change).
+
+        Args:
+            route: The route to put on top, replacing the current screen.
+        """
+        self.nav.stack[-1] = route
+        self.request_rebuild()
+
+    def reset(self, stack: list[Route]) -> None:
+        """Replace the entire navigation stack and request a rebuild.
+
+        Args:
+            stack: The new, non-empty route stack (e.g. for a deep link).
+
+        Raises:
+            ValueError: If ``stack`` is empty — an app must always have a screen.
+        """
+        if not stack:
+            raise ValueError("navigation stack cannot be empty")
+        self.nav.stack = list(stack)
         self.request_rebuild()
 
     def request_rebuild(self) -> None:

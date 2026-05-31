@@ -213,6 +213,20 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
 - `QtRenderer` owns a *host* widget so a root `Replace` is a uniform child swap.
   Updates re-apply the full merged visual idempotently. Headless tests run under
   `QT_QPA_PLATFORM=offscreen` (see `tests/conftest.py`).
+- **Navigation hosts (E0b).** `Navigator`/`TabView` render a `QStackedWidget`
+  whose *current page's* inner layout is the diffable child slot, so a screen
+  swap is the normal child `Replace`, intercepted in `_replace_screen` to add a
+  fresh page and animate it in with a one-shot `QPropertyAnimation` (slide
+  direction from the `depth` delta, or `fade`/`none` per `transition`); the
+  outgoing page is dropped on `finished` and animations are strong-reffed against
+  GC. `TabBar`/`TabView` render a tab strip of `QPushButton`s emitting a typed
+  `RouteChangeEvent` (`params["index"]`) through `_invoke`. `RouteDrawer` lays
+  content + a slide-over panel as direct children (no box layout, like `Stack`),
+  sliding the panel on `open`. `Esc` on the simulator host → `App.pop` via the
+  `BackKeyFilter` event filter (`app_runner`/`dev_loop`); root pop is a no-op.
+  Conformance divergence to document on the Compose side: Qt animates with
+  `QPropertyAnimation` vs Compose `AnimatedContent`/`ModalDrawer` — the device
+  back button (vs `Esc`) is the Compose/device half (E0c/E0d), not exercised here.
 
 **A4 notes / known limits:**
 

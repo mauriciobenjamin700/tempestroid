@@ -26,7 +26,10 @@ from tempestroid.widgets import (
     Image,
     Input,
     LongPressEvent,
+    Navigator,
     ProgressBar,
+    RouteChangeEvent,
+    RouteDrawer,
     Row,
     ScrollView,
     SlideEvent,
@@ -35,6 +38,8 @@ from tempestroid.widgets import (
     Stack,
     SwipeEvent,
     Switch,
+    TabBar,
+    TabView,
     TapEvent,
     Text,
     TextArea,
@@ -61,6 +66,10 @@ WIDGET_TYPES: tuple[type[Widget], ...] = (
     ScrollView,
     Stack,
     GestureDetector,
+    Navigator,
+    TabView,
+    TabBar,
+    RouteDrawer,
     Input,
     TextArea,
     Checkbox,
@@ -84,6 +93,7 @@ EVENT_TYPES: tuple[type[Event], ...] = (
     FileSelectEvent,
     LongPressEvent,
     SwipeEvent,
+    RouteChangeEvent,
 )
 
 

@@ -21,11 +21,14 @@ from pathlib import Path
 from typing import cast
 
 import qasync  # pyright: ignore[reportMissingTypeStubs]
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
+from tempestroid.core.state import App
 from tempestroid.devices import DEFAULT_DEVICE
+from tempestroid.renderers.qt.app_runner import BackKeyFilter
 from tempestroid.renderers.qt.simulator import Simulator
 
 __all__ = ["run_dev"]
@@ -125,6 +128,17 @@ def run_dev(path: str | Path, *, verbose: bool = False) -> int:
 
     simulator = Simulator()
     _restart(simulator, app_path, verbose=verbose)  # first mount is a clean start
+
+    def _current_app() -> App[object] | None:
+        # Re-read each Esc press so a hot reload that swaps the app is honoured.
+        try:
+            return simulator.app
+        except RuntimeError:
+            return None
+
+    back_filter = BackKeyFilter(_current_app)
+    simulator.host.installEventFilter(back_filter)
+    simulator.host.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     simulator.host.setWindowTitle(f"tempestroid dev — {app_path.name}")
     simulator.host.resize(*DEFAULT_DEVICE.size)
     simulator.host.show()

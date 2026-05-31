@@ -21,11 +21,13 @@ from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
 from tempestroid.bridge.device import Bridge, DeviceApp
+from tempestroid.bridge.protocol import BACK_TOKEN
 from tempestroid.core.state import App
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
+from tempestroid.navigation import NavStack, routes_from_path
 from tempestroid.widgets import Widget
 
-__all__ = ["JniBridge", "run_device", "run_device_file"]
+__all__ = ["JniBridge", "make_event_sink", "run_device", "run_device_file"]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -85,28 +87,32 @@ class JniBridge(Bridge):
         self._host.send_to_host(json.dumps(message))
 
 
-def run_device(state: S, view: Callable[[App[S]], Widget]) -> None:
-    """Boot a :class:`DeviceApp` on a fresh asyncio loop and run it forever.
+def make_event_sink(
+    loop: asyncio.AbstractEventLoop, device: DeviceApp[S]
+) -> Callable[[str, str], None]:
+    """Build the native event sink that marshals device events onto the loop.
 
-    This is the device-side analogue of ``run_qt``: it owns the loop, sends the
-    initial ``mount`` over a :class:`JniBridge`, registers the native event sink
-    (which marshals incoming device events back onto the loop), and blocks in
-    ``run_forever``. Call it from the interpreter's main thread inside the host —
-    the Kotlin side already runs the interpreter off the UI thread.
+    The returned callable is what the host invokes (from the UI thread, with the
+    GIL held) for every incoming device event. It only schedules work onto the
+    loop via ``call_soon_threadsafe`` and returns fast, and it routes the three
+    reserved channels that share the event transport:
+
+    * :data:`~tempestroid.bridge.protocol.BACK_TOKEN` — a system back action →
+      :meth:`~tempestroid.App.pop` (pops a screen, or a no-op at the root).
+    * :data:`~tempestroid.native.dispatch.NATIVE_RESULT_PREFIX` — a native
+      request/response result → :func:`resolve_native_result`.
+    * any other token — a widget handler event → :meth:`DeviceApp.handle_event`.
 
     Args:
-        state: The initial application state.
-        view: Builds the widget tree from the app.
+        loop: The asyncio loop the device app runs on.
+        device: The device app to route events into.
+
+    Returns:
+        The ``(token, payload_json) -> None`` sink to register with the host.
     """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    device: DeviceApp[S] = DeviceApp(state, view, JniBridge())
 
     def _on_event(token: str, payload_json: str) -> None:
         """Native callback: schedule an incoming event onto the loop.
-
-        Invoked by the host from the UI thread (with the GIL held), so it only
-        hands work to the loop via ``call_soon_threadsafe`` and returns fast.
 
         Args:
             token: The handler token addressed by the event.
@@ -120,6 +126,14 @@ def run_device(state: S, view: Callable[[App[S]], Widget]) -> None:
             _LOGGER.exception(
                 "dropping event for token %r: invalid JSON payload", token
             )
+            return
+        # A system back action (e.g. the Android back gesture) rides the same
+        # event channel under the reserved BACK_TOKEN, so it needs no extra JNI
+        # entry point. Route it straight to App.pop, which pops a screen (and
+        # rebuilds) or is a no-op at the root. The host only sends this when its
+        # back handler is enabled (can_pop True), so a root no-op is benign.
+        if token == BACK_TOKEN:
+            loop.call_soon_threadsafe(device.app.pop)
             return
         # Native request/response results ride the same event channel under a
         # reserved token, so they need no extra JNI entry point. Route them to
@@ -137,12 +151,39 @@ def run_device(state: S, view: Callable[[App[S]], Widget]) -> None:
             lambda: loop.create_task(device.handle_event(message))
         )
 
-    native_host().set_event_sink(_on_event)
+    return _on_event
+
+
+def run_device(
+    state: S, view: Callable[[App[S]], Widget], route: str | None = None
+) -> None:
+    """Boot a :class:`DeviceApp` on a fresh asyncio loop and run it forever.
+
+    This is the device-side analogue of ``run_qt``: it owns the loop, sends the
+    initial ``mount`` over a :class:`JniBridge`, registers the native event sink
+    (which marshals incoming device events back onto the loop), and blocks in
+    ``run_forever``. Call it from the interpreter's main thread inside the host —
+    the Kotlin side already runs the interpreter off the UI thread.
+
+    Args:
+        state: The initial application state.
+        view: Builds the widget tree from the app.
+        route: Optional deep-link path (e.g. the Android ``tempest_route`` intent
+            extra). When given it is resolved via :func:`routes_from_path` into
+            the initial navigation stack, so the app opens directly on the linked
+            screen with its back stack already built.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    nav = NavStack(stack=routes_from_path(route)) if route else None
+    device: DeviceApp[S] = DeviceApp(state, view, JniBridge(), nav=nav)
+
+    native_host().set_event_sink(make_event_sink(loop, device))
     loop.create_task(device.start())
     loop.run_forever()
 
 
-def run_device_file(path: str) -> None:
+def run_device_file(path: str, route: str | None = None) -> None:
     """Load an app file (``make_state`` + ``view``) and run it on the device.
 
     The device entry point for an APK bundled by ``tempest build``: the user's
@@ -152,6 +193,8 @@ def run_device_file(path: str) -> None:
 
     Args:
         path: Absolute path to the extracted app file on the device.
+        route: Optional deep-link path forwarded to :func:`run_device` (the
+            Android ``tempest_route`` intent extra) to open on the linked screen.
     """
     from pathlib import Path
 
@@ -159,4 +202,4 @@ def run_device_file(path: str) -> None:
 
     source = Path(path).read_text(encoding="utf-8")
     spec = spec_from_source(source, filename=path)
-    run_device(spec.make_state(), spec.view)
+    run_device(spec.make_state(), spec.view, route=route)

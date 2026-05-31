@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from tempestroid.bridge.device import Bridge, DeviceApp
+from tempestroid.bridge.protocol import BACK_TOKEN
 from tempestroid.cli.app_loader import spec_from_source
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 
@@ -59,6 +60,16 @@ async def run_dev_client(
         mirroring :func:`tempestroid.bridge.jni.run_device`.
         """
         payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
+        # A system back action (Android back) rides the same event channel under
+        # the reserved BACK_TOKEN — route it straight to App.pop, mirroring
+        # tempestroid.bridge.jni.run_device. Without this the code-push path drops
+        # the back event (no widget handler matches), so the device back button
+        # would not pop under ``tempest serve`` even though the bundled app does.
+        if token == BACK_TOKEN:
+            back_device: DeviceApp[Any] | None = current["device"]
+            if back_device is not None:
+                loop.call_soon_threadsafe(back_device.app.pop)
+            return
         if token.startswith(NATIVE_RESULT_PREFIX):
             request_id = token[len(NATIVE_RESULT_PREFIX) :]
             loop.call_soon_threadsafe(resolve_native_result, request_id, payload)

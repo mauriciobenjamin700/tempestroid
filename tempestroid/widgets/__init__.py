@@ -11,6 +11,7 @@ from tempestroid.widgets.base import (
     EventHandler,
     FileSelectHandler,
     LongPressHandler,
+    RouteChangeHandler,
     SlideHandler,
     SwipeHandler,
     TapHandler,
@@ -26,6 +27,7 @@ from tempestroid.widgets.events import (
     EventValidationError,
     FileSelectEvent,
     LongPressEvent,
+    RouteChangeEvent,
     SlideEvent,
     SwipeDirection,
     SwipeEvent,
@@ -56,6 +58,12 @@ from tempestroid.widgets.layout import (
     Stack,
 )
 from tempestroid.widgets.media import Icon, Image, ImageFit
+from tempestroid.widgets.navigation_widgets import (
+    Navigator,
+    RouteDrawer,
+    TabBar,
+    TabView,
+)
 from tempestroid.widgets.text import Text
 
 __all__ = [
@@ -68,6 +76,7 @@ __all__ = [
     "TapHandler",
     "LongPressHandler",
     "SwipeHandler",
+    "RouteChangeHandler",
     "handler_accepts_event",
     "Widget",
     "Component",
@@ -81,6 +90,10 @@ __all__ = [
     "SafeAreaEdge",
     "Stack",
     "GestureDetector",
+    "Navigator",
+    "TabView",
+    "TabBar",
+    "RouteDrawer",
     "Input",
     "TextArea",
     "Checkbox",
@@ -104,6 +117,7 @@ __all__ = [
     "SwipeDirection",
     "LongPressEvent",
     "SwipeEvent",
+    "RouteChangeEvent",
     "EventValidationError",
     "parse_event",
 ]

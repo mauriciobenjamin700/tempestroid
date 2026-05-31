@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, TypeVar, cast
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 __all__ = [
     "Event",
@@ -27,6 +27,7 @@ __all__ = [
     "SwipeDirection",
     "LongPressEvent",
     "SwipeEvent",
+    "RouteChangeEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -139,6 +140,22 @@ class SwipeEvent(Event):
     direction: SwipeDirection
     dx: float = 0.0
     dy: float = 0.0
+
+
+class RouteChangeEvent(Event):
+    """The active route changed (a push/pop/replace happened).
+
+    This is the typed payload a navigation host emits when it settles on a new
+    screen, so handlers (analytics, focus management) can react to navigation
+    across the native boundary.
+
+    Attributes:
+        name: The destination route name.
+        params: The destination route's typed parameters.
+    """
+
+    name: str
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 E = TypeVar("E", bound=Event)

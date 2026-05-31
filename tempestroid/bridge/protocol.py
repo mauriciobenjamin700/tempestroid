@@ -31,18 +31,23 @@ from tempestroid.widgets import (
     Icon,
     Image,
     Input,
+    Navigator,
     ProgressBar,
+    RouteDrawer,
     Row,
     ScrollView,
     Slider,
     Spinner,
     Stack,
     Switch,
+    TabBar,
+    TabView,
     Text,
     TextArea,
 )
 
 __all__ = [
+    "BACK_TOKEN",
     "handler_token",
     "event_type_for",
     "EVENT_SCHEMAS",
@@ -50,6 +55,13 @@ __all__ = [
     "PatchMessage",
     "EventMessage",
 ]
+
+#: Reserved event token the host sends when the user triggers a system back
+#: action (e.g. the Android back gesture). It carries no payload and addresses no
+#: widget handler: the bridge routes it straight to ``App.pop``. Mirrors
+#: :data:`~tempestroid.native.dispatch.NATIVE_RESULT_PREFIX` in reusing the
+#: existing event channel, so the back wiring needs no new JNI/C entry point.
+BACK_TOKEN: str = "__back__"
 
 #: ``{widget_type: {handler_prop: event_type}}`` derived from each widget's
 #: ``event_schemas`` classvar — the contract used to validate event payloads.
@@ -75,6 +87,10 @@ EVENT_SCHEMAS: dict[str, dict[str, type[Event]]] = {
         Icon,
         ProgressBar,
         Spinner,
+        Navigator,
+        TabView,
+        TabBar,
+        RouteDrawer,
     )
     if widget.event_schemas
 }
@@ -108,21 +124,41 @@ def event_type_for(widget_type: str, prop: str) -> type[Event] | None:
 
 
 class MountMessage(BaseModel):
-    """Initial render: the full serialized tree."""
+    """Initial render: the full serialized tree.
+
+    Attributes:
+        kind: The message discriminator (``"mount"``).
+        root: The serialized root node.
+        can_pop: Whether the navigation stack can be popped (more than one route
+            on the stack). The host reads this to enable/disable its system back
+            handler without a synchronous round-trip: when ``False`` the device's
+            default back action runs (e.g. close the app on Android); when
+            ``True`` the host sends :data:`BACK_TOKEN` to pop a screen instead.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     kind: str = "mount"
     root: dict[str, Any]
+    can_pop: bool = False
 
 
 class PatchMessage(BaseModel):
-    """Incremental update: a list of serialized patches."""
+    """Incremental update: a list of serialized patches.
+
+    Attributes:
+        kind: The message discriminator (``"patch"``).
+        patches: The serialized patches to apply.
+        can_pop: Whether the navigation stack can be popped (see
+            :class:`MountMessage`). Re-sent on every patch batch so the host's
+            back handler tracks the live stack depth after each rebuild.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     kind: str = "patch"
     patches: list[dict[str, Any]]
+    can_pop: bool = False
 
 
 class EventMessage(BaseModel):

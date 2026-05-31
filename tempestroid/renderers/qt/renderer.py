@@ -17,10 +17,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from PySide6.QtCore import (
+    QAbstractAnimation,
     QDate,
+    QEasingCurve,
     QMetaObject,
     QPoint,
     QPointF,
+    QPropertyAnimation,
     QRect,
     QRectF,
     QSize,
@@ -60,6 +63,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QStackedWidget,
     QStyle,
     QStyleOption,
     QVBoxLayout,
@@ -95,6 +99,7 @@ from tempestroid.widgets import (
     Event,
     FileSelectEvent,
     LongPressEvent,
+    RouteChangeEvent,
     SlideEvent,
     SwipeDirection,
     SwipeEvent,
@@ -669,6 +674,328 @@ def _swipe_direction(dx: float, dy: float) -> SwipeDirection:
     return SwipeDirection.DOWN if dy > 0 else SwipeDirection.UP
 
 
+#: Duration (ms) of a navigation/drawer transition animation.
+_NAV_ANIM_MS = 220
+
+
+def _new_page() -> tuple[QWidget, QVBoxLayout]:
+    """Build a fresh stack page: a widget with a zero-margin single-child layout.
+
+    Returns:
+        The page widget and its inner layout (where the screen child is placed).
+    """
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(0, 0, 0, 0)
+    return page, layout
+
+
+class _NavHost(QWidget):
+    """A navigation host wrapping a ``QStackedWidget`` of single-screen pages.
+
+    The ``QStackedWidget`` shows exactly one page at a time; a screen swap adds a
+    fresh page, animates it in (slide or fade) over the outgoing one, then drops
+    the old page. The renderer's diffable child slot is the *current* page's inner
+    layout, so screen-internal patches (``Update``/``Insert``…) flow through the
+    generic container path unchanged — only a screen ``Replace`` is intercepted
+    to animate. This realizes both :class:`~tempestroid.widgets.Navigator` and
+    :class:`~tempestroid.widgets.TabView` (the latter stacks a tab strip above).
+    """
+
+    def __init__(self, *, with_tab_bar: bool) -> None:
+        """Create the host with an empty initial page.
+
+        Args:
+            with_tab_bar: When ``True`` a tab strip is reserved above the stack
+                (a ``TabView``); otherwise the stack fills the host (a
+                ``Navigator``).
+        """
+        super().__init__()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.tab_bar: _TabBarWidget | None = None
+        if with_tab_bar:
+            self.tab_bar = _TabBarWidget()
+            outer.addWidget(self.tab_bar)
+        self.stack: QStackedWidget = QStackedWidget()
+        outer.addWidget(self.stack, 1)
+        page, layout = _new_page()
+        self.stack.addWidget(page)
+        self.stack.setCurrentWidget(page)
+        self.current_page: QWidget = page
+        self.content_layout: QVBoxLayout = layout
+        #: Last navigation depth seen, to tell a push (deeper) from a pop.
+        self.nav_depth: int = 0
+        # Strong refs to in-flight transition animations so Qt does not GC them
+        # mid-flight (mirrors the renderer's _pending task set).
+        self._anims: set[QAbstractAnimation] = set()
+
+    def new_content_page(self) -> QVBoxLayout:
+        """Add a fresh page to the stack and make it the diffable content slot.
+
+        Returns:
+            The new page's inner layout for the renderer to place the screen in.
+        """
+        page, layout = _new_page()
+        self.stack.addWidget(page)
+        self.current_page = page
+        self.content_layout = layout
+        return layout
+
+    def animate_to(self, new_page: QWidget, transition: str, forward: bool) -> None:
+        """Animate ``new_page`` in over the current page, then drop the old one.
+
+        Args:
+            new_page: The freshly built page already added to the stack.
+            transition: ``"slide"``, ``"fade"`` or ``"none"``.
+            forward: ``True`` for a push (slide left/in), ``False`` for a pop.
+        """
+        # Stubs type currentWidget() as non-optional, but it is None on an empty
+        # stack — keep the runtime guard.
+        old_page = cast("QWidget | None", self.stack.currentWidget())
+        width = self.stack.width() or self.width() or 1
+        if transition == "none" or old_page is None or old_page is new_page:
+            self._finish(new_page, old_page)
+            return
+        self.stack.setCurrentWidget(new_page)
+        if transition == "fade":
+            self._animate_fade(new_page, old_page)
+        else:
+            self._animate_slide(new_page, old_page, width, forward)
+
+    def _animate_slide(
+        self, new_page: QWidget, old_page: QWidget, width: int, forward: bool
+    ) -> None:
+        """Slide the incoming page in from the side (direction by ``forward``).
+
+        Args:
+            new_page: The incoming page.
+            old_page: The outgoing page.
+            width: The slide distance (the stack width).
+            forward: ``True`` to slide in from the right (push), else from left.
+        """
+        start_x = width if forward else -width
+        new_page.move(start_x, 0)
+        anim = QPropertyAnimation(new_page, b"pos", self)
+        anim.setDuration(_NAV_ANIM_MS)
+        anim.setStartValue(QPoint(start_x, 0))
+        anim.setEndValue(QPoint(0, 0))
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._run(anim, new_page, old_page)
+
+    def _animate_fade(self, new_page: QWidget, old_page: QWidget) -> None:
+        """Cross-fade the incoming page in by animating its window opacity.
+
+        Args:
+            new_page: The incoming page.
+            old_page: The outgoing page.
+        """
+        effect = QGraphicsOpacityEffect(new_page)
+        new_page.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", self)
+        anim.setDuration(_NAV_ANIM_MS)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._run(anim, new_page, old_page)
+
+    def _run(
+        self, anim: QPropertyAnimation, new_page: QWidget, old_page: QWidget
+    ) -> None:
+        """Start a one-shot transition animation, dropping the old page on finish.
+
+        Args:
+            anim: The configured animation.
+            new_page: The incoming page.
+            old_page: The outgoing page to remove when the animation settles.
+        """
+        self._anims.add(anim)
+
+        def _done() -> None:
+            self._anims.discard(anim)
+            self._finish(new_page, old_page)
+
+        anim.finished.connect(_done)
+        anim.start()
+
+    def _finish(self, new_page: QWidget, old_page: QWidget | None) -> None:
+        """Settle the transition: show the new page and discard the old one.
+
+        Args:
+            new_page: The incoming page (becomes current).
+            old_page: The outgoing page to remove, if distinct.
+        """
+        new_page.move(0, 0)
+        new_page.setGraphicsEffect(None)  # pyright: ignore[reportArgumentType]
+        self.stack.setCurrentWidget(new_page)
+        if old_page is not None and old_page is not new_page:
+            self.stack.removeWidget(old_page)
+            old_page.setParent(None)  # type: ignore[call-overload]
+            old_page.deleteLater()
+
+
+class _TabBarWidget(QWidget):
+    """A horizontal strip of tab buttons emitting a typed route-change on tap.
+
+    The active tab is rendered pressed/flat; tapping any tab forwards a
+    :class:`~tempestroid.widgets.RouteChangeEvent` (with ``params["index"]``)
+    through the renderer's dispatch callback into the bound handler.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty tab strip."""
+        super().__init__()
+        self._layout: QHBoxLayout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self._buttons: list[QPushButton] = []
+        self._handler: object | None = None
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+
+    def configure(
+        self,
+        tabs: list[str],
+        active: int,
+        handler: object,
+        dispatch: Callable[[Any, Event], None],
+    ) -> None:
+        """Rebuild the tab buttons and install the change handler.
+
+        Idempotent: the strip is rebuilt from the labels each call, so an
+        ``Update`` to ``tabs``/``active`` re-renders cleanly.
+
+        Args:
+            tabs: The ordered tab labels.
+            active: The selected tab index.
+            handler: The change handler (or ``None``).
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+        """
+        self._handler = handler
+        self._dispatch = dispatch
+        for button in self._buttons:
+            self._layout.removeWidget(button)
+            button.setParent(None)  # type: ignore[call-overload]
+            button.deleteLater()
+        self._buttons = []
+        for index, label in enumerate(tabs):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setChecked(index == active)
+            button.clicked.connect(self._make_tap(index, label))
+            self._layout.addWidget(button, 1)
+            self._buttons.append(button)
+
+    def _make_tap(self, index: int, label: str) -> Callable[[], None]:
+        """Build a click slot that emits the route-change for ``index``.
+
+        Args:
+            index: The tab's index.
+            label: The tab's label (used as the route name).
+
+        Returns:
+            A zero-argument slot suitable for ``clicked.connect``.
+        """
+
+        def _tap() -> None:
+            if self._handler is not None:
+                self._dispatch(
+                    self._handler,
+                    RouteChangeEvent(name=label, params={"index": index}),
+                )
+
+        return _tap
+
+
+class _DrawerHost(QWidget):
+    """A drawer-as-route host: content under a side panel that slides on toggle.
+
+    The content widget fills the host; the drawer panel is a direct child laid
+    over the right portion. Toggling ``open`` slides the panel in/out with a
+    one-shot :class:`QPropertyAnimation`; a scrim swallows taps on the content
+    while open. This is the Qt realization of
+    :class:`~tempestroid.widgets.RouteDrawer`.
+    """
+
+    #: Drawer panel width as a fraction of the host width.
+    _PANEL_FRACTION = 0.7
+
+    def __init__(self) -> None:
+        """Create the host with placeholders for the content and drawer."""
+        super().__init__()
+        self.content: QWidget | None = None
+        self.drawer: QWidget | None = None
+        self._open: bool = False
+        self._anims: set[QAbstractAnimation] = set()
+
+    def set_children(self, content: QWidget, drawer: QWidget) -> None:
+        """Adopt the content and drawer widgets as direct children.
+
+        Args:
+            content: The main content widget (fills the host).
+            drawer: The slide-over panel widget.
+        """
+        self.content = content
+        self.drawer = drawer
+        content.setParent(self)
+        drawer.setParent(self)
+        content.lower()
+        drawer.raise_()
+        self._relayout(animate=False)
+
+    def set_open(self, is_open: bool) -> None:
+        """Open or close the drawer, animating the panel position.
+
+        Args:
+            is_open: The desired open state.
+        """
+        changed = is_open != self._open
+        self._open = is_open
+        self._relayout(animate=changed)
+
+    def _panel_width(self) -> int:
+        """Return the drawer panel width for the current host width."""
+        return max(1, int(self.width() * self._PANEL_FRACTION))
+
+    def _relayout(self, *, animate: bool) -> None:
+        """Position the content and the drawer panel for the current state.
+
+        Args:
+            animate: When ``True``, slide the panel to its target x; otherwise
+                snap it.
+        """
+        if self.content is not None:
+            self.content.setGeometry(0, 0, self.width(), self.height())
+        if self.drawer is None:
+            return
+        panel_w = self._panel_width()
+        self.drawer.resize(panel_w, self.height())
+        self.drawer.raise_()
+        target_x = self.width() - panel_w if self._open else self.width()
+        if not animate:
+            self.drawer.move(target_x, 0)
+            self.drawer.setVisible(self._open or self.drawer.x() < self.width())
+            return
+        anim = QPropertyAnimation(self.drawer, b"pos", self)
+        anim.setDuration(_NAV_ANIM_MS)
+        anim.setStartValue(self.drawer.pos())
+        anim.setEndValue(QPoint(target_x, 0))
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.drawer.setVisible(True)
+        self._anims.add(anim)
+        anim.finished.connect(lambda: self._anims.discard(anim))
+        anim.start()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Re-lay the content and panel on resize.
+
+        Args:
+            event: The Qt resize event (name mandated by the PySide override).
+        """
+        self._relayout(animate=False)
+        super().resizeEvent(event)
+
+
 class _Rendered:
     """A live Qt node mirroring one IR :class:`Node`.
 
@@ -847,6 +1174,16 @@ class QtRenderer:
         parent = self._at(patch.path[:-1])
         index = patch.path[-1]
         old = parent.children[index]
+        if parent.type in ("Navigator", "TabView"):
+            self._replace_screen(parent, index, old, new)
+            return
+        if parent.type == "RouteDrawer":
+            new.widget.setParent(parent.widget)
+            parent.children[index] = new
+            self._purge_connections(old)
+            self._discard(old.widget)
+            self._sync_drawer(parent)
+            return
         if parent.type == "Stack":
             new.widget.setParent(parent.widget)
             parent.children[index] = new
@@ -864,6 +1201,35 @@ class QtRenderer:
         self._discard(old.widget)
         self._sync_main_axis(parent)
 
+    def _replace_screen(
+        self, parent: _Rendered, index: int, old: _Rendered, new: _Rendered
+    ) -> None:
+        """Swap the on-screen child of a Navigator/TabView with a transition.
+
+        Builds a fresh stack page for ``new``, places it, animates it in (slide
+        direction inferred from the navigator's ``depth`` delta, or fade/none per
+        ``transition``), and updates the host's diffable content slot to the new
+        page so screen-internal patches keep flowing through the generic path.
+
+        Args:
+            parent: The Navigator/TabView rendered node.
+            index: The child index being replaced (always ``0`` for a screen).
+            old: The outgoing screen rendered node.
+            new: The incoming screen rendered node.
+        """
+        host = cast("_NavHost", parent.widget)
+        transition = cast("str", parent.props.get("transition", "slide"))
+        new_depth = int(cast("int", parent.props.get("depth", host.nav_depth)))
+        forward = new_depth >= host.nav_depth
+        host.nav_depth = new_depth
+        layout = host.new_content_page()
+        layout.addWidget(new.widget, self._stretch(new))
+        self._place_alignment(parent, new)
+        parent.layout = layout
+        parent.children[index] = new
+        host.animate_to(host.current_page, transition, forward)
+        self._purge_connections(old)
+
     def _apply_insert(self, patch: Insert) -> None:
         """Insert a new child subtree under a parent.
 
@@ -872,10 +1238,13 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = self._create(patch.node)
-        if parent.type == "Stack":
+        if parent.type in ("Stack", "RouteDrawer"):
             child.widget.setParent(parent.widget)
             parent.children.insert(patch.index, child)
-            self._relayout_stack(parent)
+            if parent.type == "RouteDrawer":
+                self._sync_drawer(parent)
+            else:
+                self._relayout_stack(parent)
             return
         layout = self._require_layout(parent)
         # Strip spacers so the IR index maps to the layout slot for the insert.
@@ -893,10 +1262,13 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = parent.children.pop(patch.index)
-        if parent.type == "Stack":
+        if parent.type in ("Stack", "RouteDrawer"):
             self._purge_connections(child)
             self._discard(child.widget)
-            self._relayout_stack(parent)
+            if parent.type == "RouteDrawer":
+                self._sync_drawer(parent)
+            else:
+                self._relayout_stack(parent)
             return
         self._require_layout(parent).removeWidget(child.widget)
         self._purge_connections(child)
@@ -916,6 +1288,10 @@ class QtRenderer:
             # Z-order follows the child list, so re-stacking is enough.
             parent.children = new_children
             self._relayout_stack(parent)
+            return
+        if parent.type == "RouteDrawer":
+            parent.children = new_children
+            self._sync_drawer(parent)
             return
         layout = self._require_layout(parent)
         # Drop spacers first so they don't survive interleaved in the new order.
@@ -942,10 +1318,17 @@ class QtRenderer:
         rendered = self._new_rendered(node)
         rendered.props = dict(node.props)
         self._apply_visual(rendered)
+        if rendered.type in ("Navigator", "TabView"):
+            # Seed the host's last-seen depth so the first push/pop after mount
+            # picks the right slide direction (updates never touch it again).
+            cast("_NavHost", rendered.widget).nav_depth = int(
+                cast("int", node.props.get("depth", 0))
+            )
         for child_node in node.children:
             child = self._create(child_node)
             rendered.children.append(child)
-            if rendered.type == "Stack":
+            if rendered.type in ("Stack", "RouteDrawer"):
+                # Direct children (no box layout): geometry is renderer-driven.
                 child.widget.setParent(rendered.widget)
             else:
                 self._require_layout(rendered).addWidget(
@@ -954,6 +1337,8 @@ class QtRenderer:
                 self._place_alignment(rendered, child)
         if rendered.type == "Stack":
             self._relayout_stack(rendered)
+        elif rendered.type == "RouteDrawer":
+            self._sync_drawer(rendered)
         elif rendered.layout is not None:
             self._sync_main_axis(rendered)
         return rendered
@@ -996,6 +1381,13 @@ class QtRenderer:
             return _Rendered(node.type, node.key, QPushButton(), None)
         if node.type == "ScrollView":
             return self._new_scrollview(node)
+        if node.type in ("Navigator", "TabView"):
+            host = _NavHost(with_tab_bar=node.type == "TabView")
+            return _Rendered(node.type, node.key, host, host.content_layout)
+        if node.type == "TabBar":
+            return _Rendered(node.type, node.key, _TabBarWidget(), None)
+        if node.type == "RouteDrawer":
+            return _Rendered(node.type, node.key, _DrawerHost(), None)
         if node.type == "Stack":
             return _Rendered(node.type, node.key, _StackWidget(), None)
         if node.type == "GestureDetector":
@@ -1090,6 +1482,16 @@ class QtRenderer:
             self._bind_click(button, node.props.get("on_click"))
         elif node.type == "GestureDetector":
             self._bind_gestures(cast("_GestureWidget", node.widget), node.props)
+        elif node.type == "TabBar":
+            self._apply_tab_bar(cast("_TabBarWidget", node.widget), node.props)
+        elif node.type == "TabView":
+            host = cast("_NavHost", node.widget)
+            if host.tab_bar is not None:
+                self._apply_tab_bar(host.tab_bar, node.props)
+        elif node.type == "RouteDrawer":
+            cast("_DrawerHost", node.widget).set_open(
+                bool(node.props.get("open", False))
+            )
         self._apply_letter_spacing(node.widget, style)
         self._apply_sizing(node.widget, style)
         self._apply_effects(node.widget, style)
@@ -1350,6 +1752,17 @@ class QtRenderer:
         style = cast("Style | None", parent.props.get("style"))
         widget.set_layers(layers, style.stack_align if style is not None else None)
 
+    def _sync_drawer(self, parent: _Rendered) -> None:
+        """Push the content/drawer children and ``open`` state into the host.
+
+        Args:
+            parent: The ``RouteDrawer`` rendered node.
+        """
+        host = cast("_DrawerHost", parent.widget)
+        if len(parent.children) >= 2:
+            host.set_children(parent.children[0].widget, parent.children[1].widget)
+        host.set_open(bool(parent.props.get("open", False)))
+
     def _bind_gestures(self, widget: _GestureWidget, props: dict[str, Any]) -> None:
         """(Re)install the gesture handlers on a ``GestureDetector`` widget.
 
@@ -1362,6 +1775,17 @@ class QtRenderer:
             for name in ("on_tap", "on_double_tap", "on_long_press", "on_swipe")
         }
         widget.set_handlers(handlers, self._invoke)
+
+    def _apply_tab_bar(self, widget: _TabBarWidget, props: dict[str, Any]) -> None:
+        """Rebuild a tab strip from its props and wire the change handler.
+
+        Args:
+            widget: The tab-strip widget.
+            props: The node's current props (``tabs``/``active``/``on_change``).
+        """
+        tabs = cast("list[str]", props.get("tabs", []))
+        active = int(cast("int", props.get("active", 0)))
+        widget.configure(tabs, active, props.get("on_change"), self._invoke)
 
     def _bind_click(self, button: QPushButton, handler: object) -> None:
         """(Re)connect a button's click signal to a handler.

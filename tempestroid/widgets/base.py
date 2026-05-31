@@ -21,6 +21,7 @@ from tempestroid.widgets.events import (
     Event,
     FileSelectEvent,
     LongPressEvent,
+    RouteChangeEvent,
     SlideEvent,
     SwipeEvent,
     TapEvent,
@@ -38,6 +39,7 @@ __all__ = [
     "TapHandler",
     "LongPressHandler",
     "SwipeHandler",
+    "RouteChangeHandler",
     "Widget",
     "Component",
     "handler_accepts_event",
@@ -144,6 +146,12 @@ LongPressHandler: TypeAlias = Annotated[
 SwipeHandler: TypeAlias = Annotated[
     Callable[[SwipeEvent], Any]
     | Callable[[SwipeEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+RouteChangeHandler: TypeAlias = Annotated[
+    Callable[[RouteChangeEvent], Any]
+    | Callable[[RouteChangeEvent], Awaitable[Any]]
     | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
