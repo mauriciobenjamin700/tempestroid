@@ -65,3 +65,6 @@ android-host/captures/
 
 # Keep the Gradle wrapper jar tracked (do not ignore it):
 !android-host/gradle/wrapper/gradle-wrapper.jar
+
+# MkDocs build output
+site/

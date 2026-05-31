@@ -1,0 +1,16 @@
+{
+  "compose": {
+    "fontStyle": "italic",
+    "letterSpacing": 1.5,
+    "lineHeight": 1.4,
+    "maxLines": 2,
+    "textDecoration": "underline",
+    "textOverflow": "ellipsis"
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "font-style: italic; text-decoration: underline",
+    "qss_leaf": "font-style: italic; text-decoration: underline"
+  }
+}

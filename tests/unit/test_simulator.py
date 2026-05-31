@@ -91,3 +91,94 @@ async def test_watcher_triggers_hot_restart(tmp_path: Path):
             break
     task.cancel()
     assert _labels(sim) == ["after"]
+
+
+_STATEFUL_APP = """\
+from dataclasses import dataclass
+
+from tempestroid import App, Column, Text, Widget
+
+
+@dataclass
+class State:
+    value: int = 0
+
+
+def make_state() -> State:
+    return State()
+
+
+def view(app: "App[State]") -> Widget:
+    return Column(children=[Text(content="{label}: " + str(app.state.value))])
+"""
+
+
+def test_reload_preserves_state(tmp_path: Path):
+    app_file = tmp_path / "app.py"
+    app_file.write_text(_STATEFUL_APP.format(label="before"), encoding="utf-8")
+    sim = Simulator()
+    sim.load(load_app_spec(app_file))
+    sim.app.state.value = 9  # mutate directly (no running loop needed for reload)
+
+    app_file.write_text(_STATEFUL_APP.format(label="after"), encoding="utf-8")
+    sim.reload(load_app_spec(app_file))  # hot reload (preserve state)
+    assert sim.app.state.value == 9
+    assert _labels(sim) == ["after: 9"]
+
+
+def test_reload_without_loaded_app_falls_back_to_load(tmp_path: Path):
+    app_file = tmp_path / "app.py"
+    app_file.write_text(_STATEFUL_APP.format(label="fresh"), encoding="utf-8")
+    sim = Simulator()
+    sim.reload(load_app_spec(app_file))  # no app yet → behaves like load
+    assert _labels(sim) == ["fresh: 0"]
+
+
+_APP_V1 = """\
+from dataclasses import dataclass
+from tempestroid import App, Column, Text, Widget
+
+@dataclass
+class State:
+    value: int = 0
+
+def make_state() -> State:
+    return State()
+
+def view(app: "App[State]") -> Widget:
+    return Column(children=[Text(content="v1: " + str(app.state.value))])
+"""
+
+# v2 adds a `tag` field the view reads. The preserved v1 state instance lacks
+# `tag`, so the reload fails and falls back to a clean restart — where the fresh
+# make_state() *does* have `tag`.
+_APP_V2 = """\
+from dataclasses import dataclass
+from tempestroid import App, Column, Text, Widget
+
+@dataclass
+class State:
+    value: int = 0
+    tag: str = "fresh"
+
+def make_state() -> State:
+    return State()
+
+def view(app: "App[State]") -> Widget:
+    return Column(children=[Text(content=app.state.tag + ": " + str(app.state.value))])
+"""
+
+
+def test_reload_incompatible_view_falls_back_to_restart(tmp_path: Path):
+    app_file = tmp_path / "app.py"
+    app_file.write_text(_APP_V1, encoding="utf-8")
+    sim = Simulator()
+    sim.load(load_app_spec(app_file))
+    sim.app.state.value = 5
+
+    app_file.write_text(_APP_V2, encoding="utf-8")
+    sim.reload(load_app_spec(app_file))
+    # Preserved state lacked `tag` → reload failed → clean restart with fresh
+    # state (value reset to 0, the new `tag` default rendered).
+    assert sim.app.state.value == 0
+    assert _labels(sim) == ["fresh: 0"]

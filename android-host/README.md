@@ -73,7 +73,7 @@ android-host/
   serialized `{"$handler": token}` ref.
 
 `TempestRenderer.kt` is the Kotlin counterpart of the Python-side
-`to_compose(style)` (`src/tempestroid/renderers/compose/`); the two translators
+`to_compose(style)` (`tempestroid/renderers/compose/`); the two translators
 must agree, which is what the phase-D conformance suite pins.
 
 ## Wiring before a build

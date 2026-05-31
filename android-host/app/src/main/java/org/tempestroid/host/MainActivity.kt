@@ -73,11 +73,21 @@ class MainActivity : ComponentActivity() {
         //   adb shell am start -n org.tempestroid.host/.MainActivity \
         //     --es tempest_dev_url http://localhost:8765
         val devUrl = intent?.getStringExtra("tempest_dev_url")
-        val entry = if (devUrl != null) {
-            "from tempestroid.devserver.client import serve_device; " +
-                "serve_device('$devUrl')"
-        } else {
-            DEVICE_DEMO
+        val entry = when {
+            // Dev mode wins: poll the dev server and hot-reload over LAN.
+            devUrl != null ->
+                "from tempestroid.devserver.client import serve_device; " +
+                    "serve_device('$devUrl')"
+            // A `tempest build` APK bundles the user's app as this asset; extract
+            // it and run it via the file loader (make_state + view contract).
+            hasAsset(BUNDLED_APP_ASSET) -> {
+                val appFile = File(filesDir, BUNDLED_APP_ASSET)
+                extractAssets(BUNDLED_APP_ASSET, appFile)
+                "from tempestroid.bridge.jni import run_device_file; " +
+                    "run_device_file('${appFile.absolutePath}')"
+            }
+            // No bundled app and no dev URL: the built-in demo (B4/B6).
+            else -> DEVICE_DEMO
         }
 
         // Boot Python off the UI thread (plan §3.4 "regra de ouro"). The entry
@@ -127,8 +137,19 @@ class MainActivity : ComponentActivity() {
     private fun stripGuard(name: String): String =
         if (name.endsWith(".gz-")) name.dropLast(1) else name
 
+    /** True if [assetPath] exists as a packaged asset (file or non-empty dir). */
+    private fun hasAsset(assetPath: String): Boolean = try {
+        assets.open(assetPath).close()
+        true
+    } catch (_: java.io.IOException) {
+        (assets.list(assetPath)?.isNotEmpty()) == true
+    }
+
     companion object {
         private const val TAG = "tempestroid"
+
+        /** Asset slot a `tempest build` APK stages the user's app source into. */
+        private const val BUNDLED_APP_ASSET = "tempest_app.py"
 
         /**
          * Device demo: a styled counter (B4) plus a "notify" button exercising

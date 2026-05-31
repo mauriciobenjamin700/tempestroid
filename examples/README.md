@@ -28,15 +28,26 @@ only ever touches `make_state` / `view`.
 | [`calculator`](calculator/app.py) | Dense button grid as the only input. | Nested `Row`/`Column`, 16 keyed buttons; `update` on the display. |
 | [`stopwatch`](stopwatch/app.py) | Async-first loop: a coroutine handler ticks via `asyncio.sleep` while the UI stays responsive. | Coalesced rebuilds driven off the loop; `update`. |
 | [`colorpicker`](colorpicker/app.py) | Dynamic `Style`: swatches re-color a live preview; toggles re-style its text. | `background` / `font_size` / `font_weight` updates through the diff. |
+| [`form`](form/app.py) | The value-bearing input widgets, each folding its typed event back into state. | `Input` / `Checkbox` / `DatePicker` / `FilePicker`; `TextChangeEvent` / `ToggleEvent` / `DateChangeEvent` / `FileSelectEvent`. |
+| [`gallery`](gallery/app.py) | The expanded component set + input styling + an implicit `Style` transition. | `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`; secure + regex `Input`; `SlideEvent`; `Style.transition`. |
 | [`device_counter`](device_counter/app.py) | Minimal device-only counter (no Qt import) for the code-push path. | Same contract, Qt-free. |
 
 ## Constraints (current widget set)
 
-The device renderer supports **`Text` / `Button` / `Column` / `Row` / `Container`**
-and **`on_click`** only — there is no text-input, date-picker, or file-picker
-widget yet (planned framework evolution). So the gallery is **button-driven**:
-the todo list adds from a preset pool rather than from typed text, and the
-calculator uses its keypad as the input surface. Styles map cleanly to Compose
+The framework and the **Qt simulator** support the full widget set —
+**`Text` / `Button` / `Column` / `Row` / `Container` / `ScrollView`** plus the
+value-bearing inputs **`Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` /
+`DatePicker` / `FilePicker`** and the presentation widgets **`Image` / `Icon` /
+`ProgressBar` / `Spinner`** (see the `form` and `gallery` examples) — with
+`on_click` and the typed change events (`TextChangeEvent` / `ToggleEvent` /
+`SlideEvent` / `DateChangeEvent` / `FileSelectEvent`).
+
+The **device (Compose) renderer** currently renders **`Text` / `Button` /
+`Column` / `Row` / `Container`** and `on_click`; the other widgets render as an
+empty box until the Kotlin host grows the matching cases (Trilho B follow-up). So
+the device-targeted apps stay **button-driven**: the todo list adds from a preset
+pool rather than from typed text, and the calculator uses its keypad as the input
+surface. Styles map cleanly to Compose
 for `padding` / `gap` / `background` / `radius` / `color` / `font_size` /
 `font_weight` / `text_align` / `arrangement` / `alignment`; `margin`, `border`,
 and `grow` are not wired in the device renderer yet and degrade to the default.

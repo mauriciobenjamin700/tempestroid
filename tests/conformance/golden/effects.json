@@ -1,0 +1,17 @@
+{
+  "compose": {
+    "opacity": 0.5,
+    "shadow": {
+      "blur": 8.0,
+      "color": "#00000066",
+      "offsetX": 0.0,
+      "offsetY": 2.0
+    }
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

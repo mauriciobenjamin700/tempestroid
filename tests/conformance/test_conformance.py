@@ -32,12 +32,23 @@ from tempestroid.style import (
     AlignItems,
     Border,
     Color,
+    Corners,
+    Curve,
     Edge,
     FlexDirection,
+    FontStyle,
     FontWeight,
+    Gradient,
+    GradientDirection,
+    GradientStop,
     JustifyContent,
+    Shadow,
+    SideBorder,
     Style,
     TextAlign,
+    TextDecoration,
+    TextOverflow,
+    Transition,
 )
 
 _GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -101,6 +112,38 @@ CASES: dict[str, Style] = {
         min_height=20, max_height=80,
     ),
     "grow_margin": Style(grow=1, margin=Edge.all(16)),
+    "animated": Style(
+        background=Color(r=10, g=20, b=30),
+        transition=Transition(duration_ms=300, curve=Curve.EASE_IN_OUT, delay_ms=50),
+    ),
+    "effects": Style(
+        opacity=0.5,
+        shadow=Shadow(
+            color=Color(r=0, g=0, b=0, a=0.4), blur=8, offset_x=0, offset_y=2
+        ),
+    ),
+    "gradient": Style(
+        background=Gradient(
+            direction=GradientDirection.LEFT_RIGHT,
+            stops=[
+                GradientStop(color=Color(r=255, g=0, b=0), position=0.0),
+                GradientStop(color=Color(r=0, g=0, b=255), position=1.0),
+            ],
+        ),
+    ),
+    "corners_sides": Style(
+        radius=Corners(top_left=12, top_right=12, bottom_right=0, bottom_left=0),
+        border=SideBorder(bottom=Border(width=1, color=Color(r=200, g=200, b=200))),
+    ),
+    "rich_text": Style(
+        font_style=FontStyle.ITALIC,
+        text_decoration=TextDecoration.UNDERLINE,
+        letter_spacing=1.5,
+        line_height=1.4,
+        max_lines=2,
+        text_overflow=TextOverflow.ELLIPSIS,
+    ),
+    "align_self_aspect": Style(align_self=AlignItems.CENTER, aspect_ratio=1.5),
 }
 
 
@@ -126,6 +169,7 @@ _SAMPLES: dict[str, Any] = {
     "direction": FlexDirection.ROW,
     "justify": JustifyContent.CENTER,
     "align": AlignItems.CENTER,
+    "align_self": AlignItems.CENTER,
     "grow": 1.0,
     "gap": 8.0,
     "padding": Edge.all(4),
@@ -134,16 +178,26 @@ _SAMPLES: dict[str, Any] = {
     "radius": 4.0,
     "background": Color(r=1, g=2, b=3),
     "color": Color(r=1, g=2, b=3),
+    "opacity": 0.5,
+    "shadow": Shadow(color=Color(r=0, g=0, b=0), blur=4.0, offset_y=2.0),
     "font_family": "Arial",
     "font_size": 12.0,
     "font_weight": FontWeight.BOLD,
+    "font_style": FontStyle.ITALIC,
     "text_align": TextAlign.CENTER,
+    "text_decoration": TextDecoration.UNDERLINE,
+    "letter_spacing": 1.5,
+    "line_height": 1.4,
+    "max_lines": 2,
+    "text_overflow": TextOverflow.ELLIPSIS,
     "width": 100.0,
     "height": 100.0,
     "min_width": 10.0,
     "max_width": 200.0,
     "min_height": 10.0,
     "max_height": 200.0,
+    "aspect_ratio": 1.5,
+    "transition": Transition(duration_ms=300),
 }
 
 #: Expected ``field -> (compose_reacts, qt_reacts)``. Divergences (compose-only)
@@ -155,10 +209,22 @@ _SAMPLES: dict[str, Any] = {
 #:   width/height (fixed) — Qt fixed-size not wired yet (A3 notes).
 #:   direction  — structural (picks Row vs Column at the widget); neither
 #:                translator emits it into QSS/spec.
+#:   transition — Compose maps it to ``animate*AsState``; Qt animation is
+#:                renderer-imperative (QPropertyAnimation), not a QSS property, so
+#:                the ``Style → Qt`` translator does not react to it (A3 notes).
+#:   align_self — Qt applies it per-child via ``QBoxLayout.setAlignment`` in the
+#:                renderer (like grow), not through the Style translator.
+#:   opacity/shadow — Qt applies these as a ``QGraphicsEffect`` in the renderer,
+#:                not via QSS, so the translator doesn't react.
+#:   letter_spacing — no QSS property; Qt applies it via ``QFont`` in the renderer.
+#:   line_height/max_lines/text_overflow — Compose Text features; Qt would need a
+#:                ``QTextDocument``/elide at the widget, not QSS (post-v1).
+#:   aspect_ratio — Compose ``Modifier.aspectRatio``; Qt fixed-ratio not wired.
 _COVERAGE: dict[str, tuple[bool, bool]] = {
     "direction": (False, False),
     "justify": (True, True),
     "align": (True, True),
+    "align_self": (True, False),
     "grow": (True, False),
     "gap": (True, False),
     "padding": (True, True),
@@ -167,16 +233,26 @@ _COVERAGE: dict[str, tuple[bool, bool]] = {
     "radius": (True, True),
     "background": (True, True),
     "color": (True, True),
+    "opacity": (True, False),
+    "shadow": (True, False),
     "font_family": (True, True),
     "font_size": (True, True),
     "font_weight": (True, True),
+    "font_style": (True, True),
     "text_align": (True, False),
+    "text_decoration": (True, True),
+    "letter_spacing": (True, False),
+    "line_height": (True, False),
+    "max_lines": (True, False),
+    "text_overflow": (True, False),
     "width": (True, False),
     "height": (True, False),
     "min_width": (True, True),
     "max_width": (True, True),
     "min_height": (True, True),
     "max_height": (True, True),
+    "aspect_ratio": (True, False),
+    "transition": (True, False),
 }
 
 

@@ -1,0 +1,24 @@
+{
+  "compose": {
+    "background": {
+      "direction": "leftRight",
+      "kind": "gradient",
+      "stops": [
+        {
+          "color": "#ff0000",
+          "position": 0.0
+        },
+        {
+          "color": "#0000ff",
+          "position": 1.0
+        }
+      ]
+    }
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0.0 rgba(255, 0, 0, 1.0), stop:1.0 rgba(0, 0, 255, 1.0))",
+    "qss_leaf": "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0.0 rgba(255, 0, 0, 1.0), stop:1.0 rgba(0, 0, 255, 1.0))"
+  }
+}

@@ -198,7 +198,7 @@ val copyPythonStdlib by tasks.registering(CopyPythonStdlibTask::class) {
 }
 
 val sitePackagesDir = rootProject.file("../toolchain/dist/site-packages")
-val tempestroidCore = rootProject.file("../src/tempestroid")
+val tempestroidCore = rootProject.file("../tempestroid")
 val copyPythonSitePackages by tasks.registering(CopyPythonSitePackagesTask::class) {
     depsDir.fileValue(sitePackagesDir)
     coreSrc.fileValue(tempestroidCore)

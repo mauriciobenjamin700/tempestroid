@@ -1,11 +1,36 @@
 [project]
 name = "tempestroid"
-version = "0.0.1"
+version = "0.1.0"
 description = "Framework for building native Android apps in typed Python — declarative typed UI tree, Qt simulator + Compose device renderers."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Mauricio Benjamin" }]
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "android",
+    "ui",
+    "framework",
+    "declarative",
+    "pydantic",
+    "compose",
+    "qt",
+    "mobile",
+    "cross-platform",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: Android",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.7",
 ]
@@ -16,6 +41,13 @@ qt = [
     "PySide6>=6.7",
     "qasync>=0.27",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mauriciobenjamin700/tempestroid"
+Documentation = "https://mauriciobenjamin700.github.io/tempestroid/"
+Repository = "https://github.com/mauriciobenjamin700/tempestroid"
+Changelog = "https://github.com/mauriciobenjamin700/tempestroid/blob/main/CHANGELOG.md"
+Issues = "https://github.com/mauriciobenjamin700/tempestroid/issues"
 
 [project.scripts]
 tempest = "tempestroid.cli:main"
@@ -31,6 +63,13 @@ dev = [
     "pytest-asyncio>=0.23",
     "PySide6>=6.7",
     "qasync>=0.27",
+    # Documentation site (PT-BR). `uv sync` installs it; build with
+    # `uv run mkdocs build --strict` / serve with `uv run mkdocs serve`.
+    # Pinned <9.6: the 9.6.x line prints a non-suppressible MkDocs-2.0 protest
+    # banner to stderr on every build/serve. 9.5.x renders identically without it.
+    "mkdocs-material>=9.5,<9.6",
+    # PT-BR / EN-US language switcher (adds the header locale selector).
+    "mkdocs-static-i18n>=1.2",
 ]
 
 [build-system]
@@ -38,12 +77,20 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tempestroid"]
+packages = ["tempestroid"]
+
+[tool.hatch.build.targets.sdist]
+# Strict allowlist: ship the package + docs/examples + metadata. The B-track
+# build scaffolding (Gradle/Kotlin/C host + CPython toolchain) is only needed in
+# a full repo checkout for `tempest build`/`run`, never by PyPI consumers.
+only-include = ["tempestroid", "examples", "docs", "README.md", "LICENSE", "CHANGELOG.md", "mkdocs.yml"]
 
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-src = ["src", "tests"]
+# Flat layout: the first-party package `tempestroid` sits at the repo root, so
+# ruff resolves first-party imports from "." (not a src/ wrapper).
+src = ["."]
 # B-track scaffolding (Gradle/Kotlin/C + vendored build clones) is not framework
 # Python; the quality gates must not touch it. See CLAUDE.md "Layout".
 extend-exclude = ["toolchain", "android-host"]
@@ -63,7 +110,7 @@ inline-quotes = "double"
 convention = "google"
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["tempestroid", "tests"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 reportMissingImports = true
