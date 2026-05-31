@@ -13,11 +13,7 @@ import sys
 
 __all__ = ["build_parser", "main"]
 
-_NOT_YET = {
-    "new": "C — project scaffolding",
-    "build": "C — APK packaging",
-    "run": "C — install + logcat",
-}
+_NOT_YET: dict[str, str] = {}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,9 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "spec", help="Print the typed contract (widgets/events) as JSON."
     )
-    subparsers.add_parser("new", help="Scaffold a new tempestroid app.")
-    subparsers.add_parser("build", help="Build a release APK.")
-    subparsers.add_parser("run", help="Install on a device and stream logs.")
+    new = subparsers.add_parser("new", help="Scaffold a new tempestroid app.")
+    new.add_argument("name", help="App directory to create (e.g. my_app).")
+    build = subparsers.add_parser("build", help="Build an APK embedding an app.")
+    build.add_argument("app", help="Path to the app file to embed.")
+    build.add_argument(
+        "--release", action="store_true", help="Build a release APK (default: debug)."
+    )
+    run = subparsers.add_parser(
+        "run", help="Build, install on a device, and stream logs."
+    )
+    run.add_argument("app", help="Path to the app file to run.")
     return parser
 
 
@@ -139,6 +143,29 @@ def _run_serve(app: str, host: str, port: int) -> int:
     return 0
 
 
+def _run_new(name: str) -> int:
+    """Scaffold a new app directory.
+
+    Args:
+        name: The directory to create.
+
+    Returns:
+        The process exit code.
+    """
+    from pathlib import Path
+
+    from tempestroid.cli.scaffold import scaffold_app
+
+    try:
+        app_file = scaffold_app(Path(name))
+    except FileExistsError as exc:
+        print(f"refusing to overwrite: {exc}")
+        return 1
+    print(f"created {app_file}")
+    print(f"  run it:  uv run tempest dev {app_file}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command.
 
@@ -158,6 +185,16 @@ def main(argv: list[str] | None = None) -> int:
         return _run_dev(args.app)
     if command == "serve":
         return _run_serve(args.app, args.host, args.port)
+    if command == "new":
+        return _run_new(args.name)
+    if command in ("build", "run"):
+        from tempestroid.cli.packaging import run_build, run_run
+
+        return (
+            run_build(args.app, release=args.release)
+            if command == "build"
+            else run_run(args.app)
+        )
     if command == "spec":
         import json
 

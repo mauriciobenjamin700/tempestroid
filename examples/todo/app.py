@@ -1,9 +1,9 @@
-"""Tap-driven todo list — gallery example.
+"""Todo list — gallery example.
 
-No text input widget exists yet, so tasks are added from a fixed pool by tapping
-"+ add"; tapping a task toggles done; "clear done" removes the completed ones.
-This exercises every child patch the reconciler emits: ``insert`` (add),
-``remove`` (clear), ``update`` (toggle label) and stable-key reordering.
+Type a task into the :class:`Input` and tap "add"; tapping a task toggles done;
+"clear done" removes the completed ones. This exercises every child patch the
+reconciler emits — ``insert`` (add), ``remove`` (clear), ``update`` (toggle) —
+plus a value-bearing ``Input`` whose ``on_change`` carries the typed text.
 
 Runs in the Qt simulator::
 
@@ -25,19 +25,11 @@ from tempestroid import (
     Column,
     Edge,
     FontWeight,
+    Input,
     Row,
     Style,
     Text,
     Widget,
-)
-
-_POOL: tuple[str, ...] = (
-    "Buy milk",
-    "Write tests",
-    "Call dentist",
-    "Ship release",
-    "Water plants",
-    "Read a book",
 )
 
 
@@ -72,12 +64,12 @@ class TodoState:
     Attributes:
         tasks: The current tasks in display order.
         next_id: The id to assign to the next added task.
-        pool_index: The next index into ``_POOL`` to add from.
+        draft: The text currently typed into the input field.
     """
 
     tasks: list[Task] = field(default_factory=_no_tasks)
     next_id: int = 1
-    pool_index: int = 0
+    draft: str = ""
 
 
 def make_state() -> TodoState:
@@ -87,18 +79,22 @@ def make_state() -> TodoState:
         A new todo state.
     """
     return TodoState(
-        tasks=[Task(id=1, text=_POOL[0]), Task(id=2, text=_POOL[1], done=True)],
+        tasks=[
+            Task(id=1, text="Write tests"),
+            Task(id=2, text="Ship release", done=True),
+        ],
         next_id=3,
-        pool_index=2,
     )
 
 
 def _add_task(state: TodoState) -> None:
-    """Append the next task from the pool (cycling)."""
-    text = _POOL[state.pool_index % len(_POOL)]
+    """Append the drafted task and clear the input (no-op when empty)."""
+    text = state.draft.strip()
+    if not text:
+        return
     state.tasks.append(Task(id=state.next_id, text=text))
     state.next_id += 1
-    state.pool_index += 1
+    state.draft = ""
 
 
 def _toggle(state: TodoState, task_id: int) -> None:
@@ -166,11 +162,25 @@ def view(app: App[TodoState]) -> Widget:
                 ),
                 key="title",
             ),
+            Input(
+                value=app.state.draft,
+                placeholder="New task…",
+                on_change=lambda e: app.set_state(
+                    lambda s: setattr(s, "draft", e.value)
+                ),
+                key="draft",
+                style=Style(
+                    padding=Edge.symmetric(vertical=10.0, horizontal=14.0),
+                    radius=8.0,
+                    background=Color.from_hex("#1f2937"),
+                    color=Color.from_hex("#f9fafb"),
+                ),
+            ),
             Row(
                 style=Style(gap=8.0),
                 children=[
                     Button(
-                        label="+ add",
+                        label="add",
                         on_click=lambda: app.set_state(_add_task),
                         key="add",
                         style=Style(

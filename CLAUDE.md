@@ -36,7 +36,7 @@ tempestroid/
 ├── android-host/         # B2–B4 Gradle/Kotlin host skeleton (embeds official CPython via JNI)
 └── src/tempestroid/      # the framework (Trilho A, pure Python)
     ├── style.py          # Style, Color, Edge, Border + enums (Pydantic, frozen)
-    ├── widgets/          # Widget base, Text/Button/Column/Row/Container (the IR) + events.py
+    ├── widgets/          # Widget base, Text/Button/Column/Row/Container + Input/Checkbox/DatePicker/FilePicker (the IR) + events.py
     ├── core/             # ir.py (Node+patches) / reconciler.py (build,diff) / state.py (App) / introspection.py
     ├── renderers/qt/     # renderer + Style→Qt translator + app_runner (run_qt) + simulator + dev_loop
     ├── cli/              # main (tempest dev/spec/...) + app_loader + watcher
@@ -93,7 +93,8 @@ Tracks `docs/plan.md`. Update the table when a phase opens/closes; keep the
 | B4 | Compose renderer (native): render the serialized tree, apply patches, route taps | ✅ done | on-device: Compose renders the mount tree (Text/Button/Column + style spec → Modifier/Arrangement), applies patch batches (recomposes), and a real button tap → `dispatchEvent` → handler → patch → UI updates (`count` 0→4 by tapping; verified by screenshot) |
 | B5 | dev server + QR (LAN code-push + log relay) | ✅ done | on-device: `tempest serve <app>` (over `adb reverse`) pushes the app source; the device's code-push client polls, fetches, re-execs and hot-restarts the `DeviceApp` — editing+saving the file live-reloaded the device UI without an APK rebuild (verified by screenshot) |
 | B6 | native capabilities (notifications) | ✅ done | on-device: a `notify()` call from a Python handler → `native` command over the bridge → `NativeModules`/`NotificationModule` → a system notification posts (verified via `dumpsys notification` + the shade). The `native` envelope + module-router is the template for further capabilities (camera, etc.) |
-| C / D | Polish (`new`/`build`/`run`, stateful hot reload) / conformance golden snapshots | ⬜ todo | per `docs/plan.md` |
+| C | Polish: `tempest new`/`build`/`run` + stateful hot reload | ✅ done | `new` scaffolds a runnable app; `build` embeds it as an asset and produces an APK that runs the user app standalone (verified on device); `run` = build + adb install + launch + logcat; code-push reload now carries matching state fields across reloads (`carry_state`) |
+| D | Conformance golden snapshots (Qt vs Compose) | ⬜ todo | per `docs/plan.md` |
 
 **Trilho B status:** research done (`docs/research/`), decisions fixed (CPython
 3.14 official + hand-rolled JNI + cibuildwheel + Compose DIY). **B0/B1/B2 are

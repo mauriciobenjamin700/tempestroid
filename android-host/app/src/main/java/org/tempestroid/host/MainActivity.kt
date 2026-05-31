@@ -66,18 +66,26 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Dev mode (B5): if launched with a `tempest_dev_url` extra, run the
-        // code-push client (poll the dev server, hot-restart on change) instead
-        // of the bundled demo. Pair over USB with:
-        //   adb reverse tcp:8765 tcp:8765
-        //   adb shell am start -n org.tempestroid.host/.MainActivity \
-        //     --es tempest_dev_url http://localhost:8765
+        // Pick the Python entry point, in priority order:
+        //   1. dev mode (B5): `tempest_dev_url` extra → code-push client.
+        //        adb reverse tcp:8765 tcp:8765
+        //        adb shell am start -n org.tempestroid.host/.MainActivity \
+        //          --es tempest_dev_url http://localhost:8765
+        //   2. packaged app (C): a `tempest_app.py` asset embedded by
+        //      `tempest build` → load + run it.
+        //   3. otherwise: the bundled demo.
         val devUrl = intent?.getStringExtra("tempest_dev_url")
-        val entry = if (devUrl != null) {
-            "from tempestroid.devserver.client import serve_device; " +
-                "serve_device('$devUrl')"
-        } else {
-            DEVICE_DEMO
+        val appFile = File(filesDir, "tempest_app.py")
+        val entry = when {
+            devUrl != null ->
+                "from tempestroid.devserver.client import serve_device; " +
+                    "serve_device('$devUrl')"
+            extractAppAsset(appFile) ->
+                "from tempestroid.cli.app_loader import load_app_spec; " +
+                    "from tempestroid.bridge.jni import run_device; " +
+                    "spec = load_app_spec('${appFile.absolutePath}'); " +
+                    "run_device(spec.make_state(), spec.view)"
+            else -> DEVICE_DEMO
         }
 
         // Boot Python off the UI thread (plan §3.4 "regra de ouro"). The entry
@@ -89,6 +97,23 @@ class MainActivity : ComponentActivity() {
             )
             Log.i(TAG, "python exited rc=$rc")
         }, "tempest-python").start()
+    }
+
+    /**
+     * Extract an embedded `tempest_app.py` asset to [dest], if present.
+     *
+     * @param dest the destination file in the app's private storage.
+     * @return true if a packaged app asset was found and extracted.
+     */
+    private fun extractAppAsset(dest: File): Boolean {
+        return try {
+            assets.open("tempest_app.py").use { input ->
+                dest.outputStream().use { input.copyTo(it) }
+            }
+            true
+        } catch (_: java.io.IOException) {
+            false
+        }
     }
 
     /** Request POST_NOTIFICATIONS on API 33+ so the B6 demo can post. */

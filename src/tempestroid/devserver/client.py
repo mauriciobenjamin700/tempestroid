@@ -20,7 +20,27 @@ from typing import Any
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.cli.app_loader import spec_from_source
 
-__all__ = ["run_dev_client", "serve_device"]
+__all__ = ["run_dev_client", "serve_device", "carry_state"]
+
+
+def carry_state(old: object, new: object) -> None:
+    """Copy attributes present on both ``old`` and ``new`` from old to new.
+
+    Enables stateful hot reload: the freshly-built state keeps the running
+    values for any field the edited app still declares. Fields the edit removed
+    are dropped; fields it added keep their fresh defaults.
+
+    Args:
+        old: The previous app's state.
+        new: The newly-built state to seed.
+    """
+    old_attrs = getattr(old, "__dict__", {})
+    for key, value in old_attrs.items():
+        if hasattr(new, key):
+            try:
+                setattr(new, key, value)
+            except AttributeError:
+                pass  # frozen/read-only field — leave the fresh default
 
 
 async def run_dev_client(
@@ -32,6 +52,7 @@ async def run_dev_client(
     poll_interval: float = 1.0,
     log: Callable[[str], None] = print,
     max_polls: int | None = None,
+    preserve_state: bool = True,
 ) -> None:
     """Poll the dev server and hot-restart the app on every source change.
 
@@ -44,6 +65,9 @@ async def run_dev_client(
         poll_interval: Seconds between version polls.
         log: Sink for status lines.
         max_polls: Stop after this many polls (tests); ``None`` runs forever.
+        preserve_state: Carry matching state attributes across reloads (stateful
+            hot reload). On a reload, attributes present on both the previous and
+            the freshly-built state keep their previous values.
     """
     loop = asyncio.get_running_loop()
     current: dict[str, Any] = {"device": None, "hash": None}
@@ -69,7 +93,11 @@ async def run_dev_client(
             if version != current["hash"]:
                 payload = json.loads(await fetch(f"{url}/app"))
                 spec = spec_from_source(payload["source"], filename="<dev-push>")
-                device = DeviceApp(spec.make_state(), spec.view, make_bridge())
+                state = spec.make_state()
+                previous: DeviceApp[Any] | None = current["device"]
+                if preserve_state and previous is not None:
+                    carry_state(previous.app.state, state)
+                device = DeviceApp(state, spec.view, make_bridge())
                 current["device"] = device
                 current["hash"] = payload["hash"]
                 await device.start()
