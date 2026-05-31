@@ -218,7 +218,8 @@ Frozen Pydantic value objects, diffed by value.
   (Compose maps it to `animate*AsState`; Qt animation is renderer-imperative).
 - Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
   **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
-  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing).
+  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing),
+  **`StackAlign`** (overlay child alignment in a `Stack`).
 
 ### Widgets (`tempestroid.widgets`)
 
@@ -228,6 +229,13 @@ The declarative IR — bare-noun widgets.
   **`Container`**, **`ScrollView`** (scrollable container), **`SafeArea`**
   (insets its child past the status/navigation bars + notch; `edges` selects
   which sides, default all — `SafeAreaEdge` enum).
+- **`Stack`** — overlay/z-order container: children share one box, layered in
+  declaration order. A child with `position=ABSOLUTE` is anchored by its
+  `top`/`right`/`bottom`/`left` insets; the rest align by `Style.stack_align`
+  (`StackAlign` enum). The framework's overlay primitive (scrim, modal, FAB).
+- **`GestureDetector`** — wraps a `child` and reports pointer gestures via
+  **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
+  (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
 - **`Component`** (base) — a composite widget that lowers to a primitive tree via
   `render()`; the reconciler expands it before diffing, so renderers never see it.
 - Value-bearing inputs: **`Input`** (text — with `secure` password masking +
@@ -287,6 +295,9 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`** (carries `valid`
   against the input's `pattern`), **`ToggleEvent`**, **`SlideEvent`**,
   **`DateChangeEvent`**, **`FileSelectEvent`**.
+- Gesture events (from `GestureDetector`): **`LongPressEvent`** (optional
+  `x`/`y`), **`SwipeEvent`** (`direction` + `dx`/`dy`) with the
+  **`SwipeDirection`** enum (left/right/up/down).
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -311,6 +322,22 @@ renderer changes and are fully device-ready. Every component takes an optional
 
 - **`run_qt(state, view, *, title, size)`** — run an app in the Qt simulator.
 - **`run_dev(app_path)`** — the `tempest dev` cockpit.
+
+### Device presets (`tempestroid.devices`)
+
+Logical (`dp`) viewport sizes for common Android phones, so the simulator window
+can match a real device instead of a generic guess.
+
+- **`Device`** — `Enum` of presets (Pixel, Galaxy S/A, Redmi / Redmi Note, Poco,
+  Xiaomi, Moto, OnePlus). Each member carries `width` / `height` (in `dp`) and a
+  human `label`; `.size` returns the `(width, height)` tuple.
+- **`DEFAULT_DEVICE`** — the simulator default (`Device.REDMI_NOTE_12`, 393×873 dp).
+
+```python
+from tempestroid import Device, run_qt
+
+run_qt(state, view, size=Device.GALAXY_S23.size)
+```
 
 ### Compose + bridge — device side (phases B3/B4)
 

@@ -23,6 +23,8 @@ def test_widget_catalog_lists_all_widgets():
         "Icon",
         "ProgressBar",
         "Spinner",
+        "Stack",
+        "GestureDetector",
     }
 
 
@@ -52,6 +54,8 @@ def test_event_catalog_lists_events():
         "SlideEvent",
         "DateChangeEvent",
         "FileSelectEvent",
+        "LongPressEvent",
+        "SwipeEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

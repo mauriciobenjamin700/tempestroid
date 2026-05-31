@@ -6,6 +6,14 @@ lowers the stacking fields, the serializer carries the gesture handler tokens,
 and the Qt renderer lays out overlapping layers and classifies pointer gestures.
 """
 
+# This suite deliberately reaches into renderer internals (_StackWidget /
+# _GestureWidget / _at / _fire_long_press) to assert Qt geometry, and wires
+# throwaway event lambdas + pytest.approx; relax the matching strict rules here.
+# pyright: reportPrivateUsage=false
+# pyright: reportUnknownLambdaType=false
+# pyright: reportUnknownArgumentType=false
+# pyright: reportUnknownMemberType=false
+
 from __future__ import annotations
 
 import pytest
@@ -149,7 +157,7 @@ class TestQtStack:
 
     def test_absolute_child_fills_the_stack(self) -> None:
         renderer = QtRenderer()
-        renderer.mount(
+        host = renderer.mount(
             build(
                 Stack(
                     children=[
@@ -167,14 +175,17 @@ class TestQtStack:
                 )
             )
         )
-        renderer.root_widget.resize(200, 120)
+        # Show + size the host so Qt delivers the resize down to the stack: a
+        # never-shown widget never receives a resizeEvent.
+        host.resize(200, 120)
+        host.show()
         QApplication.processEvents()
         child = renderer._at((0,)).widget
         assert child.geometry().getRect() == (0, 0, 200, 120)
 
     def test_stack_align_centers_a_sized_child(self) -> None:
         renderer = QtRenderer()
-        renderer.mount(
+        host = renderer.mount(
             build(
                 Stack(
                     style=Style(stack_align=StackAlign.CENTER),
@@ -182,7 +193,8 @@ class TestQtStack:
                 )
             )
         )
-        renderer.root_widget.resize(200, 100)
+        host.resize(200, 100)
+        host.show()
         QApplication.processEvents()
         assert renderer._at((0,)).widget.geometry().getRect() == (80, 40, 40, 20)
 
