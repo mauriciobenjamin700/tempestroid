@@ -164,6 +164,24 @@ so they need an Android SDK/NDK and a checkout of the host tree.
 | `tempest build <app>` | ✅ | Bundle an app into an APK (needs Android SDK/NDK) |
 | `tempest run <app>` | ✅ | Build + install on a device + stream logs |
 
+### Running on a device from WSL
+
+Connecting a physical Android device to a **WSL 2** session needs USB
+passthrough plus an `adb` workaround for WSL's mirrored networking:
+
+1. **Windows (admin PowerShell)** — install [usbipd-win](https://github.com/dorssel/usbipd-win)
+   (`winget install usbipd`), then `usbipd bind --busid <id>` and
+   `usbipd attach --wsl --busid <id>` (find `<id>` via `usbipd list`).
+2. **Device** — enable USB debugging; on MIUI/HyperOS also enable **"Install via
+   USB"** (else `adb install` fails `INSTALL_FAILED_USER_RESTRICTED`).
+3. **WSL** — under mirrored networking `adb start-server` hangs; start it in the
+   foreground instead and leave it running:
+   `adb nodaemon server &`, then `adb devices` responds normally.
+4. Build + install: `ANDROID_SDK_ROOT=/usr/lib/android-sdk make apk-install`
+   (Gradle wrapper 8.11.1).
+
+Full walkthrough + troubleshooting: **[Running on a device (WSL)](docs/guia/dispositivo-wsl.md)**.
+
 ---
 
 ## Public API

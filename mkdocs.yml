@@ -69,6 +69,7 @@ plugins:
             Eventos: Events
             CLI (tempest): CLI (tempest)
             Galeria de exemplos: Example gallery
+            Rodar no dispositivo (WSL): Running on a device (WSL)
             Referência: Reference
             API pública: Public API
             Lado do dispositivo (ponte): Device side (bridge)
@@ -116,6 +117,7 @@ nav:
       - Eventos: guia/eventos.md
       - CLI (tempest): guia/cli.md
       - Galeria de exemplos: guia/exemplos.md
+      - Rodar no dispositivo (WSL): guia/dispositivo-wsl.md
   - Referência:
       - API pública: referencia/api.md
       - Lado do dispositivo (ponte): referencia/dispositivo.md
