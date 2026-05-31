@@ -28,6 +28,9 @@ class MainActivity : ComponentActivity() {
 
     private val tree = TempestTree()
 
+    /** Native capability router; registers its activity-result launchers here. */
+    private lateinit var native: NativeModules
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -36,6 +39,10 @@ class MainActivity : ComponentActivity() {
         // insets and safeDrawing reports empty — content that opts out of SafeArea
         // therefore must place its own padding.
         enableEdgeToEdge()
+
+        // Must be built during onCreate: it registers ActivityResultLaunchers,
+        // which the framework forbids once the activity is STARTED.
+        native = NativeModules(this)
 
         // Android only sets TMPDIR on API 33+; CPython expects it.
         Os.setenv("TMPDIR", cacheDir.absolutePath, false)
@@ -54,7 +61,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 val message = JSONObject(json)
                 if (message.optString("kind") == "native") {
-                    NativeModules.handle(this, message)
+                    native.handle(message)
                 } else {
                     tree.apply(message)
                 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider roots exposed to other apps (camera capture target).
+     `photos/` under the app's internal filesDir is where CameraModule writes. -->
+<paths>
+    <files-path name="photos" path="photos/" />
+</paths>

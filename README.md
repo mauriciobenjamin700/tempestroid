@@ -277,14 +277,53 @@ phone without rebuilding the APK (`tempest serve <app>`).
   native sink + an `urllib` fetch into `run_dev_client`.
 - **`render_qr(url)`** — ASCII QR for pairing (falls back to the plain URL).
 
-### Native capabilities (phase B6)
+### Native capabilities (phase B6+)
 
 Device-native features driven from Python as `{"kind": "native"}` commands the
-Kotlin host routes to capability modules. Verified on device.
+Kotlin host routes to capability modules. Two shapes share the one JNI channel:
+**fire-and-forget** (one-way) and **request/response** (`await` a result; the
+host replies over the event channel under a reserved token — no extra native
+entry point). A failed request/response call raises `NativeError` carrying a
+machine-readable `code` (`permission_denied` / `cancelled` / `not_found` /
+`unavailable` / `io_error`). Permissions (location, camera, bluetooth) are
+requested on demand by the host.
 
-- **`notify(title, body="")`** — post a system notification from a handler.
-  The extension pattern (`native_command` envelope + a host module router) is in
-  place for further capabilities (camera, sensors, …).
+Fire-and-forget:
+
+- **`notify(title, body="")`** — post a system notification.
+- **`share(text="", url="", title="")`** — open the system share sheet.
+- **`share_to_whatsapp(text="", phone="")`** — share to WhatsApp (`wa.me`,
+  optional E.164 number).
+- **`open_url(url)`** — open a URL with the default handler.
+- **`set_text(text)`** — write to the clipboard.
+
+Request/response (`async`, awaited from a handler):
+
+- **`await get_position(high_accuracy=True) -> Position`** — a single location
+  fix (`latitude`/`longitude`/`accuracy`/`altitude`).
+- **`await take_photo() -> Photo`** — capture a photo (`path`/`width`/`height`).
+- **`await read_file(name)` / `write_file(name, content)` / `delete_file(name)`
+  / `list_files() -> list[str]`** — app-private device storage.
+- **`await get_text() -> str`** — read the clipboard.
+- **`await scan(timeout=8.0) -> list[BluetoothDevice]`** — discover nearby
+  Bluetooth devices (`address`/`name`/`rssi`).
+
+```python
+from tempestroid import App, Button, Text, Widget
+from tempestroid.native import get_position, share, NativeError
+
+async def _locate(app: App[State]) -> None:
+    try:
+        pos = await get_position()
+        app.set_state(lambda s: setattr(s, "label", f"{pos.latitude}, {pos.longitude}"))
+    except NativeError as exc:
+        app.set_state(lambda s: setattr(s, "label", f"erro: {exc.code}"))
+```
+
+The `native_command` / `native_request` envelope + the host module router is the
+extension point for further capabilities (sensors, contacts, …). The Python side
+(envelopes, pending-future resolution, typed results) is fully unit-tested
+off-device; the Kotlin capability modules need an Android device to validate.
 
 ---
 
