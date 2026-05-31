@@ -419,32 +419,40 @@ class NativeModules(private val activity: ComponentActivity) {
 
     /** Describe a captured photo, downscaling it in place to the size caps. */
     private fun photoData(file: File, args: JSONObject): JSONObject {
+        val data = JSONObject().put("path", file.absolutePath)
         val maxW = if (args.isNull("max_width")) 0 else args.optInt("max_width")
         val maxH = if (args.isNull("max_height")) 0 else args.optInt("max_height")
-        var bitmap = BitmapFactory.decodeFile(file.absolutePath)
-        if (bitmap != null && (maxW > 0 || maxH > 0)) {
-            val scale = minOf(
-                if (maxW > 0) maxW.toFloat() / bitmap.width else Float.MAX_VALUE,
-                if (maxH > 0) maxH.toFloat() / bitmap.height else Float.MAX_VALUE,
-            )
+        if (maxW <= 0 && maxH <= 0) {
+            // No size caps: read just the JPEG header bounds (no full bitmap in
+            // memory) to report width/height.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                data.put("width", bounds.outWidth).put("height", bounds.outHeight)
+            }
+            return data
+        }
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return data
+        val scale = minOf(
+            if (maxW > 0) maxW.toFloat() / bitmap.width else Float.MAX_VALUE,
+            if (maxH > 0) maxH.toFloat() / bitmap.height else Float.MAX_VALUE,
+        )
+        val out =
             if (scale < 1f) {
-                val scaled = Bitmap.createScaledBitmap(
+                Bitmap.createScaledBitmap(
                     bitmap,
                     (bitmap.width * scale).toInt().coerceAtLeast(1),
                     (bitmap.height * scale).toInt().coerceAtLeast(1),
                     true,
-                )
-                file.outputStream().use {
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 90, it)
+                ).also { scaled ->
+                    file.outputStream().use {
+                        scaled.compress(Bitmap.CompressFormat.JPEG, 90, it)
+                    }
                 }
-                bitmap = scaled
+            } else {
+                bitmap
             }
-        }
-        val data = JSONObject().put("path", file.absolutePath)
-        if (bitmap != null) {
-            data.put("width", bitmap.width).put("height", bitmap.height)
-        }
-        return data
+        return data.put("width", out.width).put("height", out.height)
     }
 
     // --- audio: microphone capture + speaker playback -----------------------

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -174,3 +176,29 @@ async def test_dev_client_routes_native_result_to_resolver(
     sink["cb"]("1:on_click", "{}")
     await asyncio.sleep(0.05)
     assert any(m["kind"] == "patch" for m in bridges[0].sent)
+
+
+def test_dev_client_imports_without_typer() -> None:
+    """The device code-push client imports without ``typer`` installed.
+
+    Regression: the Android runtime does not bundle ``typer``, but the dev
+    client imports :func:`spec_from_source` from :mod:`tempestroid.cli`, whose
+    package ``__init__`` must not eagerly import the Typer-based ``main``.
+    Run in a subprocess with ``typer`` blocked so a stray import fails loudly
+    instead of silently passing because the test process already loaded it.
+    """
+    code = (
+        "import sys; sys.modules['typer'] = None;"
+        " import tempestroid.devserver.client;"
+        " import tempestroid.cli.app_loader;"
+        " assert hasattr(tempestroid.devserver.client, 'serve_device');"
+        " print('ok')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
