@@ -1,4 +1,4 @@
-"""Layout widgets: ``Column``, ``Row``, ``Container``, ``ScrollView``, ``SafeArea``, ``Stack``."""
+"""Layout + overlay widgets (Column, Row, Container, ScrollView, SafeArea, Stack)."""
 
 from __future__ import annotations
 

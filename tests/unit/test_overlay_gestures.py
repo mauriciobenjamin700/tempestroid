@@ -31,9 +31,9 @@ from tempestroid import (
     serialize_node,
     to_compose,
 )
-from tempestroid.widgets import EventValidationError
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.renderer import _GestureWidget, _StackWidget
+from tempestroid.widgets import EventValidationError
 
 # --- widgets / IR -----------------------------------------------------------
 
@@ -46,7 +46,11 @@ def test_stack_builds_with_ordered_children() -> None:
 
 def test_gesture_detector_builds_with_child_and_handlers() -> None:
     node = build(
-        GestureDetector(on_tap=lambda: None, on_swipe=lambda e: None, child=Text(content="x"))
+        GestureDetector(
+            on_tap=lambda: None,
+            on_swipe=lambda e: None,
+            child=Text(content="x"),
+        )
     )
     assert node.type == "GestureDetector"
     assert len(node.children) == 1 and node.children[0].type == "Text"
@@ -102,12 +106,22 @@ def test_style_keeps_stacking_fields_through_merge() -> None:
 
 
 def test_to_compose_lowers_stack_align() -> None:
-    assert to_compose(Style(stack_align=StackAlign.BOTTOM_END)) == {"stackAlign": "bottomEnd"}
+    assert to_compose(Style(stack_align=StackAlign.BOTTOM_END)) == {
+        "stackAlign": "bottomEnd"
+    }
 
 
 def test_to_compose_lowers_absolute_insets() -> None:
-    spec = to_compose(Style(position=Position.ABSOLUTE, top=0, left=4, right=8, bottom=2))
-    assert spec == {"position": "absolute", "top": 0.0, "left": 4.0, "right": 8.0, "bottom": 2.0}
+    spec = to_compose(
+        Style(position=Position.ABSOLUTE, top=0, left=4, right=8, bottom=2)
+    )
+    assert spec == {
+        "position": "absolute",
+        "top": 0.0,
+        "left": 4.0,
+        "right": 8.0,
+        "bottom": 2.0,
+    }
 
 
 # --- serializer -------------------------------------------------------------
@@ -141,7 +155,13 @@ class TestQtStack:
                     children=[
                         Text(
                             content="scrim",
-                            style=Style(position=Position.ABSOLUTE, top=0, left=0, right=0, bottom=0),
+                            style=Style(
+                                position=Position.ABSOLUTE,
+                                top=0,
+                                left=0,
+                                right=0,
+                                bottom=0,
+                            ),
                         )
                     ]
                 )
