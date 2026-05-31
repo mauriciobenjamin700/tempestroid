@@ -68,3 +68,6 @@ android-host/captures/
 
 # MkDocs build output
 site/
+
+# `tempest build` embeds the user app here as a generated asset (phase C).
+android-host/app/src/main/assets/tempest_app.py

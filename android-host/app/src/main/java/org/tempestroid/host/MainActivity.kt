@@ -66,12 +66,14 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Dev mode (B5): if launched with a `tempest_dev_url` extra, run the
-        // code-push client (poll the dev server, hot-restart on change) instead
-        // of the bundled demo. Pair over USB with:
-        //   adb reverse tcp:8765 tcp:8765
-        //   adb shell am start -n org.tempestroid.host/.MainActivity \
-        //     --es tempest_dev_url http://localhost:8765
+        // Pick the Python entry point, in priority order:
+        //   1. dev mode (B5): `tempest_dev_url` extra → code-push client.
+        //        adb reverse tcp:8765 tcp:8765
+        //        adb shell am start -n org.tempestroid.host/.MainActivity \
+        //          --es tempest_dev_url http://localhost:8765
+        //   2. packaged app (C): a `tempest_app.py` asset embedded by
+        //      `tempest build` → load + run it.
+        //   3. otherwise: the bundled demo.
         val devUrl = intent?.getStringExtra("tempest_dev_url")
         val entry = when {
             // Dev mode wins: poll the dev server and hot-reload over LAN.

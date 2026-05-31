@@ -117,7 +117,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | App | What it shows |
 |---|---|
 | [`counter`](examples/counter/app.py) | Sync + `async` handlers, the basics. |
-| [`todo`](examples/todo/app.py) | Tap-driven list — `insert` / `remove` / `update` patches. |
+| [`todo`](examples/todo/app.py) | Type-to-add list — `Input` + `insert` / `remove` / `update` patches. |
 | [`calculator`](examples/calculator/app.py) | Dense nested `Row`/`Column` button grid. |
 | [`stopwatch`](examples/stopwatch/app.py) | Async loop ticking the UI via `asyncio.sleep`. |
 | [`colorpicker`](examples/colorpicker/app.py) | Dynamic `Style` updates (swatches + toggles). |
@@ -127,9 +127,10 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 The framework and the Qt simulator support the full widget set, including the
 value-bearing inputs and the utility widgets (`Slider` / `Switch` /
 `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`). The
-device (Compose) renderer currently renders `Text` / `Button` / `Column` / `Row`
-/ `Container` and `on_click`; device-targeted apps stay button-driven until the
-Kotlin host grows the remaining widget cases (see
+device (Compose) renderer renders `Text` / `Button` / `Column` / `Row` /
+`Container` plus the value widgets `Input` / `Checkbox` / `DatePicker` /
+`FilePicker` (with their typed change events); the remaining utility widgets stay
+empty-box on device until the Kotlin host grows the matching cases (see
 [`examples/README.md`](examples/README.md)).
 
 ---
@@ -215,7 +216,8 @@ The declarative IR — bare-noun widgets.
   **`DateChangeEvent`**, **`FileSelectEvent`**.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
-  errors. This is the Python↔Kotlin contract for the device bridge.
+  errors. This is the Python↔Kotlin contract for the device bridge. The bridge
+  passes the validated event to handlers that accept a positional argument.
 
 ### Core — IR + reconciler (`tempestroid.core`)
 

@@ -24,7 +24,7 @@ only ever touches `make_state` / `view`.
 | App | What it shows | Widgets / patches exercised |
 |---|---|---|
 | [`counter`](counter/app.py) | The basics: sync **and** `async` handlers. | `Text`, `Button`, `Row`/`Column`; `update`. |
-| [`todo`](todo/app.py) | Tap-driven list (no text input yet — tasks come from a fixed pool). | Stable-key list; `insert` (add), `remove` (clear), `update` (toggle). |
+| [`todo`](todo/app.py) | Type a task into the `Input`, tap to add/toggle/clear. | `Input` (`TextChangeEvent`); `insert` / `remove` / `update`. |
 | [`calculator`](calculator/app.py) | Dense button grid as the only input. | Nested `Row`/`Column`, 16 keyed buttons; `update` on the display. |
 | [`stopwatch`](stopwatch/app.py) | Async-first loop: a coroutine handler ticks via `asyncio.sleep` while the UI stays responsive. | Coalesced rebuilds driven off the loop; `update`. |
 | [`colorpicker`](colorpicker/app.py) | Dynamic `Style`: swatches re-color a live preview; toggles re-style its text. | `background` / `font_size` / `font_weight` updates through the diff. |
@@ -42,15 +42,21 @@ value-bearing inputs **`Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` /
 `on_click` and the typed change events (`TextChangeEvent` / `ToggleEvent` /
 `SlideEvent` / `DateChangeEvent` / `FileSelectEvent`).
 
-The **device (Compose) renderer** currently renders **`Text` / `Button` /
-`Column` / `Row` / `Container`** and `on_click`; the other widgets render as an
-empty box until the Kotlin host grows the matching cases (Trilho B follow-up). So
-the device-targeted apps stay **button-driven**: the todo list adds from a preset
-pool rather than from typed text, and the calculator uses its keypad as the input
-surface. Styles map cleanly to Compose
-for `padding` / `gap` / `background` / `radius` / `color` / `font_size` /
-`font_weight` / `text_align` / `arrangement` / `alignment`; `margin`, `border`,
-and `grow` are not wired in the device renderer yet and degrade to the default.
+The **device (Compose) renderer** renders **`Text` / `Button` / `Column` /
+`Row` / `Container`** plus the value widgets **`Input` / `Checkbox` /
+`DatePicker` / `FilePicker`**; the remaining widgets (`TextArea` / `Switch` /
+`Slider` / `Image` / `Icon` / `ProgressBar` / `Spinner` / `ScrollView`) render as
+an empty box until the Kotlin host grows the matching cases (Trilho B follow-up).
+Value widgets carry a typed change event — `Input.on_change` (`TextChangeEvent`),
+`Checkbox.on_change` (`ToggleEvent`), `DatePicker.on_change` (`DateChangeEvent`),
+`FilePicker.on_select` (`FileSelectEvent`) — and the bridge passes the validated
+event to any handler that accepts a positional argument (declare it
+zero-argument to ignore the value). The text field is **controlled**: its value
+lives in Python state, so each edit round-trips through `on_change`. Styles map
+cleanly to Compose for `padding` / `gap` / `background` / `radius` / `color` /
+`font_size` / `font_weight` / `text_align` / `arrangement` / `alignment`;
+`margin`, `border`, and `grow` are not wired in the device renderer yet and
+degrade to the default.
 
 > **Tip on handlers:** rebuilds compare handler props by identity, so a fresh
 > `lambda` each build reads as a prop change (a known A2/A4 limitation). The
