@@ -304,6 +304,7 @@ class QtRenderer:
             self._host_layout.insertWidget(0, new.widget)
             self._root = new
             if old is not None:
+                self._purge_connections(old)
                 self._discard(old.widget)
             return
         parent = self._at(patch.path[:-1])
@@ -313,6 +314,7 @@ class QtRenderer:
         layout.insertWidget(index, new.widget, self._stretch(new))
         self._place_alignment(parent, new)
         parent.children[index] = new
+        self._purge_connections(old)
         self._discard(old.widget)
 
     def _apply_insert(self, patch: Insert) -> None:
@@ -337,6 +339,7 @@ class QtRenderer:
         parent = self._at(patch.path)
         child = parent.children.pop(patch.index)
         self._require_layout(parent).removeWidget(child.widget)
+        self._purge_connections(child)
         self._discard(child.widget)
 
     def _apply_reorder(self, patch: Reorder) -> None:
@@ -988,6 +991,26 @@ class QtRenderer:
         )
         if flag is not None:
             parent.layout.setAlignment(child.widget, flag)
+
+    def _purge_connections(self, rendered: _Rendered) -> None:
+        """Drop tracked signal connections for a discarded subtree.
+
+        The click/value/eye registries are keyed by ``id(widget)``. ``deleteLater``
+        only *schedules* a widget's destruction, so without this the entries
+        outlive the widget — a slow leak across remove/replace churn, and a
+        correctness hazard once CPython recycles the ``id`` for a fresh widget.
+        Walks the whole ``_Rendered`` subtree since handler-bearing widgets may
+        sit anywhere below the discarded node.
+
+        Args:
+            rendered: The root of the rendered subtree being discarded.
+        """
+        widget_id = id(rendered.widget)
+        self._click_conns.pop(widget_id, None)
+        self._value_conns.pop(widget_id, None)
+        self._eye_actions.pop(widget_id, None)
+        for child in rendered.children:
+            self._purge_connections(child)
 
     @staticmethod
     def _discard(widget: QWidget) -> None:

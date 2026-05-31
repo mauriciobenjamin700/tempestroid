@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,50 @@ def test_devserver_serves_and_reflects_edits(tmp_path: Path) -> None:
         # Editing the file changes what the server reports — no restart needed.
         app.write_text("x = 2\n", encoding="utf-8")
         assert json.loads(_get(f"{base}/version"))["hash"] == source_hash("x = 2\n")
+    finally:
+        server.stop()
+
+
+def _post(url: str, body: bytes, *, content_length: str | None = None) -> int:
+    """POST raw bytes and return the HTTP status (treating errors as their code)."""
+    headers = {} if content_length is None else {"Content-Length": content_length}
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+            return response.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def test_devserver_log_accepts_small_body(tmp_path: Path) -> None:
+    """A normal-sized log body is relayed and answered 204."""
+    app = tmp_path / "app.py"
+    app.write_text("x = 1\n", encoding="utf-8")
+    relayed: list[str] = []
+    server = DevServer(app, host="127.0.0.1", port=0, log=relayed.append)
+    server.start()
+    try:
+        status = _post(f"http://127.0.0.1:{server.port}/log", b"hello device")
+        assert status == 204
+        assert any("hello device" in line for line in relayed)
+    finally:
+        server.stop()
+
+
+def test_devserver_log_rejects_oversized_body(tmp_path: Path) -> None:
+    """An over-cap Content-Length is rejected (413) before any body is read."""
+    app = tmp_path / "app.py"
+    app.write_text("x = 1\n", encoding="utf-8")
+    server = DevServer(app, host="127.0.0.1", port=0)
+    server.start()
+    try:
+        # Claim a 64 MiB body via the header; the server must refuse before read.
+        status = _post(
+            f"http://127.0.0.1:{server.port}/log",
+            b"x",
+            content_length=str(64 << 20),
+        )
+        assert status == 413
     finally:
         server.stop()
 
