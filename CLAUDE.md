@@ -161,9 +161,12 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
 
 **A2 notes / known limits (revisit post-v1):**
 
-- Child diffing is **positional** by default; a single `Reorder` is emitted only
-  for a *pure* permutation (both lists fully keyed, unique keys, same set, equal
-  length). Mixed insert+reorder falls back to positional — correct, less optimal.
+- Child diffing is **positional** by default. When **both** child lists are
+  fully keyed with unique keys, a keyed diff runs instead: removed keys →
+  `Remove` (descending), survivors realigned with one `Reorder`, added keys →
+  `Insert` (ascending final index), matched keys recurse — handling mixed
+  insert + remove + reorder in one pass (a pure permutation is the no-add/remove
+  case). Partially-keyed / duplicate-key lists still use the positional path.
 - Handler props compared by equality → a fresh `lambda` each build reads as a
   prop change. Prefer stable handler references (matters once A4/state lands).
 

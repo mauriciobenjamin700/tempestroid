@@ -206,8 +206,7 @@ def test_unchanged_keyed_order_emits_nothing():
     assert diff(old, new) == []
 
 
-def test_mixed_keyset_falls_back_to_positional():
-    # Different key sets => not a pure reorder => positional diff.
+def test_keyed_append_emits_single_insert():
     old = build(Column(children=[Text(content="a", key="a")]))
     new = build(
         Column(children=[Text(content="a", key="a"), Text(content="c", key="c")])
@@ -216,3 +215,88 @@ def test_mixed_keyset_falls_back_to_positional():
     assert len(patches) == 1
     assert isinstance(patches[0], Insert)
     assert patches[0].index == 1
+
+
+def test_keyed_middle_insert_emits_only_insert():
+    # A keyed insert in the middle must NOT cascade into Replaces/Updates of the
+    # positionally-shifted children — just one Insert at the target index.
+    old = build(
+        Column(children=[Text(content="a", key="a"), Text(content="c", key="c")])
+    )
+    new = build(
+        Column(
+            children=[
+                Text(content="a", key="a"),
+                Text(content="b", key="b"),
+                Text(content="c", key="c"),
+            ]
+        )
+    )
+    patches = diff(old, new)
+    assert len(patches) == 1
+    assert isinstance(patches[0], Insert)
+    assert patches[0].index == 1
+    assert patches[0].node.key == "b"
+
+
+def test_keyed_middle_remove_emits_only_remove():
+    old = build(
+        Column(
+            children=[
+                Text(content="a", key="a"),
+                Text(content="b", key="b"),
+                Text(content="c", key="c"),
+            ]
+        )
+    )
+    new = build(
+        Column(children=[Text(content="a", key="a"), Text(content="c", key="c")])
+    )
+    patches = diff(old, new)
+    assert len(patches) == 1
+    assert isinstance(patches[0], Remove)
+    assert patches[0].index == 1
+
+
+def test_keyed_mixed_insert_remove_reorder():
+    # b removed, d added, a/c swapped — one Remove + one Reorder + one Insert.
+    old = build(
+        Column(
+            children=[
+                Text(content="a", key="a"),
+                Text(content="b", key="b"),
+                Text(content="c", key="c"),
+            ]
+        )
+    )
+    new = build(
+        Column(
+            children=[
+                Text(content="c", key="c"),
+                Text(content="a", key="a"),
+                Text(content="d", key="d"),
+            ]
+        )
+    )
+    patches = diff(old, new)
+    removes = [p for p in patches if isinstance(p, Remove)]
+    reorders = [p for p in patches if isinstance(p, Reorder)]
+    inserts = [p for p in patches if isinstance(p, Insert)]
+    assert [p.index for p in removes] == [1]  # drop "b"
+    assert reorders[0].order == [1, 0]  # survivors [a, c] -> [c, a]
+    assert inserts[0].index == 2 and inserts[0].node.key == "d"
+
+
+def test_keyed_diff_recurses_matched_keys():
+    # A moved keyed child whose props changed updates at its NEW index.
+    old = build(
+        Column(children=[Text(content="a", key="a"), Text(content="b", key="b")])
+    )
+    new = build(
+        Column(children=[Text(content="B!", key="b"), Text(content="a", key="a")])
+    )
+    patches = diff(old, new)
+    updates = [p for p in patches if isinstance(p, Update)]
+    assert len(updates) == 1
+    assert updates[0].path == (0,)  # "b" now at index 0
+    assert updates[0].set_props == {"content": "B!"}

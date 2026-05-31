@@ -11,11 +11,14 @@ Diffing strategy (v1):
 * Differing ``type`` or ``key`` at a position → :class:`Replace` the subtree.
 * Child lists are diffed **positionally** by default (:class:`Insert` /
   :class:`Remove` at the tail).
-* When both child lists are fully keyed with the same unique key set and equal
-  length, a pure permutation is detected and collapsed into a single
-  :class:`Reorder` before recursing. Mixed insert+reorder falls back to the
-  positional path — still correct, just less optimal. Keyed move-with-resize is
-  a post-v1 refinement.
+* When both child lists are **fully keyed with unique keys**, a keyed diff runs:
+  removed keys → :class:`Remove` (descending), the surviving keys are realigned
+  to their new relative order with a single :class:`Reorder`, added keys →
+  :class:`Insert` at their final indices (ascending), and matched keys recurse
+  (:class:`Update` / :class:`Replace`). This handles mixed insert + remove +
+  reorder in one pass — a pure permutation is just the no-add/no-remove case.
+  Patches compose under sequential application: every index is valid against the
+  live child list at the moment its patch applies.
 """
 
 from __future__ import annotations
@@ -128,15 +131,8 @@ def _reconcile_children(
         path: The address of the parent node.
         patches: The accumulator to append patches to.
     """
-    if _is_pure_reorder(old, new):
-        old_index_by_key = {node.key: index for index, node in enumerate(old)}
-        order = [old_index_by_key[node.key] for node in new]
-        if order != list(range(len(order))):
-            patches.append(Reorder(path=path, order=order))
-        for new_index, new_child in enumerate(new):
-            _reconcile(
-                old[order[new_index]], new_child, path + (new_index,), patches
-            )
+    if old and new and _fully_keyed(old) and _fully_keyed(new):
+        _reconcile_keyed(old, new, path, patches)
         return
 
     common = min(len(old), len(new))
@@ -148,29 +144,69 @@ def _reconcile_children(
         patches.append(Insert(path=path, index=index, node=new[index]))
 
 
-def _is_pure_reorder(old: list[Node], new: list[Node]) -> bool:
-    """Report whether two child lists differ only by a key permutation.
-
-    Requires both lists to be non-empty, equal length, fully keyed with unique
-    keys, and to share the same key set.
+def _fully_keyed(nodes: list[Node]) -> bool:
+    """Report whether every node carries a key and all keys are unique.
 
     Args:
-        old: The old children.
-        new: The new children.
+        nodes: The child nodes to inspect.
 
     Returns:
-        ``True`` when a single :class:`Reorder` can align the lists.
+        ``True`` when no key is ``None`` and no key repeats.
     """
-    if not old or len(old) != len(new):
-        return False
-    old_keys = [node.key for node in old]
-    new_keys = [node.key for node in new]
-    if None in old_keys or None in new_keys:
-        return False
-    old_set = set(old_keys)
-    if len(old_set) != len(old_keys) or len(set(new_keys)) != len(new_keys):
-        return False
-    return old_set == set(new_keys)
+    keys = [node.key for node in nodes]
+    return None not in keys and len(set(keys)) == len(keys)
+
+
+def _reconcile_keyed(
+    old: list[Node],
+    new: list[Node],
+    path: tuple[int, ...],
+    patches: list[Patch],
+) -> None:
+    """Diff two fully-keyed child lists into a minimal patch sequence.
+
+    Emits, in order: :class:`Remove` for keys gone from ``new`` (descending
+    index), a single :class:`Reorder` realigning the survivors to their new
+    relative order, :class:`Insert` for keys new to the list (ascending final
+    index), then recurses each matched key at its final index. Applying the
+    patches in this order is correct because each index is valid against the live
+    child list at the moment its patch runs: removals shrink from the tail,
+    the reorder permutes the survivors, ascending inserts land at final slots,
+    and the matched survivors end up at their new indices for the recursion.
+
+    Args:
+        old: The old children (fully keyed, unique).
+        new: The new children (fully keyed, unique).
+        path: The address of the parent node.
+        patches: The accumulator to append patches to.
+    """
+    new_keys = {node.key for node in new}
+    old_keys = {node.key for node in old}
+
+    # 1. Remove keys gone from `new`, descending so lower indices stay valid.
+    for index in range(len(old) - 1, -1, -1):
+        if old[index].key not in new_keys:
+            patches.append(Remove(path=path, index=index))
+
+    # 2. Realign the survivors (old order) to their new relative order.
+    survivor_index = {
+        node.key: index
+        for index, node in enumerate(node for node in old if node.key in new_keys)
+    }
+    order = [survivor_index[node.key] for node in new if node.key in old_keys]
+    if order != list(range(len(order))):
+        patches.append(Reorder(path=path, order=order))
+
+    # 3. Insert keys new to the list at their final indices, ascending.
+    for index, node in enumerate(new):
+        if node.key not in old_keys:
+            patches.append(Insert(path=path, index=index, node=node))
+
+    # 4. Recurse matched keys at their final (new) indices.
+    old_by_key = {node.key: node for node in old}
+    for index, node in enumerate(new):
+        if node.key in old_keys:
+            _reconcile(old_by_key[node.key], node, path + (index,), patches)
 
 
 def _diff_props(
