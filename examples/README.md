@@ -21,16 +21,21 @@ only ever touches `make_state` / `view`.
 
 ## Apps
 
-| App | What it shows | Widgets / patches exercised |
-|---|---|---|
-| [`counter`](counter/app.py) | The basics: sync **and** `async` handlers. | `Text`, `Button`, `Row`/`Column`; `update`. |
-| [`todo`](todo/app.py) | Type a task into the `Input`, tap to add/toggle/clear. | `Input` (`TextChangeEvent`); `insert` / `remove` / `update`. |
-| [`calculator`](calculator/app.py) | Dense button grid as the only input. | Nested `Row`/`Column`, 16 keyed buttons; `update` on the display. |
-| [`stopwatch`](stopwatch/app.py) | Async-first loop: a coroutine handler ticks via `asyncio.sleep` while the UI stays responsive. | Coalesced rebuilds driven off the loop; `update`. |
-| [`colorpicker`](colorpicker/app.py) | Dynamic `Style`: swatches re-color a live preview; toggles re-style its text. | `background` / `font_size` / `font_weight` updates through the diff. |
-| [`form`](form/app.py) | The value-bearing input widgets, each folding its typed event back into state. | `Input` / `Checkbox` / `DatePicker` / `FilePicker`; `TextChangeEvent` / `ToggleEvent` / `DateChangeEvent` / `FileSelectEvent`. |
-| [`gallery`](gallery/app.py) | The expanded component set + input styling + an implicit `Style` transition. | `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`; secure + regex `Input`; `SlideEvent`; `Style.transition`. |
-| [`device_counter`](device_counter/app.py) | Minimal device-only counter (no Qt import) for the code-push path. | Same contract, Qt-free. |
+The **Device** column marks whether the example renders fully on the Compose
+(Android) renderer today; a 〜 means it runs but some widgets degrade to the
+default until the Kotlin host grows the matching cases (see *Constraints* below).
+
+| App | What it shows | Widgets / patches exercised | Device |
+|---|---|---|:--:|
+| [`counter`](counter/app.py) | The basics: sync **and** `async` handlers, styled buttons. | `Text`, `Button`, `Row`/`Column`; `update`. | ✅ |
+| [`tabs`](tabs/app.py) | Tabbed navigation: a persistent tab bar swaps the body while shared state survives the switch. | `Container` cards, view switching via `Replace`; `Input` / `Checkbox` state carried across tabs. | ✅ |
+| [`todo`](todo/app.py) | Type a task into the `Input`, tap to add/toggle/clear. | `Input` (`TextChangeEvent`); `insert` / `remove` / `update`. | ✅ |
+| [`calculator`](calculator/app.py) | Dense button grid as the only input. | Nested `Row`/`Column`, 16 keyed buttons; `update` on the display. | ✅ |
+| [`stopwatch`](stopwatch/app.py) | Async-first loop: a coroutine handler ticks via `asyncio.sleep` while the UI stays responsive. | Coalesced rebuilds driven off the loop; `update`. | ✅ |
+| [`colorpicker`](colorpicker/app.py) | Dynamic `Style`: swatches re-color a live preview; toggles re-style its text. | `background` / `font_size` / `font_weight` updates through the diff. | ✅ |
+| [`form`](form/app.py) | The value-bearing input widgets, each folding its typed event back into state. | `Input` / `Checkbox` / `DatePicker` / `FilePicker`; `TextChangeEvent` / `ToggleEvent` / `DateChangeEvent` / `FileSelectEvent`. | ✅ |
+| [`gallery`](gallery/app.py) | The expanded component set + input styling + an implicit `Style` transition. | `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`; secure + regex `Input`; `SlideEvent`; `Style.transition`. | 〜 |
+| [`device_counter`](device_counter/app.py) | Minimal device-only counter (no Qt import) for the code-push path. | Same contract, Qt-free; styled button. | ✅ |
 
 ## Constraints (current widget set)
 
@@ -56,7 +61,10 @@ lives in Python state, so each edit round-trips through `on_change`. Styles map
 cleanly to Compose for `padding` / `gap` / `background` / `radius` / `color` /
 `font_size` / `font_weight` / `text_align` / `arrangement` / `alignment`;
 `margin`, `border`, and `grow` are not wired in the device renderer yet and
-degrade to the default.
+degrade to the default. The device-ready examples set an explicit `background`
+on every `Button` (rather than leaning on the host's Material default), so they
+read consistently across the Qt simulator and Compose; honoring that background
+on the Compose `Button` itself is a tracked Trilho B follow-up.
 
 > **Tip on handlers:** rebuilds compare handler props by identity, so a fresh
 > `lambda` each build reads as a prop change (a known A2/A4 limitation). The
