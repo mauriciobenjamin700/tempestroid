@@ -14,6 +14,7 @@ do pacote: `from tempestroid import Text, Button, ...`.
 | `Row` | Empilha filhos na horizontal. | `children: list[Widget]` |
 | `Container` | Embrulha um único filho. | `child: Widget \| None` |
 | `ScrollView` | Área rolável. | `horizontal: bool`, `child` |
+| `SafeArea` | Afasta o filho das barras do sistema + notch. | `child`, `edges: list[SafeAreaEdge]` (padrão todos) |
 
 ```python
 from tempestroid import Button, Column, Row, ScrollView, Style, Text
