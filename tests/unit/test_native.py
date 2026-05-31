@@ -13,10 +13,14 @@ import pytest
 
 from tempestroid import notify
 from tempestroid.native import (
+    AudioClip,
     BluetoothDevice,
+    CameraFacing,
     NativeError,
     Photo,
     Position,
+    Video,
+    VideoQuality,
     delete_file,
     get_position,
     get_text,
@@ -24,12 +28,16 @@ from tempestroid.native import (
     native_command,
     native_request,
     open_url,
+    play_sound,
     read_file,
+    record_audio,
+    record_video,
     resolve_native_result,
     scan,
     set_text,
     share,
     share_to_whatsapp,
+    stop_sound,
     take_photo,
     write_file,
 )
@@ -206,6 +214,83 @@ def test_take_photo_parses_result(
 
     photo = asyncio.run(run())
     assert photo == Photo(path="/data/x.jpg", width=100)
+
+
+def test_take_photo_forwards_params(
+    install_host: Callable[[list[dict[str, Any]] | None], _FakeHost],
+) -> None:
+    """``take_photo`` forwards the camera/size params in the envelope args."""
+    host = install_host([{"ok": True, "data": {"path": "/data/x.jpg"}}])
+
+    async def run() -> Photo:
+        return await take_photo(
+            camera=CameraFacing.FRONT, max_width=640, max_height=480
+        )
+
+    asyncio.run(run())
+    assert host.sent[0]["module"] == "camera"
+    assert host.sent[0]["action"] == "take_photo"
+    assert host.sent[0]["args"] == {
+        "camera": "front",
+        "max_width": 640,
+        "max_height": 480,
+    }
+
+
+def test_record_video_parses_result_and_forwards_params(
+    install_host: Callable[[list[dict[str, Any]] | None], _FakeHost],
+) -> None:
+    """``record_video`` returns a typed ``Video`` and forwards its params."""
+    host = install_host(
+        [{"ok": True, "data": {"path": "/data/v.mp4", "duration_ms": 4200}}]
+    )
+
+    async def run() -> Video:
+        return await record_video(
+            camera=CameraFacing.BACK, max_duration_s=30, quality=VideoQuality.LOW
+        )
+
+    video = asyncio.run(run())
+    assert video == Video(path="/data/v.mp4", duration_ms=4200)
+    assert host.sent[0]["action"] == "record_video"
+    assert host.sent[0]["args"] == {
+        "camera": "back",
+        "max_duration_s": 30,
+        "quality": "low",
+    }
+
+
+def test_record_audio_parses_clip(
+    install_host: Callable[[list[dict[str, Any]] | None], _FakeHost],
+) -> None:
+    """``record_audio`` (microphone) returns a typed ``AudioClip``."""
+    host = install_host(
+        [{"ok": True, "data": {"path": "/data/a.m4a", "duration_ms": 1500}}]
+    )
+
+    async def run() -> AudioClip:
+        return await record_audio(max_duration_s=5)
+
+    clip = asyncio.run(run())
+    assert clip == AudioClip(path="/data/a.m4a", duration_ms=1500)
+    assert host.sent[0]["module"] == "audio"
+    assert host.sent[0]["args"] == {"max_duration_s": 5}
+
+
+def test_play_and_stop_sound_send_commands(
+    install_host: Callable[[list[dict[str, Any]] | None], _FakeHost],
+) -> None:
+    """``play_sound`` / ``stop_sound`` drive the speaker via the audio module."""
+    host = install_host([{"ok": True, "data": {}}, {"ok": True, "data": {}}])
+
+    async def run() -> None:
+        await play_sound("/data/a.m4a", volume=0.5)
+        await stop_sound()
+
+    asyncio.run(run())
+    assert host.sent[0]["action"] == "play_sound"
+    assert host.sent[0]["args"] == {"src": "/data/a.m4a", "volume": 0.5}
+    assert host.sent[1]["action"] == "stop_sound"
 
 
 def test_storage_round_trip(

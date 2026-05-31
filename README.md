@@ -432,7 +432,14 @@ Request/response (`async`, awaited from a handler):
 
 - **`await get_position(high_accuracy=True) -> Position`** — a single location
   fix (`latitude`/`longitude`/`accuracy`/`altitude`).
-- **`await take_photo() -> Photo`** — capture a photo (`path`/`width`/`height`).
+- **`await take_photo(*, camera=CameraFacing.BACK, max_width=None, max_height=None) -> Photo`**
+  — capture a photo (`path`/`width`/`height`); the host downscales to the size caps.
+- **`await record_video(*, camera=CameraFacing.BACK, max_duration_s=None, quality=VideoQuality.HIGH) -> Video`**
+  — record a clip (`path`/`duration_ms`/`width`/`height`).
+- **`await record_audio(*, max_duration_s=None) -> AudioClip`** — record from the
+  microphone (`path`/`duration_ms`).
+- **`await play_sound(src, *, volume=1.0)` / `stop_sound()`** — play/stop audio on
+  the device speaker (`src` = local path or URL).
 - **`await read_file(name)` / `write_file(name, content)` / `delete_file(name)`
   / `list_files() -> list[str]`** — app-private device storage.
 - **`await get_text() -> str`** — read the clipboard.
