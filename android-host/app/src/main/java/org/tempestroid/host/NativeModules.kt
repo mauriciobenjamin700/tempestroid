@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
@@ -333,7 +334,16 @@ class NativeModules(private val activity: ComponentActivity) {
         pendingPhoto = null
         pendingPhotoFile = null
         if (saved && file != null && file.exists()) {
-            reply(pending.requestId, true, data = JSONObject().put("path", file.absolutePath))
+            val data = JSONObject().put("path", file.absolutePath)
+            // Report pixel dimensions by decoding only the JPEG header bounds
+            // (no full bitmap in memory), so Python's Photo.width/height are
+            // populated instead of null.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                data.put("width", bounds.outWidth).put("height", bounds.outHeight)
+            }
+            reply(pending.requestId, true, data = data)
         } else {
             reply(pending.requestId, false, error = "cancelled")
         }
