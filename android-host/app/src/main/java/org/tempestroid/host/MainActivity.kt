@@ -8,7 +8,6 @@ import android.system.Os
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -30,12 +29,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Draw under the system bars so a `SafeArea` widget can inset against the
-        // real `WindowInsets.safeDrawing`. Without this the system consumes those
-        // insets and safeDrawing reports empty — content that opts out of SafeArea
-        // therefore must place its own padding.
-        enableEdgeToEdge()
 
         // Android only sets TMPDIR on API 33+; CPython expects it.
         Os.setenv("TMPDIR", cacheDir.absolutePath, false)
@@ -168,8 +161,7 @@ class MainActivity : ComponentActivity() {
         private val DEVICE_DEMO = """
             from dataclasses import dataclass
             from tempestroid import (
-                App, Button, Color, Column, Edge, SafeArea, Style, Text, Widget,
-                notify,
+                App, Button, Color, Column, Edge, Style, Text, Widget, notify,
             )
             from tempestroid.bridge.jni import run_device
 
@@ -184,25 +176,23 @@ class MainActivity : ComponentActivity() {
                 notify("tempestroid", "native notification from Python")
 
             def view(app: App[State]) -> Widget:
-                return SafeArea(
-                    child=Column(
-                        style=Style(
-                            padding=Edge.all(24),
-                            gap=16,
-                            background=Color(r=245, g=245, b=250),
-                        ),
-                        children=[
-                            Text(
-                                content="count = " + str(app.state.n),
-                                style=Style(font_size=28, color=Color(r=20, g=20, b=40)),
-                            ),
-                            Button(
-                                label="increment",
-                                on_click=lambda: app.set_state(_inc),
-                            ),
-                            Button(label="notify", on_click=_ping),
-                        ],
+                return Column(
+                    style=Style(
+                        padding=Edge.all(24),
+                        gap=16,
+                        background=Color(r=245, g=245, b=250),
                     ),
+                    children=[
+                        Text(
+                            content="count = " + str(app.state.n),
+                            style=Style(font_size=28, color=Color(r=20, g=20, b=40)),
+                        ),
+                        Button(
+                            label="increment",
+                            on_click=lambda: app.set_state(_inc),
+                        ),
+                        Button(label="notify", on_click=_ping),
+                    ],
                 )
 
             run_device(State(), view)

@@ -28,9 +28,7 @@ See the [styles guide](../guia/estilos.md).
 The declarative IR — bare-noun widgets.
 
 - Layout/content: **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**,
-  **`Row`**, **`Container`**, **`ScrollView`**, **`SafeArea`** (insets its child
-  past the status/navigation bars + notch; `edges`/**`SafeAreaEdge`** selects the
-  sides, default all).
+  **`Row`**, **`Container`**, **`ScrollView`**.
 - **`Component`** (base) — a composite widget that lowers to a primitive tree via
   `render()`; the reconciler expands it before diffing.
 - Value-bearing inputs: **`Input`** (text), **`TextArea`** (multiline),
