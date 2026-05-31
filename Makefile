@@ -138,7 +138,12 @@ publish-host: ## Upload the built host APK to the GitHub release (download fallb
 	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' first"; exit 1; }
 	@gh release view "v$(VERSION)" >/dev/null 2>&1 \
 		|| gh release create "v$(VERSION)" --title "v$(VERSION)" --notes "tempestroid v$(VERSION)"
-	gh release upload "v$(VERSION)" "$(HOST_APK)#$(HOST_ASSET)" --clobber
+	@# `gh release upload file#label` sets only the asset *label*, not its download
+	@# name (which stays the file's basename), so `tempest install` — which fetches
+	@# .../v<version>/tempest-host-<version>.apk — would 404. Upload a file already
+	@# named like the asset instead.
+	cp "$(HOST_APK)" "$(dir $(HOST_APK))$(HOST_ASSET)"
+	gh release upload "v$(VERSION)" "$(dir $(HOST_APK))$(HOST_ASSET)" --clobber
 	@echo "published $(HOST_ASSET) as the tempest install download fallback"
 
 .PHONY: apk-install
