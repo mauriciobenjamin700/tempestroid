@@ -52,7 +52,10 @@ def test_build_reports_missing_toolchain(
     monkeypatch.delenv("TEMPESTROID_ANDROID_HOST", raising=False)
     monkeypatch.chdir(tmp_path)
     assert main(["build", str(app)]) == 1
-    assert "build failed" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # Preflight surfaces the missing host tree inline before any Gradle work.
+    assert "android-host" in out
+    assert "could not find the android-host project" in out
 
 
 def test_dev_requires_app_path():

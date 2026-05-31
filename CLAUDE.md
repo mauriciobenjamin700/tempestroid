@@ -40,7 +40,7 @@ tempestroid/
     ├── components/       # composite components (AppBar/Header/Footer/Sidebar/Scaffold/NavBar) — lower to primitives via Component.render
     ├── core/             # ir.py (Node+patches) / reconciler.py (build,diff) / state.py (App) / introspection.py
     ├── renderers/qt/     # renderer + Style→Qt translator + app_runner (run_qt) + simulator + dev_loop
-    ├── cli/              # main (tempest dev/spec/...) + app_loader + watcher
+    ├── cli/              # main (tempest dev/spec/build/run/doctor/...) + app_loader + watcher + console (step reporter)
     ├── renderers/compose/# Style→Compose translator (Python side ✓; Kotlin renderer = B4)
     ├── bridge/           # serialize IR/patches, handler registry+dispatch, DeviceApp (Python ✓; JNI transport = B3)
     ├── native/           # capability modules: notifications, camera         (phase B6)
@@ -303,6 +303,25 @@ arrives with track B.)
   never drags in another agent's uncommitted work. Before starting, check
   `origin/main` and open PRs/branches so you don't reimplement work already
   landed or in flight. It is fine to keep a branch local and push it later.
+
+## Dual-renderer device verification (enforced)
+
+- **When a physical Android device is connected (`adb devices` lists one), every
+  change to framework surface MUST be verified on BOTH renderers before it is
+  called done:**
+  1. **Qt simulator** — `make run APP=…` / `make dev APP=…` (desktop CPython).
+  2. **Kotlin/Compose on the physical device** — `make apk-install` (or
+     `tempest serve <app>` over `adb reverse` for live code-push) and exercise
+     the changed flow on the real device, confirming with a screenshot.
+- Type-check + pytest + the Qt sim are NOT sufficient when a device is attached —
+  the Compose renderer and JNI bridge are a separate leaf that only the device
+  exercises. A change that passes Qt but is untested on device is incomplete.
+- If no device is connected (`adb devices` empty), verify on Qt only and **state
+  explicitly** that the device half was not exercised — never claim device
+  parity without running on hardware.
+- Build prereqs for the device path live in the "Trilho B status" notes above
+  (export `ANDROID_SDK_ROOT=/usr/lib/android-sdk`, Gradle wrapper 8.11.1, MIUI
+  "Install via USB").
 
 ## Commands
 
