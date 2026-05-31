@@ -6,32 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-31
+
 ### Added
 
-- **`tempest install` — offline device install (no SDK/NDK, no download).** The
-  prebuilt CPython + framework host APK now **ships inside the wheel**
-  (`tempestroid/_assets/host.apk`), so `tempest install` adb-installs it offline.
-  Resolution order: explicit `.apk`/URL → `TEMPESTROID_HOST_APK` → bundled asset
-  → `TEMPESTROID_HOST_APK_URL`/GitHub-release download fallback.
-- **`tempest new .` scaffolds in place, fully configured.** `tempest new` now
-  writes a complete project — `app.py`, `pyproject.toml` (with the
-  `tempestroid[qt]` dependency and a `[tool.tempest] app` pointer), `README.md`,
-  and `.gitignore`. `.` (the default) targets the current directory; a name
-  creates a subdirectory.
-- **No-argument app commands.** `tempest dev` / `serve` / `build` / `run` read
-  the app path from `[tool.tempest] app` in the nearest `pyproject.toml` when no
-  path is passed, so inside a project the commands take no arguments.
+- **Overlay + gestures.** New **`Stack`** widget (z-order overlay; children share
+  one box, `position=ABSOLUTE` anchors by `top`/`right`/`bottom`/`left` insets,
+  others align by **`StackAlign`**) and **`GestureDetector`** (wraps a child,
+  reports gestures via **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`**:
+  `on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`). Adds the
+  **`LongPressEvent`** / **`SwipeEvent`** (+ **`SwipeDirection`**) typed events and
+  the **`Position`** style enum. Realized in the Qt renderer; the Compose device
+  cases ship next.
+- **Device screen-size presets (`tempestroid.devices`).** **`Device`** — an enum
+  of logical (dp) viewport sizes for common phones (Pixel, Galaxy, Redmi, Poco,
+  …) with `.size`; **`DEFAULT_DEVICE`** sizes the simulator window so it matches a
+  real device instead of a generic guess.
+- **`tempest install` — install the prebuilt host on a device (no SDK/NDK).**
+  Resolves the host APK from an explicit `.apk`/URL → `TEMPESTROID_HOST_APK` → a
+  bundled asset (in source checkouts) → a download from the matching GitHub
+  release (`TEMPESTROID_HOST_APK_URL` override), cached under `~/.cache/tempestroid`.
+  After installing once, `tempest serve` pushes app code over LAN.
+- **`tempest new .` scaffolds in place, fully configured.** Writes `app.py`,
+  `pyproject.toml` (with the `tempestroid[qt]` dependency and a `[tool.tempest] app`
+  pointer), `README.md` and `.gitignore`. `.` (the default) targets the current
+  directory; a name creates a subdirectory.
+- **No-argument app commands.** `tempest dev` / `serve` / `build` / `run` read the
+  app path from `[tool.tempest] app` in the nearest `pyproject.toml` when no path
+  is passed, so inside a project the commands take no arguments.
 - **`tempest serve` closes the device loop.** With a device connected it now
   auto-wires `adb reverse` and launches the host in dev mode pointed at the dev
-  server, so `tempest install` + `tempest serve` is the whole on-device flow
-  (`--no-launch` to serve only).
+  server (`--no-launch` to serve only).
 
 ### Changed
 
-- **`tempest build` fails with an actionable hint from an installed wheel.**
-  When the `android-host` source tree is absent, the error now points at the
-  `tempest install` + `tempest serve` device path instead of only mentioning a
-  source checkout.
+- **CLI migrated to Typer** — global `--version`/`-V` flag plus a `version`
+  command, `no_args_is_help`, richer help.
+- **`tempest build` fails with an actionable hint from an installed wheel** —
+  when the `android-host` source tree is absent, the error points at the
+  `tempest install` + `tempest serve` device path.
 
 ## [0.2.0] — 2026-05-31
 

@@ -141,7 +141,7 @@ empty-box on device until the Kotlin host grows the matching cases (see
 ```bash
 uv run tempest new .                # scaffold a fully configured project in the current dir
 uv run tempest dev                  # dev loop: edit + save → hot reload (reads pyproject)
-uv run tempest install              # adb-install the bundled host APK (offline, no SDK/NDK)
+uv run tempest install              # download + adb-install the prebuilt host (no SDK/NDK)
 uv run tempest serve                # push to a device over LAN + auto-launch in dev mode
 uv run tempest doctor               # check the Android build/run prerequisites
 uv run tempest build                # bundle the app into an APK (from-source; needs SDK/NDK)
@@ -161,34 +161,33 @@ restart, clean state), `s` (raise window), `q` (quit). Saving the file
 hot-reloads; a reload incompatible with the live state falls back to a clean
 restart.
 
-**Running on a device — the easy path (no toolchain, no download).** You do
-**not** need an Android SDK/NDK or the `android-host` source to run on hardware.
-The prebuilt host APK **ships inside the `tempestroid` wheel**, so installing it
-is offline and instant:
+**Running on a device — the easy path (no toolchain).** You do **not** need an
+Android SDK/NDK or the `android-host` source to run on hardware. Install the
+prebuilt host once, then push your Python over LAN:
 
 ```bash
-uv run tempest install   # adb-installs the bundled host APK (no network)
+uv run tempest install   # fetch + adb-install the prebuilt host APK
 uv run tempest serve     # auto adb-reverse + launches the host in dev mode
 ```
 
-`tempest install` resolves the APK from the package bundle by default; pass a
-local `.apk` path or URL, or override via `TEMPESTROID_HOST_APK` /
-`TEMPESTROID_HOST_APK_URL` (the latter is also the download fallback when the
-bundle is absent, e.g. an unstaged editable checkout). With a device connected,
-`tempest serve` wires `adb reverse` and launches the host in dev mode pointing at
-the dev server, so edit-and-save hot-reloads on the device — no APK rebuild. Use
-`--no-launch` to serve only.
+`tempest install` resolves the host APK in order: an explicit `.apk` path/URL →
+`TEMPESTROID_HOST_APK` → a bundled asset (present in source checkouts) → a
+download from the matching GitHub release (`TEMPESTROID_HOST_APK_URL` to override),
+cached under `~/.cache/tempestroid` so it's fetched only once. With a device
+connected, `tempest serve` wires `adb reverse` and launches the host in dev mode
+pointing at the dev server, so edit-and-save hot-reloads on the device — no APK
+rebuild. Use `--no-launch` to serve only.
 
 **Building an APK from source** (`tempest build`/`run`) is the maintainer path:
 it drives the `android-host` Gradle project + `adb`, so it needs an Android
 SDK/NDK **and** a checkout of the host tree. From an installed wheel it fails
 fast with a hint pointing at `tempest install` + `tempest serve`.
 
-> **Maintainers:** the bundled host APK lives at `tempestroid/_assets/host.apk`
-> (gitignored, too big to track). Stage it from the Gradle output with
-> `make stage-host` before `make build`/`release` so the published wheel ships
-> it. `make publish-host` additionally uploads it to the GitHub release as the
-> download fallback for unstaged installs.
+> **Maintainers:** publish the host APK to the GitHub release for each version
+> with `make publish-host` (builds via `make apk` first, then `gh release
+> upload`), so `tempest install` resolves it as a download. Optionally
+> `make stage-host` copies it to `tempestroid/_assets/host.apk` (gitignored) for
+> a local checkout to install offline; the PyPI wheel stays lean.
 
 **Transparent output.** `build`/`run` announce each step (`→ … ✓/✗` with
 elapsed time) and run a **preflight** first — checking the host tree, Android
@@ -203,7 +202,7 @@ failed command's tail is surfaced and the happy path stays quiet.
 | `tempest new [name]` | ✅ | Scaffold a fully configured project (`.` = current dir); writes `pyproject.toml` + `app.py` + `.gitignore` |
 | `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `-v` for tracebacks |
 | `tempest serve [app]` | ✅ | LAN code-push to a device + log relay; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |
-| `tempest install [src]` | ✅ | adb-install the host APK (no SDK/NDK); default = the APK **bundled in the wheel** (offline); `src` = local `.apk`/URL |
+| `tempest install [src]` | ✅ | Fetch + adb-install the prebuilt host APK (no SDK/NDK); resolves `src`/env/bundled/GitHub-release (cached); `src` = local `.apk`/URL |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
 | `tempest build <app>` | ✅ | Bundle an app into an APK (needs Android SDK/NDK); `-v` for full output |
