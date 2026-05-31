@@ -7,6 +7,7 @@ and a device, validated on the maintainer's host, not in CI).
 
 import io
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -17,8 +18,11 @@ from tempestroid.cli.packaging import (
     ToolchainError,
     connected_devices,
     find_android_host,
+    host_apk_url,
+    install_host,
     preflight,
     report_preflight,
+    resolve_host_apk,
     stage_app_source,
 )
 
@@ -163,6 +167,102 @@ def test_console_step_marks_success():
     with console.step("ok work"):
         pass
     assert "✓ ok work" in stream.getvalue()
+
+
+def test_host_apk_url_default_and_override(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TEMPESTROID_HOST_APK_URL", raising=False)
+    url = host_apk_url("1.2.3")
+    assert url.endswith("/releases/download/v1.2.3/tempest-host-1.2.3.apk")
+    monkeypatch.setenv("TEMPESTROID_HOST_APK_URL", "https://example/x.apk")
+    assert host_apk_url("1.2.3") == "https://example/x.apk"
+
+
+def test_resolve_host_apk_local_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TEMPESTROID_HOST_APK", raising=False)
+    apk = tmp_path / "host.apk"
+    apk.write_bytes(b"PK\x03\x04")
+    assert resolve_host_apk(str(apk), version="0.0.0") == apk.resolve()
+
+
+def test_resolve_host_apk_missing_local_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("TEMPESTROID_HOST_APK", raising=False)
+    with pytest.raises(ToolchainError):
+        resolve_host_apk(str(tmp_path / "nope.apk"), version="0.0.0")
+
+
+def test_resolve_host_apk_env_local_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    apk = tmp_path / "env-host.apk"
+    apk.write_bytes(b"PK\x03\x04")
+    monkeypatch.setenv("TEMPESTROID_HOST_APK", str(apk))
+    assert resolve_host_apk(None, version="0.0.0") == apk.resolve()
+
+
+def test_resolve_host_apk_prefers_bundled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("TEMPESTROID_HOST_APK", raising=False)
+    monkeypatch.delenv("TEMPESTROID_HOST_APK_URL", raising=False)
+    bundled = tmp_path / "host.apk"
+    bundled.write_bytes(b"PK\x03\x04")
+
+    def _bundled() -> Path:
+        return bundled
+
+    # With a bundled asset present, resolution is offline — no cache, no network.
+    monkeypatch.setattr("tempestroid.cli.packaging.bundled_host_apk", _bundled)
+    assert resolve_host_apk(None, version="0.0.0") == bundled
+
+
+def test_resolve_host_apk_uses_download_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("TEMPESTROID_HOST_APK", raising=False)
+    monkeypatch.delenv("TEMPESTROID_HOST_APK_URL", raising=False)
+    # No bundled asset → resolution falls through to the download cache.
+    monkeypatch.setattr("tempestroid.cli.packaging.bundled_host_apk", lambda: None)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    cached = tmp_path / "tempestroid" / "tempest-host-9.9.9.apk"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"PK\x03\x04")
+    # A cache hit must not attempt any network download.
+    assert resolve_host_apk(None, version="9.9.9") == cached
+
+
+def test_install_host_requires_device(monkeypatch: pytest.MonkeyPatch):
+    def _no_devices() -> list[str]:
+        return []
+
+    monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr("tempestroid.cli.packaging.connected_devices", _no_devices)
+    console = Console(stream=io.StringIO())
+    with pytest.raises(StepError):
+        install_host(version="0.0.0", console=console)
+
+
+def test_install_host_installs_and_launches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def _one_device() -> list[str]:
+        return ["ABC123"]
+
+    monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr("tempestroid.cli.packaging.connected_devices", _one_device)
+    apk = tmp_path / "host.apk"
+    apk.write_bytes(b"PK\x03\x04")
+    calls: list[list[str]] = []
+
+    def fake_run(_self: Console, cmd: Sequence[str], **_kw: object) -> None:
+        calls.append(list(cmd))
+
+    monkeypatch.setattr(Console, "run_command", fake_run)
+    console = Console(stream=io.StringIO())
+    assert install_host(str(apk), version="0.0.0", console=console) == 0
+    assert any("install" in c for c in calls)
+    assert any("am" in c for c in calls)
 
 
 def test_console_run_command_surfaces_failure_tail():

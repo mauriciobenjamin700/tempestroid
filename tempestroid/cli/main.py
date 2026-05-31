@@ -1,100 +1,272 @@
-"""``tempest`` command-line entry point.
+"""``tempest`` command-line entry point (Typer).
 
-``tempest dev`` runs the interactive simulator cockpit (phase A5). ``tempest
-serve`` pushes an app to a device over LAN (phase B5). The phase-C packaging
-commands — ``new`` (scaffold), ``build`` (APK), ``run`` (install + logcat) —
-drive the ``android-host`` Gradle project and ``adb``; ``doctor`` probes their
-prerequisites without building. ``build``/``run``/``dev`` report each step and
-accept ``-v``/``--verbose`` for raw command streaming (see
+Wires every ``tempest`` sub-command behind a single :class:`typer.Typer`
+``app``, mirroring the ``tempest-fastapi-sdk`` CLI conventions (global
+``--version``/``-V`` flag plus a ``version`` command, ``no_args_is_help``,
+rich markup). ``tempest dev`` runs the interactive simulator cockpit (phase
+A5). ``tempest serve`` pushes an app to a device over LAN (phase B5). The
+phase-C packaging commands — ``new`` (scaffold), ``build`` (APK), ``run``
+(install + logcat) — drive the ``android-host`` Gradle project and ``adb``;
+``doctor`` probes their prerequisites without building. ``build``/``run``/
+``dev`` accept ``-v``/``--verbose`` for raw command streaming (see
 :mod:`tempestroid.cli.console`). Qt is imported lazily inside ``dev`` so
 ``tempest --help`` works without the optional ``qt`` extra.
 """
 
 from __future__ import annotations
 
-import argparse
-import sys
+from typing import Annotated
 
-__all__ = ["build_parser", "main"]
+import typer
+
+__all__ = ["app", "main"]
+
+app: typer.Typer = typer.Typer(
+    name="tempest",
+    help="Build native Android apps in typed Python.",
+    no_args_is_help=True,
+    add_completion=False,
+    rich_markup_mode="rich",
+)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser.
+def _print_version(value: bool) -> None:
+    """Print the framework version and exit.
 
-    Returns:
-        The configured parser with all ``tempest`` subcommands registered.
+    Args:
+        value: True when ``--version`` is passed.
+
+    Raises:
+        typer.Exit: Always when ``value`` is True.
     """
-    # Imported lazily to avoid a circular import: the dev-server client imports
-    # this CLI package, and the top-level package imports the dev server.
+    if value:
+        from tempestroid import __version__
+
+        typer.echo(f"tempest {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(  # pyright: ignore[reportUnusedFunction]  # wired by Typer via the decorator
+    _version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            "-V",
+            help="Show the framework version and exit.",
+            callback=_print_version,
+            is_eager=True,
+        ),
+    ] = False,
+) -> None:
+    """Root callback wiring global flags such as ``--version``."""
+
+
+@app.command("version")
+def version_cmd() -> None:
+    """Show the framework version (alias of ``--version``)."""
     from tempestroid import __version__
 
-    parser = argparse.ArgumentParser(
-        prog="tempest",
-        description="Build native Android apps in typed Python.",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
-    )
-    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
-    dev = subparsers.add_parser("dev", help="Run the simulator dev loop.")
-    dev.add_argument("app", help="Path to the app file (e.g. examples/counter/app.py).")
-    dev.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Print full tracebacks when a save fails to reload.",
-    )
-    serve = subparsers.add_parser(
-        "serve", help="Serve an app to a device over LAN (code-push + log relay)."
-    )
-    serve.add_argument("app", help="Path to the app file to push to the device.")
-    serve.add_argument(
-        "--port", type=int, default=8765, help="TCP port (default: 8765)."
-    )
-    serve.add_argument(
-        "--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)."
-    )
-    subparsers.add_parser(
-        "spec", help="Print the typed contract (widgets/events) as JSON."
-    )
-    new = subparsers.add_parser("new", help="Scaffold a new tempestroid app.")
-    new.add_argument("name", help="Project name (also the directory name).")
-    new.add_argument(
-        "--into", default=".", help="Parent directory for the project (default: .)."
-    )
-    build = subparsers.add_parser("build", help="Build an APK bundling an app.")
-    build.add_argument("app", help="Path to the app file to bundle into the APK.")
-    build.add_argument(
-        "--release", action="store_true", help="Build the release variant."
-    )
-    build.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Echo raw commands and stream the full Gradle/adb output.",
-    )
-    run = subparsers.add_parser(
-        "run", help="Build, install on a device, and stream logs."
-    )
-    run.add_argument("app", help="Path to the app file to bundle into the APK.")
-    run.add_argument(
-        "--release", action="store_true", help="Build the release variant."
-    )
-    run.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Echo raw commands and stream the full Gradle/adb output.",
-    )
-    doctor = subparsers.add_parser(
-        "doctor", help="Check the Android build/run prerequisites and exit."
-    )
-    doctor.add_argument(
-        "-v", "--verbose", action="store_true", help="Show resolution hints."
-    )
-    return parser
+    typer.echo(f"tempest {__version__}")
+
+
+@app.command("dev")
+def dev_cmd(
+    app_path: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[APP]",
+            help="Path to the app file. Omitted → read [tool.tempest] app.",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Print full tracebacks when a save fails to reload.",
+        ),
+    ] = False,
+) -> None:
+    """Run the simulator dev loop."""
+    resolved = _resolve_app_or_exit(app_path)
+    raise typer.Exit(_run_dev(resolved, verbose))
+
+
+@app.command("serve")
+def serve_cmd(
+    app_path: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[APP]",
+            help="Path to the app file. Omitted → read [tool.tempest] app.",
+        ),
+    ] = None,
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Bind address (default: 0.0.0.0)."),
+    ] = "0.0.0.0",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="TCP port (default: 8765)."),
+    ] = 8765,
+    no_launch: Annotated[
+        bool,
+        typer.Option(
+            "--no-launch",
+            help="Just serve; do not auto `adb reverse` + launch the host in "
+            "dev mode (launch it yourself).",
+        ),
+    ] = False,
+) -> None:
+    """Serve an app to a device over LAN (code-push + log relay)."""
+    resolved = _resolve_app_or_exit(app_path)
+    raise typer.Exit(_run_serve(resolved, host, port, launch=not no_launch))
+
+
+@app.command("install")
+def install_cmd(
+    source: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[SOURCE]",
+            help="Local .apk path or http(s) URL. Default: the host APK bundled "
+            "in the package (offline). Override via TEMPESTROID_HOST_APK[_URL].",
+        ),
+    ] = None,
+    no_launch: Annotated[
+        bool,
+        typer.Option("--no-launch", help="Install only; do not launch the host."),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Echo raw commands and stream the full adb output.",
+        ),
+    ] = False,
+) -> None:
+    """Install the prebuilt host APK on a device (no Android SDK/NDK needed)."""
+    raise typer.Exit(_run_install(source, launch=not no_launch, verbose=verbose))
+
+
+@app.command("spec")
+def spec_cmd() -> None:
+    """Print the typed contract (widgets/events) as JSON."""
+    import json
+
+    from tempestroid import introspect
+
+    print(json.dumps(introspect(), indent=2))
+    raise typer.Exit(0)
+
+
+@app.command("new")
+def new_cmd(
+    name: Annotated[
+        str,
+        typer.Argument(
+            help="Project name for a new subdirectory; use a dot to scaffold in "
+            "the current directory (the default).",
+        ),
+    ] = ".",
+    into: Annotated[
+        str,
+        typer.Option(
+            "--into",
+            help="Parent directory for a named project (default: current dir).",
+        ),
+    ] = ".",
+) -> None:
+    """Scaffold a fully configured tempestroid app."""
+    raise typer.Exit(_run_new(name, into))
+
+
+@app.command("build")
+def build_cmd(
+    app_path: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[APP]",
+            help="Path to the app file. Omitted → read [tool.tempest] app.",
+        ),
+    ] = None,
+    release: Annotated[
+        bool,
+        typer.Option("--release", help="Build the release variant."),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Echo raw commands and stream the full Gradle/adb output.",
+        ),
+    ] = False,
+) -> None:
+    """Build an APK bundling an app."""
+    resolved = _resolve_app_or_exit(app_path)
+    raise typer.Exit(_run_build(resolved, release, verbose))
+
+
+@app.command("run")
+def run_cmd(
+    app_path: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[APP]",
+            help="Path to the app file. Omitted → read [tool.tempest] app.",
+        ),
+    ] = None,
+    release: Annotated[
+        bool,
+        typer.Option("--release", help="Build the release variant."),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Echo raw commands and stream the full Gradle/adb output.",
+        ),
+    ] = False,
+) -> None:
+    """Build, install on a device, and stream logs."""
+    resolved = _resolve_app_or_exit(app_path)
+    raise typer.Exit(_run_run(resolved, release, verbose))
+
+
+@app.command("doctor")
+def doctor_cmd(
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show resolution hints."),
+    ] = False,
+) -> None:
+    """Check the Android build/run prerequisites and exit."""
+    raise typer.Exit(_run_doctor(verbose))
+
+
+def _resolve_app_or_exit(app_path: str | None) -> str:
+    """Resolve the app path from the argument or project config, or exit.
+
+    Args:
+        app_path: An explicit path, or ``None`` to read ``[tool.tempest] app``.
+
+    Returns:
+        The resolved app file path.
+
+    Raises:
+        typer.Exit: With code ``1`` when no app can be resolved.
+    """
+    from tempestroid.cli.project import AppResolutionError, resolve_app
+
+    try:
+        return resolve_app(app_path)
+    except AppResolutionError as exc:
+        print(exc)
+        raise typer.Exit(1) from exc
 
 
 def _run_dev(app: str, verbose: bool) -> int:
@@ -136,21 +308,34 @@ def _lan_ip() -> str:
         sock.close()
 
 
-def _run_serve(app: str, host: str, port: int) -> int:
+def _run_serve(app: str, host: str, port: int, *, launch: bool = True) -> int:
     """Serve an app to a device and relay its logs until interrupted.
+
+    When a device is connected and ``launch`` is set, this closes the loop
+    automatically: it wires ``adb reverse`` and launches the prebuilt host in
+    dev mode pointed at this server, so ``tempest install`` + ``tempest serve``
+    is all that's needed to run on hardware (no SDK/NDK or source build).
 
     Args:
         app: Path to the app file.
         host: Bind address.
         port: TCP port.
+        launch: Auto ``adb reverse`` + launch the host in dev mode when a device
+            is present. Set ``False`` to only serve.
 
     Returns:
         The process exit code.
     """
+    import subprocess
     import threading
     from pathlib import Path
 
-    from tempestroid.cli.packaging import connected_devices
+    from tempestroid.cli.packaging import (
+        ToolchainError,
+        adb_reverse,
+        connected_devices,
+        launch_host_dev,
+    )
     from tempestroid.devserver import DevServer, render_qr
 
     server = DevServer(app, host=host, port=port)
@@ -173,6 +358,21 @@ def _run_serve(app: str, host: str, port: int) -> int:
         f"→ http://localhost:{server.port}\n"
         "Edit + save the app file to hot-restart on device. Ctrl-C to stop."
     )
+    if launch and devices:
+        try:
+            adb_reverse(server.port)
+            launch_host_dev(server.port)
+            print(
+                f"launched the host in dev mode on {devices[0]} "
+                f"(adb reverse :{server.port} + tempest_dev_url)."
+            )
+        except (ToolchainError, subprocess.CalledProcessError) as exc:
+            print(
+                f"could not auto-launch the host ({exc}); launch it manually:\n"
+                f"  adb reverse tcp:{server.port} tcp:{server.port}\n"
+                f"  adb shell am start -n org.tempestroid.host/.MainActivity "
+                f"--es tempest_dev_url http://localhost:{server.port}"
+            )
     try:
         threading.Event().wait()
     except KeyboardInterrupt:
@@ -182,12 +382,45 @@ def _run_serve(app: str, host: str, port: int) -> int:
     return 0
 
 
-def _run_new(name: str, into: str) -> int:
-    """Scaffold a new app project, reporting the outcome.
+def _run_install(source: str | None, *, launch: bool, verbose: bool) -> int:
+    """Install the prebuilt host APK on a device, reporting the outcome.
 
     Args:
-        name: The project name (and directory name).
-        into: Parent directory to create the project under.
+        source: A local ``.apk`` path or ``http(s)`` URL; ``None`` uses the host
+            APK bundled in the package (offline), falling back to a download.
+        launch: Launch the host activity after installing.
+        verbose: Echo raw commands and stream full subprocess output.
+
+    Returns:
+        The process exit code.
+    """
+    import subprocess
+
+    from tempestroid import __version__
+    from tempestroid.cli.console import Console, StepError
+    from tempestroid.cli.packaging import ToolchainError, install_host
+
+    console = Console(verbose=verbose)
+    try:
+        return install_host(
+            source, version=__version__, launch=launch, console=console
+        )
+    except StepError:
+        return 1
+    except (ToolchainError, FileNotFoundError) as exc:
+        console.fail(f"install failed: {exc}")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        console.fail(f"adb command failed (exit {exc.returncode}).")
+        return exc.returncode or 1
+
+
+def _run_new(name: str, into: str) -> int:
+    """Scaffold a fully configured app project, reporting the outcome.
+
+    Args:
+        name: The project name, or ``"."`` to scaffold in the current directory.
+        into: Parent directory to create a named project under.
 
     Returns:
         The process exit code.
@@ -195,14 +428,19 @@ def _run_new(name: str, into: str) -> int:
     from tempestroid.cli.scaffold import scaffold
 
     try:
-        root = scaffold(name, parent=into)
+        result = scaffold(name, parent=into)
     except (ValueError, FileExistsError) as exc:
         print(f"cannot scaffold: {exc}")
         return 1
+    where = "." if result.in_place else result.root.name
+    cd_hint = "" if result.in_place else f"  cd {where}\n"
     print(
-        f"created {root}\n"
-        f"  uv run tempest dev {root.name}/app.py     # simulator + hot reload\n"
-        f"  uv run tempest serve {root.name}/app.py   # push to a device over LAN"
+        f"created {result.name} in {result.root}\n"
+        f"{cd_hint}"
+        "  uv sync                  # install tempestroid + the Qt simulator\n"
+        "  uv run tempest dev       # simulator + hot reload (reads pyproject)\n"
+        "  uv run tempest install   # adb-install the bundled host (offline)\n"
+        "  uv run tempest serve     # push to the device + auto-launch"
     )
     return 0
 
@@ -291,39 +529,25 @@ def _run_doctor(verbose: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the requested command.
 
+    Thin wrapper around the Typer ``app`` that returns a process exit code
+    instead of raising :class:`SystemExit`, so it stays usable both as the
+    console-script entry point and from tests. Click runs in standalone mode,
+    so help/version output and usage errors are printed for us; we only map the
+    resulting :class:`SystemExit` to a returned exit code.
+
     Args:
         argv: Argument vector to parse. Defaults to ``sys.argv[1:]``.
 
     Returns:
         A process exit code.
     """
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    command: str | None = args.command
-    if command is None:
-        parser.print_help()
-        return 0
-    if command == "dev":
-        return _run_dev(args.app, args.verbose)
-    if command == "serve":
-        return _run_serve(args.app, args.host, args.port)
-    if command == "spec":
-        import json
-
-        from tempestroid import introspect
-
-        print(json.dumps(introspect(), indent=2))
-        return 0
-    if command == "new":
-        return _run_new(args.name, args.into)
-    if command == "build":
-        return _run_build(args.app, args.release, args.verbose)
-    if command == "run":
-        return _run_run(args.app, args.release, args.verbose)
-    if command == "doctor":
-        return _run_doctor(args.verbose)
-    parser.error(f"unknown command: {command}")
+    command = typer.main.get_command(app)
+    try:
+        command.main(args=argv, prog_name="tempest")
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

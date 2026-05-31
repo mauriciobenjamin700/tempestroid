@@ -66,6 +66,10 @@ run: ## Run an app in the Qt simulator (APP=examples/counter/app.py)
 dev: ## tempest dev: simulator + hot restart (APP=...)
 	uv run tempest dev $(APP)
 
+.PHONY: serve
+serve: ## tempest serve: LAN code-push to a device + auto launch in dev mode (APP=...)
+	uv run tempest serve $(APP)
+
 .PHONY: spec
 spec: ## Print the typed contract as JSON
 	uv run tempest spec
@@ -81,7 +85,9 @@ docs-serve: ## Serve MkDocs site locally
 
 # ---- python package build ---------------------------------------------------
 .PHONY: build
-build: ## Build sdist + wheel into dist/
+build: ## Build sdist + wheel into dist/ (bundles the host APK if staged)
+	@test -f tempestroid/_assets/host.apk \
+		|| echo "WARN: tempestroid/_assets/host.apk missing — wheel won't bundle the host; run 'make stage-host' (needs 'make apk' first)."
 	uv build
 
 # ---- release ----------------------------------------------------------------
@@ -108,8 +114,32 @@ apk: ## Build debug APK (assembleDebug)
 	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug
 
 .PHONY: install
-install: ## adb install the debug APK onto a connected device
+install: ## adb install the debug APK onto a connected device (from-source build)
 	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:installDebug
+
+.PHONY: install-host
+install-host: ## tempest install: fetch + install the prebuilt host APK (no SDK/NDK)
+	uv run tempest install
+
+# The built host APK, the bundled asset path, and the release-asset name.
+HOST_APK       := $(ANDROID)/app/build/outputs/apk/debug/app-debug.apk
+BUNDLED_HOST   := tempestroid/_assets/host.apk
+HOST_ASSET     := tempest-host-$(VERSION).apk
+
+.PHONY: stage-host
+stage-host: ## Copy the built host APK into the package so the wheel bundles it
+	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' first"; exit 1; }
+	@mkdir -p $(dir $(BUNDLED_HOST))
+	cp "$(HOST_APK)" "$(BUNDLED_HOST)"
+	@echo "staged $(BUNDLED_HOST) — `make build` will bundle it into the wheel"
+
+.PHONY: publish-host
+publish-host: ## Upload the built host APK to the GitHub release (download fallback for unstaged installs)
+	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' first"; exit 1; }
+	@gh release view "v$(VERSION)" >/dev/null 2>&1 \
+		|| gh release create "v$(VERSION)" --title "v$(VERSION)" --notes "tempestroid v$(VERSION)"
+	gh release upload "v$(VERSION)" "$(HOST_APK)#$(HOST_ASSET)" --clobber
+	@echo "published $(HOST_ASSET) as the tempest install download fallback"
 
 .PHONY: apk-install
 apk-install: apk install ## Build + install the debug APK
