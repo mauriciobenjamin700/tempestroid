@@ -97,6 +97,40 @@ Tracks `docs/plan.md`. Update the table when a phase opens/closes; keep the
 | C | Polish: `tempest new`/`build`/`run` + stateful hot reload | ✅ done | `tempest new` scaffolds a runnable project; `tempest build`/`run` stage the app as an asset + drive the `android-host` Gradle wrapper + `adb` (need SDK/NDK); `App.swap_view` powers stateful hot reload — `tempest dev` `r` (save) preserves state via diff, `R` restarts clean, device code-push `reload`s preserving on-device state (all covered by tests; build/run device path needs the toolchain) |
 | D | Conformance golden snapshots (Qt vs Compose) | ✅ done | `tests/conformance/` pins both `Style` translators: golden snapshots of `to_compose` + `to_qss`/`layout_alignment` for canonical styles (regenerate with `UPDATE_GOLDEN=1`), plus a per-field coverage-parity table that fails if either translator starts/stops handling a field without updating the documented divergences |
 
+### Trilho E — Paridade Flutter/RN (planejado)
+
+Roadmap para fechar o gap com Flutter + React Native. Descritivo fase-a-fase
+(IR · Qt · Compose · testes) em [`docs/plan-parity.md`](docs/plan-parity.md).
+Toda fase entrega as **três camadas casadas** (IR/diff + renderizador Qt +
+renderizador Compose) e só fecha com os **dois renderizadores verdes** + (havendo
+device) verificação dual. Sequência: E0 (navegação) destrava multi-tela e é
+pré-requisito de quase tudo; E1–E2 são a base de UX; E3 (animação) é consumida por
+E0/E2 nas transições; E4–E9 acoplam menos e reordenam por demanda.
+
+| Phase | Scope | Status | Done when |
+|---|---|---|---|
+| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | 🔜 planned | exemplo de 3 telas navega; voltar do Android faz `pop` (device); abas/gaveta como rotas; transições na conformância |
+| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | 🔜 planned | lista de 10k itens rola fluido nos dois renderizadores; refresh + `on_end_reached` + cabeçalho fixo |
+| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | 🔜 planned | cada overlay abre/fecha por handler; barrier bloqueia; toast expira; menu ancorado (device) |
+| E3 | Framework de animação (controller, tween/curva, implícita, gesto-dirigida, Hero, shimmer) | 🔜 planned | `AnimatedContainer`/`AnimatedList`/`Hero` animam nos dois renderizadores; controlador testado com clock determinístico |
+| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder, viewer) | 🔜 planned | cada gesto dispara evento tipado e muda estado; swipe-to-delete + reorder (diff) + pinça-zoom (device) |
+| E5 | Inputs e formulários (dropdown/select, time, range, form/validação, autocomplete, OTP, máscara) | 🔜 planned | formulário valida e bloqueia submit inválido com erro por campo nos dois renderizadores |
+| E6 | Layout refinado (flex-wrap, pager/carousel, sliver/app bar colapsável, tabela, aspect ratio) | 🔜 planned | `Wrap` quebra linha igual (conformância); pager pagina; app bar colapsa ao rolar (device) |
+| E7 | Mídia e gráficos (vídeo, webview, canvas/desenho, svg, câmera live, QR scanner, mapa, blur, clip) | 🔜 planned | vídeo/webview no device; canvas desenha chart idêntico (conformância); preview câmera + QR (device); placeholders Qt sinalizados |
+| E8 | Plataforma/sistema (haptics, sensores, lifecycle, deep link, permissões, biometria, secure storage, prefs, SQLite, connectivity, push, background) | 🔜 planned | metade Python unit-testada off-device; capacidades validadas no device; stubs do simulador avisam o que é device-only |
+| E9 | Transversais (tema/dark + MediaQuery, i18n/l10n + RTL, acessibilidade/semantics, fontes custom + escala) | 🔜 planned | dark mode (snapshot light/dark); RTL espelha start/end (conformância); TalkBack lê rótulos; troca de locale re-renderiza |
+
+**Tudo dentro do projeto — sem projetos extras (enforced).** Toda implementação
+do Trilho E (e qualquer feature futura) mora **dentro do repositório
+`tempestroid`**: a metade Python no pacote `tempestroid/`, a metade Kotlin/Compose
+em `android-host/`. **Nunca** criar repositório, pacote PyPI, plugin ou app
+separado para um recurso. O único movimento permitido é (1) **um módulo dedicado
+novo** por área para organizar imports (ex.: `navigation.py`, `animation.py`,
+`native/sensors.py`), sempre re-exportado pelo `__init__.py` (nunca uma ilha), e
+(2) **uma seção de documentação extra** (README/MkDocs). Preferir DIY sobre o que
+Qt/Compose/`androidx` já oferecem; dependência externa nova só com justificativa
+forte registrada no PR.
+
 **Trilho B status:** research done (`docs/research/`), decisions fixed (CPython
 3.14 official + hand-rolled JNI + cibuildwheel + Compose DIY). **B0/B1/B2 are
 validated on a real arm64 device** (2026-05-30): the `android-host/` APK
@@ -271,11 +305,29 @@ Project skills that guard framework health — use them, don't reinvent the chec
   "Documentation sync" rule above.
 - **`phase-closer`** — `bash .claude/skills/phase-closer/close.sh <phase-id>`.
   Prints a phase's done-when, runs both gates above, and a manual checklist.
-  Run before flipping any phase to ✅.
+  Run before flipping any phase to ✅ (A–D phases).
+- **`android-doctor`** — `bash .claude/skills/android-doctor/check.sh [--quick]`.
+  Validates the Trilho B device toolchain (SDK/NDK location, Gradle wrapper
+  8.11.1, JDK, connected arm64 device + MIUI gotcha, staged CPython 3.14 +
+  wheels) before `make apk`/`install`/`tempest serve`. Resolves the real SDK
+  (`/usr/lib/android-sdk`) past the stale env `ANDROID_SDK_ROOT`. `--quick` skips
+  the device/adb checks.
+- **`dual-verify`** — `bash .claude/skills/dual-verify/verify.sh [APP]`.
+  Orchestrates the enforced dual-renderer check: always runs the Qt gate, and if
+  `adb` lists a device, runs `android-doctor` + prints the device build/flow/
+  screenshot checklist; with no device it prints the mandatory "device half not
+  exercised" disclaimer. Run before reporting any framework-surface change done.
+- **`parity-phase`** — `bash .claude/skills/parity-phase/plan.sh <E-phase-id>`.
+  The Trilho E counterpart of `phase-closer`: prints a phase's spec from
+  `docs/plan-parity.md`, resolves its `Arquivos` anchors (edit vs new), checks
+  the three-matched-layers invariant (IR + Qt + Compose + conformance), then
+  chains `framework-guard` and points at `dual-verify`. Use to start or close any
+  E0–E9 sub-task.
 
 Run `framework-guard` + `docs-sync-check` before every commit; `phase-closer`
-before closing a phase. (Android-toolchain validation skill — `android-doctor` —
-arrives with track B.)
+(A–D) or `parity-phase` (Trilho E) before closing a phase; `android-doctor`
+before any Android build and `dual-verify` before calling a framework-surface
+change done.
 
 ## Workflow
 
@@ -285,15 +337,37 @@ arrives with track B.)
 - Run `framework-guard` (ruff + `pyright` + `pytest`) before calling a phase done.
 - Commits: Conventional Commits (`feat:`, `fix:`, `ref:`, `docs:`, `tests:`,
   `chore:`). Branches: `feat/`, `fix/`, `ref/`.
-- **One PR per agent, scoped to its own work.** When multiple agents work in
-  parallel, each agent opens **exactly one** PR containing **only what it did and
-  validated** — never bundle another agent's changes, and never commit to or
-  update a PR that belongs to another agent. Each agent works on its **own
-  branch** (a dedicated `git worktree` off a clean base is the safe way when the
-  working tree is shared), so a tree-wide change reconstructed from that base
-  never drags in another agent's uncommitted work. Before starting, check
-  `origin/main` and open PRs/branches so you don't reimplement work already
-  landed or in flight. It is fine to keep a branch local and push it later.
+- **Super PRs + feature grouping allowed. Build agents NEVER self-merge — the
+  Claude main thread is the reviewer and fires the review chains; the owner QAs
+  post-merge.** Roles:
+  - **Group features freely.** A PR may bundle many features / many sub-tasks /
+    many thousands of lines. No "one PR per agent" or "one scope per PR" limit —
+    ship a coherent batch in one PR when it's convenient.
+  - **Build/implementation agents STOP at "done + tested + PR opened".** They do
+    NOT merge, do NOT close the loop, do NOT push to `dev`/`main`. They finish the
+    work, pass the gate, open the PR against **`dev`** (`gh pr create --base dev`),
+    and hand back. (Matches the `parity-chain` skill: it does no git/PR and stops
+    for the next stage.) "Tested" is the hard precondition for handoff — see below.
+  - **The Claude main thread is the reviewer.** When work comes back green, the
+    main thread **fires a review chain** (e.g. `cavecrew-reviewer` / the
+    `code-review` skill across the diff) and reads the findings before anything
+    merges. Review is the merge bar — not a build agent's say-so. Only after the
+    review chain passes does the merge happen. `main` stays the release branch
+    reached only by `dev → main`.
+  - **"Tested" = the gate is green, no exceptions.** `framework-guard` (ruff +
+    `pyright` strict + `pytest` + `mkdocs build --strict`) MUST pass, `docs-sync`
+    MUST pass, and the **dual-renderer device verification below** MUST hold when
+    a device is attached (Qt + Compose, with the device half exercised). A red or
+    skipped gate = NOT tested = NOT eligible for review/merge. Never paper over a
+    red gate; fix the cause.
+  - **State what was verified in the PR body** — which gates ran, their result,
+    and whether the device half was exercised (and if not, say so explicitly).
+    The reviewer and the owner both read this.
+  - **Branches + Conventional Commits always.** Work on a `feat/`/`fix/`/`ref/`
+    branch (a `git worktree` off a clean base when the tree is shared). Branches
+    keep history clean and let the owner bisect QA feedback.
+  - Before starting, check `origin/main` + open branches so you don't redo landed
+    or in-flight work.
 
 ## Dual-renderer device verification (enforced)
 
