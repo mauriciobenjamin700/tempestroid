@@ -21,6 +21,7 @@ from typing import Any, Protocol, TypeVar, cast
 
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.core.state import App
+from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.widgets import Widget
 
 __all__ = ["JniBridge", "run_device", "run_device_file"]
@@ -109,6 +110,13 @@ def run_device(state: S, view: Callable[[App[S]], Widget]) -> None:
             payload_json: The raw JSON payload (``""`` for none).
         """
         payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
+        # Native request/response results ride the same event channel under a
+        # reserved token, so they need no extra JNI entry point. Route them to
+        # the pending-future resolver instead of the widget handler registry.
+        if token.startswith(NATIVE_RESULT_PREFIX):
+            request_id = token[len(NATIVE_RESULT_PREFIX) :]
+            loop.call_soon_threadsafe(resolve_native_result, request_id, payload)
+            return
         message: dict[str, Any] = {
             "kind": "event",
             "token": token,

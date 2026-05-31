@@ -142,6 +142,22 @@ posts a real system notification. **All of Trilho B (B0–B6) is implemented and
 verified on a real arm64 device.** The `native` envelope + module-router is the
 extension point for further capabilities (camera, sensors, …).
 
+**Native capabilities — expanded set (post-B6).** Beyond `notify`, the
+`native/` package now exposes geolocation (`get_position`), sharing
+(`share`/`share_to_whatsapp`/`open_url`), camera (`take_photo`), device storage
+(`read_file`/`write_file`/`delete_file`/`list_files`), clipboard
+(`get_text`/`set_text`) and bluetooth (`scan`). This added a **request/response**
+shape to the previously fire-and-forget bridge: `send_native_request` ships an
+envelope with a `request_id` and `await`s an `asyncio.Future`; the host replies
+over the **existing** event channel under the reserved token
+`__native_result__:<id>` (`jni._on_event` routes it to `resolve_native_result`),
+so **no C/JNI change** was needed. Failures raise `NativeError(code)`. The Kotlin
+`NativeModules` is now a per-activity class holding the permission + camera
+`ActivityResultLauncher`s. **The Python half (envelopes, future resolution, typed
+results) is fully unit-tested off-device (`tests/unit/test_native.py`); the
+Kotlin capability modules + manifest perms/FileProvider are written but NOT yet
+validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
+
 **A2 notes / known limits (revisit post-v1):**
 
 - Child diffing is **positional** by default; a single `Reorder` is emitted only
