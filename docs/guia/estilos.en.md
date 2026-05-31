@@ -139,3 +139,18 @@ both with golden snapshots to prevent silent divergence.
 `Style` and its value objects are frozen. To "change" a style, build a new
 object — which is what `view` does on every rebuild, and what enables diffing by
 value.
+
+## Recap
+
+- `Style` is a single, frozen model, differentiated by value.
+- Fields grouped by intent: layout, box, paint, typography, dimension,
+  animation.
+- Value objects (`Color`, `Edge`, `Border`, `Shadow`, `Gradient`, `Transition`)
+  build the fields.
+- One `Style` feeds both Qt and Compose; divergences are documented by the
+  conformance suite.
+
+## Next steps
+
+➡️ Wire interaction with **[Events](eventos.md)**, or see styles applied in full
+apps in the **[Example gallery](exemplos.md)**.

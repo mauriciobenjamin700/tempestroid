@@ -65,3 +65,18 @@ Cada widget declara o evento que cada *handler* emite via a classvar
 publica tudo isso como JSON — esquemas de prop dos widgets, o evento de cada
 *handler* e o esquema de *payload* de cada evento. É o que alimenta `tempest
 spec` e a fronteira do dispositivo.
+
+## Recapitulando
+
+- Eventos são modelos Pydantic frozen (`TapEvent`, `TextChangeEvent`, …).
+- `parse_event` é o portão que valida o *payload* cru antes do *handler* — como
+  o FastAPI valida um corpo de requisição.
+- *Handlers* podem receber o evento tipado ou ser zero-argumento; síncronos ou
+  `async`.
+- O contrato (`event_schemas` + `introspect()`) é publicado como JSON por
+  `tempest spec`.
+
+## Próximos passos
+
+➡️ Inspecione o contrato com a **[CLI (`tempest spec`)](cli.md)**, ou veja
+*handlers* reais na **[Galeria de exemplos](exemplos.md)**.

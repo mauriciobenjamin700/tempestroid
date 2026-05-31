@@ -93,3 +93,17 @@ exactly like FastAPI validates a request body.
 
 See [Device side (bridge)](referencia/dispositivo.md) for the wire protocol and
 the JNI transport.
+
+## Recap
+
+- tempestroid separates **what** to render (the widget IR) from **how** (leaf
+  renderers), linked by a pure reconciler.
+- The pipeline: `view → build → diff → patches → renderer`.
+- `App[S]` holds state and coalesces rebuilds (one diff per tick).
+- The Python↔Kotlin boundary is typed and validated (`parse_event`,
+  `serialize_node`).
+
+## Next steps
+
+➡️ Meet the primitives in **[Widgets](guia/widgets.md)**, or dig into the bridge
+in **[Device side](referencia/dispositivo.md)**.
