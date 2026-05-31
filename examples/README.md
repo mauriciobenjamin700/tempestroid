@@ -29,7 +29,7 @@ default until the Kotlin host grows the matching cases (see *Constraints* below)
 |---|---|---|:--:|
 | [`counter`](counter/app.py) | The basics: sync **and** `async` handlers, styled buttons. | `Text`, `Button`, `Row`/`Column`; `update`. | ✅ |
 | [`tabs`](tabs/app.py) | Tabbed navigation: a persistent tab bar swaps the body while shared state survives the switch. | `Container` cards, view switching via `Replace`; `Input` / `Checkbox` state carried across tabs. | ✅ |
-| [`shell`](shell/app.py) | The composite components: a `Scaffold` framing an `AppBar` + bottom `NavBar` with a per-tab body. | `tempestroid.components` (`AppBar` / `Scaffold` / `NavBar` / `Header`) lowering to primitives via `Component.render`. | ✅ |
+| [`shell`](shell/app.py) | The whole component set: a `Scaffold` with `AppBar`+`Burger`/`Drawer`, bottom `NavBar`, a `Card` of `ListTile`/`Avatar`/`Divider`, plus `Clock` + `Calendar`. | `tempestroid.components` lowering to primitives via `Component.render`. | ✅ |
 | [`todo`](todo/app.py) | Type a task into the `Input`, tap to add/toggle/clear. | `Input` (`TextChangeEvent`); `insert` / `remove` / `update`. | ✅ |
 | [`calculator`](calculator/app.py) | Dense button grid as the only input. | Nested `Row`/`Column`, 16 keyed buttons; `update` on the display. | ✅ |
 | [`stopwatch`](stopwatch/app.py) | Async-first loop: a coroutine handler ticks via `asyncio.sleep` while the UI stays responsive. | Coalesced rebuilds driven off the loop; `update`. | ✅ |

@@ -226,6 +226,16 @@ renderer changes and are fully device-ready. Every component takes an optional
   optional `bottom_bar` (set `scroll=True` to wrap the body in a `ScrollView`).
 - **`NavBar`** — selectable navigation/tab bar: `items` labels, an `active`
   index and an `on_select(index)` callback (generalises the `tabs` example).
+- **`Burger`** / **`Drawer`** — a hamburger menu button (`on_click`) and a
+  controlled lateral panel (`open` lives in app state; toggle it from the burger).
+- **`Calendar`** — month grid of selectable day cells: `month` (`"YYYY-MM"`),
+  `selected` (`"YYYY-MM-DD"`) and `on_select(iso_date)`.
+- **`Clock`** — digital clock rendering a preformatted `time` string (the app
+  drives the tick from state, as in `stopwatch`).
+- **`Card`** — elevated surface (shadow + radius) grouping `children`.
+- **`ListTile`** — list row: `leading` / `trailing` widgets around a `title` plus
+  an optional `subtitle`.
+- **`Avatar`** — round badge of short `initials`; **`Divider`** — thin rule.
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 

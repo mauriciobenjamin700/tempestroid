@@ -1,11 +1,12 @@
 """App shell — gallery example built from the composite components.
 
-Assembles a full screen from :mod:`tempestroid.components`: a ``Scaffold`` frames
-an ``AppBar`` on top, a ``NavBar`` at the bottom and a body that swaps per the
-active tab (with a ``Header`` per section). It is the component-driven version of
-the ``tabs`` example — same navigation behaviour, far less hand-wiring — and uses
-only the Compose-supported widget set, so it renders the same in the simulator
-and on a device.
+Assembles a full screen from :mod:`tempestroid.components` and exercises the whole
+set: a ``Scaffold`` frames an ``AppBar`` (with a ``Burger`` toggling a ``Drawer``)
+on top and a ``NavBar`` at the bottom; the body swaps per the active tab. The
+Library tab uses ``Card`` / ``ListTile`` / ``Avatar`` / ``Divider``; the Profile
+tab uses ``Clock`` and ``Calendar``. It is the component-driven version of the
+``tabs`` example — far less hand-wiring — and uses only the Compose-supported
+widget set, so it renders the same in the simulator and on a device.
 
 Runs in the Qt simulator::
 
@@ -24,15 +25,22 @@ from dataclasses import dataclass
 from tempestroid import (
     App,
     AppBar,
-    Button,
-    Color,
+    Avatar,
+    Burger,
+    Calendar,
+    Card,
+    Clock,
     Column,
+    Container,
+    Divider,
+    Drawer,
     Edge,
     Header,
+    ListTile,
     NavBar,
+    Row,
     Scaffold,
     Style,
-    Text,
     Widget,
 )
 
@@ -45,11 +53,13 @@ class ShellState:
 
     Attributes:
         active: The index of the selected bottom-navigation tab.
-        plays: How many times the Home "Play" action has been pressed.
+        drawer_open: Whether the side drawer is expanded.
+        selected_date: The day picked on the Profile calendar (ISO, or empty).
     """
 
     active: int = 0
-    plays: int = 0
+    drawer_open: bool = False
+    selected_date: str = ""
 
 
 def make_state() -> ShellState:
@@ -74,23 +84,7 @@ def _home(app: App[ShellState]) -> Widget:
         style=Style(gap=12.0, padding=Edge.all(20.0)),
         children=[
             Header(title="Home", subtitle="What's new today"),
-            Text(
-                content=f"Played {app.state.plays} time(s).",
-                style=Style(color=Color.from_hex("#9ca3af"), font_size=15.0),
-            ),
-            Button(
-                label="Play",
-                on_click=lambda: app.set_state(
-                    lambda s: setattr(s, "plays", s.plays + 1)
-                ),
-                key="play",
-                style=Style(
-                    padding=Edge.symmetric(vertical=12.0, horizontal=18.0),
-                    radius=10.0,
-                    background=Color.from_hex("#2563eb"),
-                    color=Color.from_hex("#ffffff"),
-                ),
-            ),
+            Clock(time="09:41", label="Local time"),
         ],
         key="home",
     )
@@ -103,41 +97,55 @@ def _library(_app: App[ShellState]) -> Widget:
         _app: The running app (unused).
 
     Returns:
-        The Library section content.
+        The Library section as a card of list tiles.
     """
+    people = (("Ana Lima", "Online"), ("Beto Reis", "Away"), ("Caio Souza", "Offline"))
+    tiles: list[Widget] = []
+    for index, (name, status) in enumerate(people):
+        if index:
+            tiles.append(Divider(key=f"div-{index}"))
+        initials = "".join(part[0] for part in name.split()[:2])
+        tiles.append(
+            ListTile(
+                title=name,
+                subtitle=status,
+                leading=Avatar(initials=initials, key=f"av-{index}"),
+                key=f"tile-{index}",
+            )
+        )
     return Column(
-        style=Style(gap=8.0, padding=Edge.all(20.0)),
+        style=Style(gap=12.0, padding=Edge.all(20.0)),
         children=[
-            Header(title="Library", subtitle="Your saved items"),
-            *[
-                Text(
-                    content=f"• Item {n}",
-                    style=Style(color=Color.from_hex("#e5e7eb"), font_size=16.0),
-                    key=f"item-{n}",
-                )
-                for n in range(1, 5)
-            ],
+            Header(title="Library", subtitle="Your contacts"),
+            Card(children=tiles, key="contacts"),
         ],
         key="library",
     )
 
 
-def _profile(_app: App[ShellState]) -> Widget:
+def _profile(app: App[ShellState]) -> Widget:
     """Build the Profile tab body.
 
     Args:
-        _app: The running app (unused).
+        app: The running app.
 
     Returns:
-        The Profile section content.
+        The Profile section with a calendar bound to state.
     """
+
+    def pick(iso: str) -> None:
+        app.set_state(lambda s: setattr(s, "selected_date", iso))
+
+    chosen = app.state.selected_date or "none"
     return Column(
-        style=Style(gap=8.0, padding=Edge.all(20.0)),
+        style=Style(gap=12.0, padding=Edge.all(20.0)),
         children=[
-            Header(title="Profile", subtitle="mauricio@example.com"),
-            Text(
-                content="Signed in.",
-                style=Style(color=Color.from_hex("#9ca3af"), font_size=15.0),
+            Header(title="Profile", subtitle=f"Picked: {chosen}"),
+            Calendar(
+                month="2026-05",
+                selected=app.state.selected_date,
+                on_select=pick,
+                key="cal",
             ),
         ],
         key="profile",
@@ -145,6 +153,39 @@ def _profile(_app: App[ShellState]) -> Widget:
 
 
 _BODIES = (_home, _library, _profile)
+
+
+def _drawer(app: App[ShellState]) -> Widget:
+    """Build the navigation drawer (a quick-jump list of the tabs).
+
+    Args:
+        app: The running app.
+
+    Returns:
+        A ``Drawer`` controlled by ``state.drawer_open``.
+    """
+
+    def go(index: int) -> None:
+        def mutate(s: ShellState) -> None:
+            s.active = index
+            s.drawer_open = False
+
+        app.set_state(mutate)
+
+    return Drawer(
+        open=app.state.drawer_open,
+        width=200.0,
+        children=[
+            NavBar(
+                items=list(_TABS),
+                active=app.state.active,
+                on_select=go,
+                key="drawer-nav",
+                style=Style(gap=8.0),
+            )
+        ],
+        key="drawer",
+    )
 
 
 def view(app: App[ShellState]) -> Widget:
@@ -161,23 +202,23 @@ def view(app: App[ShellState]) -> Widget:
     def select(index: int) -> None:
         app.set_state(lambda s: setattr(s, "active", index))
 
+    def toggle_drawer() -> None:
+        app.set_state(lambda s: setattr(s, "drawer_open", not s.drawer_open))
+
+    body = Row(
+        style=Style(grow=1.0, gap=0.0),
+        children=[
+            _drawer(app),
+            Container(style=Style(grow=1.0), child=_BODIES[app.state.active](app)),
+        ],
+        key="body-row",
+    )
     return Scaffold(
         app_bar=AppBar(
             title="tempestroid",
-            actions=[
-                Button(
-                    label="?",
-                    key="help",
-                    style=Style(
-                        padding=Edge.symmetric(vertical=8.0, horizontal=12.0),
-                        radius=8.0,
-                        background=Color.from_hex("#374151"),
-                        color=Color.from_hex("#f9fafb"),
-                    ),
-                )
-            ],
+            leading=Burger(on_click=toggle_drawer),
         ),
-        body=_BODIES[app.state.active](app),
+        body=body,
         bottom_bar=NavBar(items=list(_TABS), active=app.state.active, on_select=select),
     )
 
@@ -190,7 +231,7 @@ def main() -> int:
     """
     from tempestroid.renderers.qt import run_qt
 
-    return run_qt(make_state(), view, title="tempestroid — shell", size=(380, 560))
+    return run_qt(make_state(), view, title="tempestroid — shell", size=(420, 640))
 
 
 if __name__ == "__main__":

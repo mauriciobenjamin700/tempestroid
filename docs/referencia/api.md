@@ -55,6 +55,16 @@ aceita um `style` opcional mesclado sobre o padrão via **`merge_style`**.
   um `bottom_bar` opcional (`scroll=True` embrulha o corpo num `ScrollView`).
 - **`NavBar`** — barra de navegação/abas selecionável: rótulos `items`, índice
   `active` e *callback* `on_select(index)` (generaliza o exemplo `tabs`).
+- **`Burger`** / **`Drawer`** — botão de menu (☰, `on_click`) e painel lateral
+  controlado (`open` vive no estado do app; alterne pelo burger).
+- **`Calendar`** — grade do mês com dias selecionáveis: `month` (`"AAAA-MM"`),
+  `selected` (`"AAAA-MM-DD"`) e `on_select(data_iso)`.
+- **`Clock`** — relógio digital que renderiza um `time` já formatado (o app
+  dirige o tick pelo estado, como o `stopwatch`).
+- **`Card`** — superfície elevada (sombra + raio) agrupando `children`.
+- **`ListTile`** — linha de lista: `leading` / `trailing` em volta de `title` +
+  `subtitle` opcional.
+- **`Avatar`** — emblema redondo de `initials`; **`Divider`** — linha fina.
 
 ## Eventos (`tempestroid.widgets`) — contrato de fronteira tipado
 

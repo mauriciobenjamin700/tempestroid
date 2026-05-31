@@ -29,7 +29,10 @@ from tempestroid.components.base import (
     SURFACE,
     merge_style,
 )
+from tempestroid.components.cards import Avatar, Card, Divider, ListTile
+from tempestroid.components.dates import Calendar, Clock
 from tempestroid.components.layout import Scaffold, Sidebar
+from tempestroid.components.menu import Burger, Drawer
 from tempestroid.components.navigation import NavBar
 
 __all__ = [
@@ -39,6 +42,14 @@ __all__ = [
     "Sidebar",
     "Scaffold",
     "NavBar",
+    "Burger",
+    "Drawer",
+    "Calendar",
+    "Clock",
+    "Card",
+    "ListTile",
+    "Avatar",
+    "Divider",
     "merge_style",
     "BACKGROUND",
     "SURFACE",
