@@ -265,6 +265,15 @@ arrives with track B.)
 - Run `framework-guard` (ruff + `pyright` + `pytest`) before calling a phase done.
 - Commits: Conventional Commits (`feat:`, `fix:`, `ref:`, `docs:`, `tests:`,
   `chore:`). Branches: `feat/`, `fix/`, `ref/`.
+- **One PR per agent, scoped to its own work.** When multiple agents work in
+  parallel, each agent opens **exactly one** PR containing **only what it did and
+  validated** — never bundle another agent's changes, and never commit to or
+  update a PR that belongs to another agent. Each agent works on its **own
+  branch** (a dedicated `git worktree` off a clean base is the safe way when the
+  working tree is shared), so a tree-wide change reconstructed from that base
+  never drags in another agent's uncommitted work. Before starting, check
+  `origin/main` and open PRs/branches so you don't reimplement work already
+  landed or in flight. It is fine to keep a branch local and push it later.
 
 ## Commands
 
