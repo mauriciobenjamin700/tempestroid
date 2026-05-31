@@ -1,0 +1,126 @@
+# Documentação do tempestroid — site MkDocs em PT-BR.
+# Servir local: uv run mkdocs serve
+# Build estrito (CI): uv run mkdocs build --strict
+site_name: tempestroid
+site_description: >-
+  Framework para construir apps Android nativos em Python tipado — árvore de UI
+  declarativa e tipada, simulador Qt + renderizador Compose no dispositivo.
+site_author: Mauricio Benjamin
+docs_dir: docs
+# site_url: https://mauriciobenjamin700.github.io/tempestroid/  # ajuste ao publicar no GitHub Pages
+
+theme:
+  name: material
+  language: pt-BR
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/weather-night
+        name: Mudar para o tema escuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/weather-sunny
+        name: Mudar para o tema claro
+  features:
+    # navigation.instant é incompatível com o seletor de idioma do i18n
+    # (o link contextual entre locales quebra com a navegação client-side).
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+plugins:
+  - search
+  # Seletor de idioma PT-BR / EN-US no header. Arquivos sem sufixo são PT
+  # (default); traduções vivem em `<nome>.en.md`. Páginas sem tradução caem
+  # para o PT (fallback_to_default).
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: pt
+          name: Português (BR)
+          default: true
+          build: true
+        - locale: en
+          name: English (US)
+          build: true
+          site_name: tempestroid
+          nav_translations:
+            Início: Home
+            Instalação: Installation
+            Começo rápido: Quick start
+            Arquitetura: Architecture
+            Guia do usuário: User guide
+            Widgets: Widgets
+            Estilos: Styles
+            Eventos: Events
+            CLI (tempest): CLI (tempest)
+            Galeria de exemplos: Example gallery
+            Referência: Reference
+            API pública: Public API
+            Lado do dispositivo (ponte): Device side (bridge)
+            Projeto: Project
+            Roadmap e fases: Roadmap and phases
+            Plano de design (EN): Design plan (EN)
+            Pesquisa — runtime Android (EN): Research — Android runtime (EN)
+            Pesquisa — runbook Android (EN): Research — Android runbook (EN)
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+# Avisos do --strict só param o build por problemas reais (links quebrados,
+# arquivos ausentes). Páginas fora do nav não devem falhar o build.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  nav:
+    omitted_files: ignore
+
+nav:
+  - Início: index.md
+  - Instalação: instalacao.md
+  - Começo rápido: inicio-rapido.md
+  - Arquitetura: arquitetura.md
+  - Guia do usuário:
+      - Widgets: guia/widgets.md
+      - Estilos: guia/estilos.md
+      - Eventos: guia/eventos.md
+      - CLI (tempest): guia/cli.md
+      - Galeria de exemplos: guia/exemplos.md
+  - Referência:
+      - API pública: referencia/api.md
+      - Lado do dispositivo (ponte): referencia/dispositivo.md
+  - Projeto:
+      - Roadmap e fases: roadmap.md
+      - Plano de design (EN): plan.md
+      - Pesquisa — runtime Android (EN): research/android-runtime.md
+      - Pesquisa — runbook Android (EN): research/android-runbook.md

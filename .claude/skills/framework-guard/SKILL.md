@@ -1,6 +1,6 @@
 ---
 name: framework-guard
-description: Run tempestroid's quality gates (ruff + pyright strict + pytest) and convention checks (double quotes, full typing, Google docstrings, __init__ re-exports). Use before closing a phase, before a commit, or when asked to validate the framework / check conventions / "garantir manutenção do framework".
+description: Run tempestroid's quality gates (ruff + pyright strict + pytest + mkdocs build --strict) and convention checks (double quotes, full typing, Google docstrings, __init__ re-exports). Use before closing a phase, before a commit, or when asked to validate the framework / check conventions / "garantir manutenção do framework".
 ---
 
 # framework-guard
@@ -12,7 +12,7 @@ be closed.
 ## When to use
 
 - Before marking any phase done (pairs with `phase-closer`).
-- Before any commit that touches `src/tempestroid/`.
+- Before any commit that touches `tempestroid/`.
 - When the user asks to "validate", "check conventions", "run the gates", or
   "ensure framework maintenance".
 
@@ -30,9 +30,12 @@ It runs, in order, and reports a single PASS/FAIL summary:
    (ruff config in `pyproject.toml` selects `E,F,I,UP,B,Q,ANN,D`).
 2. `uv run pyright` — strict-mode type check (`typeCheckingMode = "strict"`).
 3. `uv run pytest` — the full test suite (`asyncio_mode = "auto"`).
-4. Convention heuristics ruff cannot catch (see below).
+4. `uv run mkdocs build --strict` — the docs site (when `mkdocs.yml` exists);
+   broken links, missing pages or bad nav fail the gate.
+5. Convention heuristics ruff cannot catch (see below).
 
-Pass `--quick` to skip pytest (lint + types + conventions only) for a fast loop.
+Pass `--quick` to skip pytest + the docs build (lint + types + conventions only)
+for a fast loop.
 
 ## What the script checks beyond ruff/pyright/pytest
 

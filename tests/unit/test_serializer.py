@@ -2,8 +2,12 @@ import json
 
 from tempestroid import (
     Button,
+    Checkbox,
     Color,
     Column,
+    DatePicker,
+    FilePicker,
+    Input,
     Style,
     Text,
     build,
@@ -39,6 +43,52 @@ def test_serialize_handler_token_uses_child_path():
     node = serialize_node(tree)
     handler = node["children"][1]["props"]["on_click"]
     assert handler["$handler"] == "1:on_click"
+
+
+def test_serialize_input_carries_value_and_handler():
+    node = serialize_node(
+        build(Input(value="hi", placeholder="name", on_change=lambda value: None))
+    )
+    assert node["type"] == "Input"
+    assert node["props"]["value"] == "hi"
+    assert node["props"]["placeholder"] == "name"
+    assert node["props"]["on_change"] == {
+        "$handler": "root:on_change",
+        "event": "TextChangeEvent",
+    }
+
+
+def test_serialize_checkbox_carries_checked():
+    node = serialize_node(build(Checkbox(label="agree", checked=True)))
+    assert node["props"]["checked"] is True
+    assert node["props"]["label"] == "agree"
+
+
+def test_serialize_datepicker_handler_event():
+    node = serialize_node(
+        build(DatePicker(value="2026-05-31", on_change=lambda v: None))
+    )
+    assert node["props"]["value"] == "2026-05-31"
+    assert node["props"]["on_change"]["event"] == "DateChangeEvent"
+
+
+def test_serialize_filepicker_handler_event():
+    node = serialize_node(build(FilePicker(on_select=lambda uri: None)))
+    assert node["props"]["on_select"]["event"] == "FileSelectEvent"
+
+
+def test_serialize_input_tree_is_json_safe():
+    tree = build(
+        Column(
+            children=[
+                Input(value="a", on_change=lambda v: None),
+                Checkbox(label="b", checked=False),
+                DatePicker(value="2026-01-01"),
+                FilePicker(on_select=lambda uri: None),
+            ]
+        )
+    )
+    json.dumps(serialize_node(tree))  # must not raise
 
 
 def test_serialize_is_json_safe():

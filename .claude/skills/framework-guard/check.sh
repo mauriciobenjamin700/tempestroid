@@ -29,6 +29,23 @@ else
   printf "\n(skipping pytest: --quick)\n"
 fi
 
+if [[ $QUICK -eq 0 ]]; then
+  section "mkdocs (strict docs build)"
+  # --strict turns broken links, missing pages and bad nav into a non-zero exit,
+  # so a doc that drifts from the code (dead link, renamed page) fails the gate.
+  if [[ -f mkdocs.yml ]]; then
+    docs_out=$(uv run mkdocs build --strict 2>&1)
+    if [[ $? -eq 0 ]]; then
+      ok "mkdocs build --strict"
+    else
+      bad "mkdocs build --strict (broken links / missing pages / nav):"
+      echo "$docs_out" | sed 's/^/      /'
+    fi
+  else
+    ok "mkdocs build skipped (no mkdocs.yml)"
+  fi
+fi
+
 section "convention heuristics (beyond ruff)"
 
 # 1) Single-quoted string literals in src/. ruff's flake8-quotes (Q) is the
@@ -36,20 +53,20 @@ section "convention heuristics (beyond ruff)"
 #    string contains a double quote (avoid-escape). So we only net single-quoted
 #    strings that do NOT contain a `"` and aren't in a comment — the cases ruff
 #    would also reject — as a redundant guard.
-sq=$(grep -rnP "(?<![\\w'])'(?:[^'\"\\\\\n]|\\\\.)*'" src/tempestroid --include="*.py" \
+sq=$(grep -rnP "(?<![\\w'])'(?:[^'\"\\\\\n]|\\\\.)*'" tempestroid --include="*.py" \
       | grep -vP "^\s*[^:]+:[0-9]+:\s*#" || true)
 if [[ -n "$sq" ]]; then
   bad "single-quoted strings found (use double quotes):"
   echo "$sq" | sed 's/^/      /'
 else
-  ok "no single-quoted strings in src/ (ruff Q is authoritative)"
+  ok "no single-quoted strings in tempestroid/ (ruff Q is authoritative)"
 fi
 
 # 2) __init__.py missing __all__.
 missing_all=""
 while IFS= read -r f; do
   grep -q "__all__" "$f" || missing_all+="$f"$'\n'
-done < <(find src/tempestroid -name "__init__.py")
+done < <(find tempestroid -name "__init__.py")
 if [[ -n "$missing_all" ]]; then
   bad "__init__.py without __all__:"
   printf '%s' "$missing_all" | sed 's/^/      /'
@@ -65,7 +82,7 @@ while IFS= read -r d; do
   subpys=$(find "$d" -mindepth 2 -name "*.py" -not -name "__init__.py" \
             -not -path "*__pycache__*" | wc -l)
   [[ "$pys" -le 1 && "$subpys" -eq 0 ]] && empty_pkgs+="$d"$'\n'
-done < <(find src/tempestroid -type d -not -path "*__pycache__*")
+done < <(find tempestroid -type d -not -path "*__pycache__*")
 # Drop the package root itself only if it legitimately holds modules; report leaves.
 empty_pkgs=$(printf '%s' "$empty_pkgs" | grep -v "^$" || true)
 if [[ -n "$empty_pkgs" ]]; then

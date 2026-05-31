@@ -11,10 +11,18 @@ def test_widget_catalog_lists_all_widgets():
         "Column",
         "Row",
         "Container",
+        "ScrollView",
         "Input",
+        "TextArea",
         "Checkbox",
+        "Switch",
+        "Slider",
         "DatePicker",
         "FilePicker",
+        "Image",
+        "Icon",
+        "ProgressBar",
+        "Spinner",
     }
 
 
@@ -41,10 +49,19 @@ def test_event_catalog_lists_events():
         "TapEvent",
         "TextChangeEvent",
         "ToggleEvent",
+        "SlideEvent",
         "DateChangeEvent",
         "FileSelectEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
+
+
+def test_input_publishes_its_event_contract():
+    catalog = widget_catalog()
+    assert catalog["Input"]["events"] == {"on_change": "TextChangeEvent"}
+    assert catalog["Checkbox"]["events"] == {"on_change": "ToggleEvent"}
+    assert catalog["DatePicker"]["events"] == {"on_change": "DateChangeEvent"}
+    assert catalog["FilePicker"]["events"] == {"on_select": "FileSelectEvent"}
 
 
 def test_introspect_is_json_serializable():

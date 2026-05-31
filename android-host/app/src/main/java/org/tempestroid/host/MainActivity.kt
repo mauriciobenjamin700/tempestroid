@@ -75,16 +75,20 @@ class MainActivity : ComponentActivity() {
         //      `tempest build` → load + run it.
         //   3. otherwise: the bundled demo.
         val devUrl = intent?.getStringExtra("tempest_dev_url")
-        val appFile = File(filesDir, "tempest_app.py")
         val entry = when {
+            // Dev mode wins: poll the dev server and hot-reload over LAN.
             devUrl != null ->
                 "from tempestroid.devserver.client import serve_device; " +
                     "serve_device('$devUrl')"
-            extractAppAsset(appFile) ->
-                "from tempestroid.cli.app_loader import load_app_spec; " +
-                    "from tempestroid.bridge.jni import run_device; " +
-                    "spec = load_app_spec('${appFile.absolutePath}'); " +
-                    "run_device(spec.make_state(), spec.view)"
+            // A `tempest build` APK bundles the user's app as this asset; extract
+            // it and run it via the file loader (make_state + view contract).
+            hasAsset(BUNDLED_APP_ASSET) -> {
+                val appFile = File(filesDir, BUNDLED_APP_ASSET)
+                extractAssets(BUNDLED_APP_ASSET, appFile)
+                "from tempestroid.bridge.jni import run_device_file; " +
+                    "run_device_file('${appFile.absolutePath}')"
+            }
+            // No bundled app and no dev URL: the built-in demo (B4/B6).
             else -> DEVICE_DEMO
         }
 
@@ -97,23 +101,6 @@ class MainActivity : ComponentActivity() {
             )
             Log.i(TAG, "python exited rc=$rc")
         }, "tempest-python").start()
-    }
-
-    /**
-     * Extract an embedded `tempest_app.py` asset to [dest], if present.
-     *
-     * @param dest the destination file in the app's private storage.
-     * @return true if a packaged app asset was found and extracted.
-     */
-    private fun extractAppAsset(dest: File): Boolean {
-        return try {
-            assets.open("tempest_app.py").use { input ->
-                dest.outputStream().use { input.copyTo(it) }
-            }
-            true
-        } catch (_: java.io.IOException) {
-            false
-        }
     }
 
     /** Request POST_NOTIFICATIONS on API 33+ so the B6 demo can post. */
@@ -152,8 +139,19 @@ class MainActivity : ComponentActivity() {
     private fun stripGuard(name: String): String =
         if (name.endsWith(".gz-")) name.dropLast(1) else name
 
+    /** True if [assetPath] exists as a packaged asset (file or non-empty dir). */
+    private fun hasAsset(assetPath: String): Boolean = try {
+        assets.open(assetPath).close()
+        true
+    } catch (_: java.io.IOException) {
+        (assets.list(assetPath)?.isNotEmpty()) == true
+    }
+
     companion object {
         private const val TAG = "tempestroid"
+
+        /** Asset slot a `tempest build` APK stages the user's app source into. */
+        private const val BUNDLED_APP_ASSET = "tempest_app.py"
 
         /**
          * Device demo: a styled counter (B4) plus a "notify" button exercising

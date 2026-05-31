@@ -34,9 +34,9 @@ tempestroid/
 ├── docs/research/        # Trilho B web research + executable runbook (read before B)
 ├── toolchain/            # B0/B1 build scripts: fetch CPython 3.14 + cibuildwheel wheels
 ├── android-host/         # B2–B4 Gradle/Kotlin host skeleton (embeds official CPython via JNI)
-└── src/tempestroid/      # the framework (Trilho A, pure Python)
-    ├── style.py          # Style, Color, Edge, Border + enums (Pydantic, frozen)
-    ├── widgets/          # Widget base, Text/Button/Column/Row/Container + Input/Checkbox/DatePicker/FilePicker (the IR) + events.py
+└── tempestroid/          # the framework (Trilho A, pure Python) — flat layout, package at repo root
+    ├── style.py          # Style + value objects (Color/Edge/Border/SideBorder/Corners/Shadow/Gradient/Transition) + enums (Pydantic, frozen)
+    ├── widgets/          # Widget base + layout.py/inputs.py/media.py/indicators.py (the IR) + events.py
     ├── core/             # ir.py (Node+patches) / reconciler.py (build,diff) / state.py (App) / introspection.py
     ├── renderers/qt/     # renderer + Style→Qt translator + app_runner (run_qt) + simulator + dev_loop
     ├── cli/              # main (tempest dev/spec/...) + app_loader + watcher
@@ -93,8 +93,8 @@ Tracks `docs/plan.md`. Update the table when a phase opens/closes; keep the
 | B4 | Compose renderer (native): render the serialized tree, apply patches, route taps | ✅ done | on-device: Compose renders the mount tree (Text/Button/Column + style spec → Modifier/Arrangement), applies patch batches (recomposes), and a real button tap → `dispatchEvent` → handler → patch → UI updates (`count` 0→4 by tapping; verified by screenshot) |
 | B5 | dev server + QR (LAN code-push + log relay) | ✅ done | on-device: `tempest serve <app>` (over `adb reverse`) pushes the app source; the device's code-push client polls, fetches, re-execs and hot-restarts the `DeviceApp` — editing+saving the file live-reloaded the device UI without an APK rebuild (verified by screenshot) |
 | B6 | native capabilities (notifications) | ✅ done | on-device: a `notify()` call from a Python handler → `native` command over the bridge → `NativeModules`/`NotificationModule` → a system notification posts (verified via `dumpsys notification` + the shade). The `native` envelope + module-router is the template for further capabilities (camera, etc.) |
-| C | Polish: `tempest new`/`build`/`run` + stateful hot reload | ✅ done | `new` scaffolds a runnable app; `build` embeds it as an asset and produces an APK that runs the user app standalone (verified on device); `run` = build + adb install + launch + logcat; code-push reload now carries matching state fields across reloads (`carry_state`) |
-| D | Conformance golden snapshots (Qt vs Compose) | ⬜ todo | per `docs/plan.md` |
+| C | Polish: `tempest new`/`build`/`run` + stateful hot reload | ✅ done | `tempest new` scaffolds a runnable project; `tempest build`/`run` stage the app as an asset + drive the `android-host` Gradle wrapper + `adb` (need SDK/NDK); `App.swap_view` powers stateful hot reload — `tempest dev` `r` (save) preserves state via diff, `R` restarts clean, device code-push `reload`s preserving on-device state (all covered by tests; build/run device path needs the toolchain) |
+| D | Conformance golden snapshots (Qt vs Compose) | ✅ done | `tests/conformance/` pins both `Style` translators: golden snapshots of `to_compose` + `to_qss`/`layout_alignment` for canonical styles (regenerate with `UPDATE_GOLDEN=1`), plus a per-field coverage-parity table that fails if either translator starts/stops handling a field without updating the documented divergences |
 
 **Trilho B status:** research done (`docs/research/`), decisions fixed (CPython
 3.14 official + hand-rolled JNI + cibuildwheel + Compose DIY). **B0/B1/B2 are
@@ -224,7 +224,7 @@ command). End users still get the simulator via `pip install tempestroid[qt]`.
 framework. **Whenever you add or change framework surface, update `README.md` in
 the same change.** This triggers on:
 
-- New/changed public exports in `src/tempestroid/__init__.py` (or any package's
+- New/changed public exports in `tempestroid/__init__.py` (or any package's
   `__init__.py` public surface) → update the **Public API** section.
 - New/changed widgets, style enums, events, patches, or core types → update the
   matching API subsection.
@@ -242,8 +242,9 @@ incomplete.
 Project skills that guard framework health — use them, don't reinvent the checks:
 
 - **`framework-guard`** — `bash .claude/skills/framework-guard/check.sh [--quick]`.
-  Runs ruff + pyright (strict) + pytest + convention heuristics (quotes, typing,
-  `__all__`, no empty packages). The maintenance gate.
+  Runs ruff + pyright (strict) + pytest + `mkdocs build --strict` (when
+  `mkdocs.yml` exists) + convention heuristics (quotes, typing, `__all__`, no
+  empty packages). The maintenance gate. `--quick` skips pytest + the docs build.
 - **`docs-sync-check`** — `uv run python .claude/skills/docs-sync-check/check.py`.
   Verifies README.md tracks live exports (`tempestroid.__all__`), the `tempest`
   CLI commands, and that phase tables in README/CLAUDE.md agree. Enforces the
@@ -266,6 +267,42 @@ arrives with track B.)
   `chore:`). Branches: `feat/`, `fix/`, `ref/`.
 
 ## Commands
+
+**Prefer the `Makefile` at the repo root** — it wraps every recurring task
+(gates, run/dev, docs, package build, release with tag, Android APK build/install).
+Run `make` (or `make help`) to list targets. Use these instead of retyping raw
+`uv run …` / Gradle / adb lines. Raw equivalents below for reference.
+
+```bash
+make help        # list every target
+# quality gates
+make gate        # full framework-guard: ruff + pyright(strict) + pytest + conventions + docs
+make quick       # fast gate (no pytest)
+make lint        # ruff check          | make format → ruff --fix + format
+make typecheck   # pyright (strict)    | make test → pytest
+make docs-sync   # README/CLI/phase-table sync check
+# run / dev (APP=examples/counter/app.py by default; override APP=…)
+make run         # run an app in the Qt simulator
+make dev         # tempest dev: simulator + hot restart
+make spec        # print the typed contract as JSON
+# docs site
+make docs-build  # mkdocs build --strict   | make docs-serve → live preview
+# package + release
+make build       # uv build → sdist + wheel in dist/
+make bump        # bump pyproject version (PART=patch|minor|major, default patch)
+make release     # runs gate + docs-sync, requires clean tree, tags v<version> + pushes → PyPI publish CI
+# android (Trilho B — needs Android SDK/NDK + connected arm64 device)
+make toolchain   # fetch CPython 3.14 + build wheels + stage device site-packages
+make apk         # Gradle assembleDebug   | make install → adb installDebug | make apk-install → both
+make logcat      # tail device logs       | ANDROID_SDK_ROOT defaults to /usr/lib/android-sdk
+make clean       # remove build/test/cache artifacts
+```
+
+Release flow: `make bump PART=…` → commit → `make release` (verifies gates +
+clean tree, refuses an existing tag, then tags `v<version>` and pushes; the tag
+push triggers `.github/workflows/publish.yml` → PyPI Trusted Publishing).
+
+Raw equivalents (no Makefile):
 
 ```bash
 uv sync                                   # installs core + dev group (incl. Qt sim)

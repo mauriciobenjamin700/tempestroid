@@ -1,0 +1,16 @@
+{
+  "compose": {
+    "height": 48.0,
+    "maxHeight": 80.0,
+    "maxWidth": 320.0,
+    "minHeight": 20.0,
+    "minWidth": 40.0,
+    "width": 120.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "min-width: 40.0px; max-width: 320.0px; min-height: 20.0px; max-height: 80.0px",
+    "qss_leaf": "min-width: 40.0px; max-width: 320.0px; min-height: 20.0px; max-height: 80.0px"
+  }
+}

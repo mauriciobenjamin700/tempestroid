@@ -1,54 +1,45 @@
-"""Tests for ``tempest new`` scaffolding + stateful hot reload (phase C)."""
+"""Tests for ``tempest new`` project scaffolding."""
 
-from __future__ import annotations
-
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from tempestroid import build
 from tempestroid.cli.app_loader import load_app_spec
-from tempestroid.cli.scaffold import scaffold_app
+from tempestroid.cli.scaffold import scaffold
 from tempestroid.core.state import App
-from tempestroid.devserver.client import carry_state
 
 
-def test_scaffold_creates_runnable_app(tmp_path: Path) -> None:
-    """The scaffolded app satisfies the make_state + view contract and builds."""
-    app_file = scaffold_app(tmp_path / "my_app")
-    assert app_file.is_file()
-
-    spec = load_app_spec(app_file)
-    app: App[object] = App(spec.make_state(), spec.view, apply_patches=lambda _: None)
-    node = build(spec.view(app))
-    assert node.type == "Column"
+def test_scaffold_creates_files(tmp_path: Path):
+    root = scaffold("MyApp", parent=tmp_path)
+    assert root == tmp_path / "MyApp"
+    assert (root / "app.py").is_file()
+    assert (root / "README.md").is_file()
 
 
-def test_scaffold_refuses_overwrite(tmp_path: Path) -> None:
-    """Scaffolding refuses to clobber an existing app.py."""
-    scaffold_app(tmp_path / "app1")
+def test_scaffolded_app_is_runnable(tmp_path: Path):
+    # The generated app must honor the make_state + view contract and build.
+    root = scaffold("Counter", parent=tmp_path)
+    spec = load_app_spec(root / "app.py")
+    app: App[object] = App(
+        spec.make_state(), spec.view, apply_patches=lambda _patches: None
+    )
+    node = app.start()
+    assert node is not None
+
+
+def test_scaffold_app_uses_project_name(tmp_path: Path):
+    root = scaffold("Greeter", parent=tmp_path)
+    source = (root / "app.py").read_text(encoding="utf-8")
+    assert "Greeter" in source
+
+
+@pytest.mark.parametrize("bad", ["1abc", "with space", "-dash", "weird!", ""])
+def test_scaffold_rejects_bad_name(tmp_path: Path, bad: str):
+    with pytest.raises(ValueError):
+        scaffold(bad, parent=tmp_path)
+
+
+def test_scaffold_refuses_existing_dir(tmp_path: Path):
+    (tmp_path / "dup").mkdir()
     with pytest.raises(FileExistsError):
-        scaffold_app(tmp_path / "app1")
-
-
-def test_carry_state_preserves_common_fields() -> None:
-    """Stateful reload copies shared fields and ignores removed/added ones."""
-
-    @dataclass
-    class Old:
-        count: int = 0
-        label: str = ""
-
-    @dataclass
-    class New:
-        count: int = 0
-        extra: bool = False
-
-    old = Old(count=7, label="gone")
-    new = New()
-    carry_state(old, new)
-
-    assert new.count == 7  # shared field carried over
-    assert new.extra is False  # new field keeps its fresh default
-    assert not hasattr(new, "label")  # removed field dropped
+        scaffold("dup", parent=tmp_path)

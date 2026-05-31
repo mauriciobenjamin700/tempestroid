@@ -1,7 +1,19 @@
 import pytest
 from pydantic import ValidationError
 
-from tempestroid import Button, Column, Container, Row, Style, Text, Widget
+from tempestroid import (
+    Button,
+    Checkbox,
+    Column,
+    Container,
+    DatePicker,
+    FilePicker,
+    Input,
+    Row,
+    Style,
+    Text,
+    Widget,
+)
 
 
 def test_widget_type_tag():
@@ -58,3 +70,37 @@ def test_style_attached_to_widget():
     w: Widget = Row(style=Style(gap=8.0))
     assert w.style is not None
     assert w.style.gap == 8.0
+
+
+def test_input_widgets_are_leaves():
+    assert Input(value="x").child_nodes() == []
+    assert Checkbox(label="ok").child_nodes() == []
+    assert DatePicker(value="2026-05-31").child_nodes() == []
+    assert FilePicker().child_nodes() == []
+
+
+def test_input_widget_type_tags():
+    assert Input().widget_type == "Input"
+    assert Checkbox().widget_type == "Checkbox"
+    assert DatePicker().widget_type == "DatePicker"
+    assert FilePicker().widget_type == "FilePicker"
+
+
+def test_input_widgets_carry_values():
+    assert Input(value="hi", placeholder="name").value == "hi"
+    assert Checkbox(label="agree", checked=True).checked is True
+    assert DatePicker(value="2026-05-31").value == "2026-05-31"
+    assert FilePicker().label == "Choose file"
+
+
+def test_input_handlers_can_be_sync_or_async():
+    from tempestroid import TextChangeEvent
+
+    async def changed(event: TextChangeEvent) -> None:
+        return None
+
+    Input(on_change=lambda value: None)
+    Input(on_change=changed)
+    Checkbox(on_change=lambda checked: None)
+    DatePicker(on_change=lambda value: None)
+    FilePicker(on_select=lambda uri: None)

@@ -1,10 +1,21 @@
 import pytest
-from PySide6.QtWidgets import QLabel, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDateEdit,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QWidget,
+)
 
 from tempestroid import (
     Button,
+    Checkbox,
     Column,
     Container,
+    DatePicker,
+    FilePicker,
+    Input,
     Row,
     Text,
     build,
@@ -132,6 +143,79 @@ def test_update_rebinds_handler():
     assert isinstance(renderer.root_widget, QPushButton)
     renderer.root_widget.click()
     assert calls == ["new"]
+
+
+def test_input_renders_value_and_placeholder():
+    renderer = QtRenderer()
+    renderer.mount(build(Input(value="hi", placeholder="name")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    assert widget.text() == "hi"
+    assert widget.placeholderText() == "name"
+
+
+def test_input_change_invokes_handler_with_typed_value():
+    changes: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(Input(value="", on_change=lambda event: changes.append(event.value)))
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    widget.setText("typed")
+    assert changes == ["typed"]
+
+
+def test_checkbox_renders_label_and_state():
+    renderer = QtRenderer()
+    renderer.mount(build(Checkbox(label="agree", checked=True)))
+    widget = renderer.root_widget
+    assert isinstance(widget, QCheckBox)
+    assert widget.text() == "agree"
+    assert widget.isChecked() is True
+
+
+def test_checkbox_toggle_invokes_handler():
+    toggles: list[bool] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Checkbox(
+                label="x", on_change=lambda event: toggles.append(event.checked)
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QCheckBox)
+    widget.setChecked(True)
+    assert toggles == [True]
+
+
+def test_datepicker_renders_value():
+    renderer = QtRenderer()
+    renderer.mount(build(DatePicker(value="2026-05-31")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QDateEdit)
+    assert widget.date().toString("yyyy-MM-dd") == "2026-05-31"
+
+
+def test_filepicker_renders_label_as_button():
+    renderer = QtRenderer()
+    renderer.mount(build(FilePicker(label="Upload")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QPushButton)
+    assert widget.text() == "Upload"
+
+
+def test_input_value_update_applies():
+    renderer = QtRenderer()
+    old = Input(value="a")
+    renderer.mount(build(old))
+    new = Input(value="b")
+    renderer.apply(diff(build(old), build(new)))
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    assert widget.text() == "b"
 
 
 def test_nested_container_renders():

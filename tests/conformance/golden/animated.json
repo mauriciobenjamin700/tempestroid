@@ -1,0 +1,16 @@
+{
+  "compose": {
+    "background": "#0a141e",
+    "transition": {
+      "curve": "easeInOut",
+      "delayMs": 50,
+      "durationMs": 300
+    }
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(10, 20, 30, 1.0)",
+    "qss_leaf": "background-color: rgba(10, 20, 30, 1.0)"
+  }
+}

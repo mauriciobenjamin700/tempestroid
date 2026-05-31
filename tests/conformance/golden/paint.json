@@ -1,0 +1,12 @@
+{
+  "compose": {
+    "background": "#0a141e",
+    "color": "#c8d2dc"
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(10, 20, 30, 1.0); color: rgba(200, 210, 220, 1.0)",
+    "qss_leaf": "background-color: rgba(10, 20, 30, 1.0); color: rgba(200, 210, 220, 1.0)"
+  }
+}

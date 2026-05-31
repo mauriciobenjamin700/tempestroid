@@ -210,7 +210,7 @@ Cada fase tem um "feito quando" testável. A ordem dentro de cada trilho é sequ
 
 ### Pós-convergência
 
-- **C — Polimento.** `tempest new` (template), `tempest build` (APK), `tempest run` (instala+logcat). Hot reload com preservação de estado.
+- **C — Polimento.** ✅ `tempest new` (scaffold de projeto rodável), `tempest build` (empacota o app como asset + dirige o Gradle do `android-host`), `tempest run` (build + `adb install` + logcat). Hot reload com preservação de estado via `App.swap_view`: no cockpit Qt `r` (e o save) reaplica por diff preservando o estado e cai para restart limpo se incompatível; `R` reinicia do zero; no device o code-push faz `DeviceApp.reload` preservando o estado on-device. (`build`/`run` no device exigem SDK/NDK Android.)
 - **D — Conformância.** Suite de golden snapshots Qt vs Compose, no CI.
 
 ---
@@ -238,7 +238,7 @@ tempestroid/
 ├── CLAUDE.md
 ├── README.md
 ├── tempestroid-plano.md          # este documento
-├── src/tempestroid/
+├── tempestroid/
 │   ├── __init__.py
 │   ├── style.py                  # Style, Color, Spacing, Edge... (Pydantic)
 │   ├── widgets/                  # Text, Button, Column, Row, Container...

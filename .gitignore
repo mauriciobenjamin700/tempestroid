@@ -66,5 +66,8 @@ android-host/captures/
 # Keep the Gradle wrapper jar tracked (do not ignore it):
 !android-host/gradle/wrapper/gradle-wrapper.jar
 
+# MkDocs build output
+site/
+
 # `tempest build` embeds the user app here as a generated asset (phase C).
 android-host/app/src/main/assets/tempest_app.py

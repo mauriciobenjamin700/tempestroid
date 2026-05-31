@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -66,11 +67,36 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
             modifier = baseModifier(style),
         )
 
-        "Button" -> Button(
-            onClick = { handlerToken(node, "on_click")?.let { onEvent(it, "{}") } },
-            modifier = baseModifier(style),
-        ) {
-            Text(text = node.props["label"] as? String ?: "")
+        "Button" -> {
+            // Map Style → Material button: background/color become the button's
+            // own container/content colors (NOT a Modifier.background box behind
+            // it, which would let the Material default paint over the declared
+            // background), radius → shape, padding → contentPadding.
+            val container = colorOf(style, "background")
+            val content = colorOf(style, "color")
+            val radius = (style["radius"] as? Number)?.toFloat() ?: 0f
+            val colors = if (container != null) {
+                ButtonDefaults.buttonColors(
+                    containerColor = container,
+                    contentColor = content ?: Color.White,
+                )
+            } else {
+                ButtonDefaults.buttonColors()
+            }
+            Button(
+                onClick = { handlerToken(node, "on_click")?.let { onEvent(it, "{}") } },
+                modifier = sizeModifier(style),
+                shape = RoundedCornerShape(radius.dp),
+                colors = colors,
+                contentPadding = edgeOf(style, "padding") ?: ButtonDefaults.ContentPadding,
+            ) {
+                Text(
+                    text = node.props["label"] as? String ?: "",
+                    fontSize = (style["fontSize"] as? Number)?.toFloat()?.sp
+                        ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+                    fontWeight = (style["fontWeight"] as? Number)?.let { FontWeight(it.toInt()) },
+                )
+            }
         }
 
         "Column" -> Column(
@@ -232,6 +258,15 @@ private fun handlerToken(node: TempestNode, prop: String): String? {
     @Suppress("UNCHECKED_CAST")
     val ref = node.props[prop] as? Map<String, Any?> ?: return null
     return ref["\$handler"] as? String
+}
+
+/** Size-only Modifier (width/height) — used by widgets that paint their own
+ *  background, like [Button], so the Style background is not drawn twice. */
+private fun sizeModifier(style: Map<String, Any?>): Modifier {
+    var m: Modifier = Modifier
+    (style["width"] as? Number)?.let { m = m.width(it.toFloat().dp) }
+    (style["height"] as? Number)?.let { m = m.height(it.toFloat().dp) }
+    return m
 }
 
 /** Build the box-model Modifier chain (size → background+radius → padding). */

@@ -1,12 +1,17 @@
 # tempestroid
 
+> 📖 **Documentação / Docs:** site MkDocs bilíngue em [`docs/`](docs/index.md)
+> com seletor **PT-BR / EN-US** no header — rode `uv run mkdocs serve` e abra
+> <http://127.0.0.1:8000> (PT) ou <http://127.0.0.1:8000/en/> (EN). Guia do
+> usuário, arquitetura e referência da API.
+
 Build **native Android apps** in **typed Python**.
 
 You write one declarative, fully typed widget tree (a Pydantic IR). A
 **renderer-agnostic reconciler** diffs it into patches. Two leaf renderers apply
 those patches: **Qt** for the desktop simulator, **Jetpack Compose** for the
-device. The runtime is **async-first**, with an Expo-style dev loop (hot restart
-now, LAN code-push over QR on the roadmap).
+device. The runtime is **async-first**, with an Expo-style dev loop: hot reload
+in the Qt simulator and LAN code-push to a device over QR — both shipping today.
 
 > This is a **framework, not a web service** — no FastAPI, SQLAlchemy, Redis, or
 > HTTP layering. See [`docs/plan.md`](docs/plan.md) for the full design and the
@@ -116,34 +121,47 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`calculator`](examples/calculator/app.py) | Dense nested `Row`/`Column` button grid. |
 | [`stopwatch`](examples/stopwatch/app.py) | Async loop ticking the UI via `asyncio.sleep`. |
 | [`colorpicker`](examples/colorpicker/app.py) | Dynamic `Style` updates (swatches + toggles). |
-| [`form`](examples/form/app.py) | All four value widgets: `Input` / `Checkbox` / `DatePicker` / `FilePicker`. |
+| [`form`](examples/form/app.py) | The value-bearing inputs (`Input` / `Checkbox` / `DatePicker` / `FilePicker`) + their typed change events. |
+| [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
 
-The renderer supports `Text` / `Button` / `Column` / `Row` / `Container` plus the
-value widgets `Input` / `Checkbox` / `DatePicker` / `FilePicker` (with their typed
-change events) — see [`examples/README.md`](examples/README.md).
+The framework and the Qt simulator support the full widget set, including the
+value-bearing inputs and the utility widgets (`Slider` / `Switch` /
+`ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`). The
+device (Compose) renderer renders `Text` / `Button` / `Column` / `Row` /
+`Container` plus the value widgets `Input` / `Checkbox` / `DatePicker` /
+`FilePicker` (with their typed change events); the remaining utility widgets stay
+empty-box on device until the Kotlin host grows the matching cases (see
+[`examples/README.md`](examples/README.md)).
 
 ---
 
 ## CLI
 
 ```bash
+uv run tempest new MyApp                        # scaffold a new app project
 uv run python examples/counter/app.py          # run an app directly in the Qt simulator
-uv run tempest dev examples/counter/app.py     # dev loop: edit + save → hot restart
+uv run tempest dev examples/counter/app.py     # dev loop: edit + save → hot reload (state preserved)
+uv run tempest serve examples/device_counter/app.py  # push to a device over LAN, no APK rebuild
+uv run tempest build MyApp/app.py              # bundle the app into an APK
+uv run tempest run MyApp/app.py                # build + install on a device + stream logs
 uv run tempest spec                            # print the typed contract (widgets/events) as JSON
 uv run tempest --help
 ```
 
-`tempest dev` cockpit commands: `r`/`R` (restart), `s` (status), `q` (quit). It
-also auto-restarts on file save.
+`tempest dev` cockpit commands: `r` (hot reload, state preserved), `R` (hot
+restart, clean state), `s` (raise window), `q` (quit). Saving the file
+hot-reloads; a reload incompatible with the live state falls back to a clean
+restart. `tempest build`/`run` drive the `android-host` Gradle project + `adb`,
+so they need an Android SDK/NDK and a checkout of the host tree.
 
 | Command | Status | Notes |
 |---|---|---|
-| `tempest dev <app>` | ✅ | Simulator + hot restart (needs `qt` extra) |
+| `tempest new <name>` | ✅ | Scaffold a runnable app project |
+| `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra) |
 | `tempest serve <app>` | ✅ | LAN code-push to a device + log relay (phase B5) |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
-| `tempest new <name>` | ✅ | Scaffold a runnable app (phase C) |
-| `tempest build <app>` | ✅ | Embed the app + build an APK that runs it standalone (phase C) |
-| `tempest run <app>` | ✅ | Build, install on a device, and stream logs (phase C) |
+| `tempest build <app>` | ✅ | Bundle an app into an APK (needs Android SDK/NDK) |
+| `tempest run <app>` | ✅ | Build + install on a device + stream logs |
 
 ---
 
@@ -155,30 +173,46 @@ Everything below is importable from the top-level `tempestroid` package.
 
 Frozen Pydantic value objects, diffed by value.
 
-- **`Style`** — the style model (direction, gap, padding, color, font, etc.).
+- **`Style`** — the style model (layout, box model, paint, typography, sizing,
+  effects, animation). Notable fields: `opacity`, `shadow`, `align_self`,
+  `letter_spacing`, `line_height`, `max_lines`, `text_overflow`, `aspect_ratio`.
 - **`Color`** — `Color.from_hex("#101418")`.
 - **`Edge`** — insets; `Edge.all(24.0)`.
-- **`Border`**.
+- **`Border`** (uniform) / **`SideBorder`** (per-side, e.g. a bottom divider).
+- **`Corners`** — per-corner radii for `Style.radius` (e.g. top-rounded sheets).
+- **`Shadow`** — `box-shadow` / elevation (`color` / `blur` / `offset_x` /
+  `offset_y`); Compose maps it to elevation, Qt to a `QGraphicsDropShadowEffect`.
+- **`Gradient`** + **`GradientStop`** — a linear gradient usable wherever a
+  background `Color` is (QSS `qlineargradient` / Compose `Brush`).
+- **`Transition`** — implicit animation (`duration_ms` / `curve` / `delay_ms`):
+  on rebuild the renderer tweens changed visual props instead of snapping
+  (Compose maps it to `animate*AsState`; Qt animation is renderer-imperative).
 - Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
-  **`TextAlign`**, **`FontWeight`**.
+  **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
+  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing).
 
 ### Widgets (`tempestroid.widgets`)
 
 The declarative IR — bare-noun widgets.
 
 - **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**, **`Row`**,
-  **`Container`**.
-- Value-bearing inputs: **`Input`** (text field), **`Checkbox`**,
-  **`DatePicker`**, **`FilePicker`**. Each declares a change handler
-  (`on_change` / `on_select`) that receives the typed event.
-- **`EventHandler`** — zero-argument handler prop wrapper. Value widgets use the
-  typed variants **`TextChangeHandler`**, **`ToggleHandler`**,
-  **`DateChangeHandler`**, **`FileSelectHandler`** (a handler may also be
-  declared zero-argument when the value isn't needed).
+  **`Container`**, **`ScrollView`** (scrollable container).
+- Value-bearing inputs: **`Input`** (text — with `secure` password masking +
+  reveal toggle, regex `pattern`, `keyboard` type, `max_length`), **`TextArea`**
+  (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
+  **`Slider`** (numeric range), **`DatePicker`** (ISO date), **`FilePicker`**
+  (file selection).
+- Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
+  **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
+- Enums: **`KeyboardType`** (text/number/email/phone/url/password),
+  **`ImageFit`** (contain/cover/fill/none).
+- **`EventHandler`** — the typed handler-prop wrapper used by every handler field
+  (`on_click`, `on_change`, `on_select`); sync or `async`, zero- or one-argument.
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 
-- **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`**, **`ToggleEvent`**,
+- **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`** (carries `valid`
+  against the input's `pattern`), **`ToggleEvent`**, **`SlideEvent`**,
   **`DateChangeEvent`**, **`FileSelectEvent`**.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
@@ -254,9 +288,9 @@ Kotlin host routes to capability modules. Verified on device.
 ## Project layout
 
 ```text
-src/tempestroid/
-├── style.py            # Style, Color, Edge, Border + enums (frozen Pydantic)
-├── widgets/            # Widget base, Text/Button/Column/Row/Container + events.py
+tempestroid/
+├── style.py            # Style + value objects (Color/Edge/Border/Corners/Shadow/Gradient/Transition) + enums (frozen Pydantic)
+├── widgets/            # Widget base + layout/inputs/media/indicators widgets + events.py
 ├── core/               # ir.py, reconciler.py, state.py, introspection.py
 ├── renderers/qt/       # renderer, Style→Qt, run_qt, simulator, dev_loop
 ├── renderers/compose/  # Style→Compose translator (device renderer, Python side)
@@ -285,7 +319,8 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | A5 | `tempest dev`: watcher, hot restart, command loop | ✅ |
 | A6 | Typed event contract + introspection | ✅ |
 | B0–B6 | Android runtime: CPython 3.14 arm64, native wheels, Kotlin host, JNI bridge, Compose renderer, LAN code-push, native capabilities | ✅ |
-| C / D | Polish (`new`/`build`/`run`, stateful hot reload) / conformance snapshots | ⬜ |
+| C | Polish: `new`/`build`/`run` + stateful hot reload | ✅ |
+| D | Conformance golden snapshots (Qt vs Compose) | ✅ |
 
 ---
 

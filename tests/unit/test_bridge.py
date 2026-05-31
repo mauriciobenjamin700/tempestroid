@@ -115,3 +115,35 @@ async def test_registry_dispatch_rejects_bad_payload():
     registry.refresh(root)
     with pytest.raises(EventValidationError):
         await registry.dispatch("root:on_click", {"x": "not-a-number"})
+
+
+def _counter_view_b(app: "App[Counter]") -> Widget:
+    def increment() -> None:
+        app.set_state(lambda s: setattr(s, "value", s.value + 1))
+
+    return Column(
+        children=[
+            Text(content=f"NEW: {app.state.value}", key="label"),
+            Button(label="+", on_click=increment, key="inc"),
+        ]
+    )
+
+
+async def test_device_reload_preserves_state_and_patches():
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
+    await device.start()
+    await device.handle_event({"kind": "event", "token": "1:on_click", "payload": {}})
+    await _drain()
+    assert device.app.state.value == 1
+
+    device.reload(_counter_view_b)
+    await _drain()
+    # State survives the reload; a patch reflecting the new view is sent.
+    assert device.app.state.value == 1
+    assert bridge.sent[-1]["kind"] == "patch"
+
+    # Handlers from the reloaded view still work.
+    await device.handle_event({"kind": "event", "token": "1:on_click", "payload": {}})
+    await _drain()
+    assert device.app.state.value == 2
