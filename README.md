@@ -128,7 +128,8 @@ The framework and the Qt simulator support the full widget set, including the
 value-bearing inputs and the utility widgets (`Slider` / `Switch` /
 `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`). The
 device (Compose) renderer renders `Text` / `Button` / `Column` / `Row` /
-`Container` plus the value widgets `Input` / `Checkbox` / `DatePicker` /
+`Container` / `SafeArea` (insetting against the real `WindowInsets.safeDrawing`)
+plus the value widgets `Input` / `Checkbox` / `DatePicker` /
 `FilePicker` (with their typed change events); the remaining utility widgets stay
 empty-box on device until the Kotlin host grows the matching cases (see
 [`examples/README.md`](examples/README.md)).
@@ -196,7 +197,9 @@ Frozen Pydantic value objects, diffed by value.
 The declarative IR — bare-noun widgets.
 
 - **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**, **`Row`**,
-  **`Container`**, **`ScrollView`** (scrollable container).
+  **`Container`**, **`ScrollView`** (scrollable container), **`SafeArea`**
+  (insets its child past the status/navigation bars + notch; `edges` selects
+  which sides, default all — `SafeAreaEdge` enum).
 - Value-bearing inputs: **`Input`** (text — with `secure` password masking +
   reveal toggle, regex `pattern`, `keyboard` type, `max_length`), **`TextArea`**
   (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),

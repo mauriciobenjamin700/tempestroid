@@ -68,6 +68,7 @@ from tempestroid.renderers.qt.style_translator import (
     to_qss,
 )
 from tempestroid.style import (
+    Edge,
     JustifyContent,
     Shadow,
     Style,
@@ -86,7 +87,21 @@ from tempestroid.widgets import (
 
 __all__ = ["QtRenderer"]
 
-_CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView"})
+_CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView", "SafeArea"})
+
+#: Approximate Android system-bar insets (logical px) the desktop simulator
+#: reserves for a ``SafeArea``. The device queries the real
+#: ``WindowInsets.safeDrawing`` (status bar, navigation bar, display cutout); the
+#: simulator has no system bars, so it stands in with typical status-bar (top)
+#: and gesture/nav-bar (bottom) heights and leaves the sides flush.
+_SAFE_AREA_INSETS: dict[str, float] = {
+    "top": 24.0,
+    "right": 0.0,
+    "bottom": 24.0,
+    "left": 0.0,
+}
+#: Fallback edge set when a ``SafeArea`` carries no explicit ``edges`` prop.
+_SAFE_AREA_EDGES_ALL: frozenset[str] = frozenset({"top", "right", "bottom", "left"})
 _TOGGLE_TYPES = frozenset({"Checkbox", "Switch"})
 _DATE_FORMAT = "yyyy-MM-dd"
 #: Qt's "no maximum" sentinel for widget sizes (``QWIDGETSIZE_MAX``); resetting a
@@ -492,6 +507,7 @@ class QtRenderer:
             self._host_layout.insertWidget(0, new.widget)
             self._root = new
             if old is not None:
+                self._purge_connections(old)
                 self._discard(old.widget)
             return
         parent = self._at(patch.path[:-1])
@@ -503,6 +519,7 @@ class QtRenderer:
         layout.insertWidget(index, new.widget, self._stretch(new))
         self._place_alignment(parent, new)
         parent.children[index] = new
+        self._purge_connections(old)
         self._discard(old.widget)
         self._sync_main_axis(parent)
 
@@ -531,6 +548,7 @@ class QtRenderer:
         parent = self._at(patch.path)
         child = parent.children.pop(patch.index)
         self._require_layout(parent).removeWidget(child.widget)
+        self._purge_connections(child)
         self._discard(child.widget)
         self._sync_main_axis(parent)
 
@@ -668,6 +686,12 @@ class QtRenderer:
         node.widget.setStyleSheet(to_qss(style, with_padding=not is_container))
         if node.layout is not None:
             self._apply_container_layout(node.layout, node.type, style)
+            if node.type == "SafeArea":
+                self._apply_safe_area(
+                    node.layout,
+                    style,
+                    cast("list[Any] | None", node.props.get("edges")),
+                )
         if node.type == "Text":
             label = cast("_TextLabel", node.widget)
             label.setText(cast("str", node.props.get("content", "")))
@@ -851,6 +875,41 @@ class QtRenderer:
         )
         if alignment is not None:
             layout.setAlignment(alignment)
+
+    @staticmethod
+    def _apply_safe_area(
+        layout: QBoxLayout,
+        style: Style | None,
+        edges: list[Any] | None,
+    ) -> None:
+        """Reserve approximate system-bar insets on a ``SafeArea``'s layout.
+
+        Overrides the container margins with ``padding + inset`` on each selected
+        edge, so the simulator keeps the child clear of where the status/nav bars
+        would sit on a device (the device renderer uses the real
+        ``WindowInsets.safeDrawing``). Idempotent.
+
+        Args:
+            layout: The safe-area container's box layout.
+            style: The container's style (its ``padding`` is added under the inset).
+            edges: The protected edges (edge strings/enums); ``None`` means all.
+        """
+        base = Edge()
+        if style is not None and style.padding is not None:
+            base = style.padding
+        selected = (
+            {str(edge) for edge in edges} if edges is not None else _SAFE_AREA_EDGES_ALL
+        )
+
+        def inset(side: str) -> float:
+            return _SAFE_AREA_INSETS[side] if side in selected else 0.0
+
+        layout.setContentsMargins(
+            int(base.left + inset("left")),
+            int(base.top + inset("top")),
+            int(base.right + inset("right")),
+            int(base.bottom + inset("bottom")),
+        )
 
     @staticmethod
     def _strip_spacers(layout: QBoxLayout) -> None:
@@ -1319,6 +1378,26 @@ class QtRenderer:
         )
         if flag is not None:
             parent.layout.setAlignment(child.widget, flag)
+
+    def _purge_connections(self, rendered: _Rendered) -> None:
+        """Drop tracked signal connections for a discarded subtree.
+
+        The click/value/eye registries are keyed by ``id(widget)``. ``deleteLater``
+        only *schedules* a widget's destruction, so without this the entries
+        outlive the widget — a slow leak across remove/replace churn, and a
+        correctness hazard once CPython recycles the ``id`` for a fresh widget.
+        Walks the whole ``_Rendered`` subtree since handler-bearing widgets may
+        sit anywhere below the discarded node.
+
+        Args:
+            rendered: The root of the rendered subtree being discarded.
+        """
+        widget_id = id(rendered.widget)
+        self._click_conns.pop(widget_id, None)
+        self._value_conns.pop(widget_id, None)
+        self._eye_actions.pop(widget_id, None)
+        for child in rendered.children:
+            self._purge_connections(child)
 
     @staticmethod
     def _discard(widget: QWidget) -> None:

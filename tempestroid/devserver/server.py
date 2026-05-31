@@ -23,6 +23,10 @@ from typing import Any
 
 __all__ = ["DevServer", "source_hash"]
 
+#: Upper bound on a relayed ``/log`` body (bytes). Caps the memory a single LAN
+#: peer can make the dev server allocate from an attacker-chosen ``Content-Length``.
+_MAX_LOG_BODY: int = 1 << 20  # 1 MiB
+
 
 def source_hash(source: str) -> str:
     """Return the stable content hash used to detect source changes.
@@ -115,7 +119,16 @@ class DevServer:
                 if self.path != "/log":
                     self.send_error(404)
                     return
-                length = int(self.headers.get("Content-Length", "0"))
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    self.send_error(400, "invalid Content-Length")
+                    return
+                # Reject oversized bodies before allocating, so a LAN peer can
+                # not exhaust the dev machine's memory via a huge Content-Length.
+                if length < 0 or length > _MAX_LOG_BODY:
+                    self.send_error(413, "log body too large")
+                    return
                 body = self.rfile.read(length).decode("utf-8", "replace")
                 server._log(f"[device] {body}")
                 self.send_response(204)

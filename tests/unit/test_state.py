@@ -109,3 +109,35 @@ def test_swap_view_before_start_raises():
     app: App[Counter] = App(Counter(), _view, apply_patches=lambda _p: None)
     with pytest.raises(RuntimeError):
         app.swap_view(_view_b)
+
+
+class _BrokenLoop:
+    """A stand-in loop whose scheduling always fails (e.g. a closed loop)."""
+
+    def call_soon(self, *_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("loop is closed")
+
+
+class _RecordingLoop:
+    """A stand-in loop that records scheduled callbacks instead of running them."""
+
+    def __init__(self) -> None:
+        self.scheduled: list[object] = []
+
+    def call_soon(self, callback: object, *_args: object, **_kwargs: object) -> None:
+        self.scheduled.append(callback)
+
+
+def test_request_rebuild_resets_flag_when_scheduling_fails():
+    # If call_soon raises, the coalescing flag must be cleared so the app is not
+    # wedged: a later request (on a healthy loop) must still schedule a rebuild.
+    app: App[Counter] = App(Counter(), _view, apply_patches=lambda _p: None)
+    app.start()
+    app._loop = lambda: _BrokenLoop()  # type: ignore[method-assign, return-value]
+    with pytest.raises(RuntimeError):
+        app.request_rebuild()
+    # Recover the loop; if the flag were stuck True this would no-op.
+    recording = _RecordingLoop()
+    app._loop = lambda: recording  # type: ignore[method-assign, return-value]
+    app.request_rebuild()
+    assert len(recording.scheduled) == 1

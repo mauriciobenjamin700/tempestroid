@@ -28,7 +28,9 @@ See the [styles guide](../guia/estilos.md).
 The declarative IR — bare-noun widgets.
 
 - Layout/content: **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**,
-  **`Row`**, **`Container`**, **`ScrollView`**.
+  **`Row`**, **`Container`**, **`ScrollView`**, **`SafeArea`** (insets its child
+  past the status/navigation bars + notch; `edges`/**`SafeAreaEdge`** selects the
+  sides, default all).
 - Value-bearing inputs: **`Input`** (text), **`TextArea`** (multiline),
   **`Checkbox`**, **`Switch`** (booleans), **`Slider`** (float), **`DatePicker`**
   (ISO date), **`FilePicker`** (file selection).

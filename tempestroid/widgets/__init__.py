@@ -38,7 +38,14 @@ from tempestroid.widgets.inputs import (
     Switch,
     TextArea,
 )
-from tempestroid.widgets.layout import Column, Container, Row, ScrollView
+from tempestroid.widgets.layout import (
+    Column,
+    Container,
+    Row,
+    SafeArea,
+    SafeAreaEdge,
+    ScrollView,
+)
 from tempestroid.widgets.media import Icon, Image, ImageFit
 from tempestroid.widgets.text import Text
 
@@ -57,6 +64,8 @@ __all__ = [
     "Row",
     "Container",
     "ScrollView",
+    "SafeArea",
+    "SafeAreaEdge",
     "Input",
     "TextArea",
     "Checkbox",

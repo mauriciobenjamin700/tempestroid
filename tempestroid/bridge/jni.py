@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
@@ -25,6 +26,8 @@ from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_res
 from tempestroid.widgets import Widget
 
 __all__ = ["JniBridge", "run_device", "run_device_file"]
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 S = TypeVar("S")
 
@@ -109,7 +112,15 @@ def run_device(state: S, view: Callable[[App[S]], Widget]) -> None:
             token: The handler token addressed by the event.
             payload_json: The raw JSON payload (``""`` for none).
         """
-        payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
+        # A native callback must never raise back into JNI: a malformed payload
+        # is dropped (logged) instead of crashing the host on the UI thread.
+        try:
+            payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
+        except json.JSONDecodeError:
+            _LOGGER.exception(
+                "dropping event for token %r: invalid JSON payload", token
+            )
+            return
         # Native request/response results ride the same event channel under a
         # reserved token, so they need no extra JNI entry point. Route them to
         # the pending-future resolver instead of the widget handler registry.
