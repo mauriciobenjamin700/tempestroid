@@ -68,6 +68,7 @@ from tempestroid.renderers.qt.style_translator import (
     to_qss,
 )
 from tempestroid.style import (
+    Edge,
     JustifyContent,
     Shadow,
     Style,
@@ -86,7 +87,21 @@ from tempestroid.widgets import (
 
 __all__ = ["QtRenderer"]
 
-_CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView"})
+_CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView", "SafeArea"})
+
+#: Approximate Android system-bar insets (logical px) the desktop simulator
+#: reserves for a ``SafeArea``. The device queries the real
+#: ``WindowInsets.safeDrawing`` (status bar, navigation bar, display cutout); the
+#: simulator has no system bars, so it stands in with typical status-bar (top)
+#: and gesture/nav-bar (bottom) heights and leaves the sides flush.
+_SAFE_AREA_INSETS: dict[str, float] = {
+    "top": 24.0,
+    "right": 0.0,
+    "bottom": 24.0,
+    "left": 0.0,
+}
+#: Fallback edge set when a ``SafeArea`` carries no explicit ``edges`` prop.
+_SAFE_AREA_EDGES_ALL: frozenset[str] = frozenset({"top", "right", "bottom", "left"})
 _TOGGLE_TYPES = frozenset({"Checkbox", "Switch"})
 _DATE_FORMAT = "yyyy-MM-dd"
 #: Qt's "no maximum" sentinel for widget sizes (``QWIDGETSIZE_MAX``); resetting a
@@ -671,6 +686,12 @@ class QtRenderer:
         node.widget.setStyleSheet(to_qss(style, with_padding=not is_container))
         if node.layout is not None:
             self._apply_container_layout(node.layout, node.type, style)
+            if node.type == "SafeArea":
+                self._apply_safe_area(
+                    node.layout,
+                    style,
+                    cast("list[Any] | None", node.props.get("edges")),
+                )
         if node.type == "Text":
             label = cast("_TextLabel", node.widget)
             label.setText(cast("str", node.props.get("content", "")))
@@ -854,6 +875,41 @@ class QtRenderer:
         )
         if alignment is not None:
             layout.setAlignment(alignment)
+
+    @staticmethod
+    def _apply_safe_area(
+        layout: QBoxLayout,
+        style: Style | None,
+        edges: list[Any] | None,
+    ) -> None:
+        """Reserve approximate system-bar insets on a ``SafeArea``'s layout.
+
+        Overrides the container margins with ``padding + inset`` on each selected
+        edge, so the simulator keeps the child clear of where the status/nav bars
+        would sit on a device (the device renderer uses the real
+        ``WindowInsets.safeDrawing``). Idempotent.
+
+        Args:
+            layout: The safe-area container's box layout.
+            style: The container's style (its ``padding`` is added under the inset).
+            edges: The protected edges (edge strings/enums); ``None`` means all.
+        """
+        base = Edge()
+        if style is not None and style.padding is not None:
+            base = style.padding
+        selected = (
+            {str(edge) for edge in edges} if edges is not None else _SAFE_AREA_EDGES_ALL
+        )
+
+        def inset(side: str) -> float:
+            return _SAFE_AREA_INSETS[side] if side in selected else 0.0
+
+        layout.setContentsMargins(
+            int(base.left + inset("left")),
+            int(base.top + inset("top")),
+            int(base.right + inset("right")),
+            int(base.bottom + inset("bottom")),
+        )
 
     @staticmethod
     def _strip_spacers(layout: QBoxLayout) -> None:
