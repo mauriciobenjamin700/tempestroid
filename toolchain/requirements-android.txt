@@ -1,0 +1,12 @@
+# Python deps to ship inside the Android host's site-packages.
+# Pure-Python ones install straight from PyPI; pydantic-core is cross-compiled
+# by 01_build_wheels.sh (no prebuilt Android wheel exists).
+#
+# Pin exact versions when the runtime stabilizes.
+
+pydantic>=2.7        # core model (Trilho A reuses it)
+pydantic-core        # Rust — built locally via cibuildwheel (see 01_build_wheels.sh)
+httpx>=0.27          # async HTTP (plan §3.5: HTTPX without fear)
+
+# The framework itself (Trilho A core, Qt-free) is added as the app's own
+# site-packages by the Gradle assets task — not listed here.
