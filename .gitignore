@@ -75,3 +75,6 @@ android-host/app/src/main/assets/tempest_app.py
 # Bundled prebuilt host APK (staged from `make apk` output via `make stage-host`).
 # Shipped in the wheel via [tool.hatch.build] artifacts; too big to track in git.
 tempestroid/_assets/*.apk
+
+# Runtime lock for scheduled tasks — per-session (sessionId/pid), not source.
+.claude/scheduled_tasks.lock
