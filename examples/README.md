@@ -24,22 +24,28 @@ only ever touches `make_state` / `view`.
 | App | What it shows | Widgets / patches exercised |
 |---|---|---|
 | [`counter`](counter/app.py) | The basics: sync **and** `async` handlers. | `Text`, `Button`, `Row`/`Column`; `update`. |
-| [`todo`](todo/app.py) | Tap-driven list (no text input yet — tasks come from a fixed pool). | Stable-key list; `insert` (add), `remove` (clear), `update` (toggle). |
+| [`todo`](todo/app.py) | Type a task into the `Input`, tap to add/toggle/clear. | `Input` (`TextChangeEvent`); `insert` / `remove` / `update`. |
 | [`calculator`](calculator/app.py) | Dense button grid as the only input. | Nested `Row`/`Column`, 16 keyed buttons; `update` on the display. |
 | [`stopwatch`](stopwatch/app.py) | Async-first loop: a coroutine handler ticks via `asyncio.sleep` while the UI stays responsive. | Coalesced rebuilds driven off the loop; `update`. |
 | [`colorpicker`](colorpicker/app.py) | Dynamic `Style`: swatches re-color a live preview; toggles re-style its text. | `background` / `font_size` / `font_weight` updates through the diff. |
+| [`form`](form/app.py) | All four value widgets feeding a live summary. | `Input` / `Checkbox` / `DatePicker` / `FilePicker` + their typed change events. |
 | [`device_counter`](device_counter/app.py) | Minimal device-only counter (no Qt import) for the code-push path. | Same contract, Qt-free. |
 
 ## Constraints (current widget set)
 
-The device renderer supports **`Text` / `Button` / `Column` / `Row` / `Container`**
-and **`on_click`** only — there is no text-input, date-picker, or file-picker
-widget yet (planned framework evolution). So the gallery is **button-driven**:
-the todo list adds from a preset pool rather than from typed text, and the
-calculator uses its keypad as the input surface. Styles map cleanly to Compose
-for `padding` / `gap` / `background` / `radius` / `color` / `font_size` /
-`font_weight` / `text_align` / `arrangement` / `alignment`; `margin`, `border`,
-and `grow` are not wired in the device renderer yet and degrade to the default.
+The renderer supports **`Text` / `Button` / `Column` / `Row` / `Container`** plus
+the value widgets **`Input` / `Checkbox` / `DatePicker` / `FilePicker`**. Value
+widgets carry a typed change event — `Input.on_change` (`TextChangeEvent`),
+`Checkbox.on_change` (`ToggleEvent`), `DatePicker.on_change` (`DateChangeEvent`),
+`FilePicker.on_select` (`FileSelectEvent`) — and the bridge passes the validated
+event to any handler that accepts a positional argument (declare it
+zero-argument to ignore the value). The text field is **controlled**: its value
+lives in Python state, so each edit round-trips through `on_change`.
+
+Styles map cleanly to Compose for `padding` / `gap` / `background` / `radius` /
+`color` / `font_size` / `font_weight` / `text_align` / `arrangement` /
+`alignment`; `margin`, `border`, and `grow` are not wired in the device renderer
+yet and degrade to the default.
 
 > **Tip on handlers:** rebuilds compare handler props by identity, so a fresh
 > `lambda` each build reads as a prop change (a known A2/A4 limitation). The

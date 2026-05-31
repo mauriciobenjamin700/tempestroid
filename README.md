@@ -112,14 +112,15 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | App | What it shows |
 |---|---|
 | [`counter`](examples/counter/app.py) | Sync + `async` handlers, the basics. |
-| [`todo`](examples/todo/app.py) | Tap-driven list — `insert` / `remove` / `update` patches. |
+| [`todo`](examples/todo/app.py) | Type-to-add list — `Input` + `insert` / `remove` / `update` patches. |
 | [`calculator`](examples/calculator/app.py) | Dense nested `Row`/`Column` button grid. |
 | [`stopwatch`](examples/stopwatch/app.py) | Async loop ticking the UI via `asyncio.sleep`. |
 | [`colorpicker`](examples/colorpicker/app.py) | Dynamic `Style` updates (swatches + toggles). |
+| [`form`](examples/form/app.py) | All four value widgets: `Input` / `Checkbox` / `DatePicker` / `FilePicker`. |
 
-The device renderer currently supports `Text` / `Button` / `Column` / `Row` /
-`Container` and `on_click`, so the gallery is button-driven (no text-input,
-date-picker, or file-picker widgets yet — see [`examples/README.md`](examples/README.md)).
+The renderer supports `Text` / `Button` / `Column` / `Row` / `Container` plus the
+value widgets `Input` / `Checkbox` / `DatePicker` / `FilePicker` (with their typed
+change events) — see [`examples/README.md`](examples/README.md).
 
 ---
 
@@ -140,9 +141,9 @@ also auto-restarts on file save.
 | `tempest dev <app>` | ✅ | Simulator + hot restart (needs `qt` extra) |
 | `tempest serve <app>` | ✅ | LAN code-push to a device + log relay (phase B5) |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
-| `tempest new` | ⬜ | Scaffold an app (phase C) |
-| `tempest build` | ⬜ | Release APK (phase C) |
-| `tempest run` | ⬜ | Install on device + stream logs (phase C) |
+| `tempest new <name>` | ✅ | Scaffold a runnable app (phase C) |
+| `tempest build <app>` | ✅ | Embed the app + build an APK that runs it standalone (phase C) |
+| `tempest run <app>` | ✅ | Build, install on a device, and stream logs (phase C) |
 
 ---
 
@@ -167,14 +168,22 @@ The declarative IR — bare-noun widgets.
 
 - **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**, **`Row`**,
   **`Container`**.
-- **`EventHandler`** — typed handler prop wrapper.
+- Value-bearing inputs: **`Input`** (text field), **`Checkbox`**,
+  **`DatePicker`**, **`FilePicker`**. Each declares a change handler
+  (`on_change` / `on_select`) that receives the typed event.
+- **`EventHandler`** — zero-argument handler prop wrapper. Value widgets use the
+  typed variants **`TextChangeHandler`**, **`ToggleHandler`**,
+  **`DateChangeHandler`**, **`FileSelectHandler`** (a handler may also be
+  declared zero-argument when the value isn't needed).
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 
-- **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`**.
+- **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`**, **`ToggleEvent`**,
+  **`DateChangeEvent`**, **`FileSelectEvent`**.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
-  errors. This is the Python↔Kotlin contract for the device bridge.
+  errors. This is the Python↔Kotlin contract for the device bridge. The bridge
+  passes the validated event to handlers that accept a positional argument.
 
 ### Core — IR + reconciler (`tempestroid.core`)
 
