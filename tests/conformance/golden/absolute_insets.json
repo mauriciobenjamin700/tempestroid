@@ -1,0 +1,15 @@
+{
+  "compose": {
+    "bottom": 4.0,
+    "left": 0.0,
+    "position": "absolute",
+    "right": 8.0,
+    "top": 0.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

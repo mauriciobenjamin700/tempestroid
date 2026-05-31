@@ -9,7 +9,10 @@ from tempestroid.widgets.base import (
     DateChangeHandler,
     EventHandler,
     FileSelectHandler,
+    LongPressHandler,
     SlideHandler,
+    SwipeHandler,
+    TapHandler,
     TextChangeHandler,
     ToggleHandler,
     Widget,
@@ -21,12 +24,16 @@ from tempestroid.widgets.events import (
     Event,
     EventValidationError,
     FileSelectEvent,
+    LongPressEvent,
     SlideEvent,
+    SwipeDirection,
+    SwipeEvent,
     TapEvent,
     TextChangeEvent,
     ToggleEvent,
     parse_event,
 )
+from tempestroid.widgets.gestures import GestureDetector
 from tempestroid.widgets.indicators import ProgressBar, Spinner
 from tempestroid.widgets.inputs import (
     Checkbox,
@@ -38,7 +45,7 @@ from tempestroid.widgets.inputs import (
     Switch,
     TextArea,
 )
-from tempestroid.widgets.layout import Column, Container, Row, ScrollView
+from tempestroid.widgets.layout import Column, Container, Row, ScrollView, Stack
 from tempestroid.widgets.media import Icon, Image, ImageFit
 from tempestroid.widgets.text import Text
 
@@ -49,6 +56,9 @@ __all__ = [
     "SlideHandler",
     "DateChangeHandler",
     "FileSelectHandler",
+    "TapHandler",
+    "LongPressHandler",
+    "SwipeHandler",
     "handler_accepts_event",
     "Widget",
     "Text",
@@ -57,6 +67,8 @@ __all__ = [
     "Row",
     "Container",
     "ScrollView",
+    "Stack",
+    "GestureDetector",
     "Input",
     "TextArea",
     "Checkbox",
@@ -77,6 +89,9 @@ __all__ = [
     "SlideEvent",
     "DateChangeEvent",
     "FileSelectEvent",
+    "SwipeDirection",
+    "LongPressEvent",
+    "SwipeEvent",
     "EventValidationError",
     "parse_event",
 ]

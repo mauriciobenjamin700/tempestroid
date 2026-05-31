@@ -1,0 +1,11 @@
+{
+  "compose": {
+    "stackAlign": "bottomEnd"
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

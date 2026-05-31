@@ -26,7 +26,9 @@ from tempestroid.style import (
     Gradient,
     GradientDirection,
     JustifyContent,
+    Position,
     SideBorder,
+    StackAlign,
     Style,
     TextAlign,
     TextDecoration,
@@ -74,6 +76,21 @@ _TEXT_DECORATION: dict[TextDecoration, str] = {
 _TEXT_OVERFLOW: dict[TextOverflow, str] = {
     TextOverflow.CLIP: "clip",
     TextOverflow.ELLIPSIS: "ellipsis",
+}
+_STACK_ALIGN: dict[StackAlign, str] = {
+    StackAlign.TOP_START: "topStart",
+    StackAlign.TOP_CENTER: "topCenter",
+    StackAlign.TOP_END: "topEnd",
+    StackAlign.CENTER_START: "centerStart",
+    StackAlign.CENTER: "center",
+    StackAlign.CENTER_END: "centerEnd",
+    StackAlign.BOTTOM_START: "bottomStart",
+    StackAlign.BOTTOM_CENTER: "bottomCenter",
+    StackAlign.BOTTOM_END: "bottomEnd",
+}
+_POSITION: dict[Position, str] = {
+    Position.STATIC: "static",
+    Position.ABSOLUTE: "absolute",
 }
 _GRADIENT_DIRECTION: dict[GradientDirection, str] = {
     GradientDirection.TOP_BOTTOM: "topBottom",
@@ -210,6 +227,18 @@ def to_compose(style: Style | None) -> dict[str, Any]:
         spec["maxLines"] = style.max_lines
     if style.text_overflow is not None:
         spec["textOverflow"] = _TEXT_OVERFLOW[style.text_overflow]
+    if style.stack_align is not None:
+        spec["stackAlign"] = _STACK_ALIGN[style.stack_align]
+    if style.position is not None:
+        spec["position"] = _POSITION[style.position]
+    for name, value in (
+        ("top", style.top),
+        ("right", style.right),
+        ("bottom", style.bottom),
+        ("left", style.left),
+    ):
+        if value is not None:
+            spec[name] = value
     for name, value in (
         ("width", style.width),
         ("height", style.height),

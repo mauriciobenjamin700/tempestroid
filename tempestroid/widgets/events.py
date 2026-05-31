@@ -11,6 +11,7 @@ turns a raw payload into a typed event or raises a structured error.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from enum import StrEnum
 from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -23,6 +24,9 @@ __all__ = [
     "SlideEvent",
     "DateChangeEvent",
     "FileSelectEvent",
+    "SwipeDirection",
+    "LongPressEvent",
+    "SwipeEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -100,6 +104,41 @@ class FileSelectEvent(Event):
 
     uri: str
     name: str | None = None
+
+
+class SwipeDirection(StrEnum):
+    """The cardinal direction of a swipe gesture."""
+
+    LEFT = "left"
+    RIGHT = "right"
+    UP = "up"
+    DOWN = "down"
+
+
+class LongPressEvent(Event):
+    """A press held past the long-press threshold.
+
+    Attributes:
+        x: Optional x position of the press, in logical pixels.
+        y: Optional y position of the press, in logical pixels.
+    """
+
+    x: float | None = None
+    y: float | None = None
+
+
+class SwipeEvent(Event):
+    """A directional swipe (a press-drag-release past the distance threshold).
+
+    Attributes:
+        direction: The dominant cardinal direction of the swipe.
+        dx: Total horizontal travel from press to release, in logical pixels.
+        dy: Total vertical travel from press to release, in logical pixels.
+    """
+
+    direction: SwipeDirection
+    dx: float = 0.0
+    dy: float = 0.0
 
 
 E = TypeVar("E", bound=Event)
