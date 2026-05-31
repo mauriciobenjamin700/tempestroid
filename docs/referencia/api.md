@@ -29,6 +29,8 @@ A IR declarativa — widgets como substantivos.
 
 - Layout/conteúdo: **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**,
   **`Row`**, **`Container`**, **`ScrollView`**.
+- **`Component`** (base) — widget composto que se reduz a uma árvore de
+  primitivos via `render()`; o reconciliador o expande antes do *diff*.
 - Inputs com valor: **`Input`** (texto), **`TextArea`** (multilinha),
   **`Checkbox`**, **`Switch`** (booleanos), **`Slider`** (float), **`DatePicker`**
   (data ISO), **`FilePicker`** (seleção de arquivo).
@@ -37,6 +39,22 @@ A IR declarativa — widgets como substantivos.
 - **`EventHandler`** — wrapper tipado de prop de *handler*.
 
 Veja o [guia de widgets](../guia/widgets.md).
+
+## Componentes (`tempestroid.components`)
+
+Blocos de construção reutilizáveis — cada um um **`Component`** que se reduz a
+widgets primitivos, então funcionam nos dois renderizadores (Qt e Compose) sem
+mudança alguma de renderizador e são prontos para o dispositivo. Todo componente
+aceita um `style` opcional mesclado sobre o padrão via **`merge_style`**.
+
+- **`AppBar`** — barra superior: `leading` opcional, `title` e `actions` à direita.
+- **`Header`** / **`Footer`** — faixa de cabeçalho (título + subtítulo opcional) e
+  barra inferior centralizada com `children` arbitrários.
+- **`Sidebar`** — coluna lateral de largura fixa (`width`) com `children`.
+- **`Scaffold`** — moldura de página empilhando `app_bar`, um `body` que cresce e
+  um `bottom_bar` opcional (`scroll=True` embrulha o corpo num `ScrollView`).
+- **`NavBar`** — barra de navegação/abas selecionável: rótulos `items`, índice
+  `active` e *callback* `on_select(index)` (generaliza o exemplo `tabs`).
 
 ## Eventos (`tempestroid.widgets`) — contrato de fronteira tipado
 

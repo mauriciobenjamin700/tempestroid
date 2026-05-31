@@ -29,6 +29,8 @@ The declarative IR — bare-noun widgets.
 
 - Layout/content: **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**,
   **`Row`**, **`Container`**, **`ScrollView`**.
+- **`Component`** (base) — a composite widget that lowers to a primitive tree via
+  `render()`; the reconciler expands it before diffing.
 - Value-bearing inputs: **`Input`** (text), **`TextArea`** (multiline),
   **`Checkbox`**, **`Switch`** (booleans), **`Slider`** (float), **`DatePicker`**
   (ISO date), **`FilePicker`** (file selection).
@@ -37,6 +39,22 @@ The declarative IR — bare-noun widgets.
 - **`EventHandler`** — typed handler-prop wrapper.
 
 See the [widgets guide](../guia/widgets.md).
+
+## Components (`tempestroid.components`)
+
+Reusable building blocks — each a **`Component`** that lowers to primitive
+widgets, so they work in both renderers (Qt and Compose) with no renderer changes
+and are device-ready. Every component takes an optional `style` merged over its
+default via **`merge_style`**.
+
+- **`AppBar`** — top bar: optional `leading`, `title` and trailing `actions`.
+- **`Header`** / **`Footer`** — header band (title + optional subtitle) and a
+  centered bottom bar holding arbitrary `children`.
+- **`Sidebar`** — fixed-`width` lateral column of `children`.
+- **`Scaffold`** — page frame stacking `app_bar`, a growing `body` and an
+  optional `bottom_bar` (`scroll=True` wraps the body in a `ScrollView`).
+- **`NavBar`** — selectable navigation/tab bar: `items` labels, an `active` index
+  and an `on_select(index)` callback (generalises the `tabs` example).
 
 ## Events (`tempestroid.widgets`) — typed boundary contract
 

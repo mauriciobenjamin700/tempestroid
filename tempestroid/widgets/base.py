@@ -33,6 +33,7 @@ __all__ = [
     "DateChangeHandler",
     "FileSelectHandler",
     "Widget",
+    "Component",
     "handler_accepts_event",
 ]
 
@@ -168,3 +169,36 @@ class Widget(BaseModel):
             The ordered child widgets (empty for leaf nodes).
         """
         return []
+
+
+class Component(Widget):
+    """A composite widget that lowers to a primitive widget tree.
+
+    A component is *not* part of the serialized IR. The reconciler expands it via
+    :meth:`render` into primitive widgets (``Text`` / ``Row`` / ``Column`` /
+    ``Container`` / inputs / …) **before** diffing, so neither leaf renderer (Qt
+    or Compose) ever sees a component — only the tree it produces. This keeps
+    higher-level, reusable building blocks (app bars, scaffolds, navigation bars)
+    fully renderer-agnostic and device-ready: they work anywhere a primitive
+    works, with zero renderer changes.
+
+    Subclasses declare their inputs as Pydantic fields and implement
+    :meth:`render`; they may read ``self.style`` / ``self.key`` and fold them into
+    the returned tree. ``render`` runs on the same thread as ``build`` (desktop
+    *and* device), so it may close over plain Python callables (e.g. a navigation
+    item's ``on_select``) and wire them into the primitives it emits.
+    """
+
+    def render(self) -> Widget:
+        """Lower this component into a primitive widget tree.
+
+        Returns:
+            The widget tree this component expands to (may itself contain further
+            components, which are expanded recursively).
+
+        Raises:
+            NotImplementedError: If a subclass does not implement it.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement render()"
+        )

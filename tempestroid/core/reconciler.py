@@ -31,7 +31,7 @@ from tempestroid.core.ir import (
     Replace,
     Update,
 )
-from tempestroid.widgets import Widget
+from tempestroid.widgets import Component, Widget
 
 __all__ = ["build", "diff"]
 
@@ -39,8 +39,11 @@ __all__ = ["build", "diff"]
 def build(widget: Widget) -> Node:
     """Normalize a widget tree into an IR node tree.
 
-    Children come from :meth:`Widget.child_nodes`; everything else on the widget
-    (except ``key`` and the declared child slots) becomes a prop.
+    A :class:`Component` is expanded first — replaced by the primitive tree its
+    :meth:`Component.render` returns — so the IR (and therefore both renderers)
+    only ever contains primitive widgets. Children come from
+    :meth:`Widget.child_nodes`; everything else on the widget (except ``key`` and
+    the declared child slots) becomes a prop.
 
     Args:
         widget: The root widget to normalize.
@@ -48,6 +51,8 @@ def build(widget: Widget) -> Node:
     Returns:
         The root IR node.
     """
+    if isinstance(widget, Component):
+        return build(widget.render())
     children = [build(child) for child in widget.child_nodes()]
     skip = widget.child_field_names
     props: dict[str, Any] = {}

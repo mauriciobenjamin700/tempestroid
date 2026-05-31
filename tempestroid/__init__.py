@@ -20,6 +20,15 @@ from tempestroid.bridge import (
     serialize_node,
     serialize_patch,
 )
+from tempestroid.components import (
+    AppBar,
+    Footer,
+    Header,
+    NavBar,
+    Scaffold,
+    Sidebar,
+    merge_style,
+)
 from tempestroid.core import (
     App,
     Insert,
@@ -70,6 +79,7 @@ from tempestroid.widgets import (
     Button,
     Checkbox,
     Column,
+    Component,
     Container,
     DateChangeEvent,
     DatePicker,
@@ -129,6 +139,7 @@ __all__ = [
     "Curve",
     # Widgets
     "Widget",
+    "Component",
     "Text",
     "Button",
     "Column",
@@ -149,6 +160,14 @@ __all__ = [
     "ProgressBar",
     "Spinner",
     "EventHandler",
+    # Composite components (lower to primitives via Component.render)
+    "AppBar",
+    "Header",
+    "Footer",
+    "Sidebar",
+    "Scaffold",
+    "NavBar",
+    "merge_style",
     # Events (typed boundary contract)
     "Event",
     "TapEvent",

@@ -197,6 +197,8 @@ The declarative IR — bare-noun widgets.
 
 - **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**, **`Row`**,
   **`Container`**, **`ScrollView`** (scrollable container).
+- **`Component`** (base) — a composite widget that lowers to a primitive tree via
+  `render()`; the reconciler expands it before diffing, so renderers never see it.
 - Value-bearing inputs: **`Input`** (text — with `secure` password masking +
   reveal toggle, regex `pattern`, `keyboard` type, `max_length`), **`TextArea`**
   (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
@@ -208,6 +210,22 @@ The declarative IR — bare-noun widgets.
   **`ImageFit`** (contain/cover/fill/none).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
   (`on_click`, `on_change`, `on_select`); sync or `async`, zero- or one-argument.
+
+### Components (`tempestroid.components`)
+
+Higher-level, reusable building blocks — each a **`Component`** that lowers to
+primitive widgets, so they work in both renderers (Qt and Compose) with zero
+renderer changes and are fully device-ready. Every component takes an optional
+`style` that is merged over its default via **`merge_style`**.
+
+- **`AppBar`** — top bar: optional `leading` widget, `title`, trailing `actions`.
+- **`Header`** / **`Footer`** — page header band (title + optional subtitle) and
+  a centered bottom bar holding arbitrary `children`.
+- **`Sidebar`** — fixed-`width` lateral column of `children`.
+- **`Scaffold`** — page frame stacking `app_bar`, a growing `body` and an
+  optional `bottom_bar` (set `scroll=True` to wrap the body in a `ScrollView`).
+- **`NavBar`** — selectable navigation/tab bar: `items` labels, an `active`
+  index and an `on_select(index)` callback (generalises the `tabs` example).
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 
@@ -290,7 +308,8 @@ Kotlin host routes to capability modules. Verified on device.
 ```text
 tempestroid/
 ├── style.py            # Style + value objects (Color/Edge/Border/Corners/Shadow/Gradient/Transition) + enums (frozen Pydantic)
-├── widgets/            # Widget base + layout/inputs/media/indicators widgets + events.py
+├── widgets/            # Widget base + Component base + layout/inputs/media/indicators widgets + events.py
+├── components/         # composite components (AppBar/Header/Footer/Sidebar/Scaffold/NavBar)
 ├── core/               # ir.py, reconciler.py, state.py, introspection.py
 ├── renderers/qt/       # renderer, Style→Qt, run_qt, simulator, dev_loop
 ├── renderers/compose/  # Style→Compose translator (device renderer, Python side)
