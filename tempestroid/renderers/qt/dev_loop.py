@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication
 
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
+from tempestroid.devices import DEFAULT_DEVICE
 from tempestroid.renderers.qt.simulator import Simulator
 
 __all__ = ["run_dev"]
@@ -125,7 +126,7 @@ def run_dev(path: str | Path, *, verbose: bool = False) -> int:
     simulator = Simulator()
     _restart(simulator, app_path, verbose=verbose)  # first mount is a clean start
     simulator.host.setWindowTitle(f"tempestroid dev — {app_path.name}")
-    simulator.host.resize(360, 640)
+    simulator.host.resize(*DEFAULT_DEVICE.size)
     simulator.host.show()
     print(_BANNER.format(app=app_path))
 
