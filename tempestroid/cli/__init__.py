@@ -1,8 +1,9 @@
 """Command-line interface for tempestroid."""
 
+from typing import TYPE_CHECKING, Any
+
 from tempestroid.cli.app_loader import AppSpec, load_app_spec, spec_from_source
 from tempestroid.cli.console import Console, StepError
-from tempestroid.cli.main import app, main
 from tempestroid.cli.packaging import (
     PreflightCheck,
     ToolchainError,
@@ -26,6 +27,9 @@ from tempestroid.cli.scaffold import (
     ScaffoldResult,
     scaffold,
 )
+
+if TYPE_CHECKING:
+    from tempestroid.cli.main import app, main
 
 __all__ = [
     "app",
@@ -56,3 +60,35 @@ __all__ = [
     "run_on_device",
     "stage_app_source",
 ]
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401 — PEP 562 module hook returns Any
+    """Lazily expose the Typer ``app``/``main`` entry points.
+
+    Importing them eagerly would pull in ``typer``, which the Android device
+    runtime does not bundle — yet the device's code-push client imports
+    :func:`spec_from_source` from this package, which runs this ``__init__``.
+    Deferring the ``main`` import keeps ``tempestroid.cli.app_loader``
+    importable without ``typer`` (so ``tempest serve`` works on device) while
+    still exposing ``tempestroid.cli.app`` / ``main`` on the desktop.
+
+    Args:
+        name: The attribute being accessed.
+
+    Returns:
+        The requested Typer entry point.
+
+    Raises:
+        AttributeError: If ``name`` is not a deferred CLI entry point.
+    """
+    if name in {"app", "main"}:
+        import importlib
+
+        module = importlib.import_module("tempestroid.cli.main")
+        # Bind both entry points into the package namespace so they shadow the
+        # ``main`` submodule (as the original eager re-export did) and memoize:
+        # later accesses resolve as real attributes without re-entering here.
+        globals()["app"] = module.app
+        globals()["main"] = module.main
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
