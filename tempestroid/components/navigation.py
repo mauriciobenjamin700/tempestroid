@@ -1,10 +1,10 @@
-"""Navigation components: ``NavBar`` (a.k.a. tab bar).
+"""Navigation components: ``NavBar`` (a.k.a. tab bar) and ``Breadcrumb``.
 
 ``NavBar`` generalises the ``examples/tabs`` pattern into a reusable component:
-a row of selectable items with a highlighted active index. Because a
-:class:`Component`'s :meth:`render` runs wherever ``build`` runs (desktop *and*
-device), the per-item handlers can close over the caller's ``on_select`` and the
-item index directly.
+a row of selectable items with a highlighted active index. ``Breadcrumb`` renders
+a path trail with separators. Because a :class:`Component`'s :meth:`render` runs
+wherever ``build`` runs (desktop *and* device), the per-item handlers can close
+over the caller's ``on_select`` and the item index directly.
 """
 
 from __future__ import annotations
@@ -14,11 +14,18 @@ from typing import Any
 
 from pydantic import Field
 
-from tempestroid.components.base import ACCENT, MUTED, ON_SURFACE, SURFACE, merge_style
-from tempestroid.style import Edge, FontWeight, JustifyContent, Style
-from tempestroid.widgets import Button, Component, Row, Widget
+from tempestroid.components.base import (
+    ACCENT,
+    MUTED,
+    ON_MUTED,
+    ON_SURFACE,
+    SURFACE,
+    merge_style,
+)
+from tempestroid.style import AlignItems, Edge, FontWeight, JustifyContent, Style
+from tempestroid.widgets import Button, Component, Row, Text, Widget
 
-__all__ = ["NavBar"]
+__all__ = ["NavBar", "Breadcrumb"]
 
 
 def _no_labels() -> list[str]:
@@ -101,4 +108,94 @@ class NavBar(Component):
             children=[
                 self._item(index, label) for index, label in enumerate(self.items)
             ],
+        )
+
+
+class Breadcrumb(Component):
+    """A path trail of crumbs joined by a separator.
+
+    Attributes:
+        items: The crumb labels from root to current, in order.
+        separator: The text drawn between crumbs.
+        on_select: Optional handler called with a crumb's index when tapped; when
+            ``None`` the crumbs are presentational. The last crumb (current) is
+            never tappable.
+    """
+
+    items: list[str] = Field(default_factory=_no_labels)
+    separator: str = "/"
+    on_select: Callable[[int], Any] | None = None
+
+    def _handler(self, index: int) -> Callable[[], None]:
+        """Build a zero-argument handler selecting crumb ``index``.
+
+        Args:
+            index: The crumb index to report.
+
+        Returns:
+            A click handler invoking ``on_select`` with ``index``.
+        """
+
+        def handler() -> None:
+            if self.on_select is not None:
+                self.on_select(index)
+
+        return handler
+
+    def _crumb(self, index: int, label: str) -> Widget:
+        """Build one crumb (tappable unless it is the current/last one).
+
+        Args:
+            index: The crumb's position.
+            label: The crumb text.
+
+        Returns:
+            A ``Button`` for navigable crumbs, else a ``Text``.
+        """
+        is_last = index == len(self.items) - 1
+        if self.on_select is not None and not is_last:
+            return Button(
+                label=label,
+                on_click=self._handler(index),
+                key=f"crumb-{index}",
+                style=Style(
+                    padding=Edge.symmetric(vertical=4.0, horizontal=6.0),
+                    radius=6.0,
+                    background=SURFACE,
+                    color=ACCENT,
+                    font_size=14.0,
+                ),
+            )
+        return Text(
+            content=label,
+            key=f"crumb-{index}",
+            style=Style(
+                color=ON_SURFACE if is_last else ON_MUTED,
+                font_size=14.0,
+                font_weight=FontWeight.BOLD if is_last else FontWeight.NORMAL,
+            ),
+        )
+
+    def render(self) -> Widget:
+        """Lower the breadcrumb into a primitive row of crumbs and separators.
+
+        Returns:
+            A ``Row`` interleaving crumbs with separator labels.
+        """
+        children: list[Widget] = []
+        for index, label in enumerate(self.items):
+            if index:
+                children.append(
+                    Text(
+                        content=self.separator,
+                        style=Style(color=ON_MUTED, font_size=14.0),
+                        key=f"sep-{index}",
+                    )
+                )
+            children.append(self._crumb(index, label))
+        default = Style(gap=6.0, align=AlignItems.CENTER)
+        return Row(
+            key=self.key or "breadcrumb",
+            style=merge_style(default, self.style),
+            children=children,
         )

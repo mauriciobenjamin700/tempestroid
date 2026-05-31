@@ -1,8 +1,9 @@
-"""Page-structure components: ``Sidebar`` and ``Scaffold``.
+"""Page-structure components: ``Sidebar``, ``Scaffold`` and ``Grid``.
 
 ``Sidebar`` is a fixed-width lateral column; ``Scaffold`` is the page frame that
-stacks an app bar, a growing body and an optional bottom bar. Both lower to
-primitive ``Column``/``Container`` trees.
+stacks an app bar, a growing body and an optional bottom bar; ``Grid`` lays
+children out in a fixed number of equal-width columns. All lower to primitive
+``Column``/``Row``/``Container`` trees.
 """
 
 from __future__ import annotations
@@ -11,9 +12,9 @@ from pydantic import Field
 
 from tempestroid.components.base import BACKGROUND, ON_SURFACE, SURFACE, merge_style
 from tempestroid.style import Edge, Style
-from tempestroid.widgets import Column, Component, Container, ScrollView, Widget
+from tempestroid.widgets import Column, Component, Container, Row, ScrollView, Widget
 
-__all__ = ["Sidebar", "Scaffold"]
+__all__ = ["Sidebar", "Scaffold", "Grid"]
 
 
 def _no_widgets() -> list[Widget]:
@@ -99,4 +100,52 @@ class Scaffold(Component):
             key=self.key or "scaffold",
             style=merge_style(default, self.style),
             children=children,
+        )
+
+
+class Grid(Component):
+    """A fixed-column grid laying children out in equal-width cells.
+
+    Attributes:
+        children: The cell widgets, filled left-to-right then top-to-bottom.
+        columns: The number of columns per row (clamped to at least 1).
+        gap: The spacing between cells, both horizontally and vertically.
+    """
+
+    children: list[Widget] = Field(default_factory=_no_widgets)
+    columns: int = 2
+    gap: float = 8.0
+
+    def render(self) -> Widget:
+        """Lower the grid into a primitive column of rows.
+
+        Returns:
+            A ``Column`` of ``Row``s; each child is wrapped in a growing
+            ``Container`` so columns share width, and short final rows are padded
+            with empty cells to keep alignment.
+        """
+        columns = max(1, self.columns)
+        rows: list[Widget] = []
+        for start in range(0, len(self.children), columns):
+            chunk = self.children[start : start + columns]
+            cells: list[Widget] = [
+                Container(
+                    style=Style(grow=1.0),
+                    child=child,
+                    key=f"cell-{start + offset}",
+                )
+                for offset, child in enumerate(chunk)
+            ]
+            for pad in range(len(chunk), columns):
+                cells.append(
+                    Container(style=Style(grow=1.0), key=f"cell-pad-{start}-{pad}")
+                )
+            rows.append(
+                Row(style=Style(gap=self.gap), children=cells, key=f"grid-row-{start}")
+            )
+        default = Style(gap=self.gap)
+        return Column(
+            key=self.key or "grid",
+            style=merge_style(default, self.style),
+            children=rows,
         )

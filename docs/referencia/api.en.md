@@ -65,6 +65,20 @@ default via **`merge_style`**.
 - **`ListTile`** — list row: `leading` / `trailing` widgets around a `title` plus
   an optional `subtitle`.
 - **`Avatar`** — round badge of short `initials`; **`Divider`** — thin rule.
+- **`SegmentedControl`** / **`RadioGroup`** — single-choice pickers (`options`,
+  `selected`, `on_select(index)`).
+- **`Chip`** — small rounded label, selectable when given an `on_click`.
+- **`Rating`** — a row of `max_stars` stars; `on_rate(value)` makes it tappable.
+- **`Stepper`** — numeric `-`/`+` around a value with optional `min_value` /
+  `max_value` clamping; `on_change(value)`.
+- **`SearchBar`** — controlled text `Input` with an optional clear button.
+- **`Accordion`** — controlled expand/collapse section (`open` in state,
+  `on_toggle`).
+- **`Banner`** — inline status bar (`tone`: info/success/warning/error) with an
+  optional `action`; **`Badge`** — small status pill; **`EmptyState`** — centered
+  glyph + title + subtitle + action.
+- **`Breadcrumb`** — path trail (`items` + `separator`, optional `on_select`).
+- **`Grid`** — equal-width `columns` grid of `children`.
 
 ## Events (`tempestroid.widgets`) — typed boundary contract
 

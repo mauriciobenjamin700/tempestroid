@@ -65,6 +65,19 @@ aceita um `style` opcional mesclado sobre o padrão via **`merge_style`**.
 - **`ListTile`** — linha de lista: `leading` / `trailing` em volta de `title` +
   `subtitle` opcional.
 - **`Avatar`** — emblema redondo de `initials`; **`Divider`** — linha fina.
+- **`SegmentedControl`** / **`RadioGroup`** — escolha única (`options`,
+  `selected`, `on_select(index)`).
+- **`Chip`** — rótulo arredondado pequeno, selecionável quando recebe `on_click`.
+- **`Rating`** — linha de `max_stars` estrelas; `on_rate(value)` torna tocável.
+- **`Stepper`** — `-`/`+` numérico em volta de um valor, com `min_value` /
+  `max_value` opcionais; `on_change(value)`.
+- **`SearchBar`** — `Input` de texto controlado com botão de limpar opcional.
+- **`Accordion`** — seção expansível controlada (`open` no estado, `on_toggle`).
+- **`Banner`** — barra de status inline (`tone`: info/success/warning/error) com
+  `action` opcional; **`Badge`** — pílula de status; **`EmptyState`** — glifo +
+  título + subtítulo + ação centralizados.
+- **`Breadcrumb`** — trilha de caminho (`items` + `separator`, `on_select` opc.).
+- **`Grid`** — grade de `columns` de largura igual com `children`.
 
 ## Eventos (`tempestroid.widgets`) — contrato de fronteira tipado
 

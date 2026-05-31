@@ -10,25 +10,37 @@ from __future__ import annotations
 import pytest
 
 from tempestroid import (
+    Accordion,
     AppBar,
     Avatar,
+    Badge,
+    Banner,
+    Breadcrumb,
     Burger,
     Button,
     Calendar,
     Card,
+    Chip,
     Clock,
     Color,
     Column,
     Component,
     Divider,
     Drawer,
+    EmptyState,
     Footer,
+    Grid,
     Header,
     ListTile,
     NavBar,
     Node,
+    RadioGroup,
+    Rating,
     Scaffold,
+    SearchBar,
+    SegmentedControl,
     Sidebar,
+    Stepper,
     Style,
     Text,
     Update,
@@ -46,7 +58,9 @@ _COMPOSITE_TYPES = frozenset(
         "Footer",
         "Sidebar",
         "Scaffold",
+        "Grid",
         "NavBar",
+        "Breadcrumb",
         "Burger",
         "Drawer",
         "Calendar",
@@ -55,6 +69,16 @@ _COMPOSITE_TYPES = frozenset(
         "ListTile",
         "Avatar",
         "Divider",
+        "SegmentedControl",
+        "RadioGroup",
+        "Chip",
+        "Rating",
+        "Stepper",
+        "SearchBar",
+        "Accordion",
+        "Banner",
+        "EmptyState",
+        "Badge",
     }
 )
 
@@ -312,3 +336,153 @@ def test_divider_is_a_thin_line() -> None:
     assert node.type == "Container"
     assert node.props["style"].height == 2.0
     assert node.children == []
+
+
+# --- SegmentedControl / RadioGroup / Chip / Rating --------------------------
+
+
+def test_segmented_control_selects_by_index() -> None:
+    seen: list[int] = []
+    node = build(
+        SegmentedControl(options=["A", "B", "C"], selected=1, on_select=seen.append)
+    )
+    buttons = [n for n in _walk(node) if n.type == "Button"]
+    assert len(buttons) == 3
+    buttons[2].props["on_click"]()
+    assert seen == [2]
+
+
+def test_radio_group_selects_by_index() -> None:
+    seen: list[int] = []
+    node = build(RadioGroup(options=["x", "y"], selected=0, on_select=seen.append))
+    buttons = [n for n in _walk(node) if n.type == "Button"]
+    buttons[1].props["on_click"]()
+    assert seen == [1]
+
+
+def test_chip_static_is_text_clickable_is_button() -> None:
+    assert build(Chip(label="t")).type == "Text"
+    fired: list[bool] = []
+    node = build(Chip(label="t", on_click=lambda: fired.append(True)))
+    assert node.type == "Button"
+    node.props["on_click"]()
+    assert fired == [True]
+
+
+def test_rating_reports_one_based_value() -> None:
+    seen: list[int] = []
+    node = build(Rating(value=2, max_stars=5, on_rate=seen.append))
+    stars = [n for n in _walk(node) if n.type == "Button"]
+    assert len(stars) == 5
+    stars[4].props["on_click"]()
+    assert seen == [5]
+
+
+def test_rating_without_handler_is_presentational() -> None:
+    node = build(Rating(value=3))
+    assert all(n.type != "Button" for n in _walk(node))
+
+
+# --- Stepper / SearchBar ----------------------------------------------------
+
+
+def test_stepper_steps_and_clamps() -> None:
+    seen: list[int] = []
+    node = build(
+        Stepper(value=5, step=2, min_value=0, max_value=6, on_change=seen.append)
+    )
+    down, up = (n for n in _walk(node) if n.type == "Button")
+    up.props["on_click"]()  # 5 + 2 -> clamped to 6
+    down.props["on_click"]()  # 5 - 2 -> 3
+    assert seen == [6, 3]
+
+
+def test_searchbar_clear_button_only_when_nonempty() -> None:
+    def bar(value: str) -> SearchBar:
+        return SearchBar(value=value, on_change=lambda _e: None, on_clear=lambda: None)
+
+    assert any(n.type == "Button" for n in _walk(build(bar("hi"))))
+    assert all(n.type != "Button" for n in _walk(build(bar(""))))
+
+
+# --- Accordion --------------------------------------------------------------
+
+
+def test_accordion_reveals_body_only_when_open() -> None:
+    def acc(is_open: bool) -> Accordion:
+        return Accordion(
+            title="T",
+            open=is_open,
+            children=[Text(content="b", key="b")],
+            on_toggle=lambda: None,
+        )
+
+    assert any(n.key == "b" for n in _walk(build(acc(True))))
+    assert all(n.key != "b" for n in _walk(build(acc(False))))
+
+
+def test_accordion_header_fires_toggle() -> None:
+    fired: list[bool] = []
+    node = build(Accordion(title="T", on_toggle=lambda: fired.append(True)))
+    header = next(n for n in _walk(node) if n.type == "Button")
+    header.props["on_click"]()
+    assert fired == [True]
+
+
+# --- Banner / EmptyState / Badge --------------------------------------------
+
+
+def test_banner_tone_sets_background_and_keeps_action() -> None:
+    info = build(Banner(message="m", tone="info"))
+    error = build(Banner(message="m", tone="error", action=Button(label="x", key="a")))
+    assert info.props["style"].background != error.props["style"].background
+    assert any(n.key == "a" for n in _walk(error))
+
+
+def test_empty_state_stacks_glyph_title_action() -> None:
+    node = build(
+        EmptyState(
+            title="None",
+            subtitle="add",
+            glyph="∅",
+            action=Button(label="add", key="cta"),
+        )
+    )
+    assert node.type == "Column"
+    contents = [n.props.get("content") for n in _walk(node) if n.type == "Text"]
+    assert "∅" in contents and "None" in contents and "add" in contents
+    assert any(n.key == "cta" for n in _walk(node))
+
+
+def test_badge_is_a_text_pill() -> None:
+    node = build(Badge(label="3", tone="error"))
+    assert node.type == "Text"
+    assert node.props["content"] == "3"
+    assert node.props["style"].background is not None
+
+
+# --- Breadcrumb / Grid ------------------------------------------------------
+
+
+def test_breadcrumb_last_crumb_is_not_navigable() -> None:
+    seen: list[int] = []
+    node = build(Breadcrumb(items=["Home", "Lib", "Item"], on_select=seen.append))
+    buttons = [n for n in _walk(node) if n.type == "Button"]
+    assert len(buttons) == 2  # last crumb is current, not a button
+    buttons[0].props["on_click"]()
+    assert seen == [0]
+
+
+def test_breadcrumb_without_handler_is_presentational() -> None:
+    node = build(Breadcrumb(items=["a", "b"]))
+    assert all(n.type != "Button" for n in _walk(node))
+
+
+def test_grid_chunks_children_into_rows() -> None:
+    node = build(Grid(children=[Text(content=str(i)) for i in range(5)], columns=2))
+    assert node.type == "Column"
+    rows = node.children
+    assert len(rows) == 3  # 2 + 2 + 1 (padded)
+    assert all(row.type == "Row" for row in rows)
+    # every row has exactly `columns` cells (last row padded)
+    assert {len(row.children) for row in rows} == {2}
