@@ -33,6 +33,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.7",
+    "typer>=0.12.0",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +51,7 @@ Changelog = "https://github.com/mauriciobenjamin700/tempestroid/blob/main/CHANGE
 Issues = "https://github.com/mauriciobenjamin700/tempestroid/issues"
 
 [project.scripts]
-tempest = "tempestroid.cli:main"
+tempest = "tempestroid.cli.main:app"
 
 [dependency-groups]
 # The Qt simulator is part of the dev/test loop, so its deps live here too and
@@ -75,6 +76,12 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build]
+# The prebuilt host APK is staged into tempestroid/_assets/ (gitignored, too big
+# to track) and `tempest install` adb-installs it offline. List it as an artifact
+# so hatchling ships the VCS-ignored file in BOTH the wheel and the sdist.
+artifacts = ["tempestroid/_assets/*.apk"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tempestroid"]

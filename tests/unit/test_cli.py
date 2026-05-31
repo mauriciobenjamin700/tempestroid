@@ -2,40 +2,87 @@ from pathlib import Path
 
 import pytest
 
-from tempestroid.cli import build_parser, main
+from tempestroid.cli import main
 
 
-def test_help_runs_clean():
-    assert main([]) == 0
+def test_help_runs_clean(capsys: pytest.CaptureFixture[str]):
+    assert main(["--help"]) == 0
+    assert "Usage" in capsys.readouterr().out
 
 
-def test_version_flag_exits_zero():
-    with pytest.raises(SystemExit) as exc:
-        build_parser().parse_args(["--version"])
-    assert exc.value.code == 0
+def test_version_flag_exits_zero(capsys: pytest.CaptureFixture[str]):
+    assert main(["--version"]) == 0
+    assert "tempest" in capsys.readouterr().out
 
 
-def test_build_requires_app_path():
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["build"])  # missing required `app` argument
+def test_version_command(capsys: pytest.CaptureFixture[str]):
+    assert main(["version"]) == 0
+    assert "tempest" in capsys.readouterr().out
 
 
-def test_run_requires_app_path():
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["run"])  # missing required `app` argument
+def test_dev_without_app_or_config_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # No app path + no [tool.tempest] app in cwd → graceful error, exit 1.
+    monkeypatch.chdir(tmp_path)
+    assert main(["dev"]) != 0
 
 
-def test_new_requires_name():
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["new"])  # missing required `name` argument
+def test_build_without_app_or_config_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    assert main(["build"]) != 0
 
 
-def test_new_scaffolds_project(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+def test_run_without_app_or_config_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    assert main(["run"]) != 0
+
+
+def test_dev_reads_configured_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # `tempest dev` with no arg resolves [tool.tempest] app and passes it through
+    # to the dev loop (stubbed here so we don't launch a real Qt window).
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "myapp.py"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    seen: dict[str, str] = {}
+
+    def fake_run_dev(app: str, verbose: bool) -> int:
+        seen["app"] = app
+        return 0
+
+    # `tempestroid.cli.main` the attribute is the re-exported `main` function, so
+    # reach the module object via sys.modules to patch its `_run_dev`.
+    import sys
+
+    main_module = sys.modules["tempestroid.cli.main"]
+    monkeypatch.setattr(main_module, "_run_dev", fake_run_dev)
+    assert main(["dev"]) == 0
+    assert seen["app"] == str((tmp_path / "myapp.py").resolve())
+
+
+def test_new_scaffolds_named_project(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
     assert main(["new", "demo", "--into", str(tmp_path)]) == 0
     project = tmp_path / "demo"
     assert (project / "app.py").is_file()
+    assert (project / "pyproject.toml").is_file()
     assert (project / "README.md").is_file()
     assert "created" in capsys.readouterr().out
+
+
+def test_new_scaffolds_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.chdir(tmp_path)
+    assert main(["new", "."]) == 0
+    assert (tmp_path / "app.py").is_file()
+    assert (tmp_path / "pyproject.toml").is_file()
 
 
 def test_new_rejects_existing_dir(tmp_path: Path):
@@ -56,11 +103,6 @@ def test_build_reports_missing_toolchain(
     # Preflight surfaces the missing host tree inline before any Gradle work.
     assert "android-host" in out
     assert "could not find the android-host project" in out
-
-
-def test_dev_requires_app_path():
-    with pytest.raises(SystemExit):
-        build_parser().parse_args(["dev"])  # missing required `app` argument
 
 
 def test_spec_prints_json(capsys: pytest.CaptureFixture[str]):

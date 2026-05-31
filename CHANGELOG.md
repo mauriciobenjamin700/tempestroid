@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`tempest install` — offline device install (no SDK/NDK, no download).** The
+  prebuilt CPython + framework host APK now **ships inside the wheel**
+  (`tempestroid/_assets/host.apk`), so `tempest install` adb-installs it offline.
+  Resolution order: explicit `.apk`/URL → `TEMPESTROID_HOST_APK` → bundled asset
+  → `TEMPESTROID_HOST_APK_URL`/GitHub-release download fallback.
+- **`tempest new .` scaffolds in place, fully configured.** `tempest new` now
+  writes a complete project — `app.py`, `pyproject.toml` (with the
+  `tempestroid[qt]` dependency and a `[tool.tempest] app` pointer), `README.md`,
+  and `.gitignore`. `.` (the default) targets the current directory; a name
+  creates a subdirectory.
+- **No-argument app commands.** `tempest dev` / `serve` / `build` / `run` read
+  the app path from `[tool.tempest] app` in the nearest `pyproject.toml` when no
+  path is passed, so inside a project the commands take no arguments.
+- **`tempest serve` closes the device loop.** With a device connected it now
+  auto-wires `adb reverse` and launches the host in dev mode pointed at the dev
+  server, so `tempest install` + `tempest serve` is the whole on-device flow
+  (`--no-launch` to serve only).
+
+### Changed
+
+- **`tempest build` fails with an actionable hint from an installed wheel.**
+  When the `android-host` source tree is absent, the error now points at the
+  `tempest install` + `tempest serve` device path instead of only mentioning a
+  source checkout.
+
 ## [0.2.0] — 2026-05-31
 
 ### Added

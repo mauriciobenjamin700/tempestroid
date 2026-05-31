@@ -69,14 +69,15 @@ def check_exports(readme: str) -> None:
 def check_cli(readme: str) -> None:
     """Cross-check registered CLI subcommands against the README CLI table."""
     section("CLI ⨉ README")
-    from tempestroid.cli.main import build_parser
+    from tempestroid.cli.main import app
 
-    parser = build_parser()
-    commands: set[str] = set()
-    for action in parser._actions:  # noqa: SLF001 — introspecting argparse
-        choices = getattr(action, "choices", None)
-        if choices:
-            commands.update(choices.keys())
+    # `version` aliases the global `--version`/`-V` flag and isn't part of the
+    # README command table, so it's excluded from the cross-check.
+    commands: set[str] = {
+        info.name
+        for info in app.registered_commands
+        if info.name and info.name != "version"
+    }
     if not commands:
         fail("could not introspect any CLI subcommands")
         return
