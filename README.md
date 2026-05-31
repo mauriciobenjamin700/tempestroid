@@ -312,6 +312,14 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`run_qt(state, view, *, title, size)`** — run an app in the Qt simulator.
 - **`run_dev(app_path)`** — the `tempest dev` cockpit.
 
+### Device presets (`tempestroid.devices`)
+
+Logical (dp) viewport sizes for pinning the simulator/layout tests to a real
+device, since the simulator has no physical screen to borrow from.
+
+- **`Device`** — a screen-size preset (`name` + dp `width`/`height`, `.size`).
+- **`DEFAULT_DEVICE`** — the simulator's default viewport when none is given.
+
 ### Compose + bridge — device side (phases B3/B4)
 
 The Python half is device-independent and tested without a phone; the JNI
