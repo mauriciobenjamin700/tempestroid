@@ -1,5 +1,10 @@
 package org.tempestroid.host
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,15 +16,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.Instant
+import java.time.ZoneOffset
+import org.json.JSONObject
 
 /**
  * Renders a serialized tempestroid [TempestNode] tree with Jetpack Compose, and
@@ -69,10 +89,139 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
             node.children.forEach { RenderNode(it, onEvent) }
         }
 
+        "Input" -> RenderInput(node, style, onEvent)
+
+        "Checkbox" -> RenderCheckbox(node, style, onEvent)
+
+        "DatePicker" -> RenderDatePicker(node, style, onEvent)
+
+        "FilePicker" -> RenderFilePicker(node, style, onEvent)
+
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
         }
     }
+}
+
+/** A controlled text field: the value lives in Python; each edit sends a `TextChangeEvent`. */
+@Composable
+private fun RenderInput(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    OutlinedTextField(
+        value = node.props["value"] as? String ?: "",
+        onValueChange = { text ->
+            handlerToken(node, "on_change")?.let {
+                onEvent(it, JSONObject().put("value", text).toString())
+            }
+        },
+        placeholder = { Text(text = node.props["placeholder"] as? String ?: "") },
+        singleLine = true,
+        modifier = baseModifier(style),
+    )
+}
+
+/** A labelled checkbox; each toggle sends a `ToggleEvent`. */
+@Composable
+private fun RenderCheckbox(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    Row(
+        modifier = baseModifier(style),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = node.props["checked"] as? Boolean ?: false,
+            onCheckedChange = { checked ->
+                handlerToken(node, "on_change")?.let {
+                    onEvent(it, JSONObject().put("checked", checked).toString())
+                }
+            },
+        )
+        Text(text = node.props["label"] as? String ?: "")
+    }
+}
+
+/** A button opening a Material date dialog; confirming sends an ISO `DateChangeEvent`. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderDatePicker(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val value = node.props["value"] as? String ?: ""
+    val label = node.props["label"] as? String ?: ""
+    Button(onClick = { open = true }, modifier = baseModifier(style)) {
+        Text(text = if (value.isNotEmpty()) value else if (label.isNotEmpty()) label else "Pick date")
+    }
+    if (open) {
+        val state = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { open = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    open = false
+                    state.selectedDateMillis?.let { millis ->
+                        val iso = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC)
+                            .toLocalDate()
+                            .toString()
+                        handlerToken(node, "on_change")?.let {
+                            onEvent(it, JSONObject().put("value", iso).toString())
+                        }
+                    }
+                }) { Text(text = "OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { open = false }) { Text(text = "Cancel") }
+            },
+        ) {
+            DatePicker(state = state)
+        }
+    }
+}
+
+/** A button opening the system file picker; a pick sends a `FileSelectEvent`. */
+@Composable
+private fun RenderFilePicker(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val payload = JSONObject().put("uri", uri.toString())
+            val name = displayName(context, uri) ?: uri.lastPathSegment
+            if (name != null) payload.put("name", name)
+            handlerToken(node, "on_select")?.let { onEvent(it, payload.toString()) }
+        }
+    }
+    val value = node.props["value"] as? String ?: ""
+    val label = node.props["label"] as? String ?: "Choose file"
+    Button(onClick = { launcher.launch("*/*") }, modifier = baseModifier(style)) {
+        Text(text = if (value.isNotEmpty()) "$label: $value" else label)
+    }
+}
+
+/** Resolve a content URI's human-readable display name, or null. */
+private fun displayName(context: Context, uri: Uri): String? {
+    val cursor = context.contentResolver.query(uri, null, null, null, null) ?: return null
+    cursor.use {
+        val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (index >= 0 && it.moveToFirst()) {
+            return it.getString(index)
+        }
+    }
+    return null
 }
 
 @Suppress("UNCHECKED_CAST")

@@ -5,7 +5,17 @@ from tempestroid import event_catalog, introspect, widget_catalog
 
 def test_widget_catalog_lists_all_widgets():
     catalog = widget_catalog()
-    assert set(catalog) == {"Text", "Button", "Column", "Row", "Container"}
+    assert set(catalog) == {
+        "Text",
+        "Button",
+        "Column",
+        "Row",
+        "Container",
+        "Input",
+        "Checkbox",
+        "DatePicker",
+        "FilePicker",
+    }
 
 
 def test_text_schema_exposes_content_field():
@@ -27,7 +37,13 @@ def test_button_schema_handles_handler_field():
 
 def test_event_catalog_lists_events():
     catalog = event_catalog()
-    assert set(catalog) == {"TapEvent", "TextChangeEvent"}
+    assert set(catalog) == {
+        "TapEvent",
+        "TextChangeEvent",
+        "ToggleEvent",
+        "DateChangeEvent",
+        "FileSelectEvent",
+    }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 
 
