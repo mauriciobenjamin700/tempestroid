@@ -57,6 +57,14 @@ quick: ## Fast gate (lint + types + conventions, no pytest)
 docs-sync: ## Verify README tracks live exports / CLI / phase tables
 	uv run python .claude/skills/docs-sync-check/check.py
 
+.PHONY: dual-verify
+dual-verify: ## Enforced dual-renderer check (Qt gate + device build/flow checklist) (APP=...)
+	bash .claude/skills/dual-verify/verify.sh $(APP)
+
+.PHONY: parity
+parity: ## Trilho E phase scaffold + gate (PHASE=E0|E2a|...)
+	bash .claude/skills/parity-phase/plan.sh $(PHASE)
+
 # ---- run / dev --------------------------------------------------------------
 .PHONY: run
 run: ## Run an app in the Qt simulator (APP=examples/counter/app.py)
@@ -105,6 +113,10 @@ release: gate docs-sync ## Tag vX.Y.Z (from pyproject) + push → triggers PyPI 
 	git push origin "v$(VERSION)"
 
 # ---- android (Trilho B — needs SDK/NDK + device) ----------------------------
+.PHONY: doctor
+doctor: ## Validate the Android toolchain (SDK/NDK/Gradle/JDK/device/staging)
+	bash .claude/skills/android-doctor/check.sh
+
 .PHONY: toolchain
 toolchain: ## Fetch CPython 3.14 + build wheels + stage device site-packages
 	cd toolchain && source env.sh && ./00_fetch_cpython.sh && ./01_build_wheels.sh && ./02_stage_deps.sh
