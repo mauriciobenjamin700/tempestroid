@@ -200,6 +200,8 @@ The declarative IR — bare-noun widgets.
   **`Container`**, **`ScrollView`** (scrollable container), **`SafeArea`**
   (insets its child past the status/navigation bars + notch; `edges` selects
   which sides, default all — `SafeAreaEdge` enum).
+- **`Component`** (base) — a composite widget that lowers to a primitive tree via
+  `render()`; the reconciler expands it before diffing, so renderers never see it.
 - Value-bearing inputs: **`Input`** (text — with `secure` password masking +
   reveal toggle, regex `pattern`, `keyboard` type, `max_length`), **`TextArea`**
   (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
@@ -211,6 +213,46 @@ The declarative IR — bare-noun widgets.
   **`ImageFit`** (contain/cover/fill/none).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
   (`on_click`, `on_change`, `on_select`); sync or `async`, zero- or one-argument.
+
+### Components (`tempestroid.components`)
+
+Higher-level, reusable building blocks — each a **`Component`** that lowers to
+primitive widgets, so they work in both renderers (Qt and Compose) with zero
+renderer changes and are fully device-ready. Every component takes an optional
+`style` that is merged over its default via **`merge_style`**.
+
+- **`AppBar`** — top bar: optional `leading` widget, `title`, trailing `actions`.
+- **`Header`** / **`Footer`** — page header band (title + optional subtitle) and
+  a centered bottom bar holding arbitrary `children`.
+- **`Sidebar`** — fixed-`width` lateral column of `children`.
+- **`Scaffold`** — page frame stacking `app_bar`, a growing `body` and an
+  optional `bottom_bar` (set `scroll=True` to wrap the body in a `ScrollView`).
+- **`NavBar`** — selectable navigation/tab bar: `items` labels, an `active`
+  index and an `on_select(index)` callback (generalises the `tabs` example).
+- **`Burger`** / **`Drawer`** — a hamburger menu button (`on_click`) and a
+  controlled lateral panel (`open` lives in app state; toggle it from the burger).
+- **`Calendar`** — month grid of selectable day cells: `month` (`"YYYY-MM"`),
+  `selected` (`"YYYY-MM-DD"`) and `on_select(iso_date)`.
+- **`Clock`** — digital clock rendering a preformatted `time` string (the app
+  drives the tick from state, as in `stopwatch`).
+- **`Card`** — elevated surface (shadow + radius) grouping `children`.
+- **`ListTile`** — list row: `leading` / `trailing` widgets around a `title` plus
+  an optional `subtitle`.
+- **`Avatar`** — round badge of short `initials`; **`Divider`** — thin rule.
+- **`SegmentedControl`** / **`RadioGroup`** — single-choice pickers (`options`,
+  `selected`, `on_select(index)`).
+- **`Chip`** — small rounded label, selectable when given an `on_click`.
+- **`Rating`** — a row of `max_stars` stars; `on_rate(value)` makes it tappable.
+- **`Stepper`** — numeric `-`/`+` around a value with optional `min_value` /
+  `max_value` clamping; `on_change(value)`.
+- **`SearchBar`** — controlled text `Input` with an optional clear button.
+- **`Accordion`** — controlled expand/collapse section (`open` in state,
+  `on_toggle`).
+- **`Banner`** — inline status bar (`tone`: info/success/warning/error) with an
+  optional `action`; **`Badge`** — small status pill; **`EmptyState`** — centered
+  glyph + title + subtitle + action placeholder.
+- **`Breadcrumb`** — path trail (`items` + `separator`, optional `on_select`).
+- **`Grid`** — equal-width `columns` grid of `children`.
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 
@@ -332,7 +374,8 @@ off-device; the Kotlin capability modules need an Android device to validate.
 ```text
 tempestroid/
 ├── style.py            # Style + value objects (Color/Edge/Border/Corners/Shadow/Gradient/Transition) + enums (frozen Pydantic)
-├── widgets/            # Widget base + layout/inputs/media/indicators widgets + events.py
+├── widgets/            # Widget base + Component base + layout/inputs/media/indicators widgets + events.py
+├── components/         # composite components (AppBar/Header/Footer/Sidebar/Scaffold/NavBar)
 ├── core/               # ir.py, reconciler.py, state.py, introspection.py
 ├── renderers/qt/       # renderer, Style→Qt, run_qt, simulator, dev_loop
 ├── renderers/compose/  # Style→Compose translator (device renderer, Python side)

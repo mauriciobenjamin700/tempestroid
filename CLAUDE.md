@@ -36,7 +36,8 @@ tempestroid/
 ├── android-host/         # B2–B4 Gradle/Kotlin host skeleton (embeds official CPython via JNI)
 └── tempestroid/          # the framework (Trilho A, pure Python) — flat layout, package at repo root
     ├── style.py          # Style + value objects (Color/Edge/Border/SideBorder/Corners/Shadow/Gradient/Transition) + enums (Pydantic, frozen)
-    ├── widgets/          # Widget base + layout.py/inputs.py/media.py/indicators.py (the IR) + events.py
+    ├── widgets/          # Widget base + Component base + layout.py/inputs.py/media.py/indicators.py (the IR) + events.py
+    ├── components/       # composite components (AppBar/Header/Footer/Sidebar/Scaffold/NavBar) — lower to primitives via Component.render
     ├── core/             # ir.py (Node+patches) / reconciler.py (build,diff) / state.py (App) / introspection.py
     ├── renderers/qt/     # renderer + Style→Qt translator + app_runner (run_qt) + simulator + dev_loop
     ├── cli/              # main (tempest dev/spec/...) + app_loader + watcher

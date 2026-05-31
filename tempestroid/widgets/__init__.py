@@ -6,6 +6,7 @@ level rather than from submodules.
 """
 
 from tempestroid.widgets.base import (
+    Component,
     DateChangeHandler,
     EventHandler,
     FileSelectHandler,
@@ -58,6 +59,7 @@ __all__ = [
     "FileSelectHandler",
     "handler_accepts_event",
     "Widget",
+    "Component",
     "Text",
     "Button",
     "Column",

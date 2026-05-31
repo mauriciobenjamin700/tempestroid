@@ -31,6 +31,8 @@ A IR declarativa — widgets como substantivos.
   **`Row`**, **`Container`**, **`ScrollView`**, **`SafeArea`** (afasta o filho das
   barras de status/navegação + notch; `edges`/**`SafeAreaEdge`** escolhe os lados,
   padrão todos).
+- **`Component`** (base) — widget composto que se reduz a uma árvore de
+  primitivos via `render()`; o reconciliador o expande antes do *diff*.
 - Inputs com valor: **`Input`** (texto), **`TextArea`** (multilinha),
   **`Checkbox`**, **`Switch`** (booleanos), **`Slider`** (float), **`DatePicker`**
   (data ISO), **`FilePicker`** (seleção de arquivo).
@@ -39,6 +41,45 @@ A IR declarativa — widgets como substantivos.
 - **`EventHandler`** — wrapper tipado de prop de *handler*.
 
 Veja o [guia de widgets](../guia/widgets.md).
+
+## Componentes (`tempestroid.components`)
+
+Blocos de construção reutilizáveis — cada um um **`Component`** que se reduz a
+widgets primitivos, então funcionam nos dois renderizadores (Qt e Compose) sem
+mudança alguma de renderizador e são prontos para o dispositivo. Todo componente
+aceita um `style` opcional mesclado sobre o padrão via **`merge_style`**.
+
+- **`AppBar`** — barra superior: `leading` opcional, `title` e `actions` à direita.
+- **`Header`** / **`Footer`** — faixa de cabeçalho (título + subtítulo opcional) e
+  barra inferior centralizada com `children` arbitrários.
+- **`Sidebar`** — coluna lateral de largura fixa (`width`) com `children`.
+- **`Scaffold`** — moldura de página empilhando `app_bar`, um `body` que cresce e
+  um `bottom_bar` opcional (`scroll=True` embrulha o corpo num `ScrollView`).
+- **`NavBar`** — barra de navegação/abas selecionável: rótulos `items`, índice
+  `active` e *callback* `on_select(index)` (generaliza o exemplo `tabs`).
+- **`Burger`** / **`Drawer`** — botão de menu (☰, `on_click`) e painel lateral
+  controlado (`open` vive no estado do app; alterne pelo burger).
+- **`Calendar`** — grade do mês com dias selecionáveis: `month` (`"AAAA-MM"`),
+  `selected` (`"AAAA-MM-DD"`) e `on_select(data_iso)`.
+- **`Clock`** — relógio digital que renderiza um `time` já formatado (o app
+  dirige o tick pelo estado, como o `stopwatch`).
+- **`Card`** — superfície elevada (sombra + raio) agrupando `children`.
+- **`ListTile`** — linha de lista: `leading` / `trailing` em volta de `title` +
+  `subtitle` opcional.
+- **`Avatar`** — emblema redondo de `initials`; **`Divider`** — linha fina.
+- **`SegmentedControl`** / **`RadioGroup`** — escolha única (`options`,
+  `selected`, `on_select(index)`).
+- **`Chip`** — rótulo arredondado pequeno, selecionável quando recebe `on_click`.
+- **`Rating`** — linha de `max_stars` estrelas; `on_rate(value)` torna tocável.
+- **`Stepper`** — `-`/`+` numérico em volta de um valor, com `min_value` /
+  `max_value` opcionais; `on_change(value)`.
+- **`SearchBar`** — `Input` de texto controlado com botão de limpar opcional.
+- **`Accordion`** — seção expansível controlada (`open` no estado, `on_toggle`).
+- **`Banner`** — barra de status inline (`tone`: info/success/warning/error) com
+  `action` opcional; **`Badge`** — pílula de status; **`EmptyState`** — glifo +
+  título + subtítulo + ação centralizados.
+- **`Breadcrumb`** — trilha de caminho (`items` + `separator`, `on_select` opc.).
+- **`Grid`** — grade de `columns` de largura igual com `children`.
 
 ## Eventos (`tempestroid.widgets`) — contrato de fronteira tipado
 

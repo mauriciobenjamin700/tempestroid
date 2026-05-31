@@ -19,6 +19,7 @@ uv run tempest serve examples/<nome>/app.py
 | App | O que mostra | Widgets / patches exercitados |
 |---|---|---|
 | `counter` | O básico: handlers síncronos **e** `async`. | `Text`, `Button`, `Row`/`Column`; `update`. |
+| `shell` | Os componentes compostos: um `Scaffold` com `AppBar` no topo e `NavBar` embaixo, corpo por aba. | `tempestroid.components` (`AppBar`/`Scaffold`/`NavBar`/`Header`) reduzidos a primitivos via `Component.render`. |
 | `todo` | Lista dirigida por toque (sem entrada de texto — itens vêm de um pool fixo). | Lista com chave estável; `insert` / `remove` / `update`. |
 | `calculator` | Grade densa de botões como única entrada. | `Row`/`Column` aninhados, 16 botões com chave; `update` no display. |
 | `stopwatch` | Loop async-first: um handler corrotina conta via `asyncio.sleep` sem travar a UI. | Rebuilds coalescidos a partir do loop; `update`. |
