@@ -16,6 +16,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +33,12 @@ __all__ = [
     "report_preflight",
     "build_apk",
     "run_on_device",
+    "host_apk_url",
+    "bundled_host_apk",
+    "resolve_host_apk",
+    "install_host",
+    "adb_reverse",
+    "launch_host_dev",
 ]
 
 # Asset path inside android-host the host's MainActivity extracts and runs.
@@ -39,6 +47,13 @@ _BUNDLED_APP_ASSET = "app/src/main/assets/tempest_app.py"
 # ANDROID_SDK_ROOT is unset (documented in CLAUDE.md / memory).
 _SDK_FALLBACK = "/usr/lib/android-sdk"
 _HOST_TAG = "tempestroid"
+# The prebuilt host: application id, launch activity, and the dev-mode intent
+# extra MainActivity reads to point its code-push client at a dev server.
+_HOST_PACKAGE = "org.tempestroid.host"
+_HOST_ACTIVITY = f"{_HOST_PACKAGE}/.MainActivity"
+_DEV_URL_EXTRA = "tempest_dev_url"
+# GitHub repo that publishes the prebuilt host APK as a release asset.
+_HOST_REPO = "mauriciobenjamin700/tempestroid"
 
 
 class ToolchainError(RuntimeError):
@@ -93,8 +108,12 @@ def find_android_host(start: str | Path | None = None) -> Path:
         if (candidate / "gradlew").is_file():
             return candidate
     raise ToolchainError(
-        "could not find the android-host project. Run from a tempestroid "
-        "checkout, or set TEMPESTROID_ANDROID_HOST to its path."
+        "could not find the android-host project (needed only to BUILD an APK "
+        "from source). For a device run you usually don't need it: install the "
+        "prebuilt host once with `tempest install`, then push your app with "
+        "`tempest serve <app.py>` — no Android SDK/NDK required. To build from "
+        "source instead, run from a tempestroid checkout or set "
+        "TEMPESTROID_ANDROID_HOST to its path."
     )
 
 
@@ -215,7 +234,9 @@ def preflight(
                 "android-host",
                 False,
                 str(exc),
-                "run from a tempestroid checkout or set TEMPESTROID_ANDROID_HOST.",
+                "for a device run use `tempest install` + `tempest serve` "
+                "(no source build); to build an APK, run from a checkout or set "
+                "TEMPESTROID_ANDROID_HOST.",
             )
         )
 
@@ -379,9 +400,9 @@ def run_on_device(
     with con.step(f"Installing APK ({apk.name})"):
         con.run_command([adb, "install", "-r", str(apk)], env=env)
 
-    with con.step("Launching org.tempestroid.host/.MainActivity"):
+    with con.step(f"Launching {_HOST_ACTIVITY}"):
         con.run_command(
-            [adb, "shell", "am", "start", "-n", "org.tempestroid.host/.MainActivity"],
+            [adb, "shell", "am", "start", "-n", _HOST_ACTIVITY],
             env=env,
         )
 
@@ -390,3 +411,221 @@ def run_on_device(
     con.info(f"streaming logs (tag: {_HOST_TAG}). Ctrl-C to stop.")
     subprocess.run([adb, "logcat", "-v", "tag"], env=env, check=False)  # noqa: S603
     return 0
+
+
+def host_apk_url(version: str) -> str:
+    """Build the download URL for the prebuilt host APK of a given version.
+
+    Honors ``TEMPESTROID_HOST_APK_URL`` as a full override; otherwise points at
+    the GitHub release asset for the ``v<version>`` tag.
+
+    Args:
+        version: The tempestroid version whose host APK to fetch.
+
+    Returns:
+        The ``http(s)`` URL of the host APK.
+    """
+    override = os.environ.get("TEMPESTROID_HOST_APK_URL")
+    if override:
+        return override
+    return (
+        f"https://github.com/{_HOST_REPO}/releases/download/"
+        f"v{version}/tempest-host-{version}.apk"
+    )
+
+
+def _host_apk_cache_dir() -> Path:
+    """Resolve (and create) the cache directory for downloaded host APKs.
+
+    Returns:
+        ``$XDG_CACHE_HOME/tempestroid`` (or ``~/.cache/tempestroid``).
+    """
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    cache = Path(base) / "tempestroid"
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
+def bundled_host_apk() -> Path | None:
+    """Locate the prebuilt host APK shipped inside the installed package.
+
+    The wheel bundles ``tempestroid/_assets/host.apk`` (see ``pyproject.toml``
+    ``[tool.hatch.build] artifacts``), so ``tempest install`` works offline with
+    no download. Returns ``None`` when the asset is absent (e.g. an editable
+    checkout where the APK hasn't been staged via ``make stage-host``).
+
+    Returns:
+        The filesystem path to the bundled APK, or ``None`` if not present.
+    """
+    from importlib import resources
+
+    try:
+        resource = resources.files("tempestroid").joinpath("_assets", "host.apk")
+    except (ModuleNotFoundError, AttributeError):
+        return None
+    # Wheels install unzipped, so the traversable is a real filesystem path.
+    if resource.is_file():
+        return Path(str(resource))
+    return None
+
+
+def resolve_host_apk(
+    source: str | None,
+    *,
+    version: str,
+    console: Console | None = None,
+) -> Path:
+    """Resolve a host APK to a local file: bundled, a path, a URL, or a release.
+
+    Resolution order: an explicit ``source`` (a local ``.apk`` path used as-is,
+    an ``http(s)`` URL downloaded); else ``TEMPESTROID_HOST_APK`` (a local path);
+    else the **bundled** asset shipped in the wheel (offline, the normal case);
+    else a cached/fresh download of the default release APK for ``version``
+    (overridable via ``TEMPESTROID_HOST_APK_URL``). Downloads are cached under the
+    user cache dir and reused on subsequent calls.
+
+    Args:
+        source: A local ``.apk`` path or ``http(s)`` URL, or ``None`` to use the
+            environment / bundled asset / default release.
+        version: The tempestroid version for the default release URL.
+        console: Optional step reporter for download progress.
+
+    Returns:
+        The local path of the resolved ``.apk``.
+
+    Raises:
+        ToolchainError: If a local path is missing or the download fails.
+    """
+    con = console or Console()
+    if source is None:
+        source = os.environ.get("TEMPESTROID_HOST_APK")
+    if source is not None and not source.startswith(("http://", "https://")):
+        path = Path(source).expanduser().resolve()
+        if not path.is_file():
+            raise ToolchainError(f"host APK not found: {path}")
+        return path
+
+    if source is None:
+        bundled = bundled_host_apk()
+        if bundled is not None:
+            con.info(f"using bundled host APK: {bundled}")
+            return bundled
+
+    url = source or host_apk_url(version)
+    dest = _host_apk_cache_dir() / f"tempest-host-{version}.apk"
+    if dest.is_file():
+        con.info(f"using cached host APK: {dest}")
+        return dest
+    with con.step(f"Downloading host APK ({url})"):
+        try:
+            urllib.request.urlretrieve(url, dest)  # noqa: S310 - http(s) guarded above
+        except urllib.error.HTTPError as exc:
+            dest.unlink(missing_ok=True)
+            raise ToolchainError(
+                f"could not download host APK from {url} (HTTP {exc.code}). "
+                "Publish a host APK to that release, pass a local .apk path, or "
+                "set TEMPESTROID_HOST_APK / TEMPESTROID_HOST_APK_URL."
+            ) from exc
+        except (urllib.error.URLError, OSError) as exc:
+            dest.unlink(missing_ok=True)
+            raise ToolchainError(
+                f"could not download host APK from {url}: {exc}"
+            ) from exc
+    con.detail(f"saved to {dest}")
+    return dest
+
+
+def install_host(
+    source: str | None = None,
+    *,
+    version: str,
+    launch: bool = True,
+    console: Console | None = None,
+) -> int:
+    """Install the prebuilt host APK on a connected device (production path).
+
+    A generic CPython + framework host is installed once; after that
+    ``tempest serve`` pushes app code over LAN with no Android SDK/NDK, Gradle,
+    or ``android-host`` source tree. No build happens here.
+
+    Args:
+        source: A local ``.apk`` path or ``http(s)`` URL; ``None`` uses the
+            bundled asset, then a download (see :func:`resolve_host_apk`).
+        version: The tempestroid version (used for the fallback release URL).
+        launch: Launch the host activity after a successful install.
+        console: Step reporter for transparent output.
+
+    Returns:
+        ``0`` on success.
+
+    Raises:
+        ToolchainError: If adb, a device, or the APK cannot be resolved.
+        subprocess.CalledProcessError: If install/launch fails.
+    """
+    con = console or Console()
+    adb = _adb()
+
+    with con.step("Checking for a connected device"):
+        devices = connected_devices()
+        if not devices:
+            raise StepError("no ready device (connect one and run `adb devices`)")
+        joined = ", ".join(devices)
+        con.info(f"device: {joined}")
+
+    apk = resolve_host_apk(source, version=version, console=con)
+
+    with con.step(f"Installing host APK ({apk.name})"):
+        con.run_command([adb, "install", "-r", str(apk)])
+
+    if launch:
+        with con.step(f"Launching {_HOST_ACTIVITY}"):
+            con.run_command([adb, "shell", "am", "start", "-n", _HOST_ACTIVITY])
+
+    con.info("host installed — push your app with: tempest serve <app.py>")
+    return 0
+
+
+def adb_reverse(port: int) -> None:
+    """Wire ``adb reverse`` so the device reaches the dev server on localhost.
+
+    Args:
+        port: The TCP port the dev server listens on.
+
+    Raises:
+        ToolchainError: If ``adb`` is not on ``PATH``.
+        subprocess.CalledProcessError: If the reverse command fails.
+    """
+    adb = _adb()
+    subprocess.run(  # noqa: S603
+        [adb, "reverse", f"tcp:{port}", f"tcp:{port}"], check=True
+    )
+
+
+def launch_host_dev(port: int) -> None:
+    """Launch the host activity in dev mode, pointed at a local dev server.
+
+    The host reads the ``tempest_dev_url`` intent extra and starts its code-push
+    client against ``http://localhost:<port>`` (reachable via :func:`adb_reverse`).
+
+    Args:
+        port: The dev server port.
+
+    Raises:
+        ToolchainError: If ``adb`` is not on ``PATH``.
+        subprocess.CalledProcessError: If the launch command fails.
+    """
+    adb = _adb()
+    subprocess.run(  # noqa: S603
+        [
+            adb,
+            "shell",
+            "am",
+            "start",
+            "-n",
+            _HOST_ACTIVITY,
+            "--es",
+            _DEV_URL_EXTRA,
+            f"http://localhost:{port}",
+        ],
+        check=True,
+    )

@@ -119,13 +119,8 @@ The same `Style` feeds both translators; the **conformance suite** (phase D) pin
 both with golden snapshots to prevent silent divergence.
 
 - **Qt** (`Style → Qt`): padding becomes QSS on leaves and `contentsMargins` on
-  containers (no double-count); `margin` becomes a QSS box-model rule;
-  `justify`/`align` `START/CENTER/END` become Qt alignment flags, while
-  `SPACE_BETWEEN/AROUND/EVENLY` are realized in the renderer with stretch spacers
-  and `STRETCH` is the default cross-axis fill; `grow` becomes the layout stretch
-  factor. Fixed `width`/`height`/`aspect_ratio` become
-  `setFixedWidth`/`setFixedHeight`; `text_align`, `max_lines`, `text_overflow`
-  and `line_height` are honoured by a custom `QLabel` (`QTextLayout` text layout).
+  containers (no double-count); `justify`/`align` `START/CENTER/END` become Qt
+  alignment flags; `grow` becomes the layout stretch factor.
 - **Compose** (`to_compose(style)`): emits a serializable spec the Kotlin host
   turns into `Modifier` / `Arrangement` / `Alignment`.
 
@@ -139,3 +134,18 @@ both with golden snapshots to prevent silent divergence.
 `Style` and its value objects are frozen. To "change" a style, build a new
 object — which is what `view` does on every rebuild, and what enables diffing by
 value.
+
+## Recap
+
+- `Style` is a single, frozen model, differentiated by value.
+- Fields grouped by intent: layout, box, paint, typography, dimension,
+  animation.
+- Value objects (`Color`, `Edge`, `Border`, `Shadow`, `Gradient`, `Transition`)
+  build the fields.
+- One `Style` feeds both Qt and Compose; divergences are documented by the
+  conformance suite.
+
+## Next steps
+
+➡️ Wire interaction with **[Events](eventos.md)**, or see styles applied in full
+apps in the **[Example gallery](exemplos.md)**.

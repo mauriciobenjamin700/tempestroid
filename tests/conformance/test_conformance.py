@@ -212,17 +212,13 @@ _SAMPLES: dict[str, Any] = {
     "left": 4.0,
 }
 
-#: Expected ``field -> (compose_reacts, qt_reacts)``. A ``(True, False)`` row is
-#: NOT an unimplemented field — both renderers honour every field — it means the
-#: Qt side applies it *imperatively in the renderer* rather than through the QSS
-#: translator the snapshot inspects, so ``Style → Qt`` (the pure translator) does
-#: not react. The documented reasons:
+#: Expected ``field -> (compose_reacts, qt_reacts)``. Divergences (compose-only)
+#: are intentional and documented:
 #:   grow/gap   — Qt applies these on the QBoxLayout (stretch/spacing), not the
 #:                Style translator (see A3 notes), so the translator doesn't react.
-#:   text_align — Qt applies it via ``QLabel.setAlignment``/the custom text label
-#:                in the renderer, not via QSS.
-#:   width/height (fixed) — Qt pins these via ``setFixedWidth``/``setFixedHeight``
-#:                in the renderer (QSS only maps min/max reliably).
+#:   margin     — not wired on the Qt side yet (post-v1).
+#:   text_align — Qt would express this via a widget property, not QSS (post-v1).
+#:   width/height (fixed) — Qt fixed-size not wired yet (A3 notes).
 #:   direction  — structural (picks Row vs Column at the widget); neither
 #:                translator emits it into QSS/spec.
 #:   transition — Compose maps it to ``animate*AsState``; Qt animation is
@@ -252,7 +248,7 @@ _COVERAGE: dict[str, tuple[bool, bool]] = {
     "grow": (True, False),
     "gap": (True, False),
     "padding": (True, True),
-    "margin": (True, True),
+    "margin": (True, False),
     "border": (True, True),
     "radius": (True, True),
     "background": (True, True),

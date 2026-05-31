@@ -60,8 +60,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
-    QStyle,
-    QStyleOption,
     QVBoxLayout,
     QWidget,
 )
@@ -123,29 +121,6 @@ _SAFE_AREA_INSETS: dict[str, float] = {
 _SAFE_AREA_EDGES_ALL: frozenset[str] = frozenset({"top", "right", "bottom", "left"})
 _TOGGLE_TYPES = frozenset({"Checkbox", "Switch"})
 _DATE_FORMAT = "yyyy-MM-dd"
-#: Qt's "no maximum" sentinel for widget sizes (``QWIDGETSIZE_MAX``); resetting a
-#: fixed dimension restores min 0 / max this so the widget flexes again.
-_QT_SIZE_MAX = 16_777_215
-
-#: Main-axis ``justify`` values that distribute *space* between children rather
-#: than packing them to one alignment edge. These have no single ``QBoxLayout``
-#: alignment flag, so the renderer realizes them with stretch spacers instead.
-_SPACE_JUSTIFY: frozenset[JustifyContent] = frozenset(
-    {
-        JustifyContent.SPACE_BETWEEN,
-        JustifyContent.SPACE_AROUND,
-        JustifyContent.SPACE_EVENLY,
-    }
-)
-
-#: Horizontal text-alignment flags per :class:`TextAlign` (combined with a
-#: vertical-centre flag when applied to a ``QLabel``).
-_TEXT_ALIGN: dict[TextAlign, Qt.AlignmentFlag] = {
-    TextAlign.LEFT: Qt.AlignmentFlag.AlignLeft,
-    TextAlign.CENTER: Qt.AlignmentFlag.AlignHCenter,
-    TextAlign.RIGHT: Qt.AlignmentFlag.AlignRight,
-    TextAlign.JUSTIFY: Qt.AlignmentFlag.AlignJustify,
-}
 
 _KEYBOARD_HINTS: dict[str, Qt.InputMethodHint] = {
     "number": Qt.InputMethodHint.ImhDigitsOnly,
@@ -290,148 +265,6 @@ def _eye_icon(revealed: bool) -> QIcon:
     painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, glyph)
     painter.end()
     return QIcon(pixmap)
-
-
-class _TextLabel(QLabel):
-    """A ``QLabel`` that honours ``max_lines``, ``text_overflow`` and ``line_height``.
-
-    Plain ``QLabel`` has no notion of a line cap, custom leading or per-overflow
-    eliding, so when any of those style fields is set the label paints its text
-    itself via a ``QTextLayout``: it lays out every wrapped line, draws only the
-    first ``max_lines``, applies ``line_height`` as a leading multiplier, and —
-    when the text is clipped and ``text_overflow`` is ``ELLIPSIS`` — replaces the
-    last visible line with an elided variant. With none of those fields set it
-    falls straight back to the stock ``QLabel`` paint so the common case is
-    untouched (and QSS-styled exactly as before).
-    """
-
-    def __init__(self) -> None:
-        """Create the label with no text-flow constraints (stock behaviour)."""
-        super().__init__()
-        self._max_lines: int | None = None
-        self._line_height: float | None = None
-        self._ellipsis: bool = False
-        self._flow_align: Qt.AlignmentFlag = (
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
-        self._text_color: QColor | None = None
-
-    def configure_text_flow(
-        self,
-        *,
-        max_lines: int | None,
-        line_height: float | None,
-        ellipsis: bool,
-        align: Qt.AlignmentFlag,
-        color: QColor | None,
-    ) -> None:
-        """Set the text-flow constraints and refresh the label.
-
-        Args:
-            max_lines: Maximum rendered lines, or ``None`` for unlimited.
-            line_height: Leading as a multiple of the font height, or ``None``.
-            ellipsis: Whether clipped text ends in an ellipsis.
-            align: The combined horizontal/vertical alignment flag.
-            color: The resolved text color used for custom painting, or ``None``.
-        """
-        self._max_lines = max_lines
-        self._line_height = line_height
-        self._ellipsis = ellipsis
-        self._flow_align = align
-        self._text_color = color
-        if self._needs_custom_paint():
-            self.setWordWrap(True)
-        self.setAlignment(align)
-        self.update()
-
-    def _needs_custom_paint(self) -> bool:
-        """Whether the custom text layout is required (vs. stock ``QLabel``)."""
-        return self._max_lines is not None or self._line_height is not None
-
-    def paintEvent(self, arg__1: QPaintEvent) -> None:
-        """Paint the label, using the custom text layout only when needed.
-
-        Args:
-            arg__1: The Qt paint event (name mandated by the PySide override).
-        """
-        if not self._needs_custom_paint():
-            super().paintEvent(arg__1)
-            return
-        painter = QPainter(self)
-        # Draw the QSS background/border first — overriding paintEvent skips the
-        # style's own widget primitive, so do it explicitly to keep box decoration.
-        option = QStyleOption()
-        option.initFrom(self)
-        self.style().drawPrimitive(
-            QStyle.PrimitiveElement.PE_Widget, option, painter, self
-        )
-        pen_color = self._text_color or self.palette().color(
-            QPalette.ColorRole.WindowText
-        )
-        painter.setPen(pen_color)
-        self._paint_flowed_text(painter)
-        painter.end()
-
-    def _paint_flowed_text(self, painter: QPainter) -> None:
-        """Lay out and draw the wrapped text under the flow constraints.
-
-        Args:
-            painter: The active painter bound to this widget.
-        """
-        text = self.text()
-        metrics = QFontMetricsF(self.font())
-        advance = (
-            self._line_height * metrics.height()
-            if self._line_height is not None
-            else metrics.lineSpacing()
-        )
-        width = float(max(self.width(), 1))
-        option = QTextOption(self._flow_align)
-        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
-        layout = QTextLayout(text, self.font(), painter.device())
-        layout.setTextOption(option)
-        lines: list[QTextLine] = []
-        layout.beginLayout()
-        while True:
-            line = layout.createLine()
-            if not line.isValid():
-                break
-            line.setLineWidth(width)
-            lines.append(line)
-        layout.endLayout()
-        visible = lines[: self._max_lines] if self._max_lines is not None else lines
-        truncated = len(visible) < len(lines)
-        total_height = advance * len(visible)
-        top = self._vertical_offset(total_height)
-        h_flags = int(self._flow_align & Qt.AlignmentFlag.AlignHorizontal_Mask)
-        for index, line in enumerate(visible):
-            y = top + index * advance
-            is_last = index == len(visible) - 1
-            if is_last and truncated and self._ellipsis:
-                segment = text[line.textStart() :]
-                elided = metrics.elidedText(
-                    segment, Qt.TextElideMode.ElideRight, width
-                )
-                painter.drawText(
-                    QRectF(0.0, y, width, advance), h_flags, elided
-                )
-            else:
-                line.draw(painter, QPointF(0.0, y))
-
-    def _vertical_offset(self, total_height: float) -> float:
-        """Compute the top y for the text block per the vertical alignment.
-
-        Args:
-            total_height: The total height the visible lines occupy.
-
-        Returns:
-            The y coordinate at which the first line starts.
-        """
-        if self._flow_align & Qt.AlignmentFlag.AlignVCenter:
-            return max(0.0, (self.height() - total_height) / 2)
-        if self._flow_align & Qt.AlignmentFlag.AlignBottom:
-            return max(0.0, self.height() - total_height)
-        return 0.0
 
 
 def _drop_shadow(shadow: Shadow, parent: QWidget) -> QGraphicsDropShadowEffect:
@@ -841,7 +674,6 @@ class QtRenderer:
             self._host_layout.insertWidget(0, new.widget)
             self._root = new
             if old is not None:
-                self._purge_connections(old)
                 self._discard(old.widget)
             return
         parent = self._at(patch.path[:-1])
@@ -855,14 +687,10 @@ class QtRenderer:
             self._relayout_stack(parent)
             return
         layout = self._require_layout(parent)
-        # Strip spacers so the IR index maps to the layout slot for the insert.
-        self._strip_spacers(layout)
         layout.insertWidget(index, new.widget, self._stretch(new))
         self._place_alignment(parent, new)
         parent.children[index] = new
-        self._purge_connections(old)
         self._discard(old.widget)
-        self._sync_main_axis(parent)
 
     def _apply_insert(self, patch: Insert) -> None:
         """Insert a new child subtree under a parent.
@@ -878,12 +706,9 @@ class QtRenderer:
             self._relayout_stack(parent)
             return
         layout = self._require_layout(parent)
-        # Strip spacers so the IR index maps to the layout slot for the insert.
-        self._strip_spacers(layout)
         parent.children.insert(patch.index, child)
         layout.insertWidget(patch.index, child.widget, self._stretch(child))
         self._place_alignment(parent, child)
-        self._sync_main_axis(parent)
 
     def _apply_remove(self, patch: Remove) -> None:
         """Remove a child subtree from a parent.
@@ -899,9 +724,7 @@ class QtRenderer:
             self._relayout_stack(parent)
             return
         self._require_layout(parent).removeWidget(child.widget)
-        self._purge_connections(child)
         self._discard(child.widget)
-        self._sync_main_axis(parent)
 
     def _apply_reorder(self, patch: Reorder) -> None:
         """Reorder a parent's children per a permutation.
@@ -926,7 +749,6 @@ class QtRenderer:
             layout.addWidget(child.widget, self._stretch(child))
             self._place_alignment(parent, child)
         parent.children = new_children
-        self._sync_main_axis(parent)
 
     # --- tree construction -------------------------------------------------
 
@@ -968,7 +790,7 @@ class QtRenderer:
             A rendered node with an empty widget/layout, no props applied yet.
         """
         if node.type == "Text":
-            return _Rendered(node.type, node.key, _TextLabel(), None)
+            return _Rendered(node.type, node.key, QLabel(), None)
         if node.type == "Button":
             return _Rendered(node.type, node.key, QPushButton(), None)
         if node.type == "Input":
@@ -1061,9 +883,9 @@ class QtRenderer:
                     cast("list[Any] | None", node.props.get("edges")),
                 )
         if node.type == "Text":
-            label = cast("_TextLabel", node.widget)
-            label.setText(cast("str", node.props.get("content", "")))
-            self._apply_text_flow(label, style)
+            cast("QLabel", node.widget).setText(
+                cast("str", node.props.get("content", ""))
+            )
         elif node.type == "Image":
             self._apply_image(cast("QLabel", node.widget), node.props)
         elif node.type == "Icon":
@@ -1091,7 +913,6 @@ class QtRenderer:
         elif node.type == "GestureDetector":
             self._bind_gestures(cast("_GestureWidget", node.widget), node.props)
         self._apply_letter_spacing(node.widget, style)
-        self._apply_sizing(node.widget, style)
         self._apply_effects(node.widget, style)
 
     @staticmethod
@@ -1113,81 +934,6 @@ class QtRenderer:
         else:
             font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 100.0)
         widget.setFont(font)
-
-    @staticmethod
-    def _text_alignment(style: Style | None) -> Qt.AlignmentFlag:
-        """Resolve a Text node's combined alignment flag from ``text_align``.
-
-        ``text_align`` only sets the horizontal half; the vertical half stays a
-        centre flag (QLabel's natural baseline). Defaults to left when unset.
-
-        Args:
-            style: The Text node's style, or ``None``.
-
-        Returns:
-            The combined horizontal | ``AlignVCenter`` alignment flag.
-        """
-        horizontal = Qt.AlignmentFlag.AlignLeft
-        if style is not None and style.text_align is not None:
-            horizontal = _TEXT_ALIGN[style.text_align]
-        return horizontal | Qt.AlignmentFlag.AlignVCenter
-
-    def _apply_text_flow(self, label: _TextLabel, style: Style | None) -> None:
-        """Push a Text node's alignment and text-flow constraints onto its label.
-
-        Args:
-            label: The text label to configure.
-            style: The Text node's style, or ``None``.
-        """
-        color: QColor | None = None
-        if style is not None and style.color is not None:
-            c = style.color
-            color = QColor(c.r, c.g, c.b, round(c.a * 255))
-        label.configure_text_flow(
-            max_lines=style.max_lines if style is not None else None,
-            line_height=style.line_height if style is not None else None,
-            ellipsis=(
-                style is not None
-                and style.text_overflow is TextOverflow.ELLIPSIS
-            ),
-            align=self._text_alignment(style),
-            color=color,
-        )
-
-    @staticmethod
-    def _apply_sizing(widget: QWidget, style: Style | None) -> None:
-        """Apply fixed ``width``/``height``/``aspect_ratio`` to a widget.
-
-        Qt stylesheets cannot reliably pin a widget's ``width``/``height`` (only
-        ``min``/``max`` map cleanly to QSS), so a fixed size is set imperatively
-        here. ``aspect_ratio`` derives the missing dimension from the fixed one
-        (``height = width / ratio`` or ``width = height * ratio``); with neither
-        dimension fixed it has no anchor in Qt and is left to the device renderer
-        (a documented divergence). Idempotent: an unset dimension is restored to
-        Qt's flexible ``[0, QWIDGETSIZE_MAX]`` range.
-
-        Args:
-            widget: The target widget.
-            style: The node's style, or ``None``.
-        """
-        width = style.width if style is not None else None
-        height = style.height if style is not None else None
-        ratio = style.aspect_ratio if style is not None else None
-        if ratio is not None:
-            if width is not None and height is None:
-                height = width / ratio
-            elif height is not None and width is None:
-                width = height * ratio
-        if width is not None:
-            widget.setFixedWidth(int(width))
-        else:
-            widget.setMinimumWidth(0)
-            widget.setMaximumWidth(_QT_SIZE_MAX)
-        if height is not None:
-            widget.setFixedHeight(int(height))
-        else:
-            widget.setMinimumHeight(0)
-            widget.setMaximumHeight(_QT_SIZE_MAX)
 
     @staticmethod
     def _apply_effects(widget: QWidget, style: Style | None) -> None:
@@ -1775,26 +1521,6 @@ class QtRenderer:
         )
         if flag is not None:
             parent.layout.setAlignment(child.widget, flag)
-
-    def _purge_connections(self, rendered: _Rendered) -> None:
-        """Drop tracked signal connections for a discarded subtree.
-
-        The click/value/eye registries are keyed by ``id(widget)``. ``deleteLater``
-        only *schedules* a widget's destruction, so without this the entries
-        outlive the widget — a slow leak across remove/replace churn, and a
-        correctness hazard once CPython recycles the ``id`` for a fresh widget.
-        Walks the whole ``_Rendered`` subtree since handler-bearing widgets may
-        sit anywhere below the discarded node.
-
-        Args:
-            rendered: The root of the rendered subtree being discarded.
-        """
-        widget_id = id(rendered.widget)
-        self._click_conns.pop(widget_id, None)
-        self._value_conns.pop(widget_id, None)
-        self._eye_actions.pop(widget_id, None)
-        for child in rendered.children:
-            self._purge_connections(child)
 
     @staticmethod
     def _discard(widget: QWidget) -> None:

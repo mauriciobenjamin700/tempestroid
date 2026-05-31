@@ -65,3 +65,17 @@ classvar. The [`introspect()`](../referencia/api.md#introspection) function
 publishes all of this as JSON — widget prop schemas, the event each handler emits,
 and each event's payload schema. This is what powers `tempest spec` and the device
 boundary.
+
+## Recap
+
+- Events are frozen Pydantic models (`TapEvent`, `TextChangeEvent`, …).
+- `parse_event` is the gate that validates the raw payload before the handler —
+  like FastAPI validating a request body.
+- Handlers may take the typed event or be zero-argument; sync or `async`.
+- The contract (`event_schemas` + `introspect()`) is published as JSON by
+  `tempest spec`.
+
+## Next steps
+
+➡️ Inspect the contract with the **[CLI (`tempest spec`)](cli.md)**, or see real
+handlers in the **[Example gallery](exemplos.md)**.

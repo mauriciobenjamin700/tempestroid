@@ -113,3 +113,19 @@ Each widget declares the event each handler emits via the `event_schemas`
 classvar (e.g. `Button.event_schemas == {"on_click": TapEvent}`). This contract is
 published by [`introspect()`](../referencia/api.md#introspection) and consumed by
 the device boundary. See [Events](eventos.md).
+
+## Recap
+
+- Widgets are Pydantic models; always import from the package level
+  (`from tempestroid import ...`).
+- Layout: `Column`/`Row`/`Container`/`ScrollView`/`SafeArea`; content: `Text`,
+  `Button`, media, and indicators.
+- Value-bearing inputs emit a typed change event (`on_change` / `on_select`).
+- Give list children a stable `key` — that's what lets the diff reorder instead
+  of recreating.
+
+## Next steps
+
+➡️ Make widgets look good with **[Styles](estilos.md)**, understand typed
+**[Events](eventos.md)**, or see full apps in the
+**[Example gallery](exemplos.md)**.

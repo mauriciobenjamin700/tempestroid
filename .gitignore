@@ -71,3 +71,7 @@ site/
 
 # `tempest build` embeds the user app here as a generated asset (phase C).
 android-host/app/src/main/assets/tempest_app.py
+
+# Bundled prebuilt host APK (staged from `make apk` output via `make stage-host`).
+# Shipped in the wheel via [tool.hatch.build] artifacts; too big to track in git.
+tempestroid/_assets/*.apk

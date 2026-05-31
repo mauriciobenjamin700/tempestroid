@@ -65,6 +65,10 @@ from tempestroid.core import (
     introspect,
     widget_catalog,
 )
+from tempestroid.devices import (
+    DEFAULT_DEVICE,
+    Device,
+)
 from tempestroid.devserver import (
     DevServer,
     render_qr,
@@ -272,6 +276,9 @@ __all__ = [
     "EventMessage",
     "serialize_node",
     "serialize_patch",
+    # Device presets (simulator viewport sizing)
+    "Device",
+    "DEFAULT_DEVICE",
     # Dev server (LAN code-push, phase B5)
     "DevServer",
     "run_dev_client",

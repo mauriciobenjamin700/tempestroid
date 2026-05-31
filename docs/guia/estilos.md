@@ -121,14 +121,8 @@ O mesmo `Style` alimenta os dois tradutores; a **suíte de conformidade** (fase 
 fixa ambos com *golden snapshots* para impedir divergência silenciosa.
 
 - **Qt** (`Style → Qt`): *padding* vira QSS nos *leaves* e `contentsMargins` nos
-  containers (sem dupla contagem); `margin` vira regra QSS de box-model;
-  `justify`/`align` `START/CENTER/END` viram flags de alinhamento Qt, enquanto
-  `SPACE_BETWEEN/AROUND/EVENLY` são realizados no renderizador com *spacers* de
-  *stretch* e `STRETCH` é o preenchimento padrão do eixo cruzado; `grow` vira
-  fator de *stretch*. `width`/`height`/`aspect_ratio` fixos viram
-  `setFixedWidth`/`setFixedHeight`; `text_align`, `max_lines`, `text_overflow` e
-  `line_height` são honrados por um `QLabel` customizado (layout de texto via
-  `QTextLayout`).
+  containers (sem dupla contagem); `justify`/`align` `START/CENTER/END` viram
+  flags de alinhamento Qt; `grow` vira fator de *stretch* do layout.
 - **Compose** (`to_compose(style)`): emite uma *spec* serializável que o host
   Kotlin transforma em `Modifier` / `Arrangement` / `Alignment`.
 
@@ -142,3 +136,18 @@ fixa ambos com *golden snapshots* para impedir divergência silenciosa.
 `Style` e seus objetos de valor são frozen. Para "mudar" um estilo, construa um
 novo objeto — é o que a `view` faz a cada rebuild, e o que permite o *diff* por
 valor.
+
+## Recapitulando
+
+- `Style` é um modelo único, frozen, diferenciado por valor.
+- Campos agrupados por intenção: layout, caixa, pintura, tipografia, dimensão,
+  animação.
+- Objetos de valor (`Color`, `Edge`, `Border`, `Shadow`, `Gradient`,
+  `Transition`) montam os campos.
+- Um mesmo `Style` alimenta Qt e Compose; divergências ficam documentadas pela
+  suíte de conformidade.
+
+## Próximos passos
+
+➡️ Ligue interação com **[Eventos](eventos.md)**, ou veja os estilos aplicados em
+apps completos na **[Galeria de exemplos](exemplos.md)**.

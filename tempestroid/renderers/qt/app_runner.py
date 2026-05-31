@@ -18,6 +18,7 @@ import qasync  # pyright: ignore[reportMissingTypeStubs]
 from PySide6.QtWidgets import QApplication
 
 from tempestroid.core.state import App
+from tempestroid.devices import DEFAULT_DEVICE
 from tempestroid.renderers.qt.renderer import QtRenderer
 from tempestroid.widgets import Widget
 
@@ -31,7 +32,7 @@ def run_qt(
     view: Callable[[App[S]], Widget],
     *,
     title: str = "tempestroid",
-    size: tuple[int, int] = (360, 640),
+    size: tuple[int, int] = DEFAULT_DEVICE.size,
 ) -> int:
     """Mount an app in a Qt window and run the fused Qt/asyncio loop.
 

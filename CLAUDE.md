@@ -170,21 +170,9 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
 **A3 notes / known limits:**
 
 - `Style → Qt`: padding is QSS for leaves, `contentsMargins` for containers (no
-  double-count); `margin` is a QSS box-model rule (always emitted, no conflict
-  with padding). `justify`/`align` `START/CENTER/END` → Qt alignment flags;
-  `SPACE_BETWEEN/AROUND/EVENLY` are realized in the renderer with stretch spacers
-  (`_sync_main_axis` re-lays children around spacers; structural patches strip
-  spacers first so a child's IR index still maps to its layout slot).
-  `AlignItems.STRETCH` is Qt's default cross-axis fill (no flag set). `grow` →
-  layout stretch factor; fixed `width`/`height`/`aspect_ratio` →
-  `setFixedWidth`/`setFixedHeight` in the renderer (`aspect_ratio` derives the
-  missing dimension from the fixed one; with neither fixed it has no Qt anchor
-  and is left to the device — a documented divergence).
-- Text features beyond QSS live on a custom `_TextLabel(QLabel)`: `text_align` →
-  `setAlignment`; `max_lines`/`text_overflow`/`line_height` → a `QTextLayout`
-  paint that caps lines, elides the last visible line on `ELLIPSIS`, and uses
-  `line_height` as a leading multiplier. Plain text (none of those set) falls
-  back to the stock `QLabel` paint untouched.
+  double-count). `justify`/`align` `START/CENTER/END` → Qt alignment flags;
+  `SPACE_*` and `AlignItems.STRETCH` fall through to Qt defaults (post-v1).
+  `grow` → layout stretch factor; `width/height` fixed-size is not wired yet.
 - `QtRenderer` owns a *host* widget so a root `Replace` is a uniform child swap.
   Updates re-apply the full merged visual idempotently. Headless tests run under
   `QT_QPA_PLATFORM=offscreen` (see `tests/conftest.py`).
