@@ -11,9 +11,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -113,6 +118,29 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
             verticalAlignment = verticalAlignment(style),
         ) {
             node.children.forEach { RenderNode(it, onEvent) }
+        }
+
+        "SafeArea" -> {
+            // Inset the child away from the real system intrusions (status bar,
+            // navigation bar, display cutout/notch). The `edges` prop selects
+            // which sides are protected; absent → all four. Requires the host to
+            // draw edge-to-edge (see MainActivity.enableEdgeToEdge), otherwise
+            // the system already consumes these insets and safeDrawing is empty.
+            @Suppress("UNCHECKED_CAST")
+            val selected = (node.props["edges"] as? List<*>)
+                ?.mapNotNull { it as? String }?.toSet()
+                ?: setOf("top", "right", "bottom", "left")
+            var sides: WindowInsetsSides? = null
+            fun add(s: WindowInsetsSides) { sides = sides?.plus(s) ?: s }
+            if ("top" in selected) add(WindowInsetsSides.Top)
+            if ("bottom" in selected) add(WindowInsetsSides.Bottom)
+            if ("left" in selected) add(WindowInsetsSides.Left)
+            if ("right" in selected) add(WindowInsetsSides.Right)
+            val insets = sides?.let { WindowInsets.safeDrawing.only(it) }
+                ?: WindowInsets(0, 0, 0, 0)
+            Box(modifier = baseModifier(style).windowInsetsPadding(insets)) {
+                node.children.forEach { RenderNode(it, onEvent) }
+            }
         }
 
         "Input" -> RenderInput(node, style, onEvent)
