@@ -114,3 +114,20 @@ Cada widget declara o evento que cada *handler* emite via a classvar
 `event_schemas` (ex.: `Button.event_schemas == {"on_click": TapEvent}`). Esse
 contrato é publicado por [`introspect()`](../referencia/api.md#introspeccao) e
 consumido pela fronteira do dispositivo. Veja [Eventos](eventos.md).
+
+## Recapitulando
+
+- Widgets são modelos Pydantic; importe sempre do nível do pacote
+  (`from tempestroid import ...`).
+- Layout: `Column`/`Row`/`Container`/`ScrollView`/`SafeArea`; conteúdo: `Text`,
+  `Button`, mídia e indicadores.
+- *Inputs* com valor emitem um evento de mudança tipado (`on_change` /
+  `on_select`).
+- Dê um `key` estável a filhos de listas — é o que deixa o *diff* reordenar em
+  vez de recriar.
+
+## Próximos passos
+
+➡️ Deixe os widgets bonitos com **[Estilos](estilos.md)**, entenda os
+**[Eventos](eventos.md)** tipados, ou veja apps completos na
+**[Galeria de exemplos](exemplos.md)**.

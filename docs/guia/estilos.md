@@ -142,3 +142,18 @@ fixa ambos com *golden snapshots* para impedir divergência silenciosa.
 `Style` e seus objetos de valor são frozen. Para "mudar" um estilo, construa um
 novo objeto — é o que a `view` faz a cada rebuild, e o que permite o *diff* por
 valor.
+
+## Recapitulando
+
+- `Style` é um modelo único, frozen, diferenciado por valor.
+- Campos agrupados por intenção: layout, caixa, pintura, tipografia, dimensão,
+  animação.
+- Objetos de valor (`Color`, `Edge`, `Border`, `Shadow`, `Gradient`,
+  `Transition`) montam os campos.
+- Um mesmo `Style` alimenta Qt e Compose; divergências ficam documentadas pela
+  suíte de conformidade.
+
+## Próximos passos
+
+➡️ Ligue interação com **[Eventos](eventos.md)**, ou veja os estilos aplicados em
+apps completos na **[Galeria de exemplos](exemplos.md)**.
