@@ -1,0 +1,218 @@
+from tempestroid import (
+    Button,
+    Color,
+    Column,
+    Insert,
+    Remove,
+    Reorder,
+    Replace,
+    Row,
+    Style,
+    Text,
+    Update,
+    build,
+    diff,
+)
+
+# --- build (widget -> IR node) ---------------------------------------------
+
+
+def test_build_leaf_props_exclude_children_and_key():
+    node = build(Text(content="hi", key="t", style=Style(gap=2.0)))
+    assert node.type == "Text"
+    assert node.key == "t"
+    assert node.children == []
+    assert node.props["content"] == "hi"
+    assert node.props["style"] == Style(gap=2.0)
+    assert "key" not in node.props
+
+
+def test_build_recurses_children_and_drops_child_slot_from_props():
+    node = build(Column(children=[Text(content="a"), Text(content="b")]))
+    assert node.type == "Column"
+    assert "children" not in node.props
+    assert [c.props["content"] for c in node.children] == ["a", "b"]
+
+
+def test_build_container_child_slot_excluded():
+    from tempestroid import Container
+
+    node = build(Container(child=Text(content="x")))
+    assert "child" not in node.props
+    assert len(node.children) == 1
+    assert node.children[0].props["content"] == "x"
+
+
+def test_build_button_keeps_handler_prop():
+    handler = lambda: None  # noqa: E731
+    node = build(Button(label="go", on_click=handler))
+    assert node.props["label"] == "go"
+    assert node.props["on_click"] is handler
+
+
+# --- diff: no change --------------------------------------------------------
+
+
+def test_identical_trees_produce_no_patches():
+    tree = Column(children=[Text(content="a"), Button(label="b")])
+    assert diff(build(tree), build(tree)) == []
+
+
+# --- diff: prop update ------------------------------------------------------
+
+
+def test_text_content_change_is_update_at_root():
+    patches = diff(build(Text(content="a")), build(Text(content="b")))
+    assert len(patches) == 1
+    patch = patches[0]
+    assert isinstance(patch, Update)
+    assert patch.path == ()
+    assert patch.set_props == {"content": "b"}
+    assert patch.unset_props == []
+
+
+def test_style_change_is_update():
+    old = build(Text(content="x", style=Style(gap=1.0)))
+    new = build(Text(content="x", style=Style(gap=2.0)))
+    patches = diff(old, new)
+    assert len(patches) == 1
+    assert isinstance(patches[0], Update)
+    assert patches[0].set_props == {"style": Style(gap=2.0)}
+
+
+def test_unset_prop_reported():
+    old = build(Text(content="x", style=Style(gap=1.0)))
+    new = build(Text(content="x"))
+    patches = diff(old, new)
+    assert len(patches) == 1
+    update = patches[0]
+    assert isinstance(update, Update)
+    # style went from a Style to None — value changed, so it is a set, not unset.
+    assert update.set_props == {"style": None}
+
+
+def test_equal_styles_do_not_diff():
+    old = build(Text(content="x", style=Style(background=Color.from_hex("#fff"))))
+    new = build(Text(content="x", style=Style(background=Color.from_hex("#ffffff"))))
+    assert diff(old, new) == []
+
+
+# --- diff: replace ----------------------------------------------------------
+
+
+def test_type_change_is_replace():
+    patches = diff(build(Text(content="a")), build(Button(label="a")))
+    assert len(patches) == 1
+    patch = patches[0]
+    assert isinstance(patch, Replace)
+    assert patch.path == ()
+    assert patch.node.type == "Button"
+
+
+def test_key_change_is_replace():
+    patches = diff(
+        build(Text(content="a", key="x")),
+        build(Text(content="a", key="y")),
+    )
+    assert len(patches) == 1
+    assert isinstance(patches[0], Replace)
+
+
+# --- diff: insert / remove (positional) ------------------------------------
+
+
+def test_append_child_is_insert():
+    old = build(Column(children=[Text(content="a")]))
+    new = build(Column(children=[Text(content="a"), Text(content="b")]))
+    patches = diff(old, new)
+    assert len(patches) == 1
+    patch = patches[0]
+    assert isinstance(patch, Insert)
+    assert patch.path == ()
+    assert patch.index == 1
+    assert patch.node.props["content"] == "b"
+
+
+def test_remove_trailing_child_is_remove():
+    old = build(Column(children=[Text(content="a"), Text(content="b")]))
+    new = build(Column(children=[Text(content="a")]))
+    patches = diff(old, new)
+    assert len(patches) == 1
+    patch = patches[0]
+    assert isinstance(patch, Remove)
+    assert patch.index == 1
+
+
+def test_multiple_removes_emitted_tail_first():
+    old = build(Column(children=[Text(content=str(i)) for i in range(3)]))
+    new = build(Column(children=[Text(content="0")]))
+    patches = diff(old, new)
+    removes = [p for p in patches if isinstance(p, Remove)]
+    assert [p.index for p in removes] == [2, 1]
+
+
+# --- diff: nested recursion paths ------------------------------------------
+
+
+def test_nested_update_carries_correct_path():
+    old = build(Column(children=[Row(children=[Text(content="a")])]))
+    new = build(Column(children=[Row(children=[Text(content="z")])]))
+    patches = diff(old, new)
+    assert len(patches) == 1
+    patch = patches[0]
+    assert isinstance(patch, Update)
+    assert patch.path == (0, 0)
+    assert patch.set_props == {"content": "z"}
+
+
+# --- diff: keyed reorder ----------------------------------------------------
+
+
+def test_pure_reorder_emits_single_reorder():
+    old = build(
+        Column(children=[Text(content="a", key="a"), Text(content="b", key="b")])
+    )
+    new = build(
+        Column(children=[Text(content="b", key="b"), Text(content="a", key="a")])
+    )
+    patches = diff(old, new)
+    reorders = [p for p in patches if isinstance(p, Reorder)]
+    assert len(reorders) == 1
+    assert reorders[0].order == [1, 0]
+    # no content changed, so no updates accompany the reorder
+    assert all(isinstance(p, Reorder) for p in patches)
+
+
+def test_reorder_then_update_uses_new_index_path():
+    old = build(
+        Column(children=[Text(content="a", key="a"), Text(content="b", key="b")])
+    )
+    new = build(
+        Column(children=[Text(content="B", key="b"), Text(content="a", key="a")])
+    )
+    patches = diff(old, new)
+    assert isinstance(patches[0], Reorder)
+    assert patches[0].order == [1, 0]
+    updates = [p for p in patches if isinstance(p, Update)]
+    assert len(updates) == 1
+    # "b" now sits at new index 0
+    assert updates[0].path == (0,)
+    assert updates[0].set_props == {"content": "B"}
+
+
+def test_unchanged_keyed_order_emits_nothing():
+    old = build(Column(children=[Text(content="a", key="a")]))
+    new = build(Column(children=[Text(content="a", key="a")]))
+    assert diff(old, new) == []
+
+
+def test_mixed_keyset_falls_back_to_positional():
+    # Different key sets => not a pure reorder => positional diff.
+    old = build(Column(children=[Text(content="a", key="a")]))
+    new = build(
+        Column(children=[Text(content="a", key="a"), Text(content="c", key="c")])
+    )
+    patches = diff(old, new)
+    assert len(patches) == 1
+    assert isinstance(patches[0], Insert)
+    assert patches[0].index == 1
