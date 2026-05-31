@@ -113,7 +113,7 @@ def view(app: App[GalleryState]) -> Widget:
             Row(
                 style=Style(gap=8.0, align=AlignItems.CENTER),
                 children=[
-                    Icon(name="widgets", size=20.0),
+                    Icon(name="star", size=20.0),
                     Text(content="Component gallery", style=Style(font_size=22.0)),
                 ],
             ),

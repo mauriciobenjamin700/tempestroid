@@ -6,6 +6,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-31
+
+### Added
+
+- **Compose device cases for the utility widgets.** The Compose renderer now
+  draws **`Switch`**, **`Slider`**, **`ProgressBar`**, **`Spinner`**,
+  **`TextArea`**, **`ScrollView`**, **`Image`** (via Coil) and **`Icon`** (named
+  Material icons) on the device, instead of falling back to an empty `Box`. Adds
+  the `material-icons-extended` + `coil-compose` host dependencies. (`Stack` /
+  `GestureDetector` already rendered, shipped with the overlay.)
+- **Camera parameters (photo + video).** `take_photo(camera, max_width,
+  max_height)` takes a facing + size caps; new `record_video(camera,
+  max_duration_s, quality) -> Video`. The Kotlin camera handler builds the
+  `ACTION_IMAGE_CAPTURE` / `ACTION_VIDEO_CAPTURE` intent with the requested
+  extras, downscales photos to the caps, and reads video metadata.
+- **Microphone + speaker capabilities (`tempestroid.native.audio`).**
+  `record_audio() -> AudioClip` (microphone, `MediaRecorder`) and
+  `play_sound(src, volume)` / `stop_sound()` (speaker, `MediaPlayer`) over the
+  existing request/response native channel. `RECORD_AUDIO` added to the manifest.
+
+### Changed
+
+- **Keyed mixed diff in one pass.** When both child lists are fully keyed with
+  unique keys, the reconciler now handles insert + remove + reorder together in a
+  single pass (a pure permutation is the no-add/remove case), instead of the
+  positional fallback.
+
+### Fixed
+
+- **On-device code-push no longer needs Typer.** The CLI's Typer import is
+  deferred so the device-side code-push re-exec path runs without the `typer`
+  dependency present.
+- **Photo dimensions come from the camera capability.** `take_photo` now reports
+  the real captured width/height instead of a placeholder.
+
 ## [0.3.0] — 2026-05-31
 
 ### Added
