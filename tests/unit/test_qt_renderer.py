@@ -124,6 +124,34 @@ def test_reorder_changes_visual_order():
     assert _ordered_labels(renderer.root_widget) == ["b", "a"]
 
 
+def test_keyed_mixed_diff_applies_end_to_end():
+    # The keyed diff (remove + reorder + insert in one pass) must compose under
+    # sequential patch application in the real renderer: old -> new exactly.
+    renderer = QtRenderer()
+    old = build(
+        Column(
+            children=[
+                Text(content="a", key="a"),
+                Text(content="b", key="b"),
+                Text(content="c", key="c"),
+            ]
+        )
+    )
+    renderer.mount(old)
+    new = build(
+        Column(
+            children=[
+                Text(content="c", key="c"),
+                Text(content="a2", key="a"),
+                Text(content="d", key="d"),
+            ]
+        )
+    )
+    renderer.apply(diff(old, new))
+    # "b" gone, "c"/"a" reordered, "d" inserted, "a" updated to "a2".
+    assert _ordered_labels(renderer.root_widget) == ["c", "a2", "d"]
+
+
 def test_button_click_invokes_sync_handler():
     clicks: list[int] = []
     renderer = QtRenderer()
