@@ -27,6 +27,8 @@ __all__ = [
     "TextOverflow",
     "GradientDirection",
     "Curve",
+    "Position",
+    "StackAlign",
     "Color",
     "Edge",
     "Border",
@@ -130,6 +132,40 @@ class GradientDirection(StrEnum):
     BOTTOM_TOP = "bottom-top"
     LEFT_RIGHT = "left-right"
     RIGHT_LEFT = "right-left"
+
+
+class Position(StrEnum):
+    """Stacking-flow positioning of a child inside a ``Stack`` (``position``).
+
+    ``STATIC`` (the default) lets the child participate in the stack's normal
+    overlap flow, aligned by the stack's :attr:`Style.stack_align`. ``ABSOLUTE``
+    pulls the child out of that flow and anchors it by its insets
+    (:attr:`Style.top`/:attr:`Style.right`/:attr:`Style.bottom`/:attr:`Style.left`),
+    modelled on Flutter's ``Positioned`` / CSS ``position: absolute``.
+    """
+
+    STATIC = "static"
+    ABSOLUTE = "absolute"
+
+
+class StackAlign(StrEnum):
+    """Two-axis alignment of a ``Stack``'s non-positioned children.
+
+    Mirrors Compose ``Alignment`` / Flutter ``AlignmentDirectional`` constants:
+    a vertical band (top/center/bottom) crossed with a horizontal band
+    (start/center/end). Used only by ``Stack`` containers; ordinary flex
+    containers keep using single-axis :class:`JustifyContent`/:class:`AlignItems`.
+    """
+
+    TOP_START = "top-start"
+    TOP_CENTER = "top-center"
+    TOP_END = "top-end"
+    CENTER_START = "center-start"
+    CENTER = "center"
+    CENTER_END = "center-end"
+    BOTTOM_START = "bottom-start"
+    BOTTOM_CENTER = "bottom-center"
+    BOTTOM_END = "bottom-end"
 
 
 class Color(BaseModel):
@@ -444,6 +480,19 @@ class Style(BaseModel):
     min_height: float | None = None
     max_height: float | None = None
     aspect_ratio: float | None = Field(default=None, gt=0.0)
+
+    # Stacking / overlay. ``stack_align`` lives on a ``Stack`` and aligns its
+    # non-positioned children; ``position`` + the four insets live on a *child*
+    # of a Stack and anchor it absolutely (CSS ``position`` / Flutter
+    # ``Positioned``). The leaf renderers realize these imperatively (Qt geometry,
+    # Compose ``Box`` alignment/offset), so the pure ``Style → Qt`` translator does
+    # not react to them — see the conformance suite.
+    stack_align: StackAlign | None = None
+    position: Position | None = None
+    top: float | None = None
+    right: float | None = None
+    bottom: float | None = None
+    left: float | None = None
 
     # Animation. Implicitly tween changed visual props on rebuild (Compose maps
     # this to ``animate*AsState``; Qt animation is renderer-imperative, so the

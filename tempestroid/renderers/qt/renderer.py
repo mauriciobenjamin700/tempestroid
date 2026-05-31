@@ -16,17 +16,30 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
-from PySide6.QtCore import QDate, QMetaObject, QPointF, QRectF, Qt, SignalInstance
+from PySide6.QtCore import (
+    QDate,
+    QMetaObject,
+    QPoint,
+    QPointF,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    SignalInstance,
+)
 from PySide6.QtGui import (
     QAction,
     QColor,
     QFont,
     QFontMetricsF,
     QIcon,
+    QMouseEvent,
     QPainter,
     QPaintEvent,
     QPalette,
     QPixmap,
+    QResizeEvent,
     QTextLayout,
     QTextLine,
     QTextOption,
@@ -70,7 +83,9 @@ from tempestroid.renderers.qt.style_translator import (
 from tempestroid.style import (
     Edge,
     JustifyContent,
+    Position,
     Shadow,
+    StackAlign,
     Style,
     TextAlign,
     TextOverflow,
@@ -79,7 +94,11 @@ from tempestroid.widgets import (
     DateChangeEvent,
     Event,
     FileSelectEvent,
+    LongPressEvent,
     SlideEvent,
+    SwipeDirection,
+    SwipeEvent,
+    TapEvent,
     TextChangeEvent,
     ToggleEvent,
     handler_accepts_event,
@@ -134,6 +153,103 @@ _KEYBOARD_HINTS: dict[str, Qt.InputMethodHint] = {
     "phone": Qt.InputMethodHint.ImhDialableCharactersOnly,
     "url": Qt.InputMethodHint.ImhUrlCharactersOnly,
 }
+
+#: Two-axis placement bands per :class:`StackAlign`: ``(horizontal, vertical)``
+#: where horizontal ∈ ``start/center/end`` and vertical ∈ ``top/center/bottom``.
+#: Used to position a ``Stack``'s non-positioned children inside its box.
+_STACK_BANDS: dict[StackAlign, tuple[str, str]] = {
+    StackAlign.TOP_START: ("start", "top"),
+    StackAlign.TOP_CENTER: ("center", "top"),
+    StackAlign.TOP_END: ("end", "top"),
+    StackAlign.CENTER_START: ("start", "center"),
+    StackAlign.CENTER: ("center", "center"),
+    StackAlign.CENTER_END: ("end", "center"),
+    StackAlign.BOTTOM_START: ("start", "bottom"),
+    StackAlign.BOTTOM_CENTER: ("center", "bottom"),
+    StackAlign.BOTTOM_END: ("end", "bottom"),
+}
+
+#: Gesture detection thresholds (logical pixels / milliseconds). A press held
+#: past ``_LONG_PRESS_MS`` is a long-press; a release whose travel exceeds
+#: ``_SWIPE_THRESHOLD`` is a swipe; smaller travel within ``_TAP_SLOP`` is a tap.
+_LONG_PRESS_MS = 500
+_SWIPE_THRESHOLD = 40.0
+_TAP_SLOP = 12.0
+
+
+def _band_offset(band: str, extent: int, child_extent: int) -> int:
+    """Place a child of ``child_extent`` within ``extent`` along one axis band.
+
+    Args:
+        band: ``"start"``, ``"center"`` or ``"end"``.
+        extent: The parent's extent on this axis.
+        child_extent: The child's extent on this axis.
+
+    Returns:
+        The child's offset from the start edge.
+    """
+    if band == "center":
+        return (extent - child_extent) // 2
+    if band == "end":
+        return extent - child_extent
+    return 0
+
+
+def _stack_geometry(
+    widget: QWidget,
+    style: Style | None,
+    width: int,
+    height: int,
+    stack_align: StackAlign | None,
+) -> QRect:
+    """Compute a stacked child's geometry inside a ``width``×``height`` box.
+
+    A child whose style sets ``position = ABSOLUTE`` is anchored by its insets
+    (spanning the axis when both opposite insets are set); otherwise it is sized
+    to its hint (or explicit ``width``/``height``) and aligned by ``stack_align``.
+
+    Args:
+        widget: The child widget (its size hint is the fallback extent).
+        style: The child's style, or ``None``.
+        width: The stack's content width.
+        height: The stack's content height.
+        stack_align: The stack's default alignment for non-positioned children.
+
+    Returns:
+        The child's geometry rectangle within the stack.
+    """
+    hint = widget.sizeHint()
+    child_w, child_h = hint.width(), hint.height()
+    if style is not None and style.width is not None:
+        child_w = int(style.width)
+    if style is not None and style.height is not None:
+        child_h = int(style.height)
+    if style is not None and style.position == Position.ABSOLUTE:
+        left, right = style.left, style.right
+        top, bottom = style.top, style.bottom
+        if left is not None and right is not None:
+            x, child_w = int(left), max(0, width - int(left) - int(right))
+        elif left is not None:
+            x = int(left)
+        elif right is not None:
+            x = width - int(right) - child_w
+        else:
+            x = 0
+        if top is not None and bottom is not None:
+            y, child_h = int(top), max(0, height - int(top) - int(bottom))
+        elif top is not None:
+            y = int(top)
+        elif bottom is not None:
+            y = height - int(bottom) - child_h
+        else:
+            y = 0
+        return QRect(x, y, child_w, child_h)
+    horizontal, vertical = _STACK_BANDS.get(
+        stack_align or StackAlign.TOP_START, ("start", "top")
+    )
+    x = _band_offset(horizontal, width, child_w)
+    y = _band_offset(vertical, height, child_h)
+    return QRect(x, y, child_w, child_h)
 
 
 def _matches_pattern(pattern: str, value: str) -> bool:
@@ -343,6 +459,216 @@ def _drop_shadow(shadow: Shadow, parent: QWidget) -> QGraphicsDropShadowEffect:
     return effect
 
 
+class _StackWidget(QWidget):
+    """A container that overlaps its children, layered by insertion order.
+
+    Children are direct Qt children (no box layout). On every resize — and
+    whenever the renderer changes the child set or a child's style — each child's
+    geometry is recomputed by :func:`_stack_geometry` (aligned by ``stack_align``
+    or anchored by absolute insets), then raised in order so the last child paints
+    on top. This is the Qt realization of the :class:`~tempestroid.widgets.Stack`
+    overlay primitive.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty stack widget."""
+        super().__init__()
+        self._children: list[tuple[QWidget, Style | None]] = []
+        self._stack_align: StackAlign | None = None
+
+    def set_layers(
+        self,
+        children: list[tuple[QWidget, Style | None]],
+        stack_align: StackAlign | None,
+    ) -> None:
+        """Replace the layered child set and re-lay it out.
+
+        Args:
+            children: The ordered ``(widget, style)`` layers, bottom first.
+            stack_align: The stack's default alignment for non-positioned layers.
+        """
+        self._children = children
+        self._stack_align = stack_align
+        self._relayout()
+
+    def _relayout(self) -> None:
+        """Reposition and re-stack every child for the current size."""
+        width, height = self.width(), self.height()
+        for widget, style in self._children:
+            widget.setGeometry(
+                _stack_geometry(widget, style, width, height, self._stack_align)
+            )
+        for widget, _ in self._children:
+            widget.raise_()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Re-lay the children whenever the stack is resized.
+
+        Args:
+            event: The Qt resize event (name mandated by the PySide override).
+        """
+        self._relayout()
+        super().resizeEvent(event)
+
+    def sizeHint(self) -> QSize:
+        """Size to the largest non-positioned layer (Flutter-style content fit).
+
+        Absolutely-positioned layers are excluded — they are anchored to the
+        stack's own bounds, so they must not inflate it. The stack still expands
+        to fill when a parent layout or a ``grow``/fixed size says so.
+
+        Returns:
+            The union of the non-positioned children's size hints.
+        """
+        width = height = 0
+        for widget, style in self._children:
+            if style is not None and style.position == Position.ABSOLUTE:
+                continue
+            hint = widget.sizeHint()
+            width = max(width, hint.width())
+            height = max(height, hint.height())
+        return QSize(width, height)
+
+
+class _GestureWidget(QWidget):
+    """A single-child container that turns pointer activity into gesture events.
+
+    A press starts a long-press timer; movement past the slop cancels it. On
+    release the travel decides the gesture: past :data:`_SWIPE_THRESHOLD` it is a
+    swipe (dominant axis → direction), otherwise a tap. Qt's native double-click
+    drives ``on_double_tap``. Each recognized gesture is forwarded through
+    :meth:`set_handlers`' dispatch callback, which carries the typed event into
+    the matching Python handler (when one is wired).
+    """
+
+    def __init__(self) -> None:
+        """Create the gesture widget and its single-child layout."""
+        super().__init__()
+        self._layout: QVBoxLayout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+        self._press_pos: QPoint | None = None
+        self._moved: bool = False
+        self._long_fired: bool = False
+        self._long_timer: QTimer = QTimer(self)
+        self._long_timer.setSingleShot(True)
+        self._long_timer.setInterval(_LONG_PRESS_MS)
+        self._long_timer.timeout.connect(self._fire_long_press)
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+    ) -> None:
+        """Install the current gesture handlers and the dispatch callback.
+
+        Args:
+            handlers: Map of gesture prop name (``on_tap`` …) to its handler (or
+                ``None`` when unset).
+            dispatch: Callback invoked as ``dispatch(handler, event)`` to run a
+                handler with its typed event on the renderer's loop.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+
+    def _emit(self, prop: str, event: Event) -> None:
+        """Dispatch ``event`` to the handler bound at ``prop`` if present.
+
+        Args:
+            prop: The gesture prop name.
+            event: The typed gesture event.
+        """
+        handler = self._handlers.get(prop)
+        if handler is not None:
+            self._dispatch(handler, event)
+
+    def _fire_long_press(self) -> None:
+        """Timer slot: emit a long-press once the hold threshold elapses."""
+        if self._press_pos is None:
+            return
+        self._long_fired = True
+        self._emit(
+            "on_long_press",
+            LongPressEvent(x=float(self._press_pos.x()), y=float(self._press_pos.y())),
+        )
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Record the press start and arm the long-press timer.
+
+        Args:
+            event: The Qt mouse press event.
+        """
+        self._press_pos = event.position().toPoint()
+        self._moved = False
+        self._long_fired = False
+        self._long_timer.start()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Cancel the long-press once the pointer leaves the tap slop.
+
+        Args:
+            event: The Qt mouse move event.
+        """
+        if self._press_pos is not None and not self._moved:
+            delta = event.position().toPoint() - self._press_pos
+            if abs(delta.x()) > _TAP_SLOP or abs(delta.y()) > _TAP_SLOP:
+                self._moved = True
+                self._long_timer.stop()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Classify the completed gesture (swipe vs tap) on release.
+
+        Args:
+            event: The Qt mouse release event.
+        """
+        self._long_timer.stop()
+        if self._press_pos is None or self._long_fired:
+            self._press_pos = None
+            super().mouseReleaseEvent(event)
+            return
+        end = event.position().toPoint()
+        dx = float(end.x() - self._press_pos.x())
+        dy = float(end.y() - self._press_pos.y())
+        if max(abs(dx), abs(dy)) >= _SWIPE_THRESHOLD:
+            self._emit(
+                "on_swipe",
+                SwipeEvent(direction=_swipe_direction(dx, dy), dx=dx, dy=dy),
+            )
+        else:
+            self._emit("on_tap", TapEvent(x=float(end.x()), y=float(end.y())))
+        self._press_pos = None
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Emit a double-tap from Qt's native double-click.
+
+        Args:
+            event: The Qt double-click event.
+        """
+        self._long_timer.stop()
+        point = event.position().toPoint()
+        self._emit("on_double_tap", TapEvent(x=float(point.x()), y=float(point.y())))
+        super().mouseDoubleClickEvent(event)
+
+
+def _swipe_direction(dx: float, dy: float) -> SwipeDirection:
+    """Classify a swipe's dominant cardinal direction from its travel.
+
+    Args:
+        dx: Horizontal travel (positive → rightward).
+        dy: Vertical travel (positive → downward).
+
+    Returns:
+        The dominant :class:`SwipeDirection`.
+    """
+    if abs(dx) >= abs(dy):
+        return SwipeDirection.RIGHT if dx > 0 else SwipeDirection.LEFT
+    return SwipeDirection.DOWN if dy > 0 else SwipeDirection.UP
+
+
 class _Rendered:
     """A live Qt node mirroring one IR :class:`Node`.
 
@@ -494,6 +820,14 @@ class QtRenderer:
         self._apply_visual(node)
         # A justify change can switch a container in/out of SPACE_* distribution.
         self._sync_main_axis(node)
+        # A stack's own ``stack_align`` change, or any child's position/inset/size
+        # change, must re-lay the overlapping layers (geometry is renderer-driven).
+        if node.type == "Stack":
+            self._relayout_stack(node)
+        if patch.path:
+            parent = self._at(patch.path[:-1])
+            if parent.type == "Stack":
+                self._relayout_stack(parent)
 
     def _apply_replace(self, patch: Replace) -> None:
         """Replace a whole subtree with a freshly built one.
@@ -513,6 +847,13 @@ class QtRenderer:
         parent = self._at(patch.path[:-1])
         index = patch.path[-1]
         old = parent.children[index]
+        if parent.type == "Stack":
+            new.widget.setParent(parent.widget)
+            parent.children[index] = new
+            self._purge_connections(old)
+            self._discard(old.widget)
+            self._relayout_stack(parent)
+            return
         layout = self._require_layout(parent)
         # Strip spacers so the IR index maps to the layout slot for the insert.
         self._strip_spacers(layout)
@@ -531,6 +872,11 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = self._create(patch.node)
+        if parent.type == "Stack":
+            child.widget.setParent(parent.widget)
+            parent.children.insert(patch.index, child)
+            self._relayout_stack(parent)
+            return
         layout = self._require_layout(parent)
         # Strip spacers so the IR index maps to the layout slot for the insert.
         self._strip_spacers(layout)
@@ -547,6 +893,11 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = parent.children.pop(patch.index)
+        if parent.type == "Stack":
+            self._purge_connections(child)
+            self._discard(child.widget)
+            self._relayout_stack(parent)
+            return
         self._require_layout(parent).removeWidget(child.widget)
         self._purge_connections(child)
         self._discard(child.widget)
@@ -559,11 +910,16 @@ class QtRenderer:
             patch: The reorder patch.
         """
         parent = self._at(patch.path)
+        old_children = parent.children
+        new_children = [old_children[old_index] for old_index in patch.order]
+        if parent.type == "Stack":
+            # Z-order follows the child list, so re-stacking is enough.
+            parent.children = new_children
+            self._relayout_stack(parent)
+            return
         layout = self._require_layout(parent)
         # Drop spacers first so they don't survive interleaved in the new order.
         self._strip_spacers(layout)
-        old_children = parent.children
-        new_children = [old_children[old_index] for old_index in patch.order]
         for child in old_children:
             layout.removeWidget(child.widget)
         for child in new_children:
@@ -589,11 +945,16 @@ class QtRenderer:
         for child_node in node.children:
             child = self._create(child_node)
             rendered.children.append(child)
-            self._require_layout(rendered).addWidget(
-                child.widget, self._stretch(child)
-            )
-            self._place_alignment(rendered, child)
-        if rendered.layout is not None:
+            if rendered.type == "Stack":
+                child.widget.setParent(rendered.widget)
+            else:
+                self._require_layout(rendered).addWidget(
+                    child.widget, self._stretch(child)
+                )
+                self._place_alignment(rendered, child)
+        if rendered.type == "Stack":
+            self._relayout_stack(rendered)
+        elif rendered.layout is not None:
             self._sync_main_axis(rendered)
         return rendered
 
@@ -635,6 +996,13 @@ class QtRenderer:
             return _Rendered(node.type, node.key, QPushButton(), None)
         if node.type == "ScrollView":
             return self._new_scrollview(node)
+        if node.type == "Stack":
+            return _Rendered(node.type, node.key, _StackWidget(), None)
+        if node.type == "GestureDetector":
+            gesture = _GestureWidget()
+            return _Rendered(
+                node.type, node.key, gesture, cast("QBoxLayout", gesture.layout())
+            )
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (
@@ -720,6 +1088,8 @@ class QtRenderer:
             button = cast("QPushButton", node.widget)
             button.setText(cast("str", node.props.get("label", "")))
             self._bind_click(button, node.props.get("on_click"))
+        elif node.type == "GestureDetector":
+            self._bind_gestures(cast("_GestureWidget", node.widget), node.props)
         self._apply_letter_spacing(node.widget, style)
         self._apply_sizing(node.widget, style)
         self._apply_effects(node.widget, style)
@@ -965,6 +1335,33 @@ class QtRenderer:
             self._place_alignment(parent, child)
         if ends:
             layout.addStretch(1)
+
+    def _relayout_stack(self, parent: _Rendered) -> None:
+        """Push the current child layers + ``stack_align`` into a stack widget.
+
+        Args:
+            parent: The ``Stack`` rendered node.
+        """
+        widget = cast("_StackWidget", parent.widget)
+        layers = [
+            (child.widget, cast("Style | None", child.props.get("style")))
+            for child in parent.children
+        ]
+        style = cast("Style | None", parent.props.get("style"))
+        widget.set_layers(layers, style.stack_align if style is not None else None)
+
+    def _bind_gestures(self, widget: _GestureWidget, props: dict[str, Any]) -> None:
+        """(Re)install the gesture handlers on a ``GestureDetector`` widget.
+
+        Args:
+            widget: The gesture widget.
+            props: The node's current props (handlers read by name).
+        """
+        handlers: dict[str, object] = {
+            name: props.get(name)
+            for name in ("on_tap", "on_double_tap", "on_long_press", "on_swipe")
+        }
+        widget.set_handlers(handlers, self._invoke)
 
     def _bind_click(self, button: QPushButton, handler: object) -> None:
         """(Re)connect a button's click signal to a handler.

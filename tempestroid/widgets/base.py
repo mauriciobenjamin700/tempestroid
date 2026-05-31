@@ -20,7 +20,10 @@ from tempestroid.widgets.events import (
     DateChangeEvent,
     Event,
     FileSelectEvent,
+    LongPressEvent,
     SlideEvent,
+    SwipeEvent,
+    TapEvent,
     TextChangeEvent,
     ToggleEvent,
 )
@@ -32,6 +35,9 @@ __all__ = [
     "SlideHandler",
     "DateChangeHandler",
     "FileSelectHandler",
+    "TapHandler",
+    "LongPressHandler",
+    "SwipeHandler",
     "Widget",
     "Component",
     "handler_accepts_event",
@@ -120,6 +126,24 @@ DateChangeHandler: TypeAlias = Annotated[
 FileSelectHandler: TypeAlias = Annotated[
     Callable[[FileSelectEvent], Any]
     | Callable[[FileSelectEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+TapHandler: TypeAlias = Annotated[
+    Callable[[TapEvent], Any]
+    | Callable[[TapEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+LongPressHandler: TypeAlias = Annotated[
+    Callable[[LongPressEvent], Any]
+    | Callable[[LongPressEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+SwipeHandler: TypeAlias = Annotated[
+    Callable[[SwipeEvent], Any]
+    | Callable[[SwipeEvent], Awaitable[Any]]
     | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
