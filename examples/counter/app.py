@@ -72,19 +72,29 @@ def view(app: App[CounterState]) -> Widget:
         await asyncio.sleep(0.5)
         app.set_state(lambda s: setattr(s, "value", s.value + 1))
 
+    def _button_style(background: str) -> Style:
+        """Build a shared button style with the given background hex."""
+        return Style(
+            padding=Edge.symmetric(vertical=10.0, horizontal=18.0),
+            radius=10.0,
+            background=Color.from_hex(background),
+            color=Color.from_hex("#ffffff"),
+            font_size=18.0,
+        )
+
     return Column(
         style=Style(
             direction=FlexDirection.COLUMN,
             align=AlignItems.CENTER,
             gap=16.0,
             padding=Edge.all(24.0),
-            background=Color.from_hex("#101418"),
+            background=Color.from_hex("#0b0f14"),
         ),
         children=[
             Text(
                 content=f"Count: {app.state.value}",
                 style=Style(
-                    color=Color.from_hex("#ffffff"),
+                    color=Color.from_hex("#f9fafb"),
                     font_size=24.0,
                     font_weight=FontWeight.BOLD,
                 ),
@@ -93,9 +103,24 @@ def view(app: App[CounterState]) -> Widget:
             Row(
                 style=Style(gap=8.0),
                 children=[
-                    Button(label="-", on_click=decrement, key="dec"),
-                    Button(label="+", on_click=increment, key="inc"),
-                    Button(label="+ (async)", on_click=increment_later, key="async"),
+                    Button(
+                        label="-",
+                        on_click=decrement,
+                        key="dec",
+                        style=_button_style("#374151"),
+                    ),
+                    Button(
+                        label="+",
+                        on_click=increment,
+                        key="inc",
+                        style=_button_style("#22c55e"),
+                    ),
+                    Button(
+                        label="+ (async)",
+                        on_click=increment_later,
+                        key="async",
+                        style=_button_style("#2563eb"),
+                    ),
                 ],
             ),
         ],
