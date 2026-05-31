@@ -6,8 +6,11 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,6 +22,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -142,6 +148,25 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
                 node.children.forEach { RenderNode(it, onEvent) }
             }
         }
+
+        "Stack" -> Box(
+            modifier = baseModifier(style),
+            contentAlignment = stackAlignmentOf(style),
+        ) {
+            // Children overlap in declaration order (first = bottom layer). A child
+            // with position=absolute fills the box inset by its edges; the rest are
+            // aligned by the stack's contentAlignment.
+            node.children.forEach { child ->
+                val childStyle = styleOf(child)
+                if (childStyle["position"] == "absolute") {
+                    Box(modifier = absoluteModifier(childStyle)) { RenderNode(child, onEvent) }
+                } else {
+                    RenderNode(child, onEvent)
+                }
+            }
+        }
+
+        "GestureDetector" -> RenderGestureDetector(node, style, onEvent)
 
         "Input" -> RenderInput(node, style, onEvent)
 
@@ -276,6 +301,93 @@ private fun displayName(context: Context, uri: Uri): String? {
         }
     }
     return null
+}
+
+/**
+ * A transparent box that recognizes gestures over its child and routes them to
+ * Python — the Kotlin counterpart of the Qt ``_GestureWidget``.
+ *
+ * Taps, double-taps and long-presses come from [detectTapGestures]; swipes are
+ * the net travel of a [detectDragGestures] sequence, classified by dominant axis
+ * on drag end. Each fires the matching handler token with a JSON payload.
+ */
+@Composable
+private fun RenderGestureDetector(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val mod = baseModifier(style)
+        .pointerInput(node) {
+            detectTapGestures(
+                onTap = { offset ->
+                    handlerToken(node, "on_tap")?.let { onEvent(it, pointJson(offset)) }
+                },
+                onDoubleTap = { offset ->
+                    handlerToken(node, "on_double_tap")?.let { onEvent(it, pointJson(offset)) }
+                },
+                onLongPress = { offset ->
+                    handlerToken(node, "on_long_press")?.let { onEvent(it, pointJson(offset)) }
+                },
+            )
+        }
+        .pointerInput(node) {
+            var dx = 0f
+            var dy = 0f
+            detectDragGestures(
+                onDragStart = { dx = 0f; dy = 0f },
+                onDrag = { change, amount -> dx += amount.x; dy += amount.y; change.consume() },
+                onDragEnd = {
+                    if (maxOf(abs(dx), abs(dy)) >= SWIPE_THRESHOLD_PX) {
+                        handlerToken(node, "on_swipe")?.let {
+                            onEvent(it, swipeJson(dx, dy))
+                        }
+                    }
+                },
+            )
+        }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/** Logical-pixel travel past which a drag counts as a swipe (mirrors the Qt threshold). */
+private const val SWIPE_THRESHOLD_PX = 40f
+
+private fun pointJson(offset: Offset): String =
+    JSONObject().put("x", offset.x.toDouble()).put("y", offset.y.toDouble()).toString()
+
+private fun swipeJson(dx: Float, dy: Float): String {
+    val direction = if (abs(dx) >= abs(dy)) {
+        if (dx > 0) "right" else "left"
+    } else {
+        if (dy > 0) "down" else "up"
+    }
+    return JSONObject()
+        .put("direction", direction)
+        .put("dx", dx.toDouble())
+        .put("dy", dy.toDouble())
+        .toString()
+}
+
+/** Two-axis [Alignment] for a Stack's non-positioned children, from `stackAlign`. */
+private fun stackAlignmentOf(style: Map<String, Any?>): Alignment = when (style["stackAlign"]) {
+    "topStart" -> Alignment.TopStart
+    "topCenter" -> Alignment.TopCenter
+    "topEnd" -> Alignment.TopEnd
+    "centerStart" -> Alignment.CenterStart
+    "center" -> Alignment.Center
+    "centerEnd" -> Alignment.CenterEnd
+    "bottomStart" -> Alignment.BottomStart
+    "bottomCenter" -> Alignment.BottomCenter
+    "bottomEnd" -> Alignment.BottomEnd
+    else -> Alignment.TopStart
+}
+
+/** Modifier for an absolutely-positioned Stack child: fill the stack, inset by edges. */
+private fun BoxScope.absoluteModifier(style: Map<String, Any?>): Modifier {
+    fun inset(key: String) = (style[key] as? Number)?.toFloat()?.dp ?: 0.dp
+    return Modifier
+        .matchParentSize()
+        .padding(start = inset("left"), top = inset("top"), end = inset("right"), bottom = inset("bottom"))
 }
 
 @Suppress("UNCHECKED_CAST")

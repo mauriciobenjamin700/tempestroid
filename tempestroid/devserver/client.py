@@ -19,6 +19,7 @@ from typing import Any
 
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.cli.app_loader import spec_from_source
+from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 
 __all__ = ["run_dev_client", "serve_device"]
 
@@ -49,11 +50,22 @@ async def run_dev_client(
     current: dict[str, Any] = {"device": None, "hash": None}
 
     def on_event(token: str, payload_json: str) -> None:
-        """Route a device event to the currently-loaded app."""
+        """Route a device event to the currently-loaded app.
+
+        Native request/response results ride the same event channel under a
+        reserved token (see :data:`NATIVE_RESULT_PREFIX`); route those to the
+        pending-future resolver so ``async`` capability calls (geolocation,
+        camera, storage, clipboard, bluetooth) resolve under code-push too —
+        mirroring :func:`tempestroid.bridge.jni.run_device`.
+        """
+        payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
+        if token.startswith(NATIVE_RESULT_PREFIX):
+            request_id = token[len(NATIVE_RESULT_PREFIX) :]
+            loop.call_soon_threadsafe(resolve_native_result, request_id, payload)
+            return
         device: DeviceApp[Any] | None = current["device"]
         if device is None:
             return
-        payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
         message: dict[str, Any] = {"kind": "event", "token": token, "payload": payload}
         loop.call_soon_threadsafe(
             lambda: loop.create_task(device.handle_event(message))

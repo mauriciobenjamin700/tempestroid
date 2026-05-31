@@ -42,8 +42,10 @@ from tempestroid.style import (
     GradientDirection,
     GradientStop,
     JustifyContent,
+    Position,
     Shadow,
     SideBorder,
+    StackAlign,
     Style,
     TextAlign,
     TextDecoration,
@@ -144,6 +146,10 @@ CASES: dict[str, Style] = {
         text_overflow=TextOverflow.ELLIPSIS,
     ),
     "align_self_aspect": Style(align_self=AlignItems.CENTER, aspect_ratio=1.5),
+    "stack_align": Style(stack_align=StackAlign.BOTTOM_END),
+    "absolute_insets": Style(
+        position=Position.ABSOLUTE, top=0, right=8, bottom=4, left=0
+    ),
 }
 
 
@@ -198,6 +204,12 @@ _SAMPLES: dict[str, Any] = {
     "max_height": 200.0,
     "aspect_ratio": 1.5,
     "transition": Transition(duration_ms=300),
+    "stack_align": StackAlign.CENTER,
+    "position": Position.ABSOLUTE,
+    "top": 4.0,
+    "right": 4.0,
+    "bottom": 4.0,
+    "left": 4.0,
 }
 
 #: Expected ``field -> (compose_reacts, qt_reacts)``. Divergences (compose-only)
@@ -217,9 +229,17 @@ _SAMPLES: dict[str, Any] = {
 #:   opacity/shadow — Qt applies these as a ``QGraphicsEffect`` in the renderer,
 #:                not via QSS, so the translator doesn't react.
 #:   letter_spacing — no QSS property; Qt applies it via ``QFont`` in the renderer.
-#:   line_height/max_lines/text_overflow — Compose Text features; Qt would need a
-#:                ``QTextDocument``/elide at the widget, not QSS (post-v1).
-#:   aspect_ratio — Compose ``Modifier.aspectRatio``; Qt fixed-ratio not wired.
+#:   line_height/max_lines/text_overflow — Qt realizes these in the custom
+#:                ``_TextLabel`` (``QTextLayout`` leading + line cap + elide), not
+#:                via QSS.
+#:   aspect_ratio — Compose ``Modifier.aspectRatio``; Qt derives the missing fixed
+#:                dimension in the renderer (no QSS equivalent).
+#:   margin — emitted as a QSS box-model rule by both translators, so Qt reacts.
+#:   stack_align/position/top/right/bottom/left — stacking/overlay placement.
+#:                Compose lowers them into the spec (``Box`` alignment / inset
+#:                padding); Qt realizes them imperatively as ``QWidget`` geometry
+#:                in the ``_StackWidget`` (no QSS property), so the ``Style → Qt``
+#:                translator does not react.
 _COVERAGE: dict[str, tuple[bool, bool]] = {
     "direction": (False, False),
     "justify": (True, True),
@@ -253,6 +273,12 @@ _COVERAGE: dict[str, tuple[bool, bool]] = {
     "max_height": (True, True),
     "aspect_ratio": (True, False),
     "transition": (True, False),
+    "stack_align": (True, False),
+    "position": (True, False),
+    "top": (True, False),
+    "right": (True, False),
+    "bottom": (True, False),
+    "left": (True, False),
 }
 
 

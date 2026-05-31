@@ -1,4 +1,4 @@
-"""Layout widgets: ``Column``, ``Row``, ``Container``, ``ScrollView``, ``SafeArea``."""
+"""Layout + overlay widgets (Column, Row, Container, ScrollView, SafeArea, Stack)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,15 @@ from pydantic import Field
 
 from tempestroid.widgets.base import Widget
 
-__all__ = ["Column", "Row", "Container", "ScrollView", "SafeArea", "SafeAreaEdge"]
+__all__ = [
+    "Column",
+    "Row",
+    "Container",
+    "ScrollView",
+    "SafeArea",
+    "SafeAreaEdge",
+    "Stack",
+]
 
 
 def _empty_children() -> list[Widget]:
@@ -150,3 +158,36 @@ class SafeArea(Widget):
             A one-element list with the child, or an empty list.
         """
         return [self.child] if self.child is not None else []
+
+
+class Stack(Widget):
+    """An overlapping container: children share one box, layered by z-order.
+
+    Unlike ``Column``/``Row`` (which lay children out along an axis), a ``Stack``
+    paints its children on top of one another in declaration order — the first
+    child is the bottom layer, the last is on top. This is the framework's
+    overlay primitive: a scrim, a modal card, a toast or a floating action button
+    is just a later child of a ``Stack`` wrapping the page content.
+
+    Non-positioned children are aligned within the box by the stack's
+    :attr:`~tempestroid.style.Style.stack_align`. A child whose style sets
+    ``position = ABSOLUTE`` is anchored instead by its
+    ``top``/``right``/``bottom``/``left`` insets (Flutter ``Positioned`` / CSS
+    ``position: absolute``); set both ``left`` and ``right`` (or ``top`` and
+    ``bottom``) to stretch it across that axis — a full-bleed scrim is
+    ``position = ABSOLUTE`` with all four insets at ``0``.
+
+    Attributes:
+        children: The ordered child widgets, bottom layer first.
+    """
+
+    child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
+    children: list[Widget] = Field(default_factory=_empty_children)
+
+    def child_nodes(self) -> list[Widget]:
+        """Return the stack's children in z-order (bottom layer first).
+
+        Returns:
+            The ordered child widgets.
+        """
+        return self.children
