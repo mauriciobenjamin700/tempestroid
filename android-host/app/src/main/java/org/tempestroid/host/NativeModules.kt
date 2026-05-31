@@ -1,6 +1,7 @@
 package org.tempestroid.host
 
 import android.Manifest
+import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.bluetooth.BluetoothDevice
@@ -12,10 +13,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationManager
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -51,9 +58,16 @@ class NativeModules(private val activity: ComponentActivity) {
     /** A native command awaiting an async device result, pinned by request id. */
     private data class Pending(val requestId: String, val command: JSONObject)
 
-    /** The capture currently awaiting [takePicture], or null. */
-    private var pendingPhoto: Pending? = null
-    private var pendingPhotoFile: File? = null
+    /** The capture (photo or video) currently awaiting [captureLauncher], or null. */
+    private var pendingCapture: Pending? = null
+    private var pendingCaptureFile: File? = null
+    private var pendingCaptureIsVideo = false
+
+    /** Microphone recorder + speaker player (created on demand). */
+    private var recorder: MediaRecorder? = null
+    private var recorderFile: File? = null
+    private var pendingAudio: Pending? = null
+    private var player: MediaPlayer? = null
 
     /** Native commands gated on a runtime-permission grant, by request code. */
     private val pendingPermission = mutableMapOf<Int, Pending>()
@@ -64,10 +78,12 @@ class NativeModules(private val activity: ComponentActivity) {
             ActivityResultContracts.RequestMultiplePermissions()
         ) { grants -> onPermissionResult(grants) }
 
-    private val takePicture: ActivityResultLauncher<Uri> =
+    // A single result launcher backs both photo and video capture, so the camera
+    // intent can carry the requested extras (facing / size / duration / quality).
+    private val captureLauncher: ActivityResultLauncher<Intent> =
         activity.registerForActivityResult(
-            ActivityResultContracts.TakePicture()
-        ) { saved -> onPhotoResult(saved) }
+            ActivityResultContracts.StartActivityForResult()
+        ) { result -> onCaptureResult(result.resultCode == Activity.RESULT_OK) }
 
     /**
      * Dispatch one native command to its capability module.
@@ -86,6 +102,7 @@ class NativeModules(private val activity: ComponentActivity) {
             "storage" -> handleStorage(action, args, requestId)
             "geolocation" -> handleGeolocation(args, requestId)
             "camera" -> handleCamera(command, requestId)
+            "audio" -> handleAudio(command, action, args, requestId)
             "bluetooth" -> handleBluetooth(args, requestId)
             else -> {
                 Log.w(TAG, "unknown native module: $module")
@@ -310,33 +327,244 @@ class NativeModules(private val activity: ComponentActivity) {
     // --- camera --------------------------------------------------------------
 
     private fun handleCamera(command: JSONObject, requestId: String?) {
-        withPermissions(arrayOf(Manifest.permission.CAMERA), requestId, command) {
-            launchCamera(requestId)
+        val action = command.optString("action")
+        val args = command.optJSONObject("args") ?: JSONObject()
+        // Video also records audio, so it needs the microphone permission too.
+        val permissions =
+            if (action == "record_video") {
+                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+            } else {
+                arrayOf(Manifest.permission.CAMERA)
+            }
+        withPermissions(permissions, requestId, command) {
+            launchCapture(action, args, requestId)
         }
     }
 
-    private fun launchCamera(requestId: String?) {
+    private fun launchCapture(action: String, args: JSONObject, requestId: String?) {
         if (requestId == null) return
-        val dir = File(activity.filesDir, "photos").apply { mkdirs() }
-        val file = File(dir, "photo_${pendingPhotoCounter++}.jpg")
+        val video = action == "record_video"
+        val dir = File(activity.filesDir, if (video) "videos" else "photos")
+        dir.mkdirs()
+        val ext = if (video) "mp4" else "jpg"
+        val file = File(dir, "capture_${pendingCaptureCounter++}.$ext")
         val uri = FileProvider.getUriForFile(
             activity, "${activity.packageName}.fileprovider", file
         )
-        pendingPhoto = Pending(requestId, JSONObject())
-        pendingPhotoFile = file
-        takePicture.launch(uri)
+        val intent = Intent(
+            if (video) MediaStore.ACTION_VIDEO_CAPTURE else MediaStore.ACTION_IMAGE_CAPTURE
+        ).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            // Camera facing is a non-standard hint honored by some camera apps.
+            if (args.optString("camera") == "front") {
+                putExtra("android.intent.extras.CAMERA_FACING", 1)
+                putExtra("android.intent.extras.LENS_FACING_FRONT", 1)
+                putExtra("android.intent.extra.USE_FRONT_CAMERA", true)
+            }
+            if (video) {
+                putExtra(
+                    MediaStore.EXTRA_VIDEO_QUALITY,
+                    if (args.optString("quality") == "low") 0 else 1,
+                )
+                if (!args.isNull("max_duration_s")) {
+                    putExtra(MediaStore.EXTRA_DURATION_LIMIT, args.optInt("max_duration_s"))
+                }
+            }
+        }
+        if (intent.resolveActivity(activity.packageManager) == null) {
+            reply(requestId, false, error = "unavailable", message = "no camera app")
+            return
+        }
+        pendingCapture = Pending(requestId, args)
+        pendingCaptureFile = file
+        pendingCaptureIsVideo = video
+        captureLauncher.launch(intent)
     }
 
-    private fun onPhotoResult(saved: Boolean) {
-        val pending = pendingPhoto ?: return
-        val file = pendingPhotoFile
-        pendingPhoto = null
-        pendingPhotoFile = null
-        if (saved && file != null && file.exists()) {
-            reply(pending.requestId, true, data = JSONObject().put("path", file.absolutePath))
-        } else {
+    private fun onCaptureResult(saved: Boolean) {
+        val pending = pendingCapture ?: return
+        val file = pendingCaptureFile
+        val video = pendingCaptureIsVideo
+        val args = pending.command
+        pendingCapture = null
+        pendingCaptureFile = null
+        if (!saved || file == null || !file.exists() || file.length() == 0L) {
             reply(pending.requestId, false, error = "cancelled")
+            return
         }
+        val data = if (video) videoData(file) else photoData(file, args)
+        reply(pending.requestId, true, data = data)
+    }
+
+    /** Describe a captured video (path + duration + frame size) via metadata. */
+    private fun videoData(file: File): JSONObject {
+        val data = JSONObject().put("path", file.absolutePath)
+        val mmr = MediaMetadataRetriever()
+        try {
+            mmr.setDataSource(file.absolutePath)
+            mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toIntOrNull()?.let { data.put("duration_ms", it) }
+            mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull()?.let { data.put("width", it) }
+            mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull()?.let { data.put("height", it) }
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "video metadata read failed: ${e.message}")
+        } finally {
+            mmr.release()
+        }
+        return data
+    }
+
+    /** Describe a captured photo, downscaling it in place to the size caps. */
+    private fun photoData(file: File, args: JSONObject): JSONObject {
+        val maxW = if (args.isNull("max_width")) 0 else args.optInt("max_width")
+        val maxH = if (args.isNull("max_height")) 0 else args.optInt("max_height")
+        var bitmap = BitmapFactory.decodeFile(file.absolutePath)
+        if (bitmap != null && (maxW > 0 || maxH > 0)) {
+            val scale = minOf(
+                if (maxW > 0) maxW.toFloat() / bitmap.width else Float.MAX_VALUE,
+                if (maxH > 0) maxH.toFloat() / bitmap.height else Float.MAX_VALUE,
+            )
+            if (scale < 1f) {
+                val scaled = Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true,
+                )
+                file.outputStream().use {
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 90, it)
+                }
+                bitmap = scaled
+            }
+        }
+        val data = JSONObject().put("path", file.absolutePath)
+        if (bitmap != null) {
+            data.put("width", bitmap.width).put("height", bitmap.height)
+        }
+        return data
+    }
+
+    // --- audio: microphone capture + speaker playback -----------------------
+
+    private fun handleAudio(
+        command: JSONObject,
+        action: String,
+        args: JSONObject,
+        requestId: String?,
+    ) {
+        when (action) {
+            "record_audio" ->
+                withPermissions(
+                    arrayOf(Manifest.permission.RECORD_AUDIO), requestId, command
+                ) { startRecording(args, requestId) }
+            "play_sound" -> playSound(args, requestId)
+            "stop_sound" -> stopSound(requestId)
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    private fun startRecording(args: JSONObject, requestId: String?) {
+        if (requestId == null) return
+        val dir = File(activity.filesDir, "audio").apply { mkdirs() }
+        val file = File(dir, "rec_${pendingCaptureCounter++}.m4a")
+        @Suppress("DEPRECATION")
+        val rec =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(activity)
+            else MediaRecorder()
+        try {
+            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            rec.setOutputFile(file.absolutePath)
+            if (!args.isNull("max_duration_s")) {
+                rec.setMaxDuration((args.optDouble("max_duration_s") * 1000).toInt())
+                rec.setOnInfoListener { _, what, _ ->
+                    if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
+                        finishRecording()
+                    }
+                }
+            }
+            rec.prepare()
+            rec.start()
+        } catch (e: Exception) {
+            rec.release()
+            reply(requestId, false, error = "unavailable", message = e.message ?: "")
+            return
+        }
+        recorder = rec
+        recorderFile = file
+        pendingAudio = Pending(requestId, args)
+    }
+
+    /** Stop the active recording and reply with the saved clip. */
+    private fun finishRecording() {
+        val rec = recorder ?: return
+        val file = recorderFile
+        val pending = pendingAudio
+        recorder = null
+        recorderFile = null
+        pendingAudio = null
+        val durationMs = try {
+            rec.stop()
+            mediaDurationMs(file)
+        } catch (_: RuntimeException) {
+            null
+        } finally {
+            rec.release()
+        }
+        if (pending == null) return
+        if (file != null && file.exists() && file.length() > 0L) {
+            val data = JSONObject().put("path", file.absolutePath)
+            if (durationMs != null) data.put("duration_ms", durationMs)
+            reply(pending.requestId, true, data = data)
+        } else {
+            reply(pending.requestId, false, error = "unavailable")
+        }
+    }
+
+    private fun mediaDurationMs(file: File?): Int? {
+        if (file == null) return null
+        val mmr = MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(file.absolutePath)
+            mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull()
+        } catch (_: RuntimeException) {
+            null
+        } finally {
+            mmr.release()
+        }
+    }
+
+    private fun playSound(args: JSONObject, requestId: String?) {
+        player?.release()
+        val volume = args.optDouble("volume", 1.0).toFloat().coerceIn(0f, 1f)
+        try {
+            val mp = MediaPlayer()
+            mp.setDataSource(args.optString("src"))
+            mp.setVolume(volume, volume)
+            mp.setOnCompletionListener { it.release(); if (player === it) player = null }
+            mp.prepare()
+            mp.start()
+            player = mp
+            reply(requestId, true, data = JSONObject())
+        } catch (e: Exception) {
+            reply(requestId, false, error = "unavailable", message = e.message ?: "")
+        }
+    }
+
+    private fun stopSound(requestId: String?) {
+        player?.let {
+            try {
+                it.stop()
+            } catch (_: IllegalStateException) {
+            }
+            it.release()
+        }
+        player = null
+        reply(requestId, true, data = JSONObject())
     }
 
     // --- bluetooth -----------------------------------------------------------
@@ -400,7 +628,7 @@ class NativeModules(private val activity: ComponentActivity) {
         private const val NATIVE_RESULT_PREFIX = "__native_result__:"
         private const val WHATSAPP_PKG = "com.whatsapp"
 
-        private var pendingPhotoCounter = 1
+        private var pendingCaptureCounter = 1
     }
 }
 
