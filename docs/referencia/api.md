@@ -28,9 +28,7 @@ Veja o [guia de estilos](../guia/estilos.md).
 A IR declarativa — widgets como substantivos.
 
 - Layout/conteúdo: **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**,
-  **`Row`**, **`Container`**, **`ScrollView`**, **`SafeArea`** (afasta o filho das
-  barras de status/navegação + notch; `edges`/**`SafeAreaEdge`** escolhe os lados,
-  padrão todos).
+  **`Row`**, **`Container`**, **`ScrollView`**.
 - **`Component`** (base) — widget composto que se reduz a uma árvore de
   primitivos via `render()`; o reconciliador o expande antes do *diff*.
 - Inputs com valor: **`Input`** (texto), **`TextArea`** (multilinha),

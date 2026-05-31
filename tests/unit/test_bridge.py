@@ -129,50 +129,6 @@ def _counter_view_b(app: "App[Counter]") -> Widget:
     )
 
 
-async def test_handle_event_swallows_malformed_envelope():
-    # A message missing the required `token` fails EventMessage validation; the
-    # error boundary must log and return rather than crash the event task.
-    bridge = LoopbackBridge()
-    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
-    await device.start()
-    await device.handle_event({"kind": "event", "payload": {}})  # no token
-    await _drain()
-    assert device.app.state.value == 0
-    assert len(bridge.sent) == 1  # mount only — no patch
-
-
-async def test_handle_event_swallows_invalid_payload():
-    # A payload that fails the A6 contract raises EventValidationError inside the
-    # registry; handle_event must catch it instead of letting the task die.
-    bridge = LoopbackBridge()
-    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
-    await device.start()
-    await device.handle_event(
-        {"kind": "event", "token": "1:on_click", "payload": {"x": "not-a-number"}}
-    )
-    await _drain()
-    assert device.app.state.value == 0
-    assert len(bridge.sent) == 1
-
-
-def _raising_view(app: "App[Counter]") -> Widget:
-    def boom() -> None:
-        raise ValueError("handler exploded")
-
-    return Column(children=[Button(label="x", on_click=boom, key="b")])
-
-
-async def test_handle_event_swallows_raising_handler():
-    # A handler that raises must not escape as an unretrieved task exception.
-    bridge = LoopbackBridge()
-    device: DeviceApp[Counter] = DeviceApp(Counter(), _raising_view, bridge)
-    await device.start()
-    await device.handle_event({"kind": "event", "token": "0:on_click", "payload": {}})
-    await _drain()
-    # No exception propagated; the device is still live for the next event.
-    assert len(bridge.sent) == 1
-
-
 async def test_device_reload_preserves_state_and_patches():
     bridge = LoopbackBridge()
     device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)

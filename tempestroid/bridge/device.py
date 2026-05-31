@@ -14,22 +14,17 @@ from __future__ import annotations
 
 import abc
 import asyncio
-import logging
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar
-
-from pydantic import ValidationError
 
 from tempestroid.bridge.handlers import HandlerRegistry
 from tempestroid.bridge.protocol import EventMessage, MountMessage, PatchMessage
 from tempestroid.bridge.serializer import serialize_node, serialize_patch
 from tempestroid.core.ir import Patch
 from tempestroid.core.state import App
-from tempestroid.widgets import EventValidationError, Widget
+from tempestroid.widgets import Widget
 
 __all__ = ["Bridge", "LoopbackBridge", "DeviceApp"]
-
-_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 S = TypeVar("S")
 
@@ -129,31 +124,11 @@ class DeviceApp(Generic[S]):
         Validates and dispatches via the registry; any resulting ``set_state``
         schedules a coalesced rebuild whose patches are sent on the next tick.
 
-        This is an **error boundary**: it is driven as a fire-and-forget task by
-        the transport (``run_device`` schedules it via ``create_task``), so a
-        malformed envelope, a payload that fails the A6 contract, or a raising
-        handler must never escape as an unretrieved task exception that silently
-        kills the event. Every failure is caught and logged; the interpreter and
-        the event loop stay live for the next event.
-
         Args:
             message: A serialized :class:`EventMessage` dict.
         """
-        try:
-            event = EventMessage.model_validate(message)
-        except ValidationError:
-            _LOGGER.exception("dropping malformed event envelope: %r", message)
-            return
-        try:
-            await self._registry.dispatch(event.token, event.payload)
-        except EventValidationError:
-            _LOGGER.exception(
-                "dropping event with invalid payload for token %r", event.token
-            )
-        except Exception:  # noqa: BLE001 — handler errors must not kill the loop
-            _LOGGER.exception(
-                "handler for token %r raised; event dropped", event.token
-            )
+        event = EventMessage.model_validate(message)
+        await self._registry.dispatch(event.token, event.payload)
 
     def _on_patches(self, patches: list[Patch]) -> None:
         """Refresh handlers from the new tree and send the patch batch.
