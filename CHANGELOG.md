@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-31
+
+### Added
+
+- **Composite component set expanded.** App shell primitives now include
+  `AppBar`, `Scaffold`, `NavBar`, `Sidebar`, `Footer`, `Header`, `SafeArea`,
+  `Menu`, `Drawer`, `Calendar`, `Clock`, `Card`, `Selection`, `Field`,
+  `Feedback`, `Disclosure`, and navigation-focused widgets.
+- **Native capability layer.** The Python↔Kotlin bridge now covers
+  geolocation, sharing, camera, file storage, clipboard, Bluetooth scan, and
+  the request/response native envelope.
+- **CLI and device workflow polish.** `tempest build` / `tempest run` became
+  more transparent, and the repository now includes a dedicated WSL device-run
+  guide for USB/IP + `adb` mirroring.
+- **Example and docs refresh.** The gallery and supporting docs were updated
+  alongside the new component and device flows.
+
 ## [0.1.0] — 2026-05-31
 
 First public release. The framework (Trilho A) is complete and the Android
@@ -34,5 +51,6 @@ runtime (Trilho B, phases B0–B6) is validated on a real arm64 device.
 - **Conformance suite** pinning the Qt and Compose `Style` translators with
   golden snapshots (phase D).
 
-[Unreleased]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mauriciobenjamin700/tempestroid/releases/tag/v0.1.0
