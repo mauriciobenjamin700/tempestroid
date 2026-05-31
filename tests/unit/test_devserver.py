@@ -107,3 +107,70 @@ async def test_code_push_round_trip() -> None:
     sink["cb"]("1:on_click", "{}")
     await asyncio.sleep(0.05)
     assert any(m["kind"] == "patch" for m in bridges[0].sent)
+
+
+async def test_dev_client_routes_native_result_to_resolver(
+    monkeypatch: Any,
+) -> None:
+    """A native-result token is routed to the request/response resolver.
+
+    Regression: the dev client's event sink must route the reserved
+    ``__native_result__:<id>`` token to :func:`resolve_native_result` (as the
+    on-device ``run_device`` does), or ``async`` capability calls (geolocation,
+    camera, storage, clipboard, bluetooth) would hang forever over code-push.
+    A regular widget token must still reach the app, not the resolver.
+    """
+    import asyncio
+
+    from tempestroid.devserver import client as client_mod
+
+    resolved: list[tuple[str, dict[str, Any]]] = []
+
+    def _spy(request_id: str, payload: dict[str, Any]) -> bool:
+        resolved.append((request_id, payload))
+        return True
+
+    monkeypatch.setattr(client_mod, "resolve_native_result", _spy)
+
+    bridges: list[LoopbackBridge] = []
+
+    def make_bridge() -> Bridge:
+        bridge = LoopbackBridge()
+        bridges.append(bridge)
+        return bridge
+
+    sink: dict[str, Any] = {}
+
+    def register_sink(cb: Any) -> None:
+        sink["cb"] = cb
+
+    responses = {
+        "/version": json.dumps({"hash": "h1"}),
+        "/app": json.dumps({"hash": "h1", "source": _APP_SRC}),
+    }
+
+    async def fetch(url: str) -> str:
+        for path, body in responses.items():
+            if url.endswith(path):
+                return body
+        raise ValueError(url)
+
+    await run_dev_client(
+        "http://dev",
+        make_bridge=make_bridge,
+        register_sink=register_sink,
+        fetch=fetch,
+        poll_interval=0,
+        max_polls=1,
+        log=lambda _: None,
+    )
+
+    # A native-result token goes to the resolver, not the widget handler.
+    sink["cb"](f"{client_mod.NATIVE_RESULT_PREFIX}req-1", json.dumps({"ok": True}))
+    await asyncio.sleep(0.05)
+    assert resolved == [("req-1", {"ok": True})]
+
+    # A regular widget token still reaches the app (produces a patch).
+    sink["cb"]("1:on_click", "{}")
+    await asyncio.sleep(0.05)
+    assert any(m["kind"] == "patch" for m in bridges[0].sent)
