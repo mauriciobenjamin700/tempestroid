@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
+import traceback
 from pathlib import Path
 from typing import cast
 
@@ -30,8 +32,9 @@ __all__ = ["run_dev"]
 _BANNER = """\
 tempest dev
 
+  App         {app}
   Simulator   Qt          ● running
-  Device      —           ○ not connected (phase B)
+  Device      —           ○ not connected (use `tempest serve` for a device)
 
   Commands:
     r      hot reload  (preserve state)
@@ -41,7 +44,19 @@ tempest dev
 """
 
 
-def _restart(simulator: Simulator, path: Path) -> None:
+def _report_failure(exc: Exception, verbose: bool) -> None:
+    """Print a reload/restart failure, with a full traceback in verbose mode.
+
+    Args:
+        exc: The exception raised while loading the app file.
+        verbose: When ``True``, print the full traceback below the summary.
+    """
+    print(f"✗ reload failed: {type(exc).__name__}: {exc}")
+    if verbose:
+        traceback.print_exc()
+
+
+def _restart(simulator: Simulator, path: Path, *, verbose: bool = False) -> None:
     """Reload the app file and hot-restart the simulator (clean state).
 
     A syntax or runtime error in the app file is printed and swallowed so the
@@ -50,15 +65,17 @@ def _restart(simulator: Simulator, path: Path) -> None:
     Args:
         simulator: The simulator to restart.
         path: The app file path.
+        verbose: Print the full traceback on a bad save.
     """
+    started = time.monotonic()
     try:
         simulator.load(load_app_spec(path))
-        print(f"↻ restarted from {path}")
+        print(f"↻ restarted from {path.name} (clean state, {_ms(started)})")
     except Exception as exc:  # noqa: BLE001 — keep the dev loop alive on bad saves
-        print(f"✗ reload failed: {type(exc).__name__}: {exc}")
+        _report_failure(exc, verbose)
 
 
-def _reload(simulator: Simulator, path: Path) -> None:
+def _reload(simulator: Simulator, path: Path, *, verbose: bool = False) -> None:
     """Reload the app file and hot-reload the simulator (preserve state).
 
     Mirrors :func:`_restart` but routes through :meth:`Simulator.reload`, which
@@ -68,19 +85,34 @@ def _reload(simulator: Simulator, path: Path) -> None:
     Args:
         simulator: The simulator to reload.
         path: The app file path.
+        verbose: Print the full traceback on a bad save.
     """
+    started = time.monotonic()
     try:
         simulator.reload(load_app_spec(path))
-        print(f"↻ reloaded from {path} (state preserved)")
+        print(f"↻ reloaded from {path.name} (state preserved, {_ms(started)})")
     except Exception as exc:  # noqa: BLE001 — keep the dev loop alive on bad saves
-        print(f"✗ reload failed: {type(exc).__name__}: {exc}")
+        _report_failure(exc, verbose)
 
 
-def run_dev(path: str | Path) -> int:
+def _ms(started: float) -> str:
+    """Format the elapsed time since ``started`` as a millisecond string.
+
+    Args:
+        started: A :func:`time.monotonic` timestamp taken before the work.
+
+    Returns:
+        A human-readable duration like ``"12ms"``.
+    """
+    return f"{(time.monotonic() - started) * 1000:.0f}ms"
+
+
+def run_dev(path: str | Path, *, verbose: bool = False) -> int:
     """Run the dev cockpit for an app file until quit.
 
     Args:
         path: Path to the app's Python file.
+        verbose: Print full tracebacks when a save fails to reload.
 
     Returns:
         The process exit code.
@@ -91,14 +123,15 @@ def run_dev(path: str | Path) -> int:
     asyncio.set_event_loop(loop)
 
     simulator = Simulator()
-    _restart(simulator, app_path)  # first mount is always a clean start
+    _restart(simulator, app_path, verbose=verbose)  # first mount is a clean start
     simulator.host.setWindowTitle(f"tempestroid dev — {app_path.name}")
     simulator.host.resize(360, 640)
     simulator.host.show()
-    print(_BANNER)
+    print(_BANNER.format(app=app_path))
 
     async def on_change() -> None:
-        _reload(simulator, app_path)  # save → preserve state (fall back to restart)
+        # save → preserve state (fall back to restart)
+        _reload(simulator, app_path, verbose=verbose)
 
     def handle_command() -> None:
         line = sys.stdin.readline()
@@ -107,9 +140,9 @@ def run_dev(path: str | Path) -> int:
             return
         command = line.strip()
         if command == "r":
-            _reload(simulator, app_path)
+            _reload(simulator, app_path, verbose=verbose)
         elif command == "R":
-            _restart(simulator, app_path)
+            _restart(simulator, app_path, verbose=verbose)
         elif command == "s":
             simulator.host.raise_()
             simulator.host.activateWindow()

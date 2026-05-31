@@ -3,8 +3,11 @@
 ``tempest dev`` runs the interactive simulator cockpit (phase A5). ``tempest
 serve`` pushes an app to a device over LAN (phase B5). The phase-C packaging
 commands — ``new`` (scaffold), ``build`` (APK), ``run`` (install + logcat) —
-drive the ``android-host`` Gradle project and ``adb``. Qt is imported lazily
-inside ``dev`` so ``tempest --help`` works without the optional ``qt`` extra.
+drive the ``android-host`` Gradle project and ``adb``; ``doctor`` probes their
+prerequisites without building. ``build``/``run``/``dev`` report each step and
+accept ``-v``/``--verbose`` for raw command streaming (see
+:mod:`tempestroid.cli.console`). Qt is imported lazily inside ``dev`` so
+``tempest --help`` works without the optional ``qt`` extra.
 """
 
 from __future__ import annotations
@@ -37,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     dev = subparsers.add_parser("dev", help="Run the simulator dev loop.")
     dev.add_argument("app", help="Path to the app file (e.g. examples/counter/app.py).")
+    dev.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print full tracebacks when a save fails to reload.",
+    )
     serve = subparsers.add_parser(
         "serve", help="Serve an app to a device over LAN (code-push + log relay)."
     )
@@ -60,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--release", action="store_true", help="Build the release variant."
     )
+    build.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Echo raw commands and stream the full Gradle/adb output.",
+    )
     run = subparsers.add_parser(
         "run", help="Build, install on a device, and stream logs."
     )
@@ -67,14 +82,27 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--release", action="store_true", help="Build the release variant."
     )
+    run.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Echo raw commands and stream the full Gradle/adb output.",
+    )
+    doctor = subparsers.add_parser(
+        "doctor", help="Check the Android build/run prerequisites and exit."
+    )
+    doctor.add_argument(
+        "-v", "--verbose", action="store_true", help="Show resolution hints."
+    )
     return parser
 
 
-def _run_dev(app: str) -> int:
+def _run_dev(app: str, verbose: bool) -> int:
     """Dispatch to the Qt dev cockpit, importing Qt lazily.
 
     Args:
         app: Path to the app file.
+        verbose: Print full tracebacks when a save fails to reload.
 
     Returns:
         The process exit code.
@@ -87,7 +115,7 @@ def _run_dev(app: str) -> int:
             'uv sync --extra qt  (or  pip install "tempestroid[qt]").'
         )
         return 1
-    return run_dev(app)
+    return run_dev(app, verbose=verbose)
 
 
 def _lan_ip() -> str:
@@ -120,7 +148,9 @@ def _run_serve(app: str, host: str, port: int) -> int:
         The process exit code.
     """
     import threading
+    from pathlib import Path
 
+    from tempestroid.cli.packaging import connected_devices
     from tempestroid.devserver import DevServer, render_qr
 
     server = DevServer(app, host=host, port=port)
@@ -131,11 +161,15 @@ def _run_serve(app: str, host: str, port: int) -> int:
         return 1
 
     lan_url = f"http://{_lan_ip()}:{server.port}"
+    devices = connected_devices()
+    device_line = ", ".join(devices) if devices else "none (connect one for USB push)"
     print(render_qr(lan_url))
     print(
         f"tempest dev server on port {server.port}.\n"
-        f"  LAN:  {lan_url}\n"
-        f"  USB:  adb reverse tcp:{server.port} tcp:{server.port} "
+        f"  App:     {Path(app).resolve()}\n"
+        f"  Devices: {device_line}\n"
+        f"  LAN:     {lan_url}\n"
+        f"  USB:     adb reverse tcp:{server.port} tcp:{server.port} "
         f"→ http://localhost:{server.port}\n"
         "Edit + save the app file to hot-restart on device. Ctrl-C to stop."
     )
@@ -173,54 +207,85 @@ def _run_new(name: str, into: str) -> int:
     return 0
 
 
-def _run_build(app: str, release: bool) -> int:
+def _run_build(app: str, release: bool, verbose: bool) -> int:
     """Build an APK bundling the given app, reporting the outcome.
 
     Args:
         app: Path to the app file to bundle.
         release: Whether to build the release variant.
+        verbose: Echo raw commands and stream full subprocess output.
 
     Returns:
         The process exit code.
     """
     import subprocess
 
+    from tempestroid.cli.console import Console, StepError
     from tempestroid.cli.packaging import ToolchainError, build_apk
 
+    console = Console(verbose=verbose)
     try:
-        apk = build_apk(app, release=release)
+        build_apk(app, release=release, console=console)
+    except StepError:
+        return 1
     except (ToolchainError, FileNotFoundError) as exc:
-        print(f"build failed: {exc}")
+        console.fail(f"build failed: {exc}")
         return 1
     except subprocess.CalledProcessError as exc:
-        print(f"gradle build failed (exit {exc.returncode}).")
+        console.fail(f"gradle build failed (exit {exc.returncode}).")
         return exc.returncode or 1
-    print(f"built {apk}")
     return 0
 
 
-def _run_run(app: str, release: bool) -> int:
+def _run_run(app: str, release: bool, verbose: bool) -> int:
     """Build, install on a device, and stream logs, reporting the outcome.
 
     Args:
         app: Path to the app file to bundle.
         release: Whether to build the release variant.
+        verbose: Echo raw commands and stream full subprocess output.
 
     Returns:
         The process exit code.
     """
     import subprocess
 
+    from tempestroid.cli.console import Console, StepError
     from tempestroid.cli.packaging import ToolchainError, run_on_device
 
+    console = Console(verbose=verbose)
     try:
-        return run_on_device(app, release=release)
+        return run_on_device(app, release=release, console=console)
+    except StepError:
+        return 1
     except (ToolchainError, FileNotFoundError) as exc:
-        print(f"run failed: {exc}")
+        console.fail(f"run failed: {exc}")
         return 1
     except subprocess.CalledProcessError as exc:
-        print(f"command failed (exit {exc.returncode}).")
+        console.fail(f"command failed (exit {exc.returncode}).")
         return exc.returncode or 1
+
+
+def _run_doctor(verbose: bool) -> int:
+    """Probe the Android build/run prerequisites and report them.
+
+    Args:
+        verbose: Show resolution hints for failed checks.
+
+    Returns:
+        ``0`` when every prerequisite is satisfied, else ``1``.
+    """
+    from tempestroid.cli.console import Console
+    from tempestroid.cli.packaging import preflight, report_preflight
+
+    console = Console(verbose=verbose)
+    console.info("tempest doctor — Android build/run prerequisites")
+    ok = report_preflight(preflight(need_device=True), console)
+    if ok:
+        console.info("all prerequisites satisfied — ready to build and run.")
+        return 0
+    console.fail("some prerequisites are missing (see above).")
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -239,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     if command == "dev":
-        return _run_dev(args.app)
+        return _run_dev(args.app, args.verbose)
     if command == "serve":
         return _run_serve(args.app, args.host, args.port)
     if command == "spec":
@@ -252,9 +317,11 @@ def main(argv: list[str] | None = None) -> int:
     if command == "new":
         return _run_new(args.name, args.into)
     if command == "build":
-        return _run_build(args.app, args.release)
+        return _run_build(args.app, args.release, args.verbose)
     if command == "run":
-        return _run_run(args.app, args.release)
+        return _run_run(args.app, args.release, args.verbose)
+    if command == "doctor":
+        return _run_doctor(args.verbose)
     parser.error(f"unknown command: {command}")
 
 

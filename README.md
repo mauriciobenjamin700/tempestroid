@@ -142,6 +142,7 @@ uv run tempest new MyApp                        # scaffold a new app project
 uv run python examples/counter/app.py          # run an app directly in the Qt simulator
 uv run tempest dev examples/counter/app.py     # dev loop: edit + save → hot reload (state preserved)
 uv run tempest serve examples/device_counter/app.py  # push to a device over LAN, no APK rebuild
+uv run tempest doctor                          # check the Android build/run prerequisites
 uv run tempest build MyApp/app.py              # bundle the app into an APK
 uv run tempest run MyApp/app.py                # build + install on a device + stream logs
 uv run tempest spec                            # print the typed contract (widgets/events) as JSON
@@ -154,14 +155,23 @@ hot-reloads; a reload incompatible with the live state falls back to a clean
 restart. `tempest build`/`run` drive the `android-host` Gradle project + `adb`,
 so they need an Android SDK/NDK and a checkout of the host tree.
 
+**Transparent output.** `build`/`run` announce each step (`→ … ✓/✗` with
+elapsed time) and run a **preflight** first — checking the host tree, Android
+SDK, `adb`, and (for `run`) a connected device — so they fail fast with an
+actionable hint instead of an opaque Gradle stack trace. `tempest doctor` runs
+that same preflight on its own. Pass `-v`/`--verbose` (on `build`/`run`/`dev`)
+to echo the raw commands and stream the full Gradle/adb output; without it, a
+failed command's tail is surfaced and the happy path stays quiet.
+
 | Command | Status | Notes |
 |---|---|---|
 | `tempest new <name>` | ✅ | Scaffold a runnable app project |
-| `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra) |
+| `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); `-v` for tracebacks |
 | `tempest serve <app>` | ✅ | LAN code-push to a device + log relay (phase B5) |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
-| `tempest build <app>` | ✅ | Bundle an app into an APK (needs Android SDK/NDK) |
-| `tempest run <app>` | ✅ | Build + install on a device + stream logs |
+| `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
+| `tempest build <app>` | ✅ | Bundle an app into an APK (needs Android SDK/NDK); `-v` for full output |
+| `tempest run <app>` | ✅ | Build + install on a device + stream logs; `-v` for full output |
 
 ---
 
