@@ -14,26 +14,44 @@ tree (see ``protocol.handler_token``).
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, TypeGuard, cast
 
 from tempestroid.bridge.protocol import event_type_for, handler_token
 from tempestroid.core.ir import (
     Insert,
     Node,
     Patch,
+    Path,
     Remove,
     Replace,
     Update,
 )
 from tempestroid.renderers.compose import to_compose
 from tempestroid.style import Style
+from tempestroid.widgets import MenuItem
 
 __all__ = ["serialize_node", "serialize_patch"]
 
 _JSON_SCALARS = (str, int, float, bool)
 
 
-def serialize_node(node: Node, path: tuple[int, ...] = ()) -> dict[str, Any]:
+def _is_menu_item_list(value: Any) -> TypeGuard[list[MenuItem]]:  # noqa: ANN401 — narrows an untyped prop value
+    """Narrow a prop value to a non-empty list of :class:`MenuItem`.
+
+    Args:
+        value: The candidate prop value.
+
+    Returns:
+        ``True`` when ``value`` is a non-empty list whose every element is a
+        :class:`MenuItem`.
+    """
+    if not isinstance(value, list):
+        return False
+    items = cast("list[Any]", value)
+    return len(items) > 0 and all(isinstance(item, MenuItem) for item in items)
+
+
+def serialize_node(node: Node, path: Path = ()) -> dict[str, Any]:
     """Serialize an IR node (and its subtree) to a JSON-able dict.
 
     Args:
@@ -84,7 +102,7 @@ def serialize_patch(patch: Patch) -> dict[str, Any]:
 def _serialize_props(
     node_type: str | None,
     props: dict[str, Any],
-    path: tuple[int, ...],
+    path: Path,
 ) -> dict[str, Any]:
     """Serialize a prop map: style → Compose spec, handlers → tokens, scalars pass.
 
@@ -114,6 +132,14 @@ def _serialize_props(
             out[name] = [
                 {"title": section.title, "item_count": section.item_count}
                 for section in value
+            ]
+            continue
+        if name == "items" and _is_menu_item_list(value):
+            # Menu/ActionSheet items are MenuItem value models; lower them to
+            # plain dicts so the device gets the label/value/icon as JSON.
+            out[name] = [
+                {"label": item.label, "value": item.value, "icon": item.icon}
+                for item in value
             ]
             continue
         if name == "style" and isinstance(value, Style):

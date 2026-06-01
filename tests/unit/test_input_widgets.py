@@ -145,9 +145,11 @@ def test_dispatch_passes_typed_value_to_handler():
         bridge = LoopbackBridge()
         device = DeviceApp(State(), view, bridge)
         await device.start()
-        root = device.app.current_tree
-        assert root is not None
-        token = serialize_node(root)["children"][0]["props"]["on_change"]["$handler"]
+        scene = device.app.current_tree
+        assert scene is not None
+        token = serialize_node(scene.root)["children"][0]["props"]["on_change"][
+            "$handler"
+        ]
         await device.handle_event(
             EventMessage(token=token, payload={"value": "typed"}).model_dump()
         )

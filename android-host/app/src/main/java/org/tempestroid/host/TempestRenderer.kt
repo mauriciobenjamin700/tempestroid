@@ -35,16 +35,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.abs
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -70,6 +79,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -115,6 +125,10 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneOffset
 import org.json.JSONObject
@@ -281,6 +295,249 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         }
     }
 }
+
+/**
+ * Render one floating overlay node (E2) above the root tree — the Kotlin
+ * counterpart of the Qt overlay layer. Dispatches by [TempestNode.type] to the
+ * platform-native surface (Material3 `AlertDialog`/`ModalBottomSheet`/
+ * `DropdownMenu`, or a `Popup`).
+ *
+ * Each overlay's [TempestNode.key] is its stable Python overlay id; a host-owned
+ * dismiss (barrier/scrim tap, swipe-down, timer expiry, away tap) is reported back
+ * to Python as the reserved `__dismiss__:<id>` event via [emitDismiss], which the
+ * bridge routes to `App.dismiss`. Material3 `AlertDialog`/`ModalBottomSheet` open
+ * their own platform window and manage their own `WindowInsets.safeDrawing`, so
+ * they are NOT wrapped in `safeDrawingPadding` (no double inset).
+ *
+ * @param node the overlay node to render.
+ * @param onEvent the event sink back to Python (token, payloadJson).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RenderOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    when (node.type) {
+        "Dialog" -> RenderDialogOverlay(node, onEvent)
+        "BottomSheet" -> RenderBottomSheetOverlay(node, onEvent)
+        "ActionSheet" -> RenderActionSheetOverlay(node, onEvent)
+        "Toast" -> RenderToastOverlay(node, onEvent)
+        "Menu" -> RenderMenuOverlay(node, onEvent)
+        "Popover" -> RenderPopoverOverlay(node, onEvent)
+        "Tooltip" -> RenderTooltipOverlay(node, onEvent)
+        // Unknown overlay type: render its children inside a centered Popup so a
+        // forward-compat overlay still shows something rather than vanishing.
+        else -> Popup(alignment = Alignment.Center) {
+            Column { node.children.forEach { RenderNode(it, onEvent) } }
+        }
+    }
+}
+
+/**
+ * A modal dialog (M3 [AlertDialog]). The barrier/scrim is built into AlertDialog;
+ * tapping it (or system back) calls [onDismissRequest], which reports the dismiss
+ * to Python. The serialized body widgets render as the dialog text content.
+ */
+@Composable
+private fun RenderDialogOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val title = node.props["title"] as? String
+    AlertDialog(
+        onDismissRequest = { emitDismiss(node, onEvent) },
+        title = if (title != null) ({ Text(text = title) }) else null,
+        text = {
+            Column { node.children.forEach { RenderNode(it, onEvent) } }
+        },
+        // Python owns the dialog lifecycle: there is no implicit confirm button.
+        // The dialog body provides its own actionable widgets (Buttons), so the
+        // confirm slot just mirrors the dismiss affordance for accessibility.
+        confirmButton = {
+            TextButton(onClick = { emitDismiss(node, onEvent) }) { Text(text = "Close") }
+        },
+    )
+}
+
+/**
+ * A bottom sheet (M3 [ModalBottomSheet]). It slides up from the bottom edge,
+ * draws its own scrim, and respects the bottom system inset natively — so it is
+ * NOT wrapped in `safeDrawingPadding`. A scrim tap or swipe-down calls
+ * [onDismissRequest], reporting the dismiss to Python.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderBottomSheetOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(
+        onDismissRequest = { emitDismiss(node, onEvent) },
+        sheetState = sheetState,
+    ) {
+        Column { node.children.forEach { RenderNode(it, onEvent) } }
+    }
+}
+
+/**
+ * An action sheet (M3 [ModalBottomSheet] holding a list of selectable items). A
+ * tap on an item fires `on_select` with a [MenuSelectEvent]-shaped payload; a
+ * scrim tap or swipe-down reports a dismiss.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderActionSheetOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val sheetState = rememberModalBottomSheetState()
+    val title = node.props["title"] as? String
+    ModalBottomSheet(
+        onDismissRequest = { emitDismiss(node, onEvent) },
+        sheetState = sheetState,
+    ) {
+        if (title != null) {
+            Text(text = title, modifier = Modifier.padding(16.dp), fontWeight = FontWeight.Bold)
+        }
+        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            val items = menuItemsOf(node)
+            itemsIndexed(items) { _, item ->
+                DropdownMenuItem(
+                    text = { Text(text = item.label) },
+                    onClick = { emitMenuSelect(node, item, onEvent) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A transient toast: a [Popup] pinned to the bottom of the screen. A
+ * [LaunchedEffect] waits `duration_s` then reports a dismiss to Python — Python's
+ * own `loop.call_later` is authoritative, but mirroring the timer here removes
+ * the visual snappily. Python confirms by removing the overlay via a patch.
+ */
+@Composable
+private fun RenderToastOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val durationSeconds = (node.props["duration_s"] as? Number)?.toDouble() ?: 2.5
+    Popup(alignment = Alignment.BottomCenter) {
+        Box(
+            modifier = Modifier
+                .padding(bottom = 48.dp)
+                .background(Color(0xDD323232), RoundedCornerShape(8.dp))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Text(text = node.props["message"] as? String ?: "", color = Color.White)
+        }
+    }
+    LaunchedEffect(node.key) {
+        delay((durationSeconds * 1000).toLong())
+        emitDismiss(node, onEvent)
+    }
+}
+
+/**
+ * An anchored menu (M3 [DropdownMenu]). Without a resolved anchor widget position,
+ * it opens top-start; tapping an item fires `on_select`. Dismissing (tap away)
+ * reports the overlay dismiss to Python.
+ */
+@Composable
+private fun RenderMenuOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    // A DropdownMenu must be anchored inside a parent box; we use a zero-size Box
+    // at top-start as the anchor (Python carries the logical `anchor` key, but the
+    // device positions menus at the layer origin for v1 — documented divergence).
+    Box {
+        DropdownMenu(
+            expanded = true,
+            onDismissRequest = { emitDismiss(node, onEvent) },
+        ) {
+            menuItemsOf(node).forEach { item ->
+                DropdownMenuItem(
+                    text = { Text(text = item.label) },
+                    onClick = { emitMenuSelect(node, item, onEvent) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A popover panel (a [Popup] anchored top-start, dismissible by tapping outside).
+ * Its single child renders inside; an outside tap reports the dismiss to Python.
+ */
+@Composable
+private fun RenderPopoverOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    Popup(
+        alignment = Alignment.TopStart,
+        offset = IntOffset(0, 0),
+        onDismissRequest = { emitDismiss(node, onEvent) },
+        properties = PopupProperties(focusable = true),
+    ) {
+        Box(
+            modifier = Modifier
+                .background(Color.White, RoundedCornerShape(8.dp))
+                .padding(8.dp),
+        ) {
+            Column { node.children.forEach { RenderNode(it, onEvent) } }
+        }
+    }
+}
+
+/**
+ * A tooltip (M3 [TooltipBox]) wrapping its single child; the hint shows on
+ * long-press of the anchored child. Toolltips have no dismiss handler (Python
+ * removes them on its own schedule).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderTooltipOverlay(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val message = node.props["message"] as? String ?: ""
+    val child = node.children.firstOrNull()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(text = message) } },
+        state = rememberTooltipState(),
+    ) {
+        if (child != null) RenderNode(child, onEvent) else Text(text = message)
+    }
+}
+
+/** The serialized `items` of a Menu/ActionSheet as plain (label,value,icon) data. */
+private fun menuItemsOf(node: TempestNode): List<MenuItemData> {
+    @Suppress("UNCHECKED_CAST")
+    val raw = node.props["items"] as? List<*> ?: return emptyList()
+    return raw.mapNotNull { entry ->
+        val map = entry as? Map<*, *> ?: return@mapNotNull null
+        val label = map["label"] as? String ?: return@mapNotNull null
+        val value = map["value"] as? String ?: return@mapNotNull null
+        MenuItemData(label = label, value = value, icon = map["icon"] as? String)
+    }
+}
+
+/** A decoded menu item from the serialized `items` array. */
+private data class MenuItemData(val label: String, val value: String, val icon: String?)
+
+/**
+ * Report a menu/action-sheet selection back to Python as a [MenuSelectEvent]
+ * payload `{value, label}` on the node's `on_select` handler.
+ */
+private fun emitMenuSelect(
+    node: TempestNode,
+    item: MenuItemData,
+    onEvent: (String, String) -> Unit,
+) {
+    handlerToken(node, "on_select")?.let { token ->
+        val payload = JSONObject().put("value", item.value).put("label", item.label)
+        onEvent(token, payload.toString())
+    }
+}
+
+/**
+ * Report a host-owned overlay dismiss to Python via the reserved
+ * `__dismiss__:<overlay_id>` event, where `overlay_id` is the node's [key]. The
+ * bridge (`jni._on_event` / `DeviceApp.handle_event`) routes this to `App.dismiss`
+ * — no new patch kind and no new JNI entry (B6 pattern).
+ */
+private fun emitDismiss(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val id = node.key ?: return
+    onEvent("$DISMISS_TOKEN_PREFIX:$id", "{}")
+}
+
+/**
+ * Reserved event-token prefix (E2) for a host-owned overlay dismiss. Must stay in
+ * sync with `tempestroid.bridge.protocol.DISMISS_TOKEN_PREFIX`.
+ */
+private const val DISMISS_TOKEN_PREFIX = "__dismiss__"
 
 /**
  * A navigation-stack host that animates the swap of its single top screen — the

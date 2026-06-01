@@ -108,6 +108,11 @@ def run_qt(
 
     renderer = QtRenderer()
     app = App(state, view, apply_patches=renderer.apply)
+    # The app builds a `Scene` (root tree + floating overlay layer). The Qt
+    # renderer mounts both; a host-owned overlay dismissal (dialog close, menu
+    # select, scrim tap) is routed back to `App.dismiss` — the desktop analogue
+    # of the device bridge's `__dismiss__:<id>` token.
+    renderer.set_dismiss_overlay(app.dismiss)
     host = renderer.mount(app.start())
     # Esc → back (app.pop), mirroring the device back button. The filter is kept
     # alive on the host so Qt does not GC it (it does not take ownership).

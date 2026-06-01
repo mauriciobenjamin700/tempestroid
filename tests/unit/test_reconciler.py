@@ -370,3 +370,55 @@ def test_window_grow_adds_only_tail_items():
     assert [p.index for p in inserts] == [5, 6, 7, 8, 9]
     assert [p.node.key for p in inserts] == ["5", "6", "7", "8", "9"]
     assert reorders == []
+
+
+# --- diff_scene (overlay layer) --------------------------------------------
+
+
+def test_diff_scene_overlay_add_remove_reorder_mix():
+    from tempestroid import Dialog, build_scene, diff_scene
+
+    # Old layer: [a, b, c]; new layer: [c, a, d] -> remove b, reorder, insert d.
+    old = build_scene(
+        Text(content="root"),
+        [
+            ("a", Dialog(title="A"), True),
+            ("b", Dialog(title="B"), True),
+            ("c", Dialog(title="C"), True),
+        ],
+    )
+    new = build_scene(
+        Text(content="root"),
+        [
+            ("c", Dialog(title="C"), True),
+            ("a", Dialog(title="A"), True),
+            ("d", Dialog(title="D"), True),
+        ],
+    )
+    patches = diff_scene(old, new)
+    # Every overlay-layer patch is addressed under the reserved prefix.
+    overlay_patches = [
+        p for p in patches if p.path and p.path[0] == "overlay"
+    ]
+    assert overlay_patches  # the overlay layer changed
+    removes = [p for p in overlay_patches if isinstance(p, Remove)]
+    reorders = [p for p in overlay_patches if isinstance(p, Reorder)]
+    inserts = [p for p in overlay_patches if isinstance(p, Insert)]
+    assert len(removes) == 1
+    assert len(reorders) == 1
+    assert {p.node.key for p in inserts} == {"d"}
+
+
+def test_diff_scene_matched_overlay_update_path_is_indexed():
+    from tempestroid import Dialog, build_scene, diff_scene
+
+    old = build_scene(
+        Text(content="root"), [("dlg", Dialog(title="old"), True)]
+    )
+    new = build_scene(
+        Text(content="root"), [("dlg", Dialog(title="new"), True)]
+    )
+    patches = diff_scene(old, new)
+    updates = [p for p in patches if isinstance(p, Update) and p.path]
+    assert len(updates) == 1
+    assert updates[0].path == ("overlay", 0)

@@ -109,9 +109,9 @@ E0/E2 nas transições; E4–E9 acoplam menos e reordenam por demanda.
 
 | Phase | Scope | Status | Done when |
 |---|---|---|---|
-| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | 🔜 planned | exemplo de 3 telas navega; voltar do Android faz `pop` (device); abas/gaveta como rotas; transições na conformância |
-| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | 🔜 planned | lista de 10k itens rola fluido nos dois renderizadores; refresh + `on_end_reached` + cabeçalho fixo |
-| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | 🔜 planned | cada overlay abre/fecha por handler; barrier bloqueia; toast expira; menu ancorado (device) |
+| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | ✅ done | exemplo de 3 telas navega; voltar do Android faz `pop` (device); abas/gaveta como rotas; transições na conformância |
+| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | ✅ done | lista de 10k itens rola fluido nos dois renderizadores; refresh + `on_end_reached` + cabeçalho fixo |
+| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ done | cada overlay abre/fecha por handler; barrier bloqueia; toast expira; menu ancorado (device) |
 | E3 | Framework de animação (controller, tween/curva, implícita, gesto-dirigida, Hero, shimmer) | 🔜 planned | `AnimatedContainer`/`AnimatedList`/`Hero` animam nos dois renderizadores; controlador testado com clock determinístico |
 | E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder, viewer) | 🔜 planned | cada gesto dispara evento tipado e muda estado; swipe-to-delete + reorder (diff) + pinça-zoom (device) |
 | E5 | Inputs e formulários (dropdown/select, time, range, form/validação, autocomplete, OTP, máscara) | 🔜 planned | formulário valida e bloqueia submit inválido com erro por campo nos dois renderizadores |
@@ -252,6 +252,36 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
   (key prefix `sec:…:header`), vs Compose's intrinsic `stickyHeader`. (3) Desktop
   has no pull-to-refresh gesture → `on_refresh` is driven by the `refreshing`
   prop/overlay only (no pull), vs Compose `PullToRefreshBox`.
+- **Overlays + feedback (E2c).** `QtRenderer.mount`/`remount` now take a `Scene`
+  (root tree + z-ordered overlay layer); a bare `Node` is still accepted (wrapped
+  as an overlay-free `Scene`) for direct-mount tests. Overlay-layer patches carry
+  the reserved leading `"overlay"` path token from `diff_scene`: `("overlay",)`
+  for layer insert/remove/reorder, `("overlay", i)` for an overlay's own
+  update/replace, `("overlay", i, …)` for a within-overlay child patch — the
+  renderer strips the `("overlay", i)` prefix and re-bases the patch onto the
+  overlay subtree, reusing the generic root-tree machinery (no new patch kind).
+  Each overlay node's `barrier` prop drives a shared `_ScrimWidget` (a
+  `rgba(0,0,0,0.4)` QWidget over the host that swallows `mousePressEvent` and, on
+  tap, dismisses the topmost barrier overlay). Overlay surfaces are top-level
+  widgets, not host children: `Dialog`/`BottomSheet`/`Popover` → `_DismissDialog`
+  (a `QDialog` that reports user-initiated closes); `Menu`/`ActionSheet` →
+  `QMenu` (shown via non-blocking `popup`, **not** `exec`, so the qasync loop
+  keeps running; `triggered` → `MenuSelectEvent`); `Toast`/`Tooltip` → a frameless
+  floating `QLabel` (toasts fade via `QGraphicsOpacityEffect`+`QTimer` just before
+  the **app-side** `loop.call_later` removes them — the Python timer stays
+  authoritative). A host-owned dismissal (scrim tap, dialog close, menu select)
+  invokes the widget's `on_dismiss`/`on_select` then calls `App.dismiss` via the
+  `set_dismiss_overlay` callback (`run_qt`/`Simulator` wire it) — the desktop
+  analogue of the device bridge's `__dismiss__:<id>` token; both are idempotent.
+  **Qt-vs-Compose divergences (document in the conformance table):** Qt uses
+  `QDialog`/`QMenu`/`QTimer`+`QPropertyAnimation` and a manual scrim QWidget;
+  Compose uses Material3 `AlertDialog`/`ModalBottomSheet`/`DropdownMenu` which
+  manage their own `WindowInsets.safeDrawing` and scrim (no double safe-area
+  padding). `BottomSheet` slides up via a `QPropertyAnimation` on `pos` and
+  anchors to the host bottom edge; the `Menu`/`Popover` `anchor` key is resolved
+  to a global point via a depth-first `key` lookup in the root tree (falling back
+  to the host origin when unresolved), vs Compose anchoring by composition.
+  Example: `examples/overlays/app.py` (`make run APP=examples/overlays/app.py`).
 
 **A4 notes / known limits:**
 

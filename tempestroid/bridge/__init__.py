@@ -11,6 +11,7 @@ from tempestroid.bridge.handlers import HandlerRegistry
 from tempestroid.bridge.jni import JniBridge, make_event_sink, run_device
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
+    DISMISS_TOKEN_PREFIX,
     EventMessage,
     MountMessage,
     PatchMessage,
@@ -28,6 +29,7 @@ __all__ = [
     "DeviceApp",
     "HandlerRegistry",
     "BACK_TOKEN",
+    "DISMISS_TOKEN_PREFIX",
     "MountMessage",
     "PatchMessage",
     "EventMessage",

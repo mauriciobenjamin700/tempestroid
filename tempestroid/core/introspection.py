@@ -12,12 +12,16 @@ from __future__ import annotations
 from typing import Any
 
 from tempestroid.widgets import (
+    ActionSheet,
+    BottomSheet,
     Button,
     Checkbox,
     Column,
     Container,
     DateChangeEvent,
     DatePicker,
+    Dialog,
+    DismissEvent,
     EndReachedEvent,
     Event,
     FilePicker,
@@ -30,7 +34,10 @@ from tempestroid.widgets import (
     LazyGrid,
     LazyRow,
     LongPressEvent,
+    Menu,
+    MenuSelectEvent,
     Navigator,
+    Popover,
     ProgressBar,
     RefreshControl,
     RefreshEvent,
@@ -52,7 +59,9 @@ from tempestroid.widgets import (
     Text,
     TextArea,
     TextChangeEvent,
+    Toast,
     ToggleEvent,
+    Tooltip,
     Widget,
 )
 
@@ -94,6 +103,13 @@ WIDGET_TYPES: tuple[type[Widget], ...] = (
     LazyGrid,
     SectionList,
     RefreshControl,
+    Dialog,
+    BottomSheet,
+    Toast,
+    Tooltip,
+    Menu,
+    Popover,
+    ActionSheet,
 )
 
 #: The event payload types crossing the native boundary.
@@ -110,6 +126,8 @@ EVENT_TYPES: tuple[type[Event], ...] = (
     ScrollEvent,
     RefreshEvent,
     EndReachedEvent,
+    DismissEvent,
+    MenuSelectEvent,
 )
 
 

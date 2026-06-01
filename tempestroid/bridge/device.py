@@ -18,7 +18,12 @@ from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
 from tempestroid.bridge.handlers import HandlerRegistry
-from tempestroid.bridge.protocol import EventMessage, MountMessage, PatchMessage
+from tempestroid.bridge.protocol import (
+    DISMISS_TOKEN_PREFIX,
+    EventMessage,
+    MountMessage,
+    PatchMessage,
+)
 from tempestroid.bridge.serializer import serialize_node, serialize_patch
 from tempestroid.core.ir import Patch
 from tempestroid.core.state import App
@@ -100,12 +105,16 @@ class DeviceApp(Generic[S]):
         return self._app
 
     async def start(self) -> None:
-        """Build the initial tree, register handlers, and send the mount message."""
-        root = self._app.start()
-        self._registry.refresh(root)
+        """Build the initial scene, register handlers, and send the mount message."""
+        scene = self._app.start()
+        self._registry.refresh(scene)
         await self._bridge.send(
             MountMessage(
-                root=serialize_node(root),
+                root=serialize_node(scene.root),
+                overlays=[
+                    serialize_node(overlay, ("overlay", index))
+                    for index, overlay in enumerate(scene.overlays)
+                ],
                 can_pop=self._app.nav.can_pop,
             ).model_dump()
         )
@@ -132,13 +141,21 @@ class DeviceApp(Generic[S]):
     async def handle_event(self, message: dict[str, Any]) -> None:
         """Process an event coming back from the device.
 
-        Validates and dispatches via the registry; any resulting ``set_state``
-        schedules a coalesced rebuild whose patches are sent on the next tick.
+        A token with the reserved :data:`DISMISS_TOKEN_PREFIX` (an overlay
+        dismissed by a host-owned gesture) is routed straight to
+        :meth:`~tempestroid.core.state.App.dismiss`; every other token is a
+        widget handler, validated and dispatched via the registry. Either path's
+        resulting ``set_state``/``dismiss`` schedules a coalesced rebuild whose
+        patches are sent on the next tick.
 
         Args:
             message: A serialized :class:`EventMessage` dict.
         """
         event = EventMessage.model_validate(message)
+        prefix = f"{DISMISS_TOKEN_PREFIX}:"
+        if event.token.startswith(prefix):
+            self._app.dismiss(event.token[len(prefix) :])
+            return
         await self._registry.dispatch(event.token, event.payload)
 
     def _on_patches(self, patches: list[Patch]) -> None:

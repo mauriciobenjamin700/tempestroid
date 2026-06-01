@@ -14,20 +14,39 @@ future Compose runner would wire the same loop to the device.
 from __future__ import annotations
 
 import asyncio
+import uuid as _uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
-from tempestroid.core.ir import Node, Patch
-from tempestroid.core.reconciler import build, diff
+from tempestroid.core.ir import Patch, Scene
+from tempestroid.core.reconciler import build_scene, diff_scene
 from tempestroid.navigation import NavStack, Route
 from tempestroid.widgets import LazyColumn, LazyGrid, LazyRow, SectionList, Widget
 
-__all__ = ["App"]
+__all__ = ["App", "OverlayEntry"]
 
 S = TypeVar("S")
 
 #: The virtualized list widgets whose visible window the app tracks and slides.
 _LAZY_LISTS: tuple[type[Widget], ...] = (LazyColumn, LazyRow, LazyGrid)
+
+
+@dataclass
+class OverlayEntry:
+    """One slot in the app's floating overlay layer.
+
+    Attributes:
+        id: Stable overlay id (a UUID), used as the overlay node's ``key``.
+        widget: The overlay's widget tree.
+        barrier: Whether a touch-blocking scrim sits behind the overlay.
+        is_toast: Whether this overlay auto-dismisses on a timer (a toast).
+    """
+
+    id: str
+    widget: Widget
+    barrier: bool
+    is_toast: bool = False
 
 
 class App(Generic[S]):
@@ -69,7 +88,11 @@ class App(Generic[S]):
         self.nav: NavStack = nav if nav is not None else NavStack()
         self._view: Callable[[App[S]], Widget] = view
         self._apply: Callable[[list[Patch]], None] = apply_patches
-        self._current: Node | None = None
+        self._current: Scene | None = None
+        # The floating overlay layer, in ascending z-order. Mutated by the
+        # imperative overlay API (`show_dialog`/`show_sheet`/`toast`/`show_menu`/
+        # `dismiss`) and folded into every build as the scene's `overlays`.
+        self._overlays: list[OverlayEntry] = []
         self._rebuild_scheduled: bool = False
         # Visible-window overrides for virtualized lists, keyed by the list's
         # `key`; SectionList sections are keyed `"<list_key>::<section_title>"`.
@@ -78,21 +101,22 @@ class App(Generic[S]):
         # cross to the renderer as the list node's `children`.
         self._windows: dict[str, tuple[int, int]] = {}
 
-    def start(self) -> Node:
-        """Build the initial IR tree and record it as the current tree.
+    def start(self) -> Scene:
+        """Build the initial scene and record it as the current tree.
 
         Returns:
-            The root IR node, ready to hand to a renderer's ``mount``.
+            The :class:`Scene` (root tree + overlay layer), ready to hand to a
+            renderer's ``mount``.
         """
         self._current = self._build()
         return self._current
 
     @property
-    def current_tree(self) -> Node | None:
-        """The most recently built IR tree (``None`` before :meth:`start`).
+    def current_tree(self) -> Scene | None:
+        """The most recently built scene (``None`` before :meth:`start`).
 
         Returns:
-            The current root node, or ``None``.
+            The current scene, or ``None``.
         """
         return self._current
 
@@ -122,9 +146,11 @@ class App(Generic[S]):
             raise RuntimeError("cannot swap_view before start()")
         # Build with the new view eagerly so a failure aborts before we commit;
         # the old self._view is untouched until the build succeeds.
-        new = build(self._inject_windows(view(self)))
+        new = build_scene(
+            self._inject_windows(view(self)), self._overlay_specs()
+        )
         self._view = view
-        patches = diff(self._current, new)
+        patches = diff_scene(self._current, new)
         self._current = new
         if patches:
             self._apply(patches)
@@ -171,14 +197,28 @@ class App(Generic[S]):
         self._windows[f"{key}::{section_title}"] = (start, end)
         self.request_rebuild()
 
-    def _build(self) -> Node:
-        """Build the current view, injecting any tracked list windows first.
+    def _build(self) -> Scene:
+        """Build the current scene: the view's tree plus the overlay layer.
+
+        Tracked list windows are injected into the root tree first; the floating
+        overlays are folded in as the scene's overlay layer.
 
         Returns:
-            The freshly built IR node tree with virtualized lists materialized at
-            their tracked windows.
+            The freshly built :class:`Scene` with virtualized lists materialized
+            at their tracked windows.
         """
-        return build(self._inject_windows(self._view(self)))
+        return build_scene(
+            self._inject_windows(self._view(self)), self._overlay_specs()
+        )
+
+    def _overlay_specs(self) -> list[tuple[str, Widget, bool]]:
+        """Lower the overlay entries to ``(id, widget, barrier)`` build tuples.
+
+        Returns:
+            The overlay layer in ascending z-order, ready for
+            :func:`~tempestroid.core.reconciler.build_scene`.
+        """
+        return [(entry.id, entry.widget, entry.barrier) for entry in self._overlays]
 
     def _inject_windows(self, widget: Widget) -> Widget:
         """Rewrite a widget tree to carry the app's tracked list windows.
@@ -298,6 +338,107 @@ class App(Generic[S]):
         self.nav.stack = list(stack)
         self.request_rebuild()
 
+    def show_dialog(self, widget: Widget, *, barrier: bool = True) -> str:
+        """Push a modal dialog onto the overlay layer.
+
+        Args:
+            widget: The dialog widget (typically a :class:`~tempestroid.Dialog`).
+            barrier: Whether a touch-blocking scrim sits behind the dialog.
+
+        Returns:
+            The stable overlay id, for a later :meth:`dismiss`.
+        """
+        return self._push(widget, barrier=barrier)
+
+    def show_sheet(self, widget: Widget, *, barrier: bool = True) -> str:
+        """Push a bottom sheet onto the overlay layer.
+
+        Args:
+            widget: The sheet widget (typically a
+                :class:`~tempestroid.BottomSheet`).
+            barrier: Whether a touch-blocking scrim sits behind the sheet.
+
+        Returns:
+            The stable overlay id, for a later :meth:`dismiss`.
+        """
+        return self._push(widget, barrier=barrier)
+
+    def show_menu(
+        self, widget: Widget, *, anchor: str | None = None, barrier: bool = False
+    ) -> str:
+        """Push a menu or popover onto the overlay layer.
+
+        Args:
+            widget: The menu widget (typically a :class:`~tempestroid.Menu` or
+                :class:`~tempestroid.Popover`). When it exposes an ``anchor``
+                field and ``anchor`` is given, the anchor is applied to the
+                widget so the renderer can position the menu.
+            anchor: Optional ``key`` of the widget to anchor the menu to.
+            barrier: Whether a touch-blocking scrim sits behind the menu
+                (menus are usually anchored and barrier-free).
+
+        Returns:
+            The stable overlay id, for a later :meth:`dismiss`.
+        """
+        if anchor is not None and "anchor" in type(widget).model_fields:
+            widget = widget.model_copy(update={"anchor": anchor})
+        return self._push(widget, barrier=barrier)
+
+    def toast(self, widget: Widget, *, duration_s: float = 2.5) -> str:
+        """Push a transient toast that auto-dismisses after ``duration_s``.
+
+        The auto-dismiss is scheduled on the event loop via ``call_later``; the
+        app remains authoritative over the toast's lifetime even if a renderer
+        also runs its own visual timer.
+
+        Args:
+            widget: The toast widget (typically a :class:`~tempestroid.Toast`).
+            duration_s: How long the toast stays visible, in seconds.
+
+        Returns:
+            The stable overlay id (also dismissable early via :meth:`dismiss`).
+        """
+        overlay_id = self._push(widget, barrier=False, is_toast=True)
+        self._loop().call_later(duration_s, self.dismiss, overlay_id)
+        return overlay_id
+
+    def dismiss(self, overlay_id: str) -> None:
+        """Remove an overlay by id and request a rebuild.
+
+        A no-op when the id is unknown (e.g. a toast already auto-dismissed, or a
+        double dismiss), so renderer-driven and timer-driven dismissals are safe
+        to race.
+
+        Args:
+            overlay_id: The id returned by a ``show_*``/``toast`` call.
+        """
+        before = len(self._overlays)
+        self._overlays = [e for e in self._overlays if e.id != overlay_id]
+        if len(self._overlays) != before:
+            self.request_rebuild()
+
+    def _push(
+        self, widget: Widget, *, barrier: bool, is_toast: bool = False
+    ) -> str:
+        """Append an overlay entry and request a rebuild.
+
+        Args:
+            widget: The overlay widget.
+            barrier: Whether a touch-blocking scrim sits behind it.
+            is_toast: Whether it auto-dismisses on a timer.
+
+        Returns:
+            The new overlay's stable id.
+        """
+        overlay_id = _uuid.uuid4().hex
+        self._overlays.append(
+            OverlayEntry(
+                id=overlay_id, widget=widget, barrier=barrier, is_toast=is_toast
+            )
+        )
+        self.request_rebuild()
+        return overlay_id
+
     def request_rebuild(self) -> None:
         """Schedule a single rebuild on the event loop.
 
@@ -309,12 +450,12 @@ class App(Generic[S]):
         self._loop().call_soon(self._rebuild)
 
     def _rebuild(self) -> None:
-        """Rebuild the tree, diff against the current one, and apply patches."""
+        """Rebuild the scene, diff against the current one, and apply patches."""
         self._rebuild_scheduled = False
         if self._current is None:
             return
         new = self._build()
-        patches = diff(self._current, new)
+        patches = diff_scene(self._current, new)
         self._current = new
         if patches:
             self._apply(patches)

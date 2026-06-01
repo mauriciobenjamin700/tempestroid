@@ -29,14 +29,21 @@ from tempestroid.core.ir import (
     Insert,
     Node,
     Patch,
+    Path,
     Remove,
     Reorder,
     Replace,
+    Scene,
     Update,
 )
 from tempestroid.widgets import Component, Widget
 
-__all__ = ["build", "diff"]
+__all__ = ["build", "diff", "build_scene", "diff_scene"]
+
+#: The reserved leading path step that addresses the overlay layer of a
+#: :class:`Scene`. A patch whose path starts with this token targets an overlay
+#: rather than the root tree.
+OVERLAY_STEP = "overlay"
 
 
 def build(widget: Widget) -> Node:
@@ -90,10 +97,81 @@ def diff(old: Node, new: Node) -> list[Patch]:
     return patches
 
 
+def build_scene(
+    widget: Widget, overlays: list[tuple[str, Widget, bool]]
+) -> Scene:
+    """Build a full :class:`Scene` from a root widget plus an overlay layer.
+
+    Each overlay is given as a ``(id, widget, barrier)`` tuple: the ``id``
+    becomes the overlay node's stable ``key`` (so the keyed diff matches it
+    across rebuilds), and ``barrier`` is recorded as a ``barrier`` prop on the
+    overlay node so a renderer knows whether to draw a touch-blocking scrim.
+
+    Args:
+        widget: The root screen widget.
+        overlays: The overlay layer, in ascending z-order, as
+            ``(overlay_id, widget, barrier)`` tuples.
+
+    Returns:
+        The built scene (root node + overlay nodes).
+    """
+    root = build(widget)
+    overlay_nodes: list[Node] = []
+    for overlay_id, overlay_widget, barrier in overlays:
+        node = build(overlay_widget)
+        props = dict(node.props)
+        props["barrier"] = barrier
+        overlay_nodes.append(
+            node.model_copy(update={"key": overlay_id, "props": props})
+        )
+    return Scene(root=root, overlays=overlay_nodes)
+
+
+def diff_scene(old: Scene, new: Scene) -> list[Patch]:
+    """Diff two scenes into an ordered patch list.
+
+    The root tree is diffed exactly as :func:`diff` does (paths unchanged, so
+    every existing renderer consumer is unaffected). The overlay layer is diffed
+    as a fully-keyed child list (each overlay's ``key`` is its stable id) under
+    the reserved ``("overlay",)`` path prefix, so overlay add/remove/reorder
+    reuse the existing :class:`Insert`/:class:`Remove`/:class:`Reorder`/
+    :class:`Update`/:class:`Replace` patch kinds — no new patch kind is needed.
+
+    Args:
+        old: The previously rendered scene.
+        new: The freshly built scene.
+
+    Returns:
+        The patches transforming ``old`` into ``new`` (empty if identical).
+    """
+    patches: list[Patch] = []
+    _reconcile(old.root, new.root, (), patches)
+    _reconcile_overlays(old.overlays, new.overlays, patches)
+    return patches
+
+
+def _reconcile_overlays(
+    old: list[Node], new: list[Node], patches: list[Patch]
+) -> None:
+    """Diff the overlay layer under the reserved ``("overlay",)`` path prefix.
+
+    Overlays are always keyed by their stable id, so a fully-keyed diff applies
+    when both layers are non-empty; otherwise the positional path handles the
+    empty-to-N and N-to-empty transitions. All emitted paths start with the
+    reserved ``"overlay"`` token.
+
+    Args:
+        old: The old overlay nodes.
+        new: The new overlay nodes.
+        patches: The accumulator to append patches to.
+    """
+    _reconcile_children(old, new, (OVERLAY_STEP,), patches)
+
+
 def _reconcile(
     old: Node,
     new: Node,
-    path: tuple[int, ...],
+    path: Path,
     patches: list[Patch],
 ) -> None:
     """Reconcile one node against another at ``path``, appending patches.
@@ -120,7 +198,7 @@ def _reconcile(
 def _reconcile_children(
     old: list[Node],
     new: list[Node],
-    path: tuple[int, ...],
+    path: Path,
     patches: list[Patch],
 ) -> None:
     """Reconcile two child lists under ``path``.
@@ -160,7 +238,7 @@ def _fully_keyed(nodes: list[Node]) -> bool:
 def _reconcile_keyed(
     old: list[Node],
     new: list[Node],
-    path: tuple[int, ...],
+    path: Path,
     patches: list[Patch],
 ) -> None:
     """Diff two fully-keyed child lists into a minimal patch sequence.

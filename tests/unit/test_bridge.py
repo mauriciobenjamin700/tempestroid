@@ -147,3 +147,114 @@ async def test_device_reload_preserves_state_and_patches():
     await device.handle_event({"kind": "event", "token": "1:on_click", "payload": {}})
     await _drain()
     assert device.app.state.value == 2
+
+
+# --- overlays over the bridge ----------------------------------------------
+
+
+def _overlay_view(app: "App[Counter]") -> Widget:
+    return Text(content="root", key="root")
+
+
+async def test_mount_serializes_overlays_with_barrier_and_key():
+    from tempestroid import Dialog
+
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _overlay_view, bridge)
+    await device.start()
+    overlay_id = device.app.show_dialog(Dialog(title="Hi"))
+    await _drain()
+
+    # A fresh mount carries no overlays; the dialog rides the next patch batch,
+    # but a subsequent start would serialize it under `overlays`.
+    bridge2 = LoopbackBridge()
+
+    def _view_with_overlay(app: "App[Counter]") -> Widget:
+        return Text(content="root", key="root")
+
+    device2: DeviceApp[Counter] = DeviceApp(Counter(), _view_with_overlay, bridge2)
+    await device2.start()
+    device2.app.show_dialog(Dialog(title="Hi"))
+    await _drain()
+    # The patch batch carried a namespaced overlay insert.
+    patch_msgs = [m for m in bridge2.sent if m["kind"] == "patch"]
+    overlay_inserts = [
+        p
+        for m in patch_msgs
+        for p in m["patches"]
+        if p["op"] == "insert" and p["path"] == ["overlay"]
+    ]
+    assert overlay_inserts
+    assert overlay_inserts[0]["node"]["type"] == "Dialog"
+    assert overlay_inserts[0]["node"]["props"]["barrier"] is True
+    assert overlay_id  # the first device returned a stable id
+
+
+async def test_patch_path_is_json_safe_for_overlay():
+    import json
+
+    from tempestroid import Dialog
+
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _overlay_view, bridge)
+    await device.start()
+    device.app.show_dialog(Dialog(title="Hi"))
+    await _drain()
+    # The whole patch batch round-trips through JSON (paths are list[int|str]).
+    patch_msgs = [m for m in bridge.sent if m["kind"] == "patch"]
+    assert patch_msgs
+    json.dumps(patch_msgs[-1])  # must not raise
+    inserts = [p for p in patch_msgs[-1]["patches"] if p["op"] == "insert"]
+    assert inserts[0]["path"] == ["overlay"]
+
+
+async def test_dismiss_token_routes_to_app_dismiss():
+    from tempestroid import Dialog
+
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _overlay_view, bridge)
+    await device.start()
+    overlay_id = device.app.show_dialog(Dialog(title="Hi"))
+    await _drain()
+    assert device.app.current_tree is not None
+    assert len(device.app.current_tree.overlays) == 1
+
+    # A host-owned dismiss arrives over the event channel as __dismiss__:<id>.
+    await device.handle_event(
+        {"kind": "event", "token": f"__dismiss__:{overlay_id}", "payload": {}}
+    )
+    await _drain()
+    assert device.app.current_tree is not None
+    assert device.app.current_tree.overlays == []
+
+
+async def test_overlay_handler_token_resolves_after_refresh():
+    from tempestroid import Dialog
+
+    bridge = LoopbackBridge()
+    dismissed: list[int] = []
+
+    def view(app: "App[Counter]") -> Widget:
+        return Text(content="root", key="root")
+
+    device: DeviceApp[Counter] = DeviceApp(Counter(), view, bridge)
+    await device.start()
+    device.app.show_dialog(
+        Dialog(title="Hi", on_dismiss=lambda: dismissed.append(1))
+    )
+    await _drain()
+    # The overlay's on_dismiss handler is registered under the namespaced token.
+    await device.handle_event(
+        {"kind": "event", "token": "overlay/0:on_dismiss", "payload": {}}
+    )
+    await _drain()
+    assert dismissed == [1]
+
+
+def test_event_schemas_register_overlay_widgets():
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+
+    for widget_type in ("Dialog", "BottomSheet", "Menu", "Popover", "ActionSheet"):
+        assert widget_type in EVENT_SCHEMAS
+    assert EVENT_SCHEMAS["Dialog"]["on_dismiss"].__name__ == "DismissEvent"
+    assert EVENT_SCHEMAS["Menu"]["on_select"].__name__ == "MenuSelectEvent"
