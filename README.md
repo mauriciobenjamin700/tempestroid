@@ -346,6 +346,19 @@ The declarative IR — bare-noun widgets.
   props); validators are pure Python and are never serialized.
 - Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
   **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
+- Media + graphics widgets (phase E7): **`Canvas`** — a retained-mode drawing
+  surface taking a `commands` list of serializable draw commands
+  (**`MoveTo`** / **`LineTo`** / **`ArcTo`** / **`Close`** / **`FillCmd`** /
+  **`StrokeCmd`** / **`DrawText`** / **`DrawRect`** / **`DrawOval`**, the
+  discriminated **`DrawCommand`** union; colors are `[r, g, b, a]` float lists, so
+  the list lowers to pure JSON and diffs by value); **`VideoPlayer`** (`src` +
+  `autoplay`/`loop`/`controls`/`muted`), **`WebView`** (`url` +
+  `javascript_enabled`), **`Svg`** (`src` + `fit`), **`CameraPreview`**
+  (`facing`), **`QrScanner`** (`on_scan` → **`QrScanEvent`**), **`MapView`**
+  (`latitude`/`longitude`/`zoom` + JSON `markers`), and the effect wrappers
+  **`Blur`** / **`BackdropFilter`** (`radius` + `child`) and **`ClipPath`**
+  (**`ClipShape`** `shape` + `radius` + `child`). `CameraPreview`/`QrScanner`/
+  `MapView` are device-only — the Qt simulator shows an explicit placeholder.
 - Virtualized lists (only the visible window is materialized; declare an
   `item_count` + an `item_builder(index) -> Widget`, never a static child list):
   **`LazyColumn`** / **`LazyRow`** (vertical/horizontal lazy lists),
@@ -373,7 +386,8 @@ The declarative IR — bare-noun widgets.
   that crosses the bridge as plain JSON. The matching handler aliases are
   **`DismissHandler`** and **`MenuSelectHandler`**.
 - Enums: **`KeyboardType`** (text/number/email/phone/url/password),
-  **`ImageFit`** (contain/cover/fill/none).
+  **`ImageFit`** (contain/cover/fill/none), **`ClipShape`**
+  (circle/rounded_rect/oval).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
   (`on_click`, `on_change`, `on_select`); sync or `async`, zero- or one-argument.
 
@@ -456,6 +470,8 @@ renderer changes and are fully device-ready. Every component takes an optional
 - Layout event (phase E6): **`PageChangeEvent`** (`page` + `previous`) — emitted
   by a `PageView` when the active page changes (handler alias
   **`PageChangeHandler`**).
+- Media event (phase E7): **`QrScanEvent`** (`data` + `format`) — emitted by a
+  `QrScanner` for each decoded QR/barcode (handler prop `on_scan`).
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -705,6 +721,7 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | E4 | Advanced gestures (`PanHandler`/`ScaleHandler`/`Draggable`/`DragTarget`/`Dismissible`/`ReorderableList`/`InteractiveViewer`) | ✅ |
 | E5 | Inputs + forms (`Dropdown`/`TimePicker`/`RangeSlider`/`Autocomplete`/`PinInput`/`MaskedInput`, `Form`/`FormField`/`Validator`/`FormState`) | ✅ |
 | E6 | Refined layout (`flex_wrap`/`Wrap`/`PageView`/`AspectRatio`/`CollapsingAppBar`/`Table`/`DataTable`, `PageChangeEvent`) | ✅ |
+| E7 | Media + graphics (`Canvas`/`Svg`/`VideoPlayer`/`WebView`/`Blur`/`ClipPath`/`CameraPreview`/`QrScanner`/`MapView`) | ✅ |
 
 ---
 

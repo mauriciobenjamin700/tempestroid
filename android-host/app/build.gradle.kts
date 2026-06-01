@@ -237,6 +237,29 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     // Named Material icons for the `Icon` widget (string name -> vector glyph).
     implementation("androidx.compose.material:material-icons-extended")
-    // Async image loading for the `Image` widget (URL/asset src).
+    // Async image loading for the `Image`/`Svg` widgets (URL/asset src).
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // E7 media + graphics ------------------------------------------------------
+    // Media3/ExoPlayer — Google's official Android video playback stack (replaces
+    // the standalone ExoPlayer); backs the `VideoPlayer` widget via PlayerView.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    // CameraX — AndroidX camera; PreviewView + lifecycle binding back the
+    // `CameraPreview` and `QrScanner` widgets (CAMERA perm already in manifest).
+    implementation("androidx.camera:camera-core:1.4.0")
+    implementation("androidx.camera:camera-camera2:1.4.0")
+    implementation("androidx.camera:camera-view:1.4.0")
+    implementation("androidx.camera:camera-lifecycle:1.4.0")
+    // ML Kit barcode scanning — decodes QR/barcodes off the CameraX ImageAnalysis
+    // frames for the `QrScanner` widget (no DIY alternative; Google's standard lib).
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // androidx.lifecycle.compose.LocalLifecycleOwner — needed to bind CameraX to
+    // the composition's lifecycle (CameraPreview/QrScanner).
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+    // MapView is a documented PLACEHOLDER on both leaves: Google Maps Compose would
+    // require google-services.json + a Maps API key (APK won't build without it),
+    // which is out of scope for the host skeleton. Wiring it is a post-phase task:
+    // implementation("com.google.maps.android:maps-compose:6.1.0")
+    // implementation("com.google.android.gms:play-services-maps:19.0.0")
 }

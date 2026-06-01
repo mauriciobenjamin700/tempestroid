@@ -43,6 +43,7 @@ __all__ = [
     "SubmitEvent",
     "ValidationEvent",
     "PageChangeEvent",
+    "QrScanEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -392,6 +393,21 @@ class PageChangeEvent(Event):
 
     page: int
     previous: int = 0
+
+
+class QrScanEvent(Event):
+    """A QR/barcode scan result.
+
+    Emitted by ``QrScanner`` for each decoded code. The decoded payload and its
+    symbology cross the boundary as plain strings.
+
+    Attributes:
+        data: The decoded code contents.
+        format: The barcode symbology (e.g. ``"QR_CODE"``).
+    """
+
+    data: str
+    format: str = "QR_CODE"
 
 
 E = TypeVar("E", bound=Event)
