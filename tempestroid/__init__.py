@@ -31,7 +31,9 @@ from tempestroid.bridge import (
 from tempestroid.bridge.protocol import (
     CONNECTIVITY_TOKEN_PREFIX,
     LIFECYCLE_TOKEN,
+    LOCALE_TOKEN,
     SENSOR_TOKEN_PREFIX,
+    THEME_TOKEN,
 )
 from tempestroid.components import (
     Accordion,
@@ -97,6 +99,7 @@ from tempestroid.devserver import (
     run_dev_client,
     serve_device,
 )
+from tempestroid.i18n import Locale, t, translate
 from tempestroid.native import (
     BiometricResult,
     ConnectivityCallback,
@@ -168,6 +171,7 @@ from tempestroid.style import (
     TextOverflow,
     Transition,
 )
+from tempestroid.theme import MediaQueryData, Theme, ThemeMode
 from tempestroid.widgets import (
     DEFAULT_WINDOW_SIZE,
     ActionSheet,
@@ -234,6 +238,7 @@ from tempestroid.widgets import (
     LazyRow,
     LifecycleEvent,
     LineTo,
+    LocaleChangeEvent,
     LongPressEvent,
     LongPressHandler,
     MapView,
@@ -278,6 +283,7 @@ from tempestroid.widgets import (
     SectionList,
     SelectEvent,
     SelectHandler,
+    Semantics,
     SensorEvent,
     SensorType,
     Shimmer,
@@ -301,6 +307,7 @@ from tempestroid.widgets import (
     Text,
     TextArea,
     TextChangeEvent,
+    ThemeChangeEvent,
     TimeChangeEvent,
     TimeChangeHandler,
     TimePicker,
@@ -352,9 +359,18 @@ __all__ = [
     "Position",
     "StackAlign",
     "FlexWrap",
+    # Theme + media-query context (phase E9)
+    "Theme",
+    "ThemeMode",
+    "MediaQueryData",
+    # i18n context (phase E9)
+    "Locale",
+    "translate",
+    "t",
     # Widgets
     "Widget",
     "Component",
+    "Semantics",
     "Text",
     "Button",
     "Column",
@@ -533,6 +549,8 @@ __all__ = [
     "ConnectivityState",
     "ConnectivityEvent",
     "DeepLinkEvent",
+    "ThemeChangeEvent",
+    "LocaleChangeEvent",
     "EventValidationError",
     "parse_event",
     # Navigation (routes + stack)
@@ -568,6 +586,8 @@ __all__ = [
     "SENSOR_TOKEN_PREFIX",
     "LIFECYCLE_TOKEN",
     "CONNECTIVITY_TOKEN_PREFIX",
+    "THEME_TOKEN",
+    "LOCALE_TOKEN",
     "Bridge",
     "LoopbackBridge",
     "JniBridge",

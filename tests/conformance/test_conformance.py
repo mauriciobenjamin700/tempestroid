@@ -213,6 +213,8 @@ _SAMPLES: dict[str, Any] = {
     "line_height": 1.4,
     "max_lines": 2,
     "text_overflow": TextOverflow.ELLIPSIS,
+    "text_scale": 1.4,
+    "font_asset": "fonts/Custom.ttf",
     "width": 100.0,
     "height": 100.0,
     "min_width": 10.0,
@@ -261,6 +263,13 @@ _SAMPLES: dict[str, Any] = {
 #:                padding); Qt realizes them imperatively as ``QWidget`` geometry
 #:                in the ``_StackWidget`` (no QSS property), so the ``Style → Qt``
 #:                translator does not react.
+#:   text_scale — Compose emits ``textScale`` (the device's ``LocalDensity``
+#:                applies it); Qt scales the emitted ``font-size`` (px when an
+#:                explicit ``font_size`` is set, otherwise a relative ``em``), so
+#:                both translators react.
+#:   font_asset — Compose emits ``fontAsset`` (Kotlin loads the bundle font into a
+#:                ``FontFamily``); Qt emits ``font-family: "CustomAsset"`` (the
+#:                renderer registers the file via ``QFontDatabase``), so both react.
 _COVERAGE: dict[str, tuple[bool, bool]] = {
     "direction": (False, False),
     "justify": (True, True),
@@ -287,6 +296,8 @@ _COVERAGE: dict[str, tuple[bool, bool]] = {
     "line_height": (True, False),
     "max_lines": (True, False),
     "text_overflow": (True, False),
+    "text_scale": (True, True),
+    "font_asset": (True, True),
     "width": (True, False),
     "height": (True, False),
     "min_width": (True, True),
@@ -2958,4 +2969,374 @@ def test_e8_translators_not_affected_by_platform_widgets() -> None:
     assert empty_snap["qt"]["qss_leaf"] == "", (
         "to_qss(Style()) changed after E8 import — "
         "KeyboardAvoidingView must not side-effect the Qt translator"
+    )
+
+
+# ---------------------------------------------------------------------------
+# E9 conformance: text_scale / font_asset + RTL start/end mirroring
+# ---------------------------------------------------------------------------
+#
+# Phase E9 adds two new ``Style`` fields (``text_scale``, ``font_asset``) — both
+# already folded into ``_SAMPLES`` / ``_COVERAGE`` above — and a ``rtl`` flag on
+# *both* translators that mirrors the box model's start/end (padding left/right,
+# margin left/right) and flips ``text_align`` LEFT/RIGHT. The two golden cases
+# below pin the new translations and the RTL mirroring against silent drift.
+#
+# ``rtl_snapshot`` captures both translators with ``rtl=True``; ``snapshot``
+# captures the default ``rtl=False`` path. ``rtl_layout`` is pinned at both so
+# the golden documents the exact left/right swap on each side.
+
+
+def rtl_snapshot(style: Style) -> dict[str, Any]:
+    """Capture both translators' RTL output for ``style`` as a JSON-able dict.
+
+    Args:
+        style: The style to translate under a right-to-left layout.
+
+    Returns:
+        ``{"compose": ..., "qt": {...}}`` — the RTL conformance snapshot.
+    """
+    return {
+        "compose": to_compose(style, rtl=True),
+        "qt": {
+            "qss_leaf": to_qss(style, with_padding=True, rtl=True),
+            "qss_container": to_qss(style, with_padding=False, rtl=True),
+        },
+    }
+
+
+#: E9 golden cases. ``rtl_layout`` pins the ltr-vs-rtl mirroring side by side;
+#: ``text_scale_font_asset`` pins the two new typography fields in both
+#: translators (ltr only — RTL does not affect them).
+_E9_CASES: dict[str, dict[str, Any]] = {
+    "rtl_layout": {
+        "ltr": snapshot(
+            Style(
+                padding=Edge(left=8, right=16),
+                margin=Edge(left=2, right=4),
+                text_align=TextAlign.LEFT,
+                border=SideBorder(
+                    left=Border(width=1, color=Color(r=10, g=20, b=30))
+                ),
+            )
+        ),
+        "rtl": rtl_snapshot(
+            Style(
+                padding=Edge(left=8, right=16),
+                margin=Edge(left=2, right=4),
+                text_align=TextAlign.LEFT,
+                border=SideBorder(
+                    left=Border(width=1, color=Color(r=10, g=20, b=30))
+                ),
+            )
+        ),
+    },
+    "text_scale_font_asset": snapshot(
+        Style(text_scale=1.4, font_asset="fonts/Custom.ttf", font_size=16)
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_E9_CASES))
+def test_e9_golden_snapshot(name: str) -> None:
+    """Each E9 canonical case matches its committed golden snapshot.
+
+    Regenerate with ``UPDATE_GOLDEN=1`` when a translator changes intentionally.
+    """
+    snap = _E9_CASES[name]
+    path = _GOLDEN_DIR / f"{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for {name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"conformance drift for {name!r}; review and re-run UPDATE_GOLDEN=1 if intended"
+    )
+
+
+def test_e9_rtl_mirrors_padding_and_text_align() -> None:
+    """``rtl=True`` swaps left/right padding and flips LEFT text-align in both."""
+    style = Style(padding=Edge(left=8, right=16), text_align=TextAlign.LEFT)
+    ltr = to_compose(style)
+    rtl = to_compose(style, rtl=True)
+    assert ltr["padding"] == {"top": 0.0, "right": 16.0, "bottom": 0.0, "left": 8.0}
+    assert rtl["padding"] == {"top": 0.0, "right": 8.0, "bottom": 0.0, "left": 16.0}
+    assert ltr["textAlign"] == "left"
+    assert rtl["textAlign"] == "right"
+    qss_ltr = to_qss(style, with_padding=True)
+    qss_rtl = to_qss(style, with_padding=True, rtl=True)
+    assert "padding: 0.0px 16.0px 0.0px 8.0px" in qss_ltr
+    assert "padding: 0.0px 8.0px 0.0px 16.0px" in qss_rtl
+
+
+# ---------------------------------------------------------------------------
+# E9 translator-level divergences (RTL: Qt vs Compose) — tripwire table
+# ---------------------------------------------------------------------------
+#
+# Phase E9 adds ``rtl: bool = False`` to *both* translators, but their
+# RTL behaviour intentionally diverges for fields the Qt translator already
+# leaves to the renderer (not QSS):
+#
+# 1. margin — Compose mirrors ``margin.left``↔``margin.right`` because it emits
+#    the full margin spec into the serialized Compose props that the Kotlin
+#    ``Modifier.padding`` reads. Qt does NOT emit ``margin`` into QSS (A3 notes:
+#    "not wired yet") so the RTL parameter has no effect on Qt's margin output.
+#    Both are correct: Qt applies margin in the renderer, not the translator.
+#
+# 2. text_align — Compose mirrors ``LEFT``→``RIGHT`` / ``RIGHT``→``LEFT`` because
+#    the Compose ``TextAlign`` enum is passed as a prop. Qt does NOT emit
+#    ``text_align`` into QSS (A3 notes: "Qt would express this via a widget
+#    property"); the RTL flag is therefore a no-op in the Qt translator for
+#    ``text_align``. Both are correct.
+#
+# 3. text_scale / font_asset — these are RTL-neutral on both sides; RTL does not
+#    change typography. Both translators handle them identically under both
+#    ``rtl=False`` and ``rtl=True``.
+#
+# Updating this table: if a divergence is resolved (e.g. Qt starts emitting
+# margin/text_align into QSS), set ``intentional=False``. The tripwire
+# ``test_e9_rtl_translator_divergences_complete`` will then fail until the row
+# is removed. Adding a new RTL divergence requires a new row AND an entry in the
+# pinned-key set.
+
+_E9_RTL_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "field": "margin",
+        "topic": "rtl_mirroring",
+        "compose_behaviour": (
+            "Mirrors margin.left↔margin.right under rtl=True because the full margin "
+            "spec is serialized into Compose props that Modifier.padding reads."
+        ),
+        "qt_behaviour": (
+            "Does NOT emit margin into QSS (A3 notes: not wired yet); the rtl "
+            "parameter has no effect on the Qt translator's margin output — margin "
+            "is applied imperatively by the renderer."
+        ),
+        "intentional": True,
+    },
+    {
+        "field": "text_align",
+        "topic": "rtl_mirroring",
+        "compose_behaviour": (
+            "Flips LEFT→RIGHT / RIGHT→LEFT under rtl=True because the Compose "
+            "TextAlign prop is serialized and read by the Kotlin renderer."
+        ),
+        "qt_behaviour": (
+            "Does NOT emit text_align into QSS (A3 notes: Qt expresses this via "
+            "a widget property); the rtl flag is a no-op in the Qt translator for "
+            "text_align — alignment is set on the QLabel/QTextEdit by the renderer."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (field, topic) pairs that must appear in ``_E9_RTL_DIVERGENCES``.
+_E9_RTL_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["field"]), str(row["topic"]))
+    for row in _E9_RTL_DIVERGENCES
+}
+
+
+def test_e9_rtl_translator_divergences_complete() -> None:
+    """Every E9 RTL translator divergence is intentional and uniquely keyed.
+
+    The tripwire: if a renderer specialist resolves a divergence (e.g. Qt starts
+    emitting margin or text_align into QSS under RTL), they must update
+    ``_E9_RTL_DIVERGENCES`` (set ``intentional=False`` and remove after review)
+    AND update ``_COVERAGE`` accordingly. Adding a new RTL divergence requires a
+    new row here plus a coverage-parity explanation.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E9_RTL_DIVERGENCES:
+        key = (str(row["field"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E9 RTL divergence row for {key!r}; consolidate or split"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True"
+        )
+        assert row["compose_behaviour"] and row["qt_behaviour"], (
+            f"divergence {key!r} is missing a behaviour description"
+        )
+    assert seen == _E9_RTL_DIVERGENCE_KEYS
+
+
+def test_e9_rtl_margin_divergence_is_real() -> None:
+    """Compose mirrors margin under RTL; Qt translator is a no-op for margin.
+
+    Pins the documented divergence so that the day Qt starts emitting margin
+    into QSS (post-v1 roadmap), this test fails loudly and the divergence table
+    is updated.
+    """
+    style = Style(margin=Edge(left=4, right=8))
+    # Compose: margin IS mirrored under rtl=True.
+    ltr_compose = to_compose(style)
+    rtl_compose = to_compose(style, rtl=True)
+    assert ltr_compose["margin"] == {
+        "top": 0.0, "right": 8.0, "bottom": 0.0, "left": 4.0
+    }
+    assert rtl_compose["margin"] == {
+        "top": 0.0, "right": 4.0, "bottom": 0.0, "left": 8.0
+    }
+    # Qt: margin is not emitted by the translator at all (rtl is irrelevant).
+    qss_ltr = to_qss(style, with_padding=True, rtl=False)
+    qss_rtl = to_qss(style, with_padding=True, rtl=True)
+    assert qss_ltr == ""
+    assert qss_rtl == ""
+    # Both LTR and RTL Qt outputs are identical (divergence is real).
+    assert qss_ltr == qss_rtl
+
+
+def test_e9_rtl_text_align_divergence_is_real() -> None:
+    """Compose flips text_align under RTL; Qt translator is a no-op for text_align.
+
+    Pins the documented divergence so that the day Qt starts emitting text_align
+    into QSS, this test fails loudly and the divergence table is updated.
+    """
+    style = Style(text_align=TextAlign.LEFT)
+    # Compose: text_align IS flipped under rtl=True.
+    assert to_compose(style)["textAlign"] == "left"
+    assert to_compose(style, rtl=True)["textAlign"] == "right"
+    # Qt: text_align is not emitted by the translator at all.
+    assert "text-align" not in to_qss(style, with_padding=True)
+    assert "text-align" not in to_qss(style, with_padding=True, rtl=True)
+    # Both LTR and RTL Qt outputs are identical (divergence is real).
+    ltr_qt = to_qss(style, with_padding=True)
+    rtl_qt = to_qss(style, with_padding=True, rtl=True)
+    assert ltr_qt == rtl_qt
+
+
+# ---------------------------------------------------------------------------
+# E9 bridge contract: THEME_TOKEN / LOCALE_TOKEN exported + reachable
+# ---------------------------------------------------------------------------
+
+
+def test_e9_tokens_exported_from_protocol() -> None:
+    """``THEME_TOKEN`` and ``LOCALE_TOKEN`` are exported from ``bridge.protocol``.
+
+    The JNI event sink routes these tokens to ``App.set_theme``/``set_locale``;
+    if the constants are absent the routing silently falls through to the widget
+    handler path instead.
+    """
+    from tempestroid.bridge.protocol import LOCALE_TOKEN, THEME_TOKEN
+
+    assert THEME_TOKEN == "__theme__", (
+        f"THEME_TOKEN has unexpected value {THEME_TOKEN!r}; "
+        "the device sends '__theme__' — the constant must match"
+    )
+    assert LOCALE_TOKEN == "__locale__", (
+        f"LOCALE_TOKEN has unexpected value {LOCALE_TOKEN!r}; "
+        "the device sends '__locale__' — the constant must match"
+    )
+
+
+def test_e9_tokens_reexported_at_root() -> None:
+    """``THEME_TOKEN`` and ``LOCALE_TOKEN`` are importable from the root package.
+
+    Guards against removing them from ``tempestroid/__init__.py`` while leaving
+    them in ``bridge/protocol.py`` — user code that writes
+    ``from tempestroid import THEME_TOKEN`` would then fail at runtime.
+    """
+    import tempestroid
+
+    for name in ("THEME_TOKEN", "LOCALE_TOKEN"):
+        assert name in tempestroid.__all__, (
+            f"{name} missing from tempestroid.__all__; "
+            "add it to tempestroid/__init__.py"
+        )
+        assert hasattr(tempestroid, name), (
+            f"{name} not importable from tempestroid; "
+            "add the import to tempestroid/__init__.py"
+        )
+    assert tempestroid.THEME_TOKEN == "__theme__"  # type: ignore[attr-defined]
+    assert tempestroid.LOCALE_TOKEN == "__locale__"  # type: ignore[attr-defined]
+
+
+def test_e9_tokens_are_bare_sentinels_with_no_colon() -> None:
+    """``THEME_TOKEN`` and ``LOCALE_TOKEN`` carry no ``:`` separator.
+
+    Handler tokens are ``"<path>:<prop>"``; native result tokens use
+    ``"__native_result__:<id>"``; the E9 theme/locale tokens must be bare
+    sentinels so they are matched by exact equality, not prefix, and can never
+    collide with widget or native paths.
+    """
+    from tempestroid.bridge.protocol import LOCALE_TOKEN, THEME_TOKEN
+
+    assert ":" not in THEME_TOKEN, (
+        f"THEME_TOKEN {THEME_TOKEN!r} contains ':'; must be a bare sentinel"
+    )
+    assert ":" not in LOCALE_TOKEN, (
+        f"LOCALE_TOKEN {LOCALE_TOKEN!r} contains ':'; must be a bare sentinel"
+    )
+    assert THEME_TOKEN != LOCALE_TOKEN
+
+
+def test_e9_tokens_distinct_from_all_existing_reserved_tokens() -> None:
+    """E9 tokens do not collide with any previously reserved token or prefix.
+
+    Every reserved token defined across phases A6–E8 is listed here; adding a
+    new one that happens to equal ``THEME_TOKEN`` / ``LOCALE_TOKEN`` must fail
+    this test, forcing a name change in one of the phases.
+    """
+    from tempestroid.bridge.protocol import (
+        BACK_TOKEN,
+        CONNECTIVITY_TOKEN_PREFIX,
+        FRAME_TOKEN,
+        LIFECYCLE_TOKEN,
+        LOCALE_TOKEN,
+        SENSOR_TOKEN_PREFIX,
+        THEME_TOKEN,
+    )
+    from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX
+
+    existing = {
+        BACK_TOKEN,
+        FRAME_TOKEN,
+        LIFECYCLE_TOKEN,
+        SENSOR_TOKEN_PREFIX,
+        CONNECTIVITY_TOKEN_PREFIX,
+        NATIVE_RESULT_PREFIX,
+    }
+    assert THEME_TOKEN not in existing, (
+        f"THEME_TOKEN {THEME_TOKEN!r} collides with an existing reserved token"
+    )
+    assert LOCALE_TOKEN not in existing, (
+        f"LOCALE_TOKEN {LOCALE_TOKEN!r} collides with an existing reserved token"
+    )
+    assert THEME_TOKEN != LOCALE_TOKEN
+
+
+def test_e9_new_style_fields_documented_count() -> None:
+    """Phase E9 adds exactly two new ``Style`` fields (``text_scale``, ``font_asset``).
+
+    This sentinel records the field count at E9 completion. If a future phase
+    adds or removes a field without updating ``_SAMPLES`` / ``_COVERAGE`` and
+    regenerating goldens, this test fails, forcing a conscious review.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+def test_e9_text_scale_and_font_asset_in_coverage_table() -> None:
+    """``text_scale`` and ``font_asset`` have ``(True, True)`` in ``_COVERAGE``.
+
+    Pins that both translators react to the two new E9 typography fields —
+    a future refactor that accidentally drops one from a translator will change
+    the parity and fail ``test_coverage_parity``, but this guard makes the
+    *expected* parity explicit and documents the rationale in one place.
+    """
+    assert _COVERAGE["text_scale"] == (True, True), (
+        "text_scale parity changed; both translators must react to it. "
+        "Compose emits 'textScale'; Qt scales font-size or emits an em unit."
+    )
+    assert _COVERAGE["font_asset"] == (True, True), (
+        "font_asset parity changed; both translators must react to it. "
+        "Compose emits 'fontAsset'; Qt emits font-family: \"CustomAsset\"."
     )

@@ -66,15 +66,22 @@ def _qss_border_value(border: Border) -> str:
     return f"{border.width}px solid {color}"
 
 
-def _qss_border_rules(border: Border | SideBorder) -> list[str]:
-    """Render a border (uniform or per-side) as QSS declarations."""
+def _qss_border_rules(border: Border | SideBorder, *, rtl: bool) -> list[str]:
+    """Render a border (uniform or per-side) as QSS declarations.
+
+    Under ``rtl`` the per-side ``left``/``right`` borders are mirrored so a
+    leading/trailing divider follows the layout direction (a uniform border has
+    no side to mirror).
+    """
     if isinstance(border, SideBorder):
+        left = border.right if rtl else border.left
+        right = border.left if rtl else border.right
         rules: list[str] = []
         for side, value in (
             ("top", border.top),
-            ("right", border.right),
+            ("right", right),
             ("bottom", border.bottom),
-            ("left", border.left),
+            ("left", left),
         ):
             if value is not None:
                 rules.append(f"border-{side}: {_qss_border_value(value)}")
@@ -94,7 +101,7 @@ def _qss_radius_rules(radius: float | Corners) -> list[str]:
     return [f"border-radius: {radius}px"]
 
 
-def to_qss(style: Style | None, *, with_padding: bool) -> str:
+def to_qss(style: Style | None, *, with_padding: bool, rtl: bool = False) -> str:
     """Render the paint/typography/box parts of a style as a QSS rule body.
 
     Flex layout (direction/justify/align/grow), gap, and margin are *not* QSS —
@@ -108,6 +115,10 @@ def to_qss(style: Style | None, *, with_padding: bool) -> str:
     Args:
         style: The style to translate, or ``None``.
         with_padding: Whether to emit ``padding`` (leaves: yes; containers: no).
+        rtl: Whether the node lays out right-to-left. When ``True``, the box
+            model's ``left``/``right`` is mirrored (padding and per-side borders)
+            and ``text_scale`` still applies, matching the Compose translator so
+            the two renderers stay in lockstep.
 
     Returns:
         A ``"; "``-joined QSS declaration body (empty string when nothing maps).
@@ -120,18 +131,33 @@ def to_qss(style: Style | None, *, with_padding: bool) -> str:
     if style.color is not None:
         rules.append(f"color: {style.color.to_rgba_string()}")
     if style.border is not None:
-        rules.extend(_qss_border_rules(style.border))
+        rules.extend(_qss_border_rules(style.border, rtl=rtl))
     if style.radius is not None:
         rules.extend(_qss_radius_rules(style.radius))
     if with_padding and style.padding is not None:
         edge = style.padding
-        rules.append(
-            f"padding: {edge.top}px {edge.right}px {edge.bottom}px {edge.left}px"
-        )
-    if style.font_family is not None:
+        left, right = (edge.right, edge.left) if rtl else (edge.left, edge.right)
+        rules.append(f"padding: {edge.top}px {right}px {edge.bottom}px {left}px")
+    if style.font_asset is not None:
+        # The renderer loads the asset via ``QFontDatabase.addApplicationFont``
+        # and registers it under this family name; the family is emitted here so
+        # the QSS picks up the custom font. A custom ``font_asset`` wins over
+        # ``font_family`` (a custom font is the more specific intent).
+        rules.append('font-family: "CustomAsset"')
+    elif style.font_family is not None:
         rules.append(f"font-family: {style.font_family}")
     if style.font_size is not None:
-        rules.append(f"font-size: {style.font_size}px")
+        # ``text_scale`` multiplies an explicit ``font_size`` before emission.
+        scaled = (
+            style.font_size * style.text_scale
+            if style.text_scale is not None
+            else style.font_size
+        )
+        rules.append(f"font-size: {scaled}px")
+    elif style.text_scale is not None:
+        # A ``text_scale`` with no explicit ``font_size`` scales the inherited
+        # font relative to its current size, expressed in QSS ``em`` units.
+        rules.append(f"font-size: {style.text_scale}em")
     if style.font_weight is not None:
         rules.append(f"font-weight: {int(style.font_weight)}")
     if style.font_style is not None:

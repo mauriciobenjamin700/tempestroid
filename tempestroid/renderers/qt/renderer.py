@@ -14,7 +14,8 @@ import asyncio
 import inspect
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from pathlib import Path as FsPath
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import (
     QAbstractAnimation,
@@ -37,6 +38,7 @@ from PySide6.QtCore import (
     SignalInstance,
 )
 from PySide6.QtGui import (
+    QAccessible,
     QAction,
     QBrush,
     QColor,
@@ -45,6 +47,7 @@ from PySide6.QtGui import (
     QDragMoveEvent,
     QDropEvent,
     QFont,
+    QFontDatabase,
     QFontMetricsF,
     QGuiApplication,
     QIcon,
@@ -65,6 +68,7 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QBoxLayout,
     QCheckBox,
     QComboBox,
@@ -127,6 +131,7 @@ from tempestroid.style import (
     TextAlign,
     TextOverflow,
 )
+from tempestroid.theme import MediaQueryData, ThemeMode
 from tempestroid.widgets import (
     DateChangeEvent,
     DismissEvent,
@@ -144,6 +149,7 @@ from tempestroid.widgets import (
     ScaleEvent,
     ScrollEvent,
     SelectEvent,
+    Semantics,
     SlideEvent,
     SubmitEvent,
     SwipeDirection,
@@ -154,6 +160,9 @@ from tempestroid.widgets import (
     ToggleEvent,
     handler_accepts_event,
 )
+
+if TYPE_CHECKING:
+    from tempestroid.core.state import App
 
 __all__ = ["QtRenderer"]
 
@@ -321,6 +330,49 @@ _TEXT_ALIGN: dict[TextAlign, Qt.AlignmentFlag] = {
     TextAlign.RIGHT: Qt.AlignmentFlag.AlignRight,
     TextAlign.JUSTIFY: Qt.AlignmentFlag.AlignJustify,
 }
+
+#: Map a :class:`~tempestroid.widgets.Semantics` ``role`` hint to the Qt
+#: accessible role the screen reader announces. Unknown roles fall through to no
+#: explicit role (``QWidget``'s own default), mirroring the Compose translator
+#: which only maps the roles it recognizes.
+_ACCESSIBLE_ROLES: dict[str, QAccessible.Role] = {
+    "button": QAccessible.Role.Button,
+    "image": QAccessible.Role.Graphic,
+    "heading": QAccessible.Role.StaticText,
+    "text": QAccessible.Role.StaticText,
+    "link": QAccessible.Role.Link,
+    "checkbox": QAccessible.Role.CheckBox,
+    "switch": QAccessible.Role.CheckBox,
+    "slider": QAccessible.Role.Slider,
+    "progressbar": QAccessible.Role.ProgressBar,
+    "list": QAccessible.Role.List,
+}
+
+#: Light/dark base palettes (window background + text + button colors) the
+#: simulator swaps wholesale when the active :class:`ThemeMode` resolves. These
+#: are the Qt analogue of Compose's ``lightColorScheme``/``darkColorScheme`` — a
+#: documented divergence: Qt uses a ``QPalette`` + a global stylesheet, Compose a
+#: ``MaterialTheme``.
+_LIGHT_PALETTE: dict[QPalette.ColorRole, tuple[int, int, int]] = {
+    QPalette.ColorRole.Window: (245, 245, 245),
+    QPalette.ColorRole.WindowText: (20, 20, 20),
+    QPalette.ColorRole.Base: (255, 255, 255),
+    QPalette.ColorRole.Text: (20, 20, 20),
+    QPalette.ColorRole.Button: (230, 230, 230),
+    QPalette.ColorRole.ButtonText: (20, 20, 20),
+}
+_DARK_PALETTE: dict[QPalette.ColorRole, tuple[int, int, int]] = {
+    QPalette.ColorRole.Window: (30, 30, 30),
+    QPalette.ColorRole.WindowText: (235, 235, 235),
+    QPalette.ColorRole.Base: (45, 45, 45),
+    QPalette.ColorRole.Text: (235, 235, 235),
+    QPalette.ColorRole.Button: (60, 60, 60),
+    QPalette.ColorRole.ButtonText: (235, 235, 235),
+}
+
+#: The QSS family the renderer registers a ``style.font_asset`` file under, kept
+#: in lockstep with the family ``to_qss`` emits (``font-family: "CustomAsset"``).
+_CUSTOM_FONT_FAMILY = "CustomAsset"
 
 _KEYBOARD_HINTS: dict[str, Qt.InputMethodHint] = {
     "number": Qt.InputMethodHint.ImhDigitsOnly,
@@ -3355,15 +3407,68 @@ class _Rendered:
         self.children: list[_Rendered] = []
 
 
+class _HostWidget(QWidget):
+    """The renderer's host widget; reports its size on resize for MediaQuery.
+
+    The host is the single window-filling surface whose child is the app root, so
+    its size *is* the viewport. On every resize it forwards the new logical size
+    (and the screen's device-pixel ratio) to a callback the renderer wires to
+    ``App._update_media`` — the desktop analogue of Compose reading
+    ``LocalConfiguration`` on a configuration change.
+    """
+
+    def __init__(self) -> None:
+        """Create the host with no resize observer wired yet."""
+        super().__init__()
+        self._on_resize: Callable[[int, int], None] = lambda _w, _h: None
+
+    def set_resize_observer(self, observer: Callable[[int, int], None]) -> None:
+        """Install the resize callback invoked with the new ``(width, height)``.
+
+        Args:
+            observer: Called as ``observer(width, height)`` on each resize.
+        """
+        self._on_resize = observer
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 (Qt override)
+        """Forward the new size to the observer, then chain to the base.
+
+        Args:
+            event: The Qt resize event (carries the new size).
+        """
+        super().resizeEvent(event)
+        size = event.size()
+        self._on_resize(size.width(), size.height())
+
+
 class QtRenderer:
     """Render an IR tree into Qt widgets and keep it in sync via patches."""
 
     def __init__(self) -> None:
         """Create the renderer and its empty host widget."""
-        self.host: QWidget = QWidget()
+        self.host: _HostWidget = _HostWidget()
+        self.host.set_resize_observer(self._on_host_resize)
         self._host_layout: QVBoxLayout = QVBoxLayout(self.host)
         self._host_layout.setContentsMargins(0, 0, 0, 0)
         self._root: _Rendered | None = None
+        # The live app, wired by ``set_app`` so the renderer can read the active
+        # theme/locale/media context (E9). ``None`` when the renderer runs
+        # standalone in a unit test that mounts a bare node tree.
+        self._app: App[Any] | None = None
+        # The current layout direction, mirrored from ``app.locale.rtl`` so every
+        # ``to_qss`` call passes a consistent ``rtl`` flag without re-reading the
+        # app each time.
+        self._rtl: bool = False
+        # The last theme mode applied to the ``QApplication`` palette, so a no-op
+        # rebuild (same mode) does not repaint the whole tree needlessly.
+        self._applied_theme: ThemeMode | None = None
+        # Bundle root used to resolve a relative ``style.font_asset`` path; defaults
+        # to the current working directory (overridable via ``set_bundle_root``).
+        self._bundle_root: FsPath = FsPath.cwd()
+        # Custom font assets already probed (resolved path → loaded family name,
+        # empty when the file was missing/unloadable), so each file loads exactly
+        # once across the app's lifetime.
+        self._loaded_fonts: dict[str, str] = {}
         # The floating overlay layer, parallel to ``Scene.overlays`` (ascending
         # z-order). Each overlay's backing widget is a top-level surface
         # (QDialog/QMenu/QLabel), not a child of the host tree.
@@ -3416,6 +3521,162 @@ class QtRenderer:
         """
         self._dismiss_overlay = dismiss
 
+    def set_app(self, app: App[Any]) -> None:
+        """Wire the live app so the renderer can read its theme/locale/media.
+
+        The app runner passes the running :class:`~tempestroid.core.state.App`
+        here. The renderer reads ``app.theme.mode`` (to swap the palette),
+        ``app.locale.rtl`` (to set the layout direction and pass ``rtl`` to every
+        ``to_qss`` call) and forwards resize events to ``app._update_media``. With
+        no app wired the renderer runs standalone (bare-node unit tests): the
+        theme/RTL features default to light/LTR.
+
+        Args:
+            app: The running app providing the theme/locale/media context.
+        """
+        self._app = app
+        self.sync_context()
+
+    def set_bundle_root(self, root: FsPath) -> None:
+        """Set the directory a relative ``style.font_asset`` path resolves against.
+
+        Args:
+            root: The bundle root (typically the app file's directory).
+        """
+        self._bundle_root = root
+
+    def sync_context(self) -> None:
+        """Re-read the app's theme/locale and apply the palette + direction.
+
+        Idempotent and cheap: applying the same theme twice is a no-op, and the
+        layout direction is only touched when it actually flips. The app runner
+        calls this after each rebuild so a ``set_theme`` / ``set_locale`` (which
+        only schedules a rebuild) takes visual effect.
+        """
+        if self._app is None:
+            return
+        platform_dark = self._app.media.platform_dark_mode
+        mode = self._app.theme.mode
+        self._apply_theme(mode, platform_dark_mode=platform_dark)
+        rtl = self._app.locale.rtl
+        if rtl != self._rtl:
+            self._rtl = rtl
+            direction = (
+                Qt.LayoutDirection.RightToLeft
+                if rtl
+                else Qt.LayoutDirection.LeftToRight
+            )
+            self.host.setLayoutDirection(direction)
+            # Re-apply the QSS box model so mirrored padding/borders follow the
+            # new direction (``to_qss`` reads ``rtl`` at apply time).
+            if self._root is not None:
+                self._reapply_visuals(self._root)
+
+    def _reapply_visuals(self, node: _Rendered) -> None:
+        """Re-run ``_apply_visual`` across a subtree (after an RTL flip).
+
+        Args:
+            node: The root of the rendered subtree to refresh.
+        """
+        self._apply_visual(node)
+        for child in node.children:
+            self._reapply_visuals(child)
+
+    def _apply_theme(
+        self, mode: ThemeMode, *, platform_dark_mode: bool = False
+    ) -> None:
+        """Swap the ``QApplication`` palette to the resolved light/dark scheme.
+
+        ``SYSTEM`` resolves against the platform: PySide6 ≥ 6.5 exposes
+        ``QStyleHints.colorScheme()``; older builds (or when it is unknown) fall
+        back to the ``platform_dark_mode`` flag the media query carries. Applying
+        the same mode twice is a no-op so an unrelated rebuild never repaints.
+
+        Args:
+            mode: The active theme mode.
+            platform_dark_mode: The OS dark-mode flag used to resolve ``SYSTEM``.
+        """
+        if mode is ThemeMode.SYSTEM:
+            dark = self._system_dark(fallback=platform_dark_mode)
+        else:
+            dark = mode is ThemeMode.DARK
+        resolved = ThemeMode.DARK if dark else ThemeMode.LIGHT
+        if resolved is self._applied_theme:
+            return
+        self._applied_theme = resolved
+        app = QApplication.instance()
+        if not isinstance(app, QApplication):
+            return
+        palette = QPalette()
+        scheme = _DARK_PALETTE if dark else _LIGHT_PALETTE
+        for role, (r, g, b) in scheme.items():
+            palette.setColor(role, QColor(r, g, b))
+        app.setPalette(palette)
+        # Repaint the whole host so already-styled leaves pick up the new palette
+        # roles (QSS rules a node sets still win — the palette is the base).
+        self.host.update()
+
+    @staticmethod
+    def _system_dark(*, fallback: bool) -> bool:
+        """Resolve the OS dark-mode setting for ``ThemeMode.SYSTEM``.
+
+        Args:
+            fallback: The value to use when the platform cannot report a scheme
+                (older PySide6, or an ``Unknown`` color scheme).
+
+        Returns:
+            ``True`` when the OS reports a dark color scheme.
+        """
+        hints = QGuiApplication.styleHints()
+        color_scheme = getattr(hints, "colorScheme", None)
+        if color_scheme is None:
+            return fallback
+        try:
+            scheme = color_scheme()
+        except (RuntimeError, TypeError):
+            return fallback
+        if scheme == Qt.ColorScheme.Dark:
+            return True
+        if scheme == Qt.ColorScheme.Light:
+            return False
+        return fallback
+
+    def _on_host_resize(self, width: int, height: int) -> None:
+        """Forward a host resize to ``App._update_media`` as a fresh snapshot.
+
+        Builds a :class:`MediaQueryData` from the new logical size, the screen's
+        device-pixel ratio, and the orientation derived from the aspect, carrying
+        the existing text-scale and platform-dark flags forward. Pushing it
+        through ``App._update_media`` schedules a coalesced rebuild so the view
+        can lay out responsively. A no-op when no app is wired.
+
+        Args:
+            width: The host's new logical width in pixels.
+            height: The host's new logical height in pixels.
+        """
+        if self._app is None:
+            return
+        # ``devicePixelRatioF`` on the widget reflects its current screen's DPR
+        # without the stub's never-None ``screen()`` narrowing complaint.
+        dpr = self.host.devicePixelRatioF()
+        previous = self._app.media
+        snapshot = MediaQueryData(
+            width=float(width),
+            height=float(height),
+            device_pixel_ratio=dpr,
+            text_scale_factor=previous.text_scale_factor,
+            platform_dark_mode=previous.platform_dark_mode,
+            orientation="landscape" if width >= height else "portrait",
+        )
+        # ``_update_media`` is the documented renderer→App entry point per the E9
+        # contract (the renderer is its sole caller). Resolve it dynamically so
+        # the intentional cross-class call reads as the contract sanctions it.
+        update_media = cast(
+            "Callable[[MediaQueryData], None]",
+            getattr(self._app, "_update_media"),  # noqa: B009
+        )
+        update_media(snapshot)
+
     @staticmethod
     def _as_scene(root: Node | Scene) -> Scene:
         """Coerce a bare root node into a :class:`Scene` with no overlays.
@@ -3450,6 +3711,7 @@ class QtRenderer:
         for index, overlay_node in enumerate(scene.overlays):
             self._mount_overlay(index, overlay_node)
         self._sync_scrim()
+        self._apply_focus_order()
         return self.host
 
     def remount(self, root: Node | Scene) -> QWidget:
@@ -3505,6 +3767,42 @@ class QtRenderer:
         """
         for patch in patches:
             self._apply_one(patch)
+        if patches:
+            # A structural change (or a focus_order prop update) may have moved
+            # the focus chain; recompute the explicit tab order once per batch.
+            self._apply_focus_order()
+
+    def _apply_focus_order(self) -> None:
+        """Chain widgets with an explicit ``focus_order`` into ascending tab order.
+
+        Walks the rendered root tree, collects every node carrying a
+        ``focus_order`` prop, sorts them ascending, and wires consecutive pairs
+        with ``QWidget.setTabOrder`` so Tab moves through them in that order.
+        Nodes without ``focus_order`` keep Qt's natural (creation-order) tabbing.
+        A no-op when fewer than two nodes declare an order.
+        """
+        if self._root is None:
+            return
+        ordered: list[tuple[int, QWidget]] = []
+        self._collect_focus_order(self._root, ordered)
+        ordered.sort(key=lambda pair: pair[0])
+        for (_, first), (_, second) in zip(ordered, ordered[1:], strict=False):
+            QWidget.setTabOrder(first, second)
+
+    def _collect_focus_order(
+        self, node: _Rendered, out: list[tuple[int, QWidget]]
+    ) -> None:
+        """Accumulate ``(focus_order, widget)`` pairs across a rendered subtree.
+
+        Args:
+            node: The subtree root to walk.
+            out: The accumulator list to append matching pairs to.
+        """
+        order = node.props.get("focus_order")
+        if isinstance(order, int):
+            out.append((order, node.widget))
+        for child in node.children:
+            self._collect_focus_order(child, out)
 
     # --- patch dispatch ----------------------------------------------------
 
@@ -4641,7 +4939,25 @@ class QtRenderer:
         """
         style = cast("Style | None", node.props.get("style"))
         is_container = node.layout is not None
-        node.widget.setStyleSheet(to_qss(style, with_padding=not is_container))
+        # Register a custom font asset (once) and learn its real family name so
+        # the renderer can bind it to the widget's font — QSS cannot alias a
+        # loaded font to the ``"CustomAsset"`` family ``to_qss`` references, so the
+        # widget font is the faithful channel for the custom typeface.
+        custom_family = self._ensure_font_asset(style)
+        qss = to_qss(style, with_padding=not is_container, rtl=self._rtl)
+        if custom_family is not None:
+            # QSS ``font-family`` wins over the widget's ``QFont``, and the
+            # placeholder family ``to_qss`` emits (``"CustomAsset"``) is not a real
+            # font name — rewrite it to the loaded asset's actual family so the
+            # custom typeface renders. (The renderer is the only place that knows
+            # the real family, since it loaded the file.)
+            qss = qss.replace(
+                f'font-family: "{_CUSTOM_FONT_FAMILY}"',
+                f'font-family: "{custom_family}"',
+            )
+        node.widget.setStyleSheet(qss)
+        self._apply_custom_font(node.widget, custom_family)
+        self._apply_accessibility(node)
         if node.layout is not None:
             self._apply_container_layout(node.layout, node.type, style)
             if node.type == "SafeArea":
@@ -4785,6 +5101,95 @@ class QtRenderer:
             # graphics-effect slot — applied after ``_apply_effects`` so it is
             # never clobbered by the (usually absent) shadow/opacity effect.
             self._apply_blur(node.widget, node.props)
+
+    def _ensure_font_asset(self, style: Style | None) -> str | None:
+        """Register a ``style.font_asset`` file with ``QFontDatabase`` (once).
+
+        The asset path is resolved relative to the bundle root and loaded exactly
+        once per resolved path; the loaded font's real family name is cached and
+        returned so the renderer can bind it to the widget. A missing or
+        unloadable file yields ``None`` — Qt then falls back to the default font
+        (the simulator must never crash on a bad asset).
+
+        Args:
+            style: The node's style, or ``None``.
+
+        Returns:
+            The loaded font's real family name, or ``None`` when there is no
+            asset (or it could not be loaded).
+        """
+        if style is None or style.font_asset is None:
+            return None
+        candidate = FsPath(style.font_asset)
+        path = candidate if candidate.is_absolute() else self._bundle_root / candidate
+        resolved = str(path)
+        cached = self._loaded_fonts.get(resolved)
+        if cached is not None:
+            return cached or None
+        family = ""
+        if path.is_file():
+            font_id = QFontDatabase.addApplicationFont(resolved)
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if font_id != -1 and families:
+                family = families[0]
+        # Cache even a failed load (empty string) so a missing asset is probed
+        # only once rather than on every idempotent re-apply.
+        self._loaded_fonts[resolved] = family
+        return family or None
+
+    @staticmethod
+    def _apply_custom_font(widget: QWidget, family: str | None) -> None:
+        """Bind a loaded custom-font ``family`` to a widget's ``QFont``.
+
+        Applied after the QSS so the loaded typeface wins over the QSS
+        ``font-family: "CustomAsset"`` rule (Qt cannot alias an application font
+        to that name). A ``None`` family leaves the widget's font untouched.
+
+        Args:
+            widget: The target widget.
+            family: The real family name of the loaded font, or ``None``.
+        """
+        if family is None:
+            return
+        font = widget.font()
+        font.setFamily(family)
+        widget.setFont(font)
+
+    def _apply_accessibility(self, node: _Rendered) -> None:
+        """Apply ``semantics`` + ``focusable`` to a node's widget (idempotent).
+
+        ``semantics.label`` → accessible name, ``semantics.hint`` → accessible
+        description (and tooltip), ``semantics.role`` → the widget's accessible
+        role via :data:`_ACCESSIBLE_ROLES`. ``focusable`` toggles the focus
+        policy (``True`` → ``StrongFocus``, ``False`` → ``NoFocus``); ``None``
+        leaves the widget's natural focusability untouched. Re-applying with the
+        fields cleared resets name/description/tooltip so an update that drops
+        ``semantics`` restores the default.
+
+        Args:
+            node: The rendered node whose widget to annotate.
+        """
+        widget = node.widget
+        semantics = cast("Semantics | None", node.props.get("semantics"))
+        if semantics is not None:
+            widget.setAccessibleName(semantics.label or "")
+            widget.setAccessibleDescription(semantics.hint or "")
+            if semantics.hint:
+                widget.setToolTip(semantics.hint)
+            if semantics.role is not None:
+                role = _ACCESSIBLE_ROLES.get(semantics.role.lower())
+                if role is not None:
+                    # ``AccessibleRole`` is a dynamic property Qt's accessibility
+                    # bridge reads; setting it keeps the role swappable on update.
+                    widget.setProperty("tempest_a11y_role", int(role.value))
+        else:
+            widget.setAccessibleName("")
+            widget.setAccessibleDescription("")
+        focusable = node.props.get("focusable")
+        if focusable is True:
+            widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        elif focusable is False:
+            widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     @staticmethod
     def _apply_letter_spacing(widget: QWidget, style: Style | None) -> None:

@@ -22,7 +22,9 @@ from typing import Generic, TypeVar, cast
 from tempestroid.animation import AnimationController
 from tempestroid.core.ir import Patch, Scene
 from tempestroid.core.reconciler import build_scene, diff_scene
+from tempestroid.i18n import Locale
 from tempestroid.navigation import NavStack, Route
+from tempestroid.theme import MediaQueryData, Theme
 from tempestroid.widgets import LazyColumn, LazyGrid, LazyRow, SectionList, Widget
 
 __all__ = ["App", "OverlayEntry"]
@@ -76,6 +78,9 @@ class App(Generic[S]):
         nav: NavStack | None = None,
         *,
         time_source: Callable[[], float] | None = None,
+        theme: Theme | None = None,
+        media: MediaQueryData | None = None,
+        locale: Locale | None = None,
     ) -> None:
         """Initialize the app.
 
@@ -90,9 +95,22 @@ class App(Generic[S]):
                 frame loop to compute the per-frame ``dt``. Tests inject a
                 deterministic source; the Qt runner passes ``loop.time``. Defaults
                 to the event loop's clock.
+            theme: The initial theme context the ``view`` reads. Defaults to a
+                fresh :class:`~tempestroid.theme.Theme` (``SYSTEM`` mode).
+            media: The initial media-query context the ``view`` reads. Defaults to
+                a fresh :class:`~tempestroid.theme.MediaQueryData`.
+            locale: The initial locale context the ``view`` reads. Defaults to a
+                fresh :class:`~tempestroid.i18n.Locale` (``pt``, LTR).
         """
         self.state: S = state
         self.nav: NavStack = nav if nav is not None else NavStack()
+        # Theme/media/locale are *input context* the view reads — not nodes in
+        # the tree. Each is an immutable snapshot swapped wholesale (set_theme /
+        # set_locale / _update_media), so a change schedules one coalesced
+        # rebuild like any state mutation, with no new patch kind.
+        self.theme: Theme = theme if theme is not None else Theme()
+        self.media: MediaQueryData = media if media is not None else MediaQueryData()
+        self.locale: Locale = locale if locale is not None else Locale()
         self._view: Callable[[App[S]], Widget] = view
         self._apply: Callable[[list[Patch]], None] = apply_patches
         self._current: Scene | None = None
@@ -198,6 +216,43 @@ class App(Generic[S]):
         """
         if mutate is not None:
             mutate(self.state)
+        self.request_rebuild()
+
+    def set_theme(self, theme: Theme) -> None:
+        """Swap the active theme and request a coalesced rebuild.
+
+        The ``view`` reads ``app.theme`` on the next build, so toggling dark/light
+        (or a palette) flows through the existing diff with no new patch kind.
+
+        Args:
+            theme: The new theme context.
+        """
+        self.theme = theme
+        self.request_rebuild()
+
+    def set_locale(self, locale: Locale) -> None:
+        """Swap the active locale and request a coalesced rebuild.
+
+        The ``view`` reads ``app.locale`` (language for string lookup,
+        ``locale.rtl`` for layout direction) on the next build.
+
+        Args:
+            locale: The new locale context.
+        """
+        self.locale = locale
+        self.request_rebuild()
+
+    def _update_media(self, data: MediaQueryData) -> None:
+        """Update the media-query context and request a coalesced rebuild.
+
+        Called by the renderer when the viewport, density, text-scale, OS dark
+        mode, or orientation changes, so a responsive ``view`` re-runs against
+        the new environment.
+
+        Args:
+            data: The new media-query snapshot.
+        """
+        self.media = data
         self.request_rebuild()
 
     def slide_window(self, key: str, start: int, end: int) -> None:

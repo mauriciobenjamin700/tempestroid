@@ -126,6 +126,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
 | [`layout`](examples/layout/app.py) | Refined layout — `Wrap` chips that wrap, a paginated `PageView` (`PageChangeEvent` + dot indicator) and a `CollapsingAppBar` that shrinks on scroll. |
 | [`platform`](examples/platform/app.py) | Platform/system (E8) — haptics, real preferences, the lifecycle stream and a `KeyboardAvoidingView`. |
+| [`theming`](examples/theming/app.py) | Cross-cutting (E9) — a light/dark `ThemeMode` toggle (`App.set_theme`), a PT↔AR locale/RTL toggle (`App.set_locale` + `translate`), and a counter label carrying `Semantics(label=…)`. |
 
 The framework and the Qt simulator support the full widget set. The device
 (Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /
@@ -242,7 +243,11 @@ Frozen Pydantic value objects, diffed by value.
 - **`Style`** — the style model (layout, box model, paint, typography, sizing,
   effects, animation). Notable fields: `opacity`, `shadow`, `align_self`,
   `letter_spacing`, `line_height`, `max_lines`, `text_overflow`, `aspect_ratio`,
-  `flex_wrap` (flow wrapping for a `Wrap` container).
+  `flex_wrap` (flow wrapping for a `Wrap` container), and the phase-E9
+  typography knobs `text_scale` (a `font_size` multiplier — Qt scales the
+  emitted `font-size`, Compose emits `textScale` for `LocalDensity`) and
+  `font_asset` (a bundle-relative custom font path — Qt `QFontDatabase`,
+  Compose `FontFamily`).
 - **`Color`** — `Color.from_hex("#101418")`.
 - **`Edge`** — insets; `Edge.all(24.0)`.
 - **`Border`** (uniform) / **`SideBorder`** (per-side, e.g. a bottom divider).
@@ -261,11 +266,37 @@ Frozen Pydantic value objects, diffed by value.
   `LINEAR`/`EASE_IN`/`EASE_OUT`/`EASE_IN_OUT` plus `EASE`/`BOUNCE`/`ELASTIC`),
   **`StackAlign`** (overlay child alignment in a `Stack`).
 
+### Theme, media query + i18n (phase E9)
+
+Cross-cutting **context** the `view(app)` reads — not nodes in the tree. Changing
+any of them swaps an immutable snapshot on the `App` and schedules one coalesced
+rebuild (no new patch kind).
+
+- **`Theme`** (`tempestroid.theme`) — frozen: the active **`ThemeMode`**
+  (`LIGHT`/`DARK`/`SYSTEM`) plus a small color palette (`primary`/`secondary`/
+  `background`/`surface`/`on_primary`/`on_background`/`error`).
+  `Theme.is_dark(platform_dark_mode=...)` resolves `SYSTEM` against the OS.
+  Swap it with `App.set_theme(theme)`.
+- **`MediaQueryData`** (`tempestroid.theme`) — frozen viewport/environment
+  snapshot: `width`/`height`/`device_pixel_ratio`/`text_scale_factor`/
+  `platform_dark_mode`/`orientation`. The renderer keeps it current via
+  `App._update_media(data)` on resize/config-change.
+- **`Locale`** (`tempestroid.i18n`) — frozen: `language` (BCP-47) + optional
+  `region` + `rtl` (layout direction). Swap it with `App.set_locale(locale)`.
+  When the renderer is told a node is RTL, both `Style` translators mirror the
+  box model's start/end (padding/margin left↔right) and flip `text_align`.
+- **`translate(key, locale, translations, **kwargs)`** / alias **`t`**
+  (`tempestroid.i18n`) — a dependency-free table lookup with `str.format`
+  interpolation; a missing key/language degrades to the key itself.
+
 ### Widgets (`tempestroid.widgets`)
 
 The declarative IR — bare-noun widgets.
 
-- **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**, **`Row`**,
+- **`Widget`** (base) — every node carries `key` / `style` plus the phase-E9
+  accessibility fields `semantics` (**`Semantics`**: `label`/`role`/`hint`,
+  propagated to both renderers and `introspect()`), `focusable`, and
+  `focus_order`. **`Text`**, **`Button`**, **`Column`**, **`Row`**,
   **`Container`**, **`ScrollView`** (scrollable container), **`SafeArea`**
   (insets its child past the status/navigation bars + notch; `edges` selects
   which sides, default all — `SafeAreaEdge` enum).
@@ -484,6 +515,10 @@ renderer changes and are fully device-ready. Every component takes an optional
   **`SensorType`** enum — + `values` + `timestamp_ms`), **`ConnectivityEvent`**
   (`state`, the **`ConnectivityState`** enum connected/disconnected/wifi/mobile)
   and **`DeepLinkEvent`** (`url` + parsed `params`).
+- Context events (phase E9) — streamed from the host over reserved tokens (no
+  widget handler): **`ThemeChangeEvent`** (`mode`, the **`ThemeMode`** enum) over
+  `THEME_TOKEN` → `App.set_theme`, and **`LocaleChangeEvent`** (`language` +
+  optional `region` + `rtl`) over `LOCALE_TOKEN` → `App.set_locale`.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -618,6 +653,12 @@ transport (B3) and the Kotlin Compose renderer (B4) are implemented in
   `"__connectivity__:<state>"` → `dispatch_connectivity_event`. Each rides the
   existing transport (no new JNI/C entry) and is routed in **both**
   `bridge/jni.py` and `devserver/client.py` (so code-push gets them too).
+- **`THEME_TOKEN`** (`"__theme__"`) / **`LOCALE_TOKEN`** (`"__locale__"`)
+  (phase E9) — reserved bare tokens carrying a host-driven context change over
+  the same event channel: `"__theme__"` (payload `{"mode": "dark"}`, validated as
+  a `ThemeChangeEvent`) → `App.set_theme`, and `"__locale__"` (payload
+  `{"language": "ar", "rtl": true}`, validated as a `LocaleChangeEvent`) →
+  `App.set_locale`. Both ride the existing transport (no new JNI/C entry).
 - **`DeviceApp`** + **`Bridge`** / **`LoopbackBridge`** — wire an `App` to a
   device transport; the device-side analogue of `run_qt`. Events come back by
   handler token, are validated by `parse_event`, and trigger coalesced patches.
@@ -799,6 +840,7 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | E6 | Refined layout (`flex_wrap`/`Wrap`/`PageView`/`AspectRatio`/`CollapsingAppBar`/`Table`/`DataTable`, `PageChangeEvent`) | ✅ |
 | E7 | Media + graphics (`Canvas`/`Svg`/`VideoPlayer`/`WebView`/`Blur`/`ClipPath`/`CameraPreview`/`QrScanner`/`MapView`) | ✅ |
 | E8 | Platform + system (haptics/sensors/system/lifecycle/permissions/biometrics/secure_storage/prefs/database/connectivity/push/background, `KeyboardAvoidingView`, `LifecycleEvent`/`SensorEvent`/`ConnectivityEvent`/`DeepLinkEvent`) | ✅ |
+| E9 | Cross-cutting: theme/dark mode (`Theme`/`ThemeMode`) + `MediaQueryData` + i18n/RTL (`Locale`/`translate`) + accessibility (`Semantics`/`focusable`) + custom fonts (`text_scale`/`font_asset`), `ThemeChangeEvent`/`LocaleChangeEvent` over `THEME_TOKEN`/`LOCALE_TOKEN` | ✅ |
 
 ---
 

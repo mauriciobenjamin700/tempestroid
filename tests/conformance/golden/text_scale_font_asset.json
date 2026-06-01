@@ -1,0 +1,13 @@
+{
+  "compose": {
+    "fontAsset": "fonts/Custom.ttf",
+    "fontSize": 16.0,
+    "textScale": 1.4
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "font-family: \"CustomAsset\"; font-size: 22.4px",
+    "qss_leaf": "font-family: \"CustomAsset\"; font-size: 22.4px"
+  }
+}

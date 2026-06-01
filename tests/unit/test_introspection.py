@@ -128,6 +128,8 @@ def test_event_catalog_lists_events():
         "SensorEvent",
         "ConnectivityEvent",
         "DeepLinkEvent",
+        "ThemeChangeEvent",
+        "LocaleChangeEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 
@@ -217,3 +219,35 @@ def test_menu_select_event_schema_carries_value_and_label():
     props = catalog["MenuSelectEvent"]["properties"]
     assert "value" in props
     assert "label" in props
+
+
+# --- E9: semantics/focusable on the widget base + new context events --------
+
+
+def test_semantics_and_focusable_in_widget_schema():
+    """Every widget schema exposes the E9 base fields semantics/focusable."""
+    catalog = widget_catalog()
+    for name in ("Text", "Button", "Column"):
+        props = catalog[name]["schema"]["properties"]
+        assert "semantics" in props, f"{name} schema missing 'semantics'"
+        assert "focusable" in props, f"{name} schema missing 'focusable'"
+        assert "focus_order" in props, f"{name} schema missing 'focus_order'"
+
+
+def test_theme_and_locale_events_in_event_catalog():
+    """ThemeChangeEvent and LocaleChangeEvent appear in the event catalog."""
+    catalog = event_catalog()
+    assert "ThemeChangeEvent" in catalog
+    assert "LocaleChangeEvent" in catalog
+    assert "mode" in catalog["ThemeChangeEvent"]["properties"]
+    locale_props = catalog["LocaleChangeEvent"]["properties"]
+    assert "language" in locale_props
+    assert "rtl" in locale_props
+
+
+def test_introspect_is_json_serializable_with_e9():
+    """The full contract — including the E9 surface — stays JSON-serializable."""
+    blob = json.dumps(introspect())
+    assert "ThemeChangeEvent" in blob
+    assert "LocaleChangeEvent" in blob
+    assert "semantics" in blob

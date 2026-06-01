@@ -22,6 +22,7 @@ from tempestroid.style import (
     Color,
     Corners,
     Curve,
+    Edge,
     FlexWrap,
     FontStyle,
     Gradient,
@@ -132,7 +133,31 @@ def _background_spec(background: Color | Gradient) -> str | dict[str, Any]:
     return background.to_hex()
 
 
-def to_compose(style: Style | None) -> dict[str, Any]:
+#: ``text-align`` values whose meaning flips under a right-to-left layout.
+_TEXT_ALIGN_RTL_MIRROR: dict[TextAlign, TextAlign] = {
+    TextAlign.LEFT: TextAlign.RIGHT,
+    TextAlign.RIGHT: TextAlign.LEFT,
+}
+
+
+def _mirror_edge(edge: Edge) -> dict[str, float]:
+    """Serialize an :class:`~tempestroid.style.Edge` with left/right swapped.
+
+    Args:
+        edge: The edge to mirror.
+
+    Returns:
+        The edge dict with ``left`` and ``right`` exchanged.
+    """
+    return {
+        "top": edge.top,
+        "right": edge.left,
+        "bottom": edge.bottom,
+        "left": edge.right,
+    }
+
+
+def to_compose(style: Style | None, *, rtl: bool = False) -> dict[str, Any]:
     """Translate a style into a Compose spec dict.
 
     Keys are omitted when unset, so the Kotlin renderer applies its own default
@@ -140,6 +165,11 @@ def to_compose(style: Style | None) -> dict[str, Any]:
 
     Args:
         style: The style to translate, or ``None``.
+        rtl: Whether the node lays out right-to-left. When ``True``, the
+            ``start``/``end`` of the box model is mirrored — ``padding.left`` ↔
+            ``padding.right``, ``margin.left`` ↔ ``margin.right`` — and a
+            ``text_align`` of ``LEFT``/``RIGHT`` is flipped, matching the Qt
+            translator so the two renderers stay in lockstep.
 
     Returns:
         A JSON-serializable dict of Compose hints (empty when ``style`` is
@@ -162,20 +192,28 @@ def to_compose(style: Style | None) -> dict[str, Any]:
         spec["flexWrap"] = _FLEX_WRAP[style.flex_wrap]
     if style.padding is not None:
         edge = style.padding
-        spec["padding"] = {
-            "top": edge.top,
-            "right": edge.right,
-            "bottom": edge.bottom,
-            "left": edge.left,
-        }
+        spec["padding"] = (
+            _mirror_edge(edge)
+            if rtl
+            else {
+                "top": edge.top,
+                "right": edge.right,
+                "bottom": edge.bottom,
+                "left": edge.left,
+            }
+        )
     if style.margin is not None:
         edge = style.margin
-        spec["margin"] = {
-            "top": edge.top,
-            "right": edge.right,
-            "bottom": edge.bottom,
-            "left": edge.left,
-        }
+        spec["margin"] = (
+            _mirror_edge(edge)
+            if rtl
+            else {
+                "top": edge.top,
+                "right": edge.right,
+                "bottom": edge.bottom,
+                "left": edge.left,
+            }
+        )
     if style.background is not None:
         spec["background"] = _background_spec(style.background)
     if style.color is not None:
@@ -228,7 +266,12 @@ def to_compose(style: Style | None) -> dict[str, Any]:
     if style.font_style is not None:
         spec["fontStyle"] = _FONT_STYLE[style.font_style]
     if style.text_align is not None:
-        spec["textAlign"] = _TEXT_ALIGN[style.text_align]
+        text_align = (
+            _TEXT_ALIGN_RTL_MIRROR.get(style.text_align, style.text_align)
+            if rtl
+            else style.text_align
+        )
+        spec["textAlign"] = _TEXT_ALIGN[text_align]
     if style.text_decoration is not None:
         spec["textDecoration"] = _TEXT_DECORATION[style.text_decoration]
     if style.letter_spacing is not None:
@@ -239,6 +282,10 @@ def to_compose(style: Style | None) -> dict[str, Any]:
         spec["maxLines"] = style.max_lines
     if style.text_overflow is not None:
         spec["textOverflow"] = _TEXT_OVERFLOW[style.text_overflow]
+    if style.text_scale is not None:
+        spec["textScale"] = style.text_scale
+    if style.font_asset is not None:
+        spec["fontAsset"] = style.font_asset
     if style.stack_align is not None:
         spec["stackAlign"] = _STACK_ALIGN[style.stack_align]
     if style.position is not None:

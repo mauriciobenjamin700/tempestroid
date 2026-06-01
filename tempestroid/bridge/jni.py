@@ -27,15 +27,23 @@ from tempestroid.bridge.protocol import (
     DISMISS_TOKEN_PREFIX,
     FRAME_TOKEN,
     LIFECYCLE_TOKEN,
+    LOCALE_TOKEN,
     SENSOR_TOKEN_PREFIX,
+    THEME_TOKEN,
 )
 from tempestroid.core.state import App
+from tempestroid.i18n import Locale
 from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
 from tempestroid.native.sensors import dispatch_sensor_event
 from tempestroid.navigation import NavStack, routes_from_path
 from tempestroid.widgets import Widget
+from tempestroid.widgets.events import (
+    LocaleChangeEvent,
+    ThemeChangeEvent,
+    parse_event,
+)
 
 __all__ = ["JniBridge", "make_event_sink", "run_device", "run_device_file"]
 
@@ -194,6 +202,31 @@ def make_event_sink(
         # connectivity callback registry.
         if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
             loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
+            return
+        # A theme-mode change (OS dark-mode toggle, or app-requested switch) rides
+        # the same event channel under the reserved THEME_TOKEN. Validate the
+        # payload at the boundary, then swap the app's theme (which rebuilds).
+        if token == THEME_TOKEN:
+            event = parse_event(ThemeChangeEvent, payload)
+            loop.call_soon_threadsafe(
+                lambda: device.app.set_theme(
+                    device.app.theme.model_copy(update={"mode": event.mode})
+                )
+            )
+            return
+        # A locale / layout-direction change rides the same event channel under
+        # the reserved LOCALE_TOKEN. Validate and swap the app's locale.
+        if token == LOCALE_TOKEN:
+            locale_event = parse_event(LocaleChangeEvent, payload)
+            loop.call_soon_threadsafe(
+                lambda: device.app.set_locale(
+                    Locale(
+                        language=locale_event.language,
+                        region=locale_event.region,
+                        rtl=locale_event.rtl,
+                    )
+                )
+            )
             return
         message: dict[str, Any] = {
             "kind": "event",

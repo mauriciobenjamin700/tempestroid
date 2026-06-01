@@ -2,6 +2,7 @@ package org.tempestroid.host
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.system.Os
@@ -10,17 +11,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import java.io.File
 import org.json.JSONObject
 
@@ -130,7 +136,66 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme {
+            // E9 dark mode: the active palette follows the OS theme. Python tracks
+            // `Theme.mode = SYSTEM` by default, so the host reflects the system
+            // setting into the Material color scheme — a `darkColorScheme` /
+            // `lightColorScheme` swap that recomposes the whole tree when the user
+            // toggles dark mode. Material primitives (Button container/content,
+            // Surface, TextField) pick up these colors automatically; widgets that
+            // declare an explicit Style.background/color still override per-node.
+            //
+            // Divergence: theme cadence is OS-driven here (isSystemInDarkTheme),
+            // NOT pushed from Python — the serializer emits no `theme_mode` envelope
+            // field (Option B context, currently un-emitted; see gaps). When the
+            // system flips, we additionally notify Python over the existing event
+            // channel under THEME_TOKEN ({"mode":"system"}), which routes to
+            // App.set_theme and rebuilds — so theme-conditional Python views react.
+            val systemDark = isSystemInDarkTheme()
+            // RTL layout direction: Python mirrors padding/margin/text-align in the
+            // serialized Style (to_compose(rtl=...)), so the box-model arrives already
+            // flipped. The host still flips LocalLayoutDirection (in RenderNode) so
+            // Compose orders children and aligns text RTL; the flag rides each node's
+            // serialized props (`locale_rtl`) — absent → LTR (see gaps: not yet
+            // emitted by the Python serializer).
+            LaunchedEffect(systemDark) {
+                // Mirror the OS dark-mode state to Python so a `Theme.mode = SYSTEM`
+                // app rebuilds its theme-conditional tree on a system toggle. Rides
+                // the existing event channel (no C/JNI change) under THEME_TOKEN.
+                PythonRuntime.dispatchEvent(
+                    THEME_TOKEN,
+                    JSONObject().put("mode", "system").toString(),
+                )
+            }
+            // E9 locale / RTL + MediaQuery: read the live device Configuration. Its
+            // locale drives language/region, its layoutDirection drives RTL, and its
+            // fontScale/screen dims feed the MediaQuery context. A config change
+            // (system locale switch, font-size accessibility setting, rotation)
+            // recomposes this, and the LaunchedEffect re-notifies Python under the
+            // existing LOCALE_TOKEN channel so `App.set_locale` rebuilds RTL-aware
+            // views. (MediaQuery push to Python has no routed `__media__` token yet —
+            // see gaps; the host applies fontScale/RTL locally via Compose.)
+            val configuration = LocalConfiguration.current
+            val isRtl = configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+            val locale = remember(configuration) {
+                @Suppress("DEPRECATION")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    configuration.locales[0]
+                } else {
+                    configuration.locale
+                }
+            }
+            LaunchedEffect(locale, isRtl) {
+                PythonRuntime.dispatchEvent(
+                    LOCALE_TOKEN,
+                    JSONObject()
+                        .put("language", locale.language.ifEmpty { "und" })
+                        .put("region", locale.country.takeIf { it.isNotEmpty() })
+                        .put("rtl", isRtl)
+                        .toString(),
+                )
+            }
+            val colorScheme = if (systemDark) darkColorScheme() else lightColorScheme()
+            MaterialTheme(colorScheme = colorScheme) {
                 // The host draws edge-to-edge (enableEdgeToEdge above), so the
                 // root content must inset itself off the system bars (status bar
                 // top, navigation bar bottom, display cutout/notch) or it would
@@ -278,6 +343,23 @@ class MainActivity : ComponentActivity() {
          * [PythonRuntime.dispatchEvent], the same channel widget taps use.
          */
         const val BACK_TOKEN = "__back__"
+
+        /**
+         * Reserved event token Python routes to `App.set_theme` (E9). The host
+         * sends it (payload `{"mode": "light"|"dark"|"system"}`) when the OS dark
+         * mode changes so a `Theme.mode = SYSTEM` app rebuilds its theme-conditional
+         * tree. Rides the existing event channel — no new JNI entry. Must stay in
+         * sync with `tempestroid.bridge.protocol.THEME_TOKEN`.
+         */
+        const val THEME_TOKEN = "__theme__"
+
+        /**
+         * Reserved event token Python routes to `App.set_locale` (E9). The host
+         * sends it (payload `{"language", "region", "rtl"}`) when the device locale
+         * / layout direction changes. Rides the existing event channel — no new JNI
+         * entry. Must stay in sync with `tempestroid.bridge.protocol.LOCALE_TOKEN`.
+         */
+        const val LOCALE_TOKEN = "__locale__"
 
         /** Asset slot a `tempest build` APK stages the user's app source into. */
         private const val BUNDLED_APP_ASSET = "tempest_app.py"
