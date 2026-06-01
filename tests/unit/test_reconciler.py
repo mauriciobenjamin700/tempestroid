@@ -300,3 +300,73 @@ def test_keyed_diff_recurses_matched_keys():
     assert len(updates) == 1
     assert updates[0].path == (0,)  # "b" now at index 0
     assert updates[0].set_props == {"content": "B!"}
+
+
+# --- diff: virtualized-list sliding window ----------------------------------
+
+
+def _windowed_column(start: int, end: int) -> Column:
+    """Build a Column standing in for a materialized list window.
+
+    Each child is keyed by its absolute index, exactly as a virtualized list
+    materializes its visible ``[start, end)`` window.
+
+    Args:
+        start: The first visible index (inclusive).
+        end: The one-past-last visible index (exclusive).
+
+    Returns:
+        The column with the windowed, keyed children.
+    """
+    return Column(
+        children=[Text(content=str(i), key=str(i)) for i in range(start, end)]
+    )
+
+
+def test_sliding_window_keyed_diff_is_remove_plus_insert():
+    # Window [0,10] -> [5,15]: keys 0..4 leave (descending Remove), keys 10..14
+    # enter (ascending Insert at their final slots); survivors stay in order.
+    old = build(_windowed_column(0, 10))
+    new = build(_windowed_column(5, 15))
+    patches = diff(old, new)
+
+    removes = [p for p in patches if isinstance(p, Remove)]
+    inserts = [p for p in patches if isinstance(p, Insert)]
+    reorders = [p for p in patches if isinstance(p, Reorder)]
+
+    assert [p.index for p in removes] == [4, 3, 2, 1, 0]
+    assert [p.index for p in inserts] == [5, 6, 7, 8, 9]
+    assert [p.node.key for p in inserts] == ["10", "11", "12", "13", "14"]
+    # Survivors 5..9 keep their relative order -> no Reorder needed.
+    assert reorders == []
+
+
+def test_window_shrink_removes_only_tail_items():
+    # Window [0,10] -> [0,5]: keys 5..9 leave (descending Remove); no inserts.
+    old = build(_windowed_column(0, 10))
+    new = build(_windowed_column(0, 5))
+    patches = diff(old, new)
+
+    removes = [p for p in patches if isinstance(p, Remove)]
+    inserts = [p for p in patches if isinstance(p, Insert)]
+    reorders = [p for p in patches if isinstance(p, Reorder)]
+
+    assert [p.index for p in removes] == [9, 8, 7, 6, 5]
+    assert inserts == []
+    assert reorders == []
+
+
+def test_window_grow_adds_only_tail_items():
+    # Window [0,5] -> [0,10]: keys 5..9 enter (ascending Insert); no removes.
+    old = build(_windowed_column(0, 5))
+    new = build(_windowed_column(0, 10))
+    patches = diff(old, new)
+
+    removes = [p for p in patches if isinstance(p, Remove)]
+    inserts = [p for p in patches if isinstance(p, Insert)]
+    reorders = [p for p in patches if isinstance(p, Reorder)]
+
+    assert removes == []
+    assert [p.index for p in inserts] == [5, 6, 7, 8, 9]
+    assert [p.node.key for p in inserts] == ["5", "6", "7", "8", "9"]
+    assert reorders == []

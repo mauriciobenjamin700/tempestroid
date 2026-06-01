@@ -1,9 +1,14 @@
+# Virtualized-list tests reach into the renderer's private scroll-area classes
+# to assert their window/sticky behaviour — internal by design.
+# pyright: reportPrivateUsage=false
 import pytest
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QDateEdit,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QWidget,
 )
@@ -14,14 +19,25 @@ from tempestroid import (
     Column,
     Container,
     DatePicker,
+    EndReachedEvent,
     FilePicker,
     Input,
+    LazyColumn,
+    LazyGrid,
+    RefreshControl,
     Row,
+    ScrollEvent,
+    SectionHeader,
+    SectionList,
     Text,
     build,
     diff,
 )
 from tempestroid.renderers.qt import QtRenderer
+from tempestroid.renderers.qt.renderer import (
+    _LazyGridArea,
+    _LazyScrollArea,
+)
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -258,3 +274,158 @@ def test_nested_container_renders():
     )
     renderer.mount(tree)
     assert _labels(renderer.root_widget) == ["x", "y", "z"]
+
+
+# --- virtualized lists (E1b) ------------------------------------------------
+
+
+def _item(index: int) -> Text:
+    """Build a trivial text item for a virtualized list."""
+    return Text(content=str(index))
+
+
+def test_lazy_column_renders_materialized_window(qapp: QApplication) -> None:
+    # E1 contract: build() materializes the visible window into keyed children;
+    # the Qt renderer mounts those children directly into a scroll area, never
+    # self-materializing from item_count.
+    renderer = QtRenderer()
+    node = build(LazyColumn(item_count=100, item_builder=_item))
+    host = renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+    # The default window is [0, window_size) — the renderer renders exactly the
+    # children the IR carried, never the full 100.
+    materialized = area.item_widgets()
+    assert len(materialized) == len(node.children)
+    assert 0 < len(materialized) < 100
+
+
+def test_lazy_column_applies_window_slide_child_patches(qapp: QApplication) -> None:
+    # Sliding the window is a keyed diff (remove/reorder/insert) on the children;
+    # the renderer applies it through the generic container path.
+    renderer = QtRenderer()
+    old = build(LazyColumn(item_count=100, item_builder=_item, window=(0, 10)))
+    host = renderer.mount(old)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+
+    def window_labels() -> list[str]:
+        return [
+            widget.text()
+            for widget in area.item_widgets()
+            if isinstance(widget, QLabel)
+        ]
+
+    assert window_labels() == [str(i) for i in range(10)]
+    # The app slid the window [0,10) -> [5,15); the renderer applies the patches.
+    new = build(LazyColumn(item_count=100, item_builder=_item, window=(5, 15)))
+    renderer.apply(diff(old, new))
+    qapp.processEvents()
+    assert window_labels() == [str(i) for i in range(5, 15)]
+
+
+def test_lazy_column_emits_scroll_and_end_reached(qapp: QApplication) -> None:
+    scrolls: list[ScrollEvent] = []
+    ends: list[EndReachedEvent] = []
+    renderer = QtRenderer()
+    node = build(
+        LazyColumn(
+            item_count=100,
+            item_builder=_item,
+            window=(0, 60),
+            on_scroll=scrolls.append,
+            on_end_reached=ends.append,
+            end_reached_threshold=0.8,
+        )
+    )
+    host = renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 200)
+    host.show()
+    qapp.processEvents()
+    bar = area.verticalScrollBar()
+    bar.setValue(bar.maximum())
+    qapp.processEvents()
+    assert scrolls, "scroll handler should fire on scrollbar movement"
+    assert scrolls[-1].direction == "vertical"
+    assert ends, "end-reached should fire past the threshold"
+
+
+def test_lazy_column_update_item_count_applies_window_patches(
+    qapp: QApplication,
+) -> None:
+    # Pagination: item_count grows but the window children change via the keyed
+    # diff. The renderer accepts the child patches without raising (the bug the
+    # old xfail tracked: it used to treat LazyColumn as a leaf).
+    renderer = QtRenderer()
+    old = build(LazyColumn(item_count=10, item_builder=_item))
+    host = renderer.mount(old)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+    # item_count grows from 10 to 1000; the window stays its default size, so the
+    # materialized window is still small (virtualization preserved).
+    new = build(LazyColumn(item_count=1000, item_builder=_item))
+    renderer.apply(diff(old, new))
+    qapp.processEvents()
+    assert len(area.item_widgets()) == len(new.children)
+    assert 0 < len(area.item_widgets()) < 100
+
+
+def test_lazy_grid_renders_window(qapp: QApplication) -> None:
+    renderer = QtRenderer()
+    node = build(LazyGrid(item_count=500, columns=3, item_builder=_item))
+    host = renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyGridArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+    materialized = area.item_widgets()
+    assert len(materialized) == len(node.children)
+    assert 0 < len(materialized) < 500
+
+
+def test_section_list_renders_sticky_header(qapp: QApplication) -> None:
+    renderer = QtRenderer()
+    sections = [
+        SectionHeader(
+            title="A",
+            item_count=3,
+            item_builder=_item,
+            header_builder=lambda: Text(content="Header A"),
+        ),
+        SectionHeader(
+            title="B",
+            item_count=2,
+            item_builder=_item,
+            header_builder=lambda: Text(content="Header B"),
+        ),
+    ]
+    node = build(SectionList(sections=sections))
+    renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    # The first section's title pins the sticky header (Qt stand-in for Compose's
+    # native stickyHeader — a documented divergence).
+    assert area.sticky.text() == "A"
+
+
+def test_refresh_control_busy_when_refreshing():
+    renderer = QtRenderer()
+    node = build(RefreshControl(refreshing=True))
+    renderer.mount(node)
+    widget = renderer.root_widget
+    assert isinstance(widget, QProgressBar)
+    # An active refresh shows an indeterminate (busy) bar: range collapses to 0.
+    assert widget.minimum() == 0
+    assert widget.maximum() == 0

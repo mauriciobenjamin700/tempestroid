@@ -28,6 +28,9 @@ __all__ = [
     "LongPressEvent",
     "SwipeEvent",
     "RouteChangeEvent",
+    "ScrollEvent",
+    "RefreshEvent",
+    "EndReachedEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -156,6 +159,37 @@ class RouteChangeEvent(Event):
 
     name: str
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScrollEvent(Event):
+    """A scrollable container scrolled.
+
+    Emitted by virtualized lists as the user scrolls, so the application can
+    recompute the visible window and request new items.
+
+    Attributes:
+        offset: The current scroll position, in logical pixels.
+        direction: The scroll axis (``"vertical"`` or ``"horizontal"``).
+    """
+
+    offset: float
+    direction: str
+
+
+class RefreshEvent(Event):
+    """A pull-to-refresh gesture completed.
+
+    Carries no payload: the gesture itself is the signal. The handler typically
+    reloads the list's data and clears the widget's ``refreshing`` flag.
+    """
+
+
+class EndReachedEvent(Event):
+    """The list scrolled past its end-reached threshold.
+
+    Carries no payload. The handler typically paginates — loading the next page
+    of items and growing the list's ``item_count``.
+    """
 
 
 E = TypeVar("E", bound=Event)

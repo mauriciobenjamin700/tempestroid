@@ -287,6 +287,22 @@ The declarative IR — bare-noun widgets.
   (file selection).
 - Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
   **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
+- Virtualized lists (only the visible window is materialized; declare an
+  `item_count` + an `item_builder(index) -> Widget`, never a static child list):
+  **`LazyColumn`** / **`LazyRow`** (vertical/horizontal lazy lists),
+  **`LazyGrid`** (`columns`-wide lazy grid), **`SectionList`** (a list of
+  **`SectionHeader`** sections with sticky headers) and **`RefreshControl`**
+  (standalone pull-to-refresh). The widgets materialize their **initial window**
+  at `build` time — `child_nodes()` builds the items in `window` (when set) or the
+  first `window_size` items (default **`DEFAULT_WINDOW_SIZE`** = 20), each keyed by
+  its absolute index — so the very first mount has content. The app slides the
+  window with `App.slide_window(key, start, end)` (and
+  `App.slide_section_window(key, title, start, end)` for sections) from a scroll
+  handler; the keyed diff turns a slide into a minimal remove/reorder/insert. They
+  emit **`ScrollEvent`** (`on_scroll`), **`RefreshEvent`** (`on_refresh`) and
+  **`EndReachedEvent`** (`on_end_reached`, fired past `end_reached_threshold` —
+  wire it to paginate). The matching handler aliases are **`ScrollHandler`** /
+  **`RefreshHandler`** / **`EndReachedHandler`**.
 - Enums: **`KeyboardType`** (text/number/email/phone/url/password),
   **`ImageFit`** (contain/cover/fill/none).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
@@ -342,6 +358,10 @@ renderer changes and are fully device-ready. Every component takes an optional
   **`SwipeDirection`** enum (left/right/up/down).
 - **`RouteChangeEvent`** (`name` + typed `params`) — emitted when navigation
   settles on a new route.
+- Virtualized-list events: **`ScrollEvent`** (`offset` + `direction`),
+  **`RefreshEvent`** (pull-to-refresh) and **`EndReachedEvent`** (threshold
+  reached) — emitted by `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` /
+  `RefreshControl`.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge

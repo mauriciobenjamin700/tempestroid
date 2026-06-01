@@ -18,6 +18,7 @@ from tempestroid.widgets import (
     Container,
     DateChangeEvent,
     DatePicker,
+    EndReachedEvent,
     Event,
     FilePicker,
     FileSelectEvent,
@@ -25,13 +26,20 @@ from tempestroid.widgets import (
     Icon,
     Image,
     Input,
+    LazyColumn,
+    LazyGrid,
+    LazyRow,
     LongPressEvent,
     Navigator,
     ProgressBar,
+    RefreshControl,
+    RefreshEvent,
     RouteChangeEvent,
     RouteDrawer,
     Row,
+    ScrollEvent,
     ScrollView,
+    SectionList,
     SlideEvent,
     Slider,
     Spinner,
@@ -81,6 +89,11 @@ WIDGET_TYPES: tuple[type[Widget], ...] = (
     Icon,
     ProgressBar,
     Spinner,
+    LazyColumn,
+    LazyRow,
+    LazyGrid,
+    SectionList,
+    RefreshControl,
 )
 
 #: The event payload types crossing the native boundary.
@@ -94,6 +107,9 @@ EVENT_TYPES: tuple[type[Event], ...] = (
     LongPressEvent,
     SwipeEvent,
     RouteChangeEvent,
+    ScrollEvent,
+    RefreshEvent,
+    EndReachedEvent,
 )
 
 

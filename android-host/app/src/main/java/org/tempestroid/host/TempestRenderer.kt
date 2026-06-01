@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -68,6 +69,21 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -249,6 +265,16 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         "TabBar" -> RenderTabBar(node, style, onEvent)
 
         "RouteDrawer" -> RenderRouteDrawer(node, style, onEvent)
+
+        "LazyColumn" -> RenderLazyList(node, style, onEvent, horizontal = false)
+
+        "LazyRow" -> RenderLazyList(node, style, onEvent, horizontal = true)
+
+        "LazyGrid" -> RenderLazyGrid(node, style, onEvent)
+
+        "SectionList" -> RenderSectionList(node, style, onEvent)
+
+        "RefreshControl" -> RenderRefreshControl(node, style, onEvent)
 
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
@@ -771,6 +797,264 @@ private fun RenderScrollView(
             node.children.forEach { RenderNode(it, onEvent) }
         }
     }
+}
+
+/**
+ * A virtualized list — the Kotlin counterpart of the Qt `LazyColumn`/`LazyRow`.
+ *
+ * The serialized node carries `props["item_count"]` (the *full* logical length)
+ * but only the materialized window in `node.children` (each keyed by its absolute
+ * index). Compose iterates the materialized window natively via [LazyColumn]/
+ * [LazyRow]; Python widens/slides the window in response to the events emitted
+ * here:
+ *  - `on_scroll` → [ScrollEvent] `{offset, direction}` on every scroll-offset tick;
+ *  - `on_refresh` → [RefreshEvent] `{}` when the [PullToRefreshBox] gesture fires;
+ *  - `on_end_reached` → [EndReachedEvent] `{}` when the last visible item's
+ *    absolute index crosses `end_reached_threshold` of `item_count` (NOT of the
+ *    partial window).
+ *
+ * @param horizontal render a [LazyRow] (`direction="horizontal"`) instead of a
+ *   vertical [LazyColumn].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderLazyList(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+    horizontal: Boolean,
+) {
+    val listState = rememberLazyListState()
+    val refreshing = node.props["refreshing"] as? Boolean ?: false
+    val direction = if (horizontal) "horizontal" else "vertical"
+
+    ReportScroll(listState, direction) { offset ->
+        handlerToken(node, "on_scroll")?.let {
+            onEvent(it, JSONObject().put("offset", offset.toDouble()).put("direction", direction).toString())
+        }
+    }
+    ReportEndReached(listState, itemCountOf(node), thresholdOf(node)) {
+        handlerToken(node, "on_end_reached")?.let { onEvent(it, "{}") }
+    }
+
+    // Snapshot the window once: itemsIndexed reads `children` eagerly, and a
+    // window slide that mutates `node.children` re-runs this composable, so the
+    // LazyColumn/LazyRow content block rebuilds with the new materialized window.
+    val children = node.children.toList()
+    val onRefresh = { handlerToken(node, "on_refresh")?.let { onEvent(it, "{}") }; Unit }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = baseModifier(style),
+    ) {
+        if (horizontal) {
+            LazyRow(state = listState, modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(
+                    items = children,
+                    key = { i, child -> child.key ?: i.toString() },
+                ) { _, child -> RenderNode(child, onEvent) }
+            }
+        } else {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(
+                    items = children,
+                    key = { i, child -> child.key ?: i.toString() },
+                ) { _, child -> RenderNode(child, onEvent) }
+            }
+        }
+    }
+}
+
+/**
+ * A virtualized grid — the Kotlin counterpart of the Qt `LazyGrid`.
+ *
+ * `props["columns"]` fixes the column count; the materialized window flows across
+ * the rows. Like [RenderLazyList], the full length is `props["item_count"]` and
+ * `on_scroll`/`on_end_reached` drive the Python-side window.
+ */
+@Composable
+private fun RenderLazyGrid(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val gridState = rememberLazyGridState()
+    val columns = (node.props["columns"] as? Number)?.toInt() ?: 2
+
+    ReportGridScroll(gridState) { offset ->
+        handlerToken(node, "on_scroll")?.let {
+            onEvent(it, JSONObject().put("offset", offset.toDouble()).put("direction", "vertical").toString())
+        }
+    }
+    ReportGridEndReached(gridState, itemCountOf(node), thresholdOf(node)) {
+        handlerToken(node, "on_end_reached")?.let { onEvent(it, "{}") }
+    }
+
+    val children = node.children.toList()
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns.coerceAtLeast(1)),
+        state = gridState,
+        modifier = baseModifier(style),
+    ) {
+        gridItemsIndexed(
+            items = children,
+            key = { i, child -> child.key ?: i.toString() },
+        ) { _, child -> RenderNode(child, onEvent) }
+    }
+}
+
+/**
+ * A sectioned list with pinned headers — the Kotlin counterpart of the Qt
+ * `SectionList`. Compose pins each section header natively via `stickyHeader {}`.
+ *
+ * The serialized window is a flat, already-materialized child list: each child
+ * carries the reconciler `key` the IR core assigned (`sec:<title>:header` for a
+ * section header, `sec:<title>:<index>` for a row). A child whose key matches
+ * [isSectionHeaderKey] is pinned with `stickyHeader {}`; everything else is a
+ * plain `item {}`. `on_scroll`/`on_end_reached` mirror [RenderLazyList], using
+ * `props["item_count"]` as the full logical length.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun RenderSectionList(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val listState = rememberLazyListState()
+
+    ReportScroll(listState, "vertical") { offset ->
+        handlerToken(node, "on_scroll")?.let {
+            onEvent(it, JSONObject().put("offset", offset.toDouble()).put("direction", "vertical").toString())
+        }
+    }
+    ReportEndReached(listState, itemCountOf(node), thresholdOf(node)) {
+        handlerToken(node, "on_end_reached")?.let { onEvent(it, "{}") }
+    }
+
+    // Snapshot the live child list once per recomposition: each `key`/`item`
+    // lambda below captures `i` (not the SnapshotStateList directly) so a window
+    // slide that mutates `node.children` recomposes the LazyColumn content block.
+    val children = node.children.toList()
+    LazyColumn(state = listState, modifier = baseModifier(style)) {
+        children.forEachIndexed { i, child ->
+            val itemKey = child.key ?: i.toString()
+            if (isSectionHeaderKey(child.key)) {
+                stickyHeader(key = itemKey) { RenderNode(child, onEvent) }
+            } else {
+                item(key = itemKey) { RenderNode(child, onEvent) }
+            }
+        }
+    }
+}
+
+/**
+ * Whether a materialized child is a pinned section header.
+ *
+ * The IR core keys section children `sec:<title>:header` (header) and
+ * `sec:<title>:<index>` (row); only the header form ends in `:header`.
+ *
+ * @param key the child's reconciler key (may be null for an unkeyed child).
+ * @return true when [key] denotes a section header.
+ */
+private fun isSectionHeaderKey(key: String?): Boolean =
+    key != null && key.startsWith("sec:") && key.endsWith(":header")
+
+/**
+ * A standalone pull-to-refresh container — the Kotlin counterpart of the Qt
+ * `RefreshControl`. `props["refreshing"]` drives the [PullToRefreshBox] spinner;
+ * the gesture emits `on_refresh` → [RefreshEvent]. Its child (if any) scrolls
+ * inside.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderRefreshControl(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val refreshing = node.props["refreshing"] as? Boolean ?: false
+    val onRefresh = { handlerToken(node, "on_refresh")?.let { onEvent(it, "{}") }; Unit }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = baseModifier(style),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            node.children.forEach { RenderNode(it, onEvent) }
+        }
+    }
+}
+
+/** The full logical item count of a list node (`item_count`), defaulting to the
+ *  materialized window size when absent. */
+private fun itemCountOf(node: TempestNode): Int =
+    (node.props["item_count"] as? Number)?.toInt() ?: node.children.size
+
+/** The `[0,1]` fraction of the scroll past which `on_end_reached` fires. */
+private fun thresholdOf(node: TempestNode): Float =
+    (node.props["end_reached_threshold"] as? Number)?.toFloat() ?: 0.8f
+
+/** Emit [report] (with the live scroll offset) on every scroll-offset change. */
+@Composable
+private fun ReportScroll(
+    listState: LazyListState,
+    @Suppress("UNUSED_PARAMETER") direction: String,
+    report: (Int) -> Unit,
+) {
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemScrollOffset }
+            .collectLatest { offset -> report(offset) }
+    }
+}
+
+/** Emit [report] (with the live scroll offset) on every grid scroll-offset change. */
+@Composable
+private fun ReportGridScroll(gridState: LazyGridState, report: (Int) -> Unit) {
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.firstVisibleItemScrollOffset }
+            .collectLatest { offset -> report(offset) }
+    }
+}
+
+/**
+ * Fire [report] once each time the last visible item's *absolute* index crosses
+ * [threshold] of [itemCount] — the denominator is the full logical length, not
+ * the materialized window, so paging triggers at the true list end.
+ */
+@Composable
+private fun ReportEndReached(
+    listState: LazyListState,
+    itemCount: Int,
+    threshold: Float,
+    report: () -> Unit,
+) {
+    val isEndReached by remember(itemCount, threshold) {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            last != null && itemCount > 0 &&
+                (last.index + 1).toFloat() / itemCount >= threshold
+        }
+    }
+    LaunchedEffect(isEndReached) { if (isEndReached) report() }
+}
+
+/** Grid variant of [ReportEndReached]. */
+@Composable
+private fun ReportGridEndReached(
+    gridState: LazyGridState,
+    itemCount: Int,
+    threshold: Float,
+    report: () -> Unit,
+) {
+    val isEndReached by remember(itemCount, threshold) {
+        derivedStateOf {
+            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()
+            last != null && itemCount > 0 &&
+                (last.index + 1).toFloat() / itemCount >= threshold
+        }
+    }
+    LaunchedEffect(isEndReached) { if (isEndReached) report() }
 }
 
 /**
