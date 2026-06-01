@@ -28,7 +28,7 @@ from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
 from tempestroid.core.state import App
 from tempestroid.devices import DEFAULT_DEVICE
-from tempestroid.renderers.qt.app_runner import BackKeyFilter
+from tempestroid.renderers.qt.app_runner import BackKeyFilter, connect_lifecycle
 from tempestroid.renderers.qt.simulator import Simulator
 
 __all__ = ["run_dev"]
@@ -123,6 +123,7 @@ def run_dev(path: str | Path, *, verbose: bool = False) -> int:
     """
     app_path = Path(path).resolve()
     qt_app = cast("QApplication", QApplication.instance() or QApplication(sys.argv))
+    connect_lifecycle(qt_app)
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
 

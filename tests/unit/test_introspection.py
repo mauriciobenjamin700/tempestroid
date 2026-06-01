@@ -75,6 +75,7 @@ def test_widget_catalog_lists_all_widgets():
         "Blur",
         "BackdropFilter",
         "ClipPath",
+        "KeyboardAvoidingView",
     }
 
 
@@ -123,6 +124,10 @@ def test_event_catalog_lists_events():
         "ValidationEvent",
         "PageChangeEvent",
         "QrScanEvent",
+        "LifecycleEvent",
+        "SensorEvent",
+        "ConnectivityEvent",
+        "DeepLinkEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

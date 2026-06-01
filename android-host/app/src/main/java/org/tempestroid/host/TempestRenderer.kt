@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -429,6 +430,8 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         "QrScanner" -> RenderQrScanner(node, style, onEvent)
 
         "MapView" -> RenderMapView(node, style)
+
+        "KeyboardAvoidingView" -> RenderKeyboardAvoidingView(node, style, onEvent)
 
         "Blur", "BackdropFilter" -> RenderBlur(node, style, onEvent)
 
@@ -867,6 +870,36 @@ private fun RenderHero(node: TempestNode, onEvent: (String, String) -> Unit) {
         }
     } else {
         RenderNode(child, onEvent)
+    }
+}
+
+/**
+ * Render a [KeyboardAvoidingView] (E8): a [Column] that recedes its content above
+ * the soft keyboard (IME) when it appears — the Compose counterpart of the Qt
+ * `_KeyboardAvoidingWidget` (which listens to
+ * `QApplication.inputMethod().keyboardRectangleChanged` and adjusts margins).
+ *
+ * [Modifier.imePadding] applies bottom padding equal to the visible IME inset
+ * (`WindowInsets.ime`), animating in lockstep with the keyboard show/hide, so the
+ * children stay above it. When the keyboard is hidden (or on a device with a
+ * hardware keyboard) the inset is zero and it behaves like a plain Column.
+ *
+ * Documented divergence: Qt resizes via `keyboardRectangleChanged` margins (no-op
+ * on the desktop sim, where there is no soft keyboard); Compose uses the native
+ * `Modifier.imePadding()`. The user-visible behaviour is identical.
+ */
+@Composable
+private fun RenderKeyboardAvoidingView(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    Column(
+        modifier = baseModifier(style).imePadding(),
+        verticalArrangement = verticalArrangement(style),
+        horizontalAlignment = horizontalAlignment(style),
+    ) {
+        node.children.forEach { RenderNode(it, onEvent) }
     }
 }
 

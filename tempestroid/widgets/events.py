@@ -44,6 +44,13 @@ __all__ = [
     "ValidationEvent",
     "PageChangeEvent",
     "QrScanEvent",
+    "AppState",
+    "LifecycleEvent",
+    "SensorType",
+    "SensorEvent",
+    "ConnectivityState",
+    "ConnectivityEvent",
+    "DeepLinkEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -408,6 +415,117 @@ class QrScanEvent(Event):
 
     data: str
     format: str = "QR_CODE"
+
+
+def _empty_floats() -> list[float]:
+    """Provide a fresh, typed empty list of floats for default factories.
+
+    Returns:
+        A new empty list of floats.
+    """
+    return []
+
+
+def _empty_str_map() -> dict[str, str]:
+    """Provide a fresh, typed empty string mapping for default factories.
+
+    Returns:
+        A new empty ``str -> str`` mapping.
+    """
+    return {}
+
+
+class AppState(StrEnum):
+    """The lifecycle state of the application process."""
+
+    FOREGROUND = "foreground"
+    BACKGROUND = "background"
+    INACTIVE = "inactive"
+
+
+class LifecycleEvent(Event):
+    """The application moved between lifecycle states.
+
+    Emitted by the host's lifecycle observer (Android ``ProcessLifecycleOwner``,
+    or the Qt simulator's ``QApplication.applicationStateChanged``) and routed
+    over the reserved lifecycle token, so application code can react to the app
+    entering the foreground or background.
+
+    Attributes:
+        state: The new lifecycle state.
+    """
+
+    state: AppState
+
+
+class SensorType(StrEnum):
+    """A device hardware sensor a continuous stream can be opened on."""
+
+    ACCELEROMETER = "accelerometer"
+    GYROSCOPE = "gyroscope"
+    MAGNETOMETER = "magnetometer"
+    PRESSURE = "pressure"
+    LIGHT = "light"
+    PROXIMITY = "proximity"
+    STEP_COUNTER = "step_counter"
+
+
+class SensorEvent(Event):
+    """A single sample from a device sensor stream.
+
+    Emitted continuously by the host while a sensor stream is open and routed
+    over the reserved sensor token (``"__sensor__:<type>"``). The sample values
+    cross the boundary as a flat list of floats (never a tuple) so the payload
+    stays JSON-serializable.
+
+    Attributes:
+        sensor: Which sensor produced the sample.
+        values: The sample values (e.g. ``[x, y, z]`` for the accelerometer).
+        timestamp_ms: The sample timestamp in milliseconds since boot, or ``0``
+            when the host does not report one.
+    """
+
+    sensor: SensorType
+    values: list[float] = Field(default_factory=_empty_floats)
+    timestamp_ms: int = 0
+
+
+class ConnectivityState(StrEnum):
+    """The device's current network connectivity state."""
+
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    WIFI = "wifi"
+    MOBILE = "mobile"
+
+
+class ConnectivityEvent(Event):
+    """The device's network connectivity changed.
+
+    Emitted by the host's connectivity callback and routed over the reserved
+    connectivity token (``"__connectivity__:<state>"``), so application code can
+    react to the device going online/offline or switching transports.
+
+    Attributes:
+        state: The new connectivity state.
+    """
+
+    state: ConnectivityState
+
+
+class DeepLinkEvent(Event):
+    """The app was opened (or resumed) via a deep link.
+
+    Carries the link target and its parsed query parameters as a flat
+    ``dict[str, str]`` so the payload stays JSON-serializable.
+
+    Attributes:
+        url: The full deep-link URL.
+        params: The parsed query parameters (empty when the link carries none).
+    """
+
+    url: str
+    params: dict[str, str] = Field(default_factory=_empty_str_map)
 
 
 E = TypeVar("E", bound=Event)

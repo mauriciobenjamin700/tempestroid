@@ -21,6 +21,19 @@
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
 
+    <!-- E8 platform + system native. VIBRATE → HapticsModule; WAKE_LOCK →
+         keep-awake (FLAG_KEEP_SCREEN_ON also needs no perm, but WorkManager +
+         WakeLock-style work want it); ACCESS_NETWORK_STATE → ConnectivityModule;
+         USE_BIOMETRIC (+ legacy USE_FINGERPRINT) → BiometricsModule;
+         RECEIVE_BOOT_COMPLETED → WorkManager re-schedules periodic work after a
+         reboot. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
@@ -51,6 +64,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- E8 FCM service (PushModule). The host reads the registration token
+             via FirebaseMessaging.getInstance().token; receiving pushes needs this
+             service. It is DECLARED but device-gated: FCM requires a Firebase
+             project + a `google-services.json` at the module root + the
+             google-services Gradle plugin. None of those are wired here (to keep
+             the host buildable without a Firebase account), so at runtime
+             FirebaseApp init fails and PushModule replies error="not_configured".
+             Configuring Firebase is a documented device pendency. -->
+        <service
+            android:name=".TempestMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- Exposes app-private capture files to the camera app (CameraModule). -->
         <provider

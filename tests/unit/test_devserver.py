@@ -280,3 +280,71 @@ def test_dev_client_imports_without_typer() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
+
+
+async def test_dev_client_routes_reserved_stream_tokens(monkeypatch: Any) -> None:
+    """The dev client mirrors jni.py and routes the E8 reserved stream tokens.
+
+    Regression (lesson E0d): the dev client's event sink must route the reserved
+    sensor / lifecycle / connectivity tokens to the same native dispatch hooks
+    ``run_device`` uses — otherwise the ``tempest serve`` code-push path silently
+    drops them (no widget handler matches).
+    """
+    import asyncio
+
+    from tempestroid.bridge.protocol import (
+        CONNECTIVITY_TOKEN_PREFIX,
+        LIFECYCLE_TOKEN,
+        SENSOR_TOKEN_PREFIX,
+    )
+    from tempestroid.devserver import client as client_mod
+
+    calls: list[tuple[str, Any]] = []
+
+    def _spy_sensor(sensor_type: str, payload: dict[str, Any]) -> None:
+        calls.append(("sensor", (sensor_type, payload)))
+
+    def _spy_lifecycle(payload: dict[str, Any]) -> None:
+        calls.append(("lifecycle", payload))
+
+    def _spy_connectivity(payload: dict[str, Any]) -> None:
+        calls.append(("connectivity", payload))
+
+    monkeypatch.setattr(client_mod, "dispatch_sensor_event", _spy_sensor)
+    monkeypatch.setattr(client_mod, "dispatch_lifecycle_event", _spy_lifecycle)
+    monkeypatch.setattr(client_mod, "dispatch_connectivity_event", _spy_connectivity)
+
+    sink: dict[str, Any] = {}
+
+    def register_sink(cb: Any) -> None:
+        sink["cb"] = cb
+
+    responses = {
+        "/version": json.dumps({"hash": "h1"}),
+        "/app": json.dumps({"hash": "h1", "source": _APP_SRC}),
+    }
+
+    async def fetch(url: str) -> str:
+        for path, body in responses.items():
+            if url.endswith(path):
+                return body
+        raise ValueError(url)
+
+    await run_dev_client(
+        "http://dev",
+        make_bridge=LoopbackBridge,
+        register_sink=register_sink,
+        fetch=fetch,
+        poll_interval=0,
+        max_polls=1,
+        log=lambda _: None,
+    )
+
+    sink["cb"](f"{SENSOR_TOKEN_PREFIX}:gyroscope", json.dumps({"values": [1.0]}))
+    sink["cb"](LIFECYCLE_TOKEN, json.dumps({"state": "foreground"}))
+    sink["cb"](f"{CONNECTIVITY_TOKEN_PREFIX}:mobile", json.dumps({"state": "mobile"}))
+    await asyncio.sleep(0.05)
+
+    assert ("sensor", ("gyroscope", {"values": [1.0]})) in calls
+    assert ("lifecycle", {"state": "foreground"}) in calls
+    assert ("connectivity", {"state": "mobile"}) in calls

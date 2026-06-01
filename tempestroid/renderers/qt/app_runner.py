@@ -21,12 +21,53 @@ from PySide6.QtWidgets import QApplication
 
 from tempestroid.core.state import App
 from tempestroid.devices import DEFAULT_DEVICE
+from tempestroid.native.lifecycle import dispatch_lifecycle_event
 from tempestroid.renderers.qt.renderer import QtRenderer
-from tempestroid.widgets import Widget
+from tempestroid.widgets import AppState, Widget
 
-__all__ = ["run_qt", "BackKeyFilter"]
+__all__ = ["run_qt", "BackKeyFilter", "connect_lifecycle"]
 
 S = TypeVar("S")
+
+#: Maps each Qt ``ApplicationState`` to the framework :class:`AppState` the
+#: lifecycle stream reports. ``ApplicationActive`` (window focused/foreground) →
+#: ``FOREGROUND``; ``ApplicationSuspended``/``ApplicationHidden`` (no visible,
+#: usable window) → ``BACKGROUND``; ``ApplicationInactive`` (transitioning,
+#: partially obscured) → ``INACTIVE``.
+_QT_APP_STATE: dict[Qt.ApplicationState, AppState] = {
+    Qt.ApplicationState.ApplicationActive: AppState.FOREGROUND,
+    Qt.ApplicationState.ApplicationInactive: AppState.INACTIVE,
+    Qt.ApplicationState.ApplicationSuspended: AppState.BACKGROUND,
+    Qt.ApplicationState.ApplicationHidden: AppState.BACKGROUND,
+}
+
+
+def connect_lifecycle(qt_app: QApplication) -> None:
+    """Wire Qt's application-state changes into the lifecycle stream.
+
+    Connects ``QApplication.applicationStateChanged`` to
+    :func:`~tempestroid.native.lifecycle.dispatch_lifecycle_event`, translating
+    each Qt :class:`Qt.ApplicationState` into the framework
+    :class:`~tempestroid.widgets.AppState`. This is the desktop analogue of the
+    device's ``__lifecycle__`` token: a window losing/gaining focus drives the
+    same ``on_app_state_change`` callbacks an app registers, so foreground/
+    background tracking works in the simulator without a host round-trip.
+
+    Args:
+        qt_app: The running ``QApplication`` whose state changes to observe.
+    """
+
+    def _on_state_changed(state: Qt.ApplicationState) -> None:
+        """Forward a Qt application-state change to the lifecycle dispatch.
+
+        Args:
+            state: The new Qt application state.
+        """
+        app_state = _QT_APP_STATE.get(state)
+        if app_state is not None:
+            dispatch_lifecycle_event({"state": app_state.value})
+
+    qt_app.applicationStateChanged.connect(_on_state_changed)
 
 
 class BackKeyFilter(QObject):
@@ -103,6 +144,8 @@ def run_qt(
         The process exit code (``0`` on a clean loop shutdown).
     """
     qt_app = QApplication.instance() or QApplication(sys.argv)
+    if isinstance(qt_app, QApplication):
+        connect_lifecycle(qt_app)
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
 

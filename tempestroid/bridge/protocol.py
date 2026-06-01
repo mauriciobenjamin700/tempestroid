@@ -52,6 +52,7 @@ from tempestroid.widgets import (
     Image,
     Input,
     InteractiveViewer,
+    KeyboardAvoidingView,
     LazyColumn,
     LazyGrid,
     LazyRow,
@@ -95,6 +96,9 @@ __all__ = [
     "BACK_TOKEN",
     "DISMISS_TOKEN_PREFIX",
     "FRAME_TOKEN",
+    "SENSOR_TOKEN_PREFIX",
+    "LIFECYCLE_TOKEN",
+    "CONNECTIVITY_TOKEN_PREFIX",
     "handler_token",
     "event_type_for",
     "EVENT_SCHEMAS",
@@ -125,6 +129,27 @@ DISMISS_TOKEN_PREFIX: str = "__dismiss__"
 #: channel — no new JNI entry point. Optional for the Qt simulator, which drives
 #: its own clock via ``loop.call_later`` and never emits this token.
 FRAME_TOKEN: str = "__frame__"
+
+#: Reserved event-token prefix the host uses to stream device sensor samples.
+#: The token is ``"__sensor__:<type>"`` (e.g. ``"__sensor__:accelerometer"``);
+#: the bridge strips the prefix and routes the sample to
+#: :func:`tempestroid.native.sensors._on_sensor`. Like :data:`BACK_TOKEN` it
+#: rides the existing event channel — no new JNI/C entry point — but unlike the
+#: one-shot native result it carries a *continuous* stream of samples while the
+#: sensor is open.
+SENSOR_TOKEN_PREFIX: str = "__sensor__"
+
+#: Reserved event token the host sends on every app-lifecycle transition
+#: (foreground/background). It carries the new state as its payload and is routed
+#: to :func:`tempestroid.native.lifecycle._on_lifecycle`. Rides the existing event
+#: channel — no new JNI entry point.
+LIFECYCLE_TOKEN: str = "__lifecycle__"
+
+#: Reserved event-token prefix the host uses to stream network-connectivity
+#: changes. The token is ``"__connectivity__:<state>"``; the bridge routes the
+#: change to :func:`tempestroid.native.connectivity._on_connectivity`. Rides the
+#: existing event channel — no new JNI entry point.
+CONNECTIVITY_TOKEN_PREFIX: str = "__connectivity__"
 
 #: ``{widget_type: {handler_prop: event_type}}`` derived from each widget's
 #: ``event_schemas`` classvar — the contract used to validate event payloads.
@@ -208,6 +233,7 @@ EVENT_SCHEMAS.update(
             Blur,
             BackdropFilter,
             ClipPath,
+            KeyboardAvoidingView,
         )
     }
 )
