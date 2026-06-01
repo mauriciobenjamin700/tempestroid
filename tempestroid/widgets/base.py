@@ -19,13 +19,17 @@ from tempestroid.style import Style
 from tempestroid.widgets.events import (
     DateChangeEvent,
     DismissEvent,
+    DragEvent,
     EndReachedEvent,
     Event,
     FileSelectEvent,
     LongPressEvent,
     MenuSelectEvent,
+    PanEvent,
     RefreshEvent,
+    ReorderEvent,
     RouteChangeEvent,
+    ScaleEvent,
     ScrollEvent,
     SlideEvent,
     SwipeEvent,
@@ -50,6 +54,10 @@ __all__ = [
     "EndReachedHandler",
     "DismissHandler",
     "MenuSelectHandler",
+    "PanHandler",
+    "ScaleHandler",
+    "DragHandler",
+    "ReorderHandler",
     "Widget",
     "Component",
     "handler_accepts_event",
@@ -192,6 +200,30 @@ DismissHandler: TypeAlias = Annotated[
 MenuSelectHandler: TypeAlias = Annotated[
     Callable[[MenuSelectEvent], Any]
     | Callable[[MenuSelectEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+PanHandler: TypeAlias = Annotated[
+    Callable[[PanEvent], Any]
+    | Callable[[PanEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+ScaleHandler: TypeAlias = Annotated[
+    Callable[[ScaleEvent], Any]
+    | Callable[[ScaleEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+DragHandler: TypeAlias = Annotated[
+    Callable[[DragEvent], Any]
+    | Callable[[DragEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+ReorderHandler: TypeAlias = Annotated[
+    Callable[[ReorderEvent], Any]
+    | Callable[[ReorderEvent], Awaitable[Any]]
     | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]

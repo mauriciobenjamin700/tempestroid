@@ -33,6 +33,10 @@ __all__ = [
     "EndReachedEvent",
     "DismissEvent",
     "MenuSelectEvent",
+    "PanEvent",
+    "ScaleEvent",
+    "DragEvent",
+    "ReorderEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -221,6 +225,83 @@ class MenuSelectEvent(Event):
 
     value: str
     label: str
+
+
+class PanEvent(Event):
+    """A pan/drag gesture reported continuously and on release.
+
+    Emitted by ``PanHandler`` as the pointer drags over its child, carrying the
+    per-frame delta and — at release — the fling velocity, so handlers can drive
+    momentum scrolling or kinetic movement.
+
+    Attributes:
+        dx: Horizontal travel since the previous report, in logical pixels.
+        dy: Vertical travel since the previous report, in logical pixels.
+        vx: Horizontal velocity at release, in logical pixels per second.
+        vy: Vertical velocity at release, in logical pixels per second.
+    """
+
+    dx: float = 0.0
+    dy: float = 0.0
+    vx: float = 0.0
+    vy: float = 0.0
+
+
+class ScaleEvent(Event):
+    """A pinch (scale + rotation) gesture, anchored at a focal point.
+
+    Emitted by ``ScaleHandler`` and ``InteractiveViewer`` as the user pinches or
+    rotates two pointers over the child. The focal point is reported as two
+    top-level floats (never a raw tuple) so the payload stays JSON-serializable
+    across the bridge.
+
+    Attributes:
+        scale: The cumulative scale factor (``1.0`` is no change).
+        focus_x: The x coordinate of the pinch focal point, in logical pixels.
+        focus_y: The y coordinate of the pinch focal point, in logical pixels.
+        rotation: The cumulative rotation, in degrees.
+    """
+
+    scale: float = 1.0
+    focus_x: float = 0.0
+    focus_y: float = 0.0
+    rotation: float = 0.0
+
+
+class DragEvent(Event):
+    """A drag-and-drop interaction: an item picked up and (maybe) dropped.
+
+    Emitted by ``Draggable`` (on release) and ``DragTarget`` (on drop). The
+    ``data`` field is the opaque label declared by the ``Draggable`` so the drop
+    target can identify what landed on it; ``x``/``y`` report the drop position
+    when the renderer can measure it.
+
+    Attributes:
+        data: The opaque payload carried from ``Draggable.drag_data``.
+        x: Optional x position of the drop, in logical pixels.
+        y: Optional y position of the drop, in logical pixels.
+    """
+
+    data: str = ""
+    x: float | None = None
+    y: float | None = None
+
+
+class ReorderEvent(Event):
+    """A list item dragged from one position to another.
+
+    Emitted by ``ReorderableList`` when the user drags an item to a new slot. The
+    handler typically mutates its backing list (``items.insert(to_index,
+    items.pop(from_index))``); a keyed child list then diffs to a ``Reorder``
+    patch (the A2 mechanism), so no new patch kind is needed.
+
+    Attributes:
+        from_index: The item's original index.
+        to_index: The item's destination index.
+    """
+
+    from_index: int
+    to_index: int
 
 
 E = TypeVar("E", bound=Event)

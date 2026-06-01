@@ -29,7 +29,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -39,14 +41,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,6 +69,9 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.TooltipDefaults
@@ -79,6 +88,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -142,6 +153,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import coil.compose.AsyncImage
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -265,6 +277,22 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         }
 
         "GestureDetector" -> RenderGestureDetector(node, style, onEvent)
+
+        "PanHandler" -> RenderPanHandler(node, style, onEvent)
+
+        "ScaleHandler" -> RenderScaleHandler(node, style, onEvent)
+
+        "DoubleTapHandler" -> RenderDoubleTapHandler(node, style, onEvent)
+
+        "Draggable" -> RenderDraggable(node, style, onEvent)
+
+        "DragTarget" -> RenderDragTarget(node, style, onEvent)
+
+        "Dismissible" -> RenderDismissible(node, style, onEvent)
+
+        "ReorderableList" -> RenderReorderableList(node, style, onEvent)
+
+        "InteractiveViewer" -> RenderInteractiveViewer(node, style, onEvent)
 
         "Input" -> RenderInput(node, style, onEvent)
 
@@ -1593,6 +1621,361 @@ private fun RenderGestureDetector(
         }
     Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
 }
+
+// ---------------------------------------------------------------------------
+// E4 — advanced gestures (PanHandler / ScaleHandler / DoubleTapHandler /
+// Draggable / DragTarget / Dismissible / ReorderableList / InteractiveViewer).
+//
+// Each is the Kotlin leaf of the matching Python gesture widget. Handler props
+// are read by the path token (`handlerToken`), and the gesture result is
+// reported back over the existing event channel via [onEvent] as a JSON payload
+// that `parse_event` validates into the matching frozen Event. No reserved
+// bridge token and no JNI change — these are plain widget-handler events.
+// ---------------------------------------------------------------------------
+
+/**
+ * A pan recognizer over its single child — the Kotlin leaf of the Python
+ * `PanHandler`. A [detectDragGestures] sequence accumulates the net delta while a
+ * [VelocityTracker] records pointer positions; on drag-end it fires `on_pan` with
+ * the [PanEvent]-shaped JSON `{dx, dy, vx, vy}` (vx/vy are px/s at release).
+ */
+@Composable
+private fun RenderPanHandler(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val mod = baseModifier(style).pointerInput(node) {
+        var dx = 0f
+        var dy = 0f
+        val tracker = VelocityTracker()
+        detectDragGestures(
+            onDragStart = { dx = 0f; dy = 0f; tracker.resetTracking() },
+            onDrag = { change, amount ->
+                dx += amount.x
+                dy += amount.y
+                tracker.addPosition(change.uptimeMillis, change.position)
+                change.consume()
+            },
+            onDragEnd = {
+                val velocity = tracker.calculateVelocity()
+                handlerToken(node, "on_pan")?.let {
+                    onEvent(it, panJson(dx, dy, velocity.x, velocity.y))
+                }
+            },
+        )
+    }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/**
+ * A pinch/rotation recognizer over its single child — the Kotlin leaf of the
+ * Python `ScaleHandler`. [detectTransformGestures] reports the multitouch pinch
+ * (true multitouch, unlike the Qt desktop scroll fallback): each gesture step
+ * fires `on_scale` with the [ScaleEvent]-shaped JSON `{scale, focus_x, focus_y,
+ * rotation}` (focus is two top-level floats, never a tuple). A separate
+ * [detectTapGestures] reports `on_double_tap` as a [TapEvent] `{x, y}`.
+ */
+@Composable
+private fun RenderScaleHandler(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val mod = baseModifier(style)
+        .pointerInput(node) {
+            // Accumulate scale across the gesture so the reported value is the
+            // running pinch factor, not the per-frame delta.
+            var scale = 1f
+            var rotation = 0f
+            detectTransformGestures(
+                onGesture = { centroid, _, zoomChange, rotationChange ->
+                    scale *= zoomChange
+                    rotation += rotationChange
+                    handlerToken(node, "on_scale")?.let {
+                        onEvent(it, scaleJson(scale, centroid.x, centroid.y, rotation))
+                    }
+                },
+            )
+        }
+        .pointerInput(node) {
+            detectTapGestures(
+                onDoubleTap = { offset ->
+                    handlerToken(node, "on_double_tap")?.let { onEvent(it, pointJson(offset)) }
+                },
+            )
+        }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/**
+ * A double-tap recognizer over its single child — the Kotlin leaf of the Python
+ * `DoubleTapHandler`. Fires `on_double_tap` with a [TapEvent] `{x, y}`.
+ */
+@Composable
+private fun RenderDoubleTapHandler(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val mod = baseModifier(style).pointerInput(node) {
+        detectTapGestures(
+            onDoubleTap = { offset ->
+                handlerToken(node, "on_double_tap")?.let { onEvent(it, pointJson(offset)) }
+            },
+        )
+    }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/**
+ * A long-press-then-drag draggable — the Kotlin leaf of the Python `Draggable`.
+ *
+ * Compose's Material3 has no stable native cross-widget drag-and-drop, so this is
+ * the documented divergence from the Qt `QDrag`/`QMimeData` OS drag: a
+ * [detectDragGesturesAfterLongPress] tracks a manual `offset` applied via
+ * `Modifier.offset` for visual feedback. On release it fires `on_drag` with the
+ * [DragEvent]-shaped JSON `{data, x, y}` (data = the `drag_data` prop, x/y = the
+ * final drag offset) and snaps the child back. A `DragTarget` hit is resolved by
+ * the Python handler from `drag_data`/position (no native drop routing).
+ */
+@Composable
+private fun RenderDraggable(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val dragData = node.props["drag_data"] as? String ?: ""
+    var offset by remember(node) { mutableStateOf(Offset.Zero) }
+    val mod = baseModifier(style)
+        .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+        .pointerInput(node) {
+            detectDragGesturesAfterLongPress(
+                onDrag = { change, amount ->
+                    offset += amount
+                    change.consume()
+                },
+                onDragEnd = {
+                    handlerToken(node, "on_drag")?.let {
+                        onEvent(it, dragJson(dragData, offset.x, offset.y))
+                    }
+                    offset = Offset.Zero
+                },
+                onDragCancel = { offset = Offset.Zero },
+            )
+        }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/**
+ * A drop target — the Kotlin leaf of the Python `DragTarget`. Material3 has no
+ * stable native cross-widget drop routing, so this renders its child plainly and
+ * fires `on_drop` with a [DragEvent] `{data, x, y}` only on a direct
+ * [detectDragGesturesAfterLongPress] release inside its own bounds (a self-drop).
+ * Cross-widget drop matching is owned by the Python handler via `drag_data` and
+ * position — the documented Qt (native QDrop) divergence.
+ */
+@Composable
+private fun RenderDragTarget(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val mod = baseModifier(style).pointerInput(node) {
+        detectDragGesturesAfterLongPress(
+            onDragEnd = { },
+            onDrag = { change, _ ->
+                change.consume()
+                handlerToken(node, "on_drop")?.let {
+                    onEvent(it, dragJson("", change.position.x, change.position.y))
+                }
+            },
+        )
+    }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/**
+ * A swipe-to-dismiss container — the Kotlin leaf of the Python `Dismissible`. Uses
+ * the Material3 [SwipeToDismissBox]: when the user swipes the child past the
+ * threshold in the allowed direction, `confirmValueChange` fires `on_dismiss` with
+ * the [DismissEvent]-shaped JSON `{overlay_id: null}` (reused unchanged from E2),
+ * letting the Python handler drop the item from state (the A2 keyed diff then
+ * emits the Remove). The `direction` prop (`left`/`right`/`up`/`down`) restricts
+ * which swipe directions are enabled (M3 `SwipeToDismissBox` only supports the
+ * horizontal start/end directions — vertical falls back to both horizontal, a
+ * documented divergence from the Qt `_DismissibleWidget`).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderDismissible(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val direction = node.props["direction"] as? String ?: "left"
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value != SwipeToDismissBoxValue.Settled) {
+                handlerToken(node, "on_dismiss")?.let {
+                    onEvent(it, JSONObject().put("overlay_id", JSONObject.NULL).toString())
+                }
+                true
+            } else {
+                false
+            }
+        },
+    )
+    // `direction` left/right map to StartToEnd/EndToStart; up/down have no M3
+    // vertical analogue, so they enable both horizontal directions.
+    val enableStartToEnd = direction == "right" || direction == "up" || direction == "down"
+    val enableEndToStart = direction == "left" || direction == "up" || direction == "down"
+    SwipeToDismissBox(
+        state = state,
+        enableDismissFromStartToEnd = enableStartToEnd,
+        enableDismissFromEndToStart = enableEndToStart,
+        backgroundContent = {
+            Box(modifier = Modifier.fillMaxSize().background(Color(0x33FF0000)))
+        },
+        modifier = baseModifier(style),
+    ) {
+        node.children.forEach { RenderNode(it, onEvent) }
+    }
+}
+
+/**
+ * A drag-to-reorder list — the Kotlin leaf of the Python `ReorderableList`.
+ *
+ * Without a reorder library (the project forbids unjustified deps), this is the
+ * DIY divergence from the Qt `QDrag`-based reorder: a [Column] iterating
+ * `node.children`, each item wrapped in a [detectDragGesturesAfterLongPress] that
+ * tracks the dragged index and a vertical offset; the destination index is
+ * `from + round(offset.y / itemHeight)`. On release it fires `on_reorder` with the
+ * [ReorderEvent]-shaped JSON `{from_index, to_index}` (the Python handler mutates
+ * state; the A2 keyed diff emits the Reorder patch). There is no smooth item
+ * animation during the drag — a documented Qt×Compose divergence.
+ */
+@Composable
+private fun RenderReorderableList(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val children = node.children.toList()
+    var dragIndex by remember(node) { mutableIntStateOf(-1) }
+    var dragOffset by remember(node) { mutableFloatStateOf(0f) }
+    var itemHeight by remember(node) { mutableIntStateOf(1) }
+    Column(modifier = baseModifier(style)) {
+        children.forEachIndexed { index, child ->
+            val isDragging = index == dragIndex
+            val itemMod = Modifier
+                .fillMaxWidth()
+                .onSizeChanged { if (it.height > 0) itemHeight = it.height }
+                .offset { IntOffset(0, if (isDragging) dragOffset.roundToInt() else 0) }
+                .pointerInput(node, index) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { dragIndex = index; dragOffset = 0f },
+                        onDrag = { change, amount -> dragOffset += amount.y; change.consume() },
+                        onDragEnd = {
+                            val delta = (dragOffset / itemHeight.coerceAtLeast(1)).roundToInt()
+                            val to = (index + delta).coerceIn(0, children.size - 1)
+                            if (to != index) {
+                                handlerToken(node, "on_reorder")?.let {
+                                    onEvent(it, reorderJson(index, to))
+                                }
+                            }
+                            dragIndex = -1
+                            dragOffset = 0f
+                        },
+                        onDragCancel = { dragIndex = -1; dragOffset = 0f },
+                    )
+                }
+            Box(modifier = itemMod) { RenderNode(child, onEvent) }
+        }
+    }
+}
+
+/**
+ * A pan+zoom viewport — the Kotlin leaf of the Python `InteractiveViewer`. A
+ * [detectTransformGestures] drives a `scale` (clamped to `min_scale`/`max_scale`)
+ * and a `translation`, both applied via `Modifier.graphicsLayer` (the divergence
+ * from the Qt `QGraphicsView`/`QTransform`). At the end of each gesture it fires
+ * `on_interaction` with the [ScaleEvent]-shaped JSON `{scale, focus_x, focus_y,
+ * rotation}` so the Python handler can persist the zoom level.
+ */
+@Composable
+private fun RenderInteractiveViewer(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val minScale = (node.props["min_scale"] as? Number)?.toFloat() ?: 0.5f
+    val maxScale = (node.props["max_scale"] as? Number)?.toFloat() ?: 4.0f
+    var scale by remember(node) { mutableFloatStateOf(1f) }
+    var translation by remember(node) { mutableStateOf(Offset.Zero) }
+    var focus by remember(node) { mutableStateOf(Offset.Zero) }
+    val mod = baseModifier(style)
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            translationX = translation.x
+            translationY = translation.y
+        }
+        .pointerInput(node) {
+            detectTransformGestures(
+                onGesture = { centroid, pan, zoomChange, _ ->
+                    scale = (scale * zoomChange).coerceIn(minScale, maxScale)
+                    translation += pan
+                    focus = centroid
+                },
+            )
+        }
+        .pointerInput(node) {
+            // Report the settled transform at the end of each gesture sequence.
+            detectDragGestures(
+                onDrag = { change, _ -> change.consume() },
+                onDragEnd = {
+                    handlerToken(node, "on_interaction")?.let {
+                        onEvent(it, scaleJson(scale, focus.x, focus.y, 0f))
+                    }
+                },
+            )
+        }
+    Box(modifier = mod) { node.children.forEach { RenderNode(it, onEvent) } }
+}
+
+/** [PanEvent] payload `{dx, dy, vx, vy}` (velocity px/s at release). */
+private fun panJson(dx: Float, dy: Float, vx: Float, vy: Float): String =
+    JSONObject()
+        .put("dx", dx.toDouble())
+        .put("dy", dy.toDouble())
+        .put("vx", vx.toDouble())
+        .put("vy", vy.toDouble())
+        .toString()
+
+/** [ScaleEvent] payload `{scale, focus_x, focus_y, rotation}` (focus = two floats). */
+private fun scaleJson(scale: Float, fx: Float, fy: Float, rot: Float): String =
+    JSONObject()
+        .put("scale", scale.toDouble())
+        .put("focus_x", fx.toDouble())
+        .put("focus_y", fy.toDouble())
+        .put("rotation", rot.toDouble())
+        .toString()
+
+/** [DragEvent] payload `{data, x, y}` for a Draggable/DragTarget. */
+private fun dragJson(data: String, x: Float, y: Float): String =
+    JSONObject()
+        .put("data", data)
+        .put("x", x.toDouble())
+        .put("y", y.toDouble())
+        .toString()
+
+/** [ReorderEvent] payload `{from_index, to_index}`. */
+private fun reorderJson(from: Int, to: Int): String =
+    JSONObject()
+        .put("from_index", from)
+        .put("to_index", to)
+        .toString()
 
 /** Logical-pixel travel past which a drag counts as a swipe (mirrors the Qt threshold). */
 private const val SWIPE_THRESHOLD_PX = 40f

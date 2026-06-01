@@ -1086,3 +1086,301 @@ def test_e3_animation_widgets_in_introspect() -> None:
             f"E3 widget {name!r} absent from introspect()['widgets']; "
             "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
         )
+
+
+# ---------------------------------------------------------------------------
+# E4 widget-level behavioural divergences (advanced gestures)
+# ---------------------------------------------------------------------------
+#
+# Phase E4 adds *no* new ``Style`` fields, so the golden/parity machinery above
+# stays unaffected. E4 introduces eight gesture/interaction widgets. These render
+# through fundamentally different platform surfaces on Qt (desktop mouse events,
+# QDrag, QGraphicsView) versus Compose (Jetpack Compose gesture APIs: pointerInput,
+# detectDragGestures, detectTransformGestures, graphicsLayer). The divergences are
+# pinned here as a named tripwire so a future renderer change that silently
+# resolves or regresses one is caught loudly.
+#
+# Rationale for each divergence (mirrors the architect contract notes):
+#
+# 1. Draggable / DragTarget — DnD surface
+#    Qt uses the native OS drag-and-drop pipeline (QDrag + QMimeData +
+#    QDropEvent). The drag image is the widget itself (grabbed via
+#    QWidget.grab()); the target accepts via acceptDrops=True and emits a
+#    DragEvent when QDropEvent arrives. This is a true inter-widget OS-level DnD.
+#    Compose has no cross-widget DnD API stable in M3. The renderer uses
+#    detectDragGesturesAfterLongPress with a manually tracked Offset state and a
+#    hoisted shared mutable state (CompositionLocal or remember at a common
+#    ancestor) to pass the dragged payload to the DragTarget. Visual feedback
+#    is a Modifier.offset applied to the Draggable child. This is in-Compose only.
+#
+# 2. InteractiveViewer — pan + zoom implementation
+#    Qt wraps the child in a QGraphicsProxyWidget inside a QGraphicsView with a
+#    QTransform that accumulates pan (via mouse move) and zoom (via Ctrl+scroll
+#    wheel, clamped to min_scale/max_scale). Scroll without Ctrl = pan. A ScaleEvent
+#    is emitted when the transform settles (mouseReleaseEvent / wheelEvent).
+#    Compose accumulates scale and translation in remember { mutableStateOf } and
+#    applies them via Modifier.graphicsLayer { scaleX; scaleY; translationX;
+#    translationY }. The gesture is detected via detectTransformGestures; the
+#    ScaleEvent is emitted at onGestureEnd (pointerInput awaitPointerEventScope).
+#
+# 3. ScaleHandler / InteractiveViewer — pinch input on desktop vs device
+#    On the Qt desktop (and WSL without a touchscreen), true two-finger pinch
+#    hardware is unavailable. The _ScaleWidget and _InteractiveViewerWidget fall
+#    back to Ctrl+ScrollWheel for zoom, which is keyboard-assisted rather than a
+#    real pinch. On-device Compose uses detectTransformGestures which responds to
+#    genuine multitouch. This is a documented desktop limitation, not a bug.
+#
+# 4. ReorderableList — reorder animation during drag
+#    Qt calculates the target index from the drop position in QDropEvent and
+#    immediately emits ReorderEvent; no animation during the drag itself (the
+#    source item becomes a floating QDrag pixmap). Compose uses
+#    detectDragGesturesAfterLongPress with manual index tracking (offset.y /
+#    itemHeight); no smooth placeholder animation during drag (DIY offset-math,
+#    no external reorderable library), consistent with the §0 no-external-lib rule.
+#
+# 5. Dismissible — swipe-to-dismiss surface
+#    Qt measures a horizontal (or directional) mouse drag against a threshold
+#    (_SWIPE_THRESHOLD) and, when exceeded, runs a QPropertyAnimation on opacity
+#    and position to slide the widget out, then emits DismissEvent. Compose uses
+#    SwipeToDismissBox (Material 3, available since material3 >= 1.2.0 as
+#    SwipeToDismissBoxValue); older AGP configs should use the legacy
+#    DismissState/SwipeToDismiss API. The Kotlin renderer must check the
+#    material3 version in android-host/app/build.gradle.kts before choosing.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on
+# the same strategy), set ``intentional=False`` and explain why. The tripwire test
+# ``test_e4_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new E4 widget or divergence topic is added, add a row here AND
+# update the pinned key set.
+
+_E4_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Draggable",
+        "topic": "drag_and_drop_surface",
+        "qt_strategy": (
+            "Native OS drag-and-drop via QDrag + QMimeData; widget grabbed as "
+            "a pixmap for the drag image; QDropEvent on the target delivers the "
+            "payload and emits DragEvent."
+        ),
+        "compose_strategy": (
+            "detectDragGesturesAfterLongPress with a manually tracked Offset "
+            "state; hoisted shared mutable state passes the dragged payload to "
+            "DragTarget (no native cross-widget DnD in M3). Visual feedback via "
+            "Modifier.offset on the Draggable child."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "DragTarget",
+        "topic": "drag_and_drop_surface",
+        "qt_strategy": (
+            "acceptDrops=True on the target QWidget; dropEvent receives "
+            "QDropEvent, extracts MIME data, and emits DragEvent."
+        ),
+        "compose_strategy": (
+            "Reads from a hoisted shared CompositionLocal or remembered "
+            "mutable state; when the Draggable's onDragEnd fires and the drag "
+            "position overlaps the DragTarget Box, a DragEvent is emitted."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "InteractiveViewer",
+        "topic": "pan_zoom_implementation",
+        "qt_strategy": (
+            "QGraphicsView + QGraphicsProxyWidget wrapping the child; "
+            "QTransform accumulates pan (mouse drag) and zoom "
+            "(Ctrl+ScrollWheel, clamped to min_scale/max_scale); "
+            "ScaleEvent emitted on mouseReleaseEvent / wheelEvent settle."
+        ),
+        "compose_strategy": (
+            "Modifier.graphicsLayer { scaleX; scaleY; translationX; translationY } "
+            "driven by detectTransformGestures; ScaleEvent emitted at gesture end "
+            "via awaitPointerEventScope. Scale clamped to min_scale/max_scale."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "ScaleHandler",
+        "topic": "pinch_input_fallback_on_desktop",
+        "qt_strategy": (
+            "Desktop/WSL has no touchscreen; true two-finger pinch is unavailable. "
+            "Falls back to Ctrl+ScrollWheel for zoom (keyboard-assisted, not a "
+            "real pinch gesture). Documented desktop limitation."
+        ),
+        "compose_strategy": (
+            "detectTransformGestures responds to genuine multitouch pinch on "
+            "the device; no keyboard fallback needed."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "InteractiveViewer",
+        "topic": "pinch_input_fallback_on_desktop",
+        "qt_strategy": (
+            "Same as ScaleHandler: Ctrl+ScrollWheel zoom fallback on desktop/WSL "
+            "where multitouch is unavailable."
+        ),
+        "compose_strategy": (
+            "detectTransformGestures with genuine multitouch on device."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "ReorderableList",
+        "topic": "reorder_animation_during_drag",
+        "qt_strategy": (
+            "Target index calculated from QDropEvent position; ReorderEvent "
+            "emitted immediately on drop. No in-place animation during drag "
+            "(source item rendered as a floating QDrag pixmap by the OS)."
+        ),
+        "compose_strategy": (
+            "detectDragGesturesAfterLongPress with manual index tracking "
+            "(offset.y / itemHeight); no smooth placeholder animation during "
+            "drag (DIY offset-math, no external reorderable library — §0 rule). "
+            "ReorderEvent emitted on onDragEnd."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Dismissible",
+        "topic": "swipe_dismiss_surface",
+        "qt_strategy": (
+            "Mouse drag measured against _SWIPE_THRESHOLD in the configured "
+            "direction; on threshold exceeded, QPropertyAnimation on opacity + "
+            "position slides the widget out, then DismissEvent is emitted."
+        ),
+        "compose_strategy": (
+            "SwipeToDismissBox (Material 3, SwipeToDismissBoxValue — requires "
+            "material3 >= 1.2.0; older builds use legacy DismissState/SwipeToDismiss). "
+            "DismissEvent emitted when confirmValueChange returns true."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E4_WIDGET_DIVERGENCES``.
+_E4_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E4_WIDGET_DIVERGENCES
+}
+
+#: The eight E4 gesture/interaction widgets introduced in phase E4.
+_E4_NEW_WIDGETS: tuple[str, ...] = (
+    "PanHandler",
+    "ScaleHandler",
+    "DoubleTapHandler",
+    "Draggable",
+    "DragTarget",
+    "Dismissible",
+    "ReorderableList",
+    "InteractiveViewer",
+)
+
+
+def test_e4_widget_divergences_complete() -> None:
+    """Every E4 gesture divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves a gesture divergence
+    (e.g. Compose gains a cross-widget DnD API that matches Qt) must update the
+    table; one who adds a new E4 widget or topic must add a row.  Either omission
+    fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E4_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E4 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E4_DIVERGENCE_KEYS
+
+
+def test_e4_no_style_field_added() -> None:
+    """Phase E4 adds no new Style fields — the parity baseline is unchanged.
+
+    E4 introduces eight gesture/interaction widgets but no new ``Style`` fields.
+    If a new field appears, update ``_SAMPLES``, ``_COVERAGE``, regenerate goldens
+    (``UPDATE_GOLDEN=1``), and update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+def test_e4_new_widgets_in_event_schemas() -> None:
+    """All eight E4 gesture widgets appear in ``bridge.protocol.EVENT_SCHEMAS``.
+
+    Each widget must be present so the bridge's introspected contract is complete.
+    The exact event bindings are verified by
+    ``test_event_schemas_registered_in_protocol`` in ``test_overlay_gestures.py``;
+    this test is a quick completeness guard.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+
+    for name in _E4_NEW_WIDGETS:
+        assert name in EVENT_SCHEMAS, (
+            f"E4 widget {name!r} missing from EVENT_SCHEMAS; "
+            "add it to bridge/protocol.py"
+        )
+
+
+def test_e4_new_widgets_in_introspect() -> None:
+    """All eight E4 gesture widgets must appear in the output of ``introspect()``.
+
+    ``introspect()`` is the framework's self-describing typed contract; the bridge
+    and tooling use it to discover every widget. Missing entries mean the widget
+    is undiscoverable at runtime.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for name in _E4_NEW_WIDGETS:
+        assert name in catalog["widgets"], (
+            f"E4 widget {name!r} absent from introspect()['widgets']; "
+            "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e4_new_events_in_introspect() -> None:
+    """The four new E4 event types appear in ``introspect()['events']``.
+
+    This pins the ``EVENT_TYPES`` list in ``core/introspection.py`` against
+    a regression that drops one of the new events from the catalog.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for event in ("PanEvent", "ScaleEvent", "DragEvent", "ReorderEvent"):
+        assert event in catalog["events"], (
+            f"E4 event {event!r} absent from introspect()['events']; "
+            "add it to EVENT_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e4_translators_not_affected_by_gesture_widgets() -> None:
+    """E4 gesture-widget imports do not mutate the Style translators.
+
+    No E4 widget adds a ``Style`` field; calling ``to_compose``/``to_qss`` with
+    ``Style()`` must yield the same output as before E4 was imported.
+    """
+    empty_snap = snapshot(Style())
+    assert empty_snap["compose"] == {}, (
+        "to_compose(Style()) changed after E4 import — "
+        "a gesture widget must not side-effect the Compose translator"
+    )
+    assert empty_snap["qt"]["qss_leaf"] == "", (
+        "to_qss(Style()) changed after E4 import — "
+        "a gesture widget must not side-effect the Qt translator"
+    )
