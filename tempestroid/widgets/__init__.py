@@ -22,6 +22,7 @@ from tempestroid.widgets.base import (
     FileSelectHandler,
     LongPressHandler,
     MenuSelectHandler,
+    PageChangeHandler,
     RangeChangeHandler,
     RefreshHandler,
     ReorderHandler,
@@ -50,6 +51,7 @@ from tempestroid.widgets.events import (
     FileSelectEvent,
     LongPressEvent,
     MenuSelectEvent,
+    PageChangeEvent,
     PanEvent,
     RangeChangeEvent,
     RefreshEvent,
@@ -108,13 +110,16 @@ from tempestroid.widgets.inputs import (
     TimePicker,
 )
 from tempestroid.widgets.layout import (
+    AspectRatio,
     Column,
     Container,
+    PageView,
     Row,
     SafeArea,
     SafeAreaEdge,
     ScrollView,
     Stack,
+    Wrap,
 )
 from tempestroid.widgets.lists import (
     DEFAULT_WINDOW_SIZE,
@@ -174,6 +179,7 @@ __all__ = [
     "RangeChangeHandler",
     "SubmitHandler",
     "ValidationHandler",
+    "PageChangeHandler",
     "handler_accepts_event",
     "Widget",
     "Component",
@@ -186,6 +192,9 @@ __all__ = [
     "SafeArea",
     "SafeAreaEdge",
     "Stack",
+    "Wrap",
+    "PageView",
+    "AspectRatio",
     "Animated",
     "AnimatedList",
     "Hero",
@@ -267,6 +276,7 @@ __all__ = [
     "RangeChangeEvent",
     "SubmitEvent",
     "ValidationEvent",
+    "PageChangeEvent",
     "EventValidationError",
     "parse_event",
 ]

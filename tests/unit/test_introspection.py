@@ -37,6 +37,9 @@ def test_widget_catalog_lists_all_widgets():
         "ProgressBar",
         "Spinner",
         "Stack",
+        "Wrap",
+        "PageView",
+        "AspectRatio",
         "GestureDetector",
         "PanHandler",
         "ScaleHandler",
@@ -108,6 +111,7 @@ def test_event_catalog_lists_events():
         "RangeChangeEvent",
         "SubmitEvent",
         "ValidationEvent",
+        "PageChangeEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

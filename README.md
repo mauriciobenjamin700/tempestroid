@@ -124,6 +124,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`form`](examples/form/app.py) | The value-bearing inputs (`Input` / `Checkbox` / `DatePicker` / `FilePicker`) + their typed change events. |
 | [`forms`](examples/forms/app.py) | A validating `Form` of `FormField`s (typed validators block an invalid submit, per-field error inline) + `Dropdown` + `PinInput` OTP. |
 | [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
+| [`layout`](examples/layout/app.py) | Refined layout — `Wrap` chips that wrap, a paginated `PageView` (`PageChangeEvent` + dot indicator) and a `CollapsingAppBar` that shrinks on scroll. |
 
 The framework and the Qt simulator support the full widget set. The device
 (Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /
@@ -239,7 +240,8 @@ Frozen Pydantic value objects, diffed by value.
 
 - **`Style`** — the style model (layout, box model, paint, typography, sizing,
   effects, animation). Notable fields: `opacity`, `shadow`, `align_self`,
-  `letter_spacing`, `line_height`, `max_lines`, `text_overflow`, `aspect_ratio`.
+  `letter_spacing`, `line_height`, `max_lines`, `text_overflow`, `aspect_ratio`,
+  `flex_wrap` (flow wrapping for a `Wrap` container).
 - **`Color`** — `Color.from_hex("#101418")`.
 - **`Edge`** — insets; `Edge.all(24.0)`.
 - **`Border`** (uniform) / **`SideBorder`** (per-side, e.g. a bottom divider).
@@ -251,7 +253,8 @@ Frozen Pydantic value objects, diffed by value.
 - **`Transition`** — implicit animation (`duration_ms` / `curve` / `delay_ms`):
   on rebuild the renderer tweens changed visual props instead of snapping
   (Compose maps it to `animate*AsState`; Qt animation is renderer-imperative).
-- Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
+- Enums: **`FlexDirection`**, **`FlexWrap`** (`NOWRAP`/`WRAP`/`WRAP_REVERSE`),
+  **`JustifyContent`**, **`AlignItems`**,
   **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
   **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing —
   `LINEAR`/`EASE_IN`/`EASE_OUT`/`EASE_IN_OUT` plus `EASE`/`BOUNCE`/`ELASTIC`),
@@ -269,6 +272,14 @@ The declarative IR — bare-noun widgets.
   declaration order. A child with `position=ABSOLUTE` is anchored by its
   `top`/`right`/`bottom`/`left` insets; the rest align by `Style.stack_align`
   (`StackAlign` enum). The framework's overlay primitive (scrim, modal, FAB).
+- Refined layout (phase E6) — **`Wrap`** (a flow container whose children wrap to
+  the next line when the row fills, driven by `Style.flex_wrap`; Compose
+  `FlowRow`/`FlowColumn`, Qt custom flow layout), **`PageView`** (a paginated
+  horizontal carousel: `children` are pages, the active `page` lives in app state
+  and `on_page_change` (**`PageChangeHandler`**) → **`PageChangeEvent`** updates
+  it; Compose `HorizontalPager`, Qt `QStackedWidget` + prev/next) and
+  **`AspectRatio`** (a single-child box fixing the `ratio` = width / height;
+  Compose `Modifier.aspectRatio`, Qt derives the missing dimension).
 - **`GestureDetector`** — wraps a `child` and reports pointer gestures via
   **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
   (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
@@ -374,8 +385,16 @@ renderer changes and are fully device-ready. Every component takes an optional
 `style` that is merged over its default via **`merge_style`**.
 
 - **`AppBar`** — top bar: optional `leading` widget, `title`, trailing `actions`.
+- **`CollapsingAppBar`** — a sliver-style header that shrinks as the content
+  scrolls: the app feeds the current `scroll_offset` (from a list's `on_scroll`)
+  and the component eases its height from `expanded_height` down to
+  `collapsed_height`, diffing the derived height as an ordinary prop (no new IR).
 - **`Header`** / **`Footer`** — page header band (title + optional subtitle) and
   a centered bottom bar holding arbitrary `children`.
+- **`Table`** — a static data table built from typed **`TableRow`** /
+  **`TableCell`** values plus optional `headers`; **`DataTable`** — a string-matrix
+  convenience (`columns` + `rows`, optional `sortable` header glyph). Both lower
+  to a `Column` of `Row`s of cells, so they render in both renderers unchanged.
 - **`Sidebar`** — fixed-`width` lateral column of `children`.
 - **`Scaffold`** — page frame stacking `app_bar`, a growing `body` and an
   optional `bottom_bar` (set `scroll=True` to wrap the body in a `ScrollView`).
@@ -434,6 +453,9 @@ renderer changes and are fully device-ready. Every component takes an optional
   **`ValidationEvent`** (`field` + `value` + optional `error`). The matching
   handler aliases are **`SelectHandler`** / **`TimeChangeHandler`** /
   **`RangeChangeHandler`** / **`SubmitHandler`** / **`ValidationHandler`**.
+- Layout event (phase E6): **`PageChangeEvent`** (`page` + `previous`) — emitted
+  by a `PageView` when the active page changes (handler alias
+  **`PageChangeHandler`**).
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -680,7 +702,9 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | E1 | Virtualized lists + scroll (lazy, sticky section, pull-to-refresh, infinite) | ✅ |
 | E2 | Overlays + feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ |
 | E3 | Animation framework (`AnimationController`/`Tween`/`Spring`, `Animated`/`AnimatedList`/`Hero`/`Shimmer`/`Skeleton`) | ✅ |
-| E5 | Inputs + forms (`Dropdown`/`TimePicker`/`RangeSlider`/`Autocomplete`/`PinInput`/`MaskedInput`, `Form`/`FormField`/`Validator`/`FormState`) | 🚧 IR + Qt + Compose |
+| E4 | Advanced gestures (`PanHandler`/`ScaleHandler`/`Draggable`/`DragTarget`/`Dismissible`/`ReorderableList`/`InteractiveViewer`) | ✅ |
+| E5 | Inputs + forms (`Dropdown`/`TimePicker`/`RangeSlider`/`Autocomplete`/`PinInput`/`MaskedInput`, `Form`/`FormField`/`Validator`/`FormState`) | ✅ |
+| E6 | Refined layout (`flex_wrap`/`Wrap`/`PageView`/`AspectRatio`/`CollapsingAppBar`/`Table`/`DataTable`, `PageChangeEvent`) | ✅ |
 
 ---
 

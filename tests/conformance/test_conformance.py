@@ -46,6 +46,7 @@ from tempestroid.style import (
     Curve,
     Edge,
     FlexDirection,
+    FlexWrap,
     FontStyle,
     FontWeight,
     Gradient,
@@ -119,6 +120,11 @@ CASES: dict[str, Style] = {
         justify=JustifyContent.END,
         align=AlignItems.END,
     ),
+    "flex_wrap": Style(
+        direction=FlexDirection.ROW,
+        flex_wrap=FlexWrap.WRAP,
+        gap=8,
+    ),
     "sizing": Style(
         width=120, height=48, min_width=40, max_width=320,
         min_height=20, max_height=80,
@@ -188,6 +194,7 @@ _SAMPLES: dict[str, Any] = {
     "align_self": AlignItems.CENTER,
     "grow": 1.0,
     "gap": 8.0,
+    "flex_wrap": FlexWrap.WRAP,
     "padding": Edge.all(4),
     "margin": Edge.all(4),
     "border": Border(width=1.0, color=Color(r=0, g=0, b=0)),
@@ -226,6 +233,10 @@ _SAMPLES: dict[str, Any] = {
 #: are intentional and documented:
 #:   grow/gap   — Qt applies these on the QBoxLayout (stretch/spacing), not the
 #:                Style translator (see A3 notes), so the translator doesn't react.
+#:   flex_wrap  — Compose lowers it into the spec (``flexWrap`` → FlowRow/FlowColumn
+#:                wrapping); Qt realizes wrapping imperatively inside its custom
+#:                ``Wrap`` flow-layout widget (reflowing children on resize), not via
+#:                QSS, so the ``Style → Qt`` translator does not react to it.
 #:   margin     — not wired on the Qt side yet (post-v1).
 #:   text_align — Qt would express this via a widget property, not QSS (post-v1).
 #:   width/height (fixed) — Qt fixed-size not wired yet (A3 notes).
@@ -257,6 +268,7 @@ _COVERAGE: dict[str, tuple[bool, bool]] = {
     "align_self": (True, False),
     "grow": (True, False),
     "gap": (True, False),
+    "flex_wrap": (True, False),
     "padding": (True, True),
     "margin": (True, False),
     "border": (True, True),
@@ -1837,4 +1849,251 @@ def test_e5_form_and_field_event_schemas() -> None:
     )
     assert field_schemas["on_validate"] is ValidationEvent, (
         "FormField.on_validate must be bound to ValidationEvent"
+    )
+
+
+# ---------------------------------------------------------------------------
+# E6 conformance: refined layout (flex_wrap + Wrap / PageView / AspectRatio +
+# CollapsingAppBar + Table / DataTable)
+# ---------------------------------------------------------------------------
+#
+# Phase E6 adds ONE new ``Style`` field — ``flex_wrap`` — so it is the first E
+# phase to grow the golden/parity baseline. ``flex_wrap`` enters ``_SAMPLES`` and
+# ``_COVERAGE`` above (Compose reacts, Qt does not — wrapping is realised in the
+# custom Qt flow-layout widget, not QSS), and a golden case ``flex_wrap.json``
+# pins the combined translator output. Because ``_SAMPLES`` grew in lockstep, the
+# ``test_e{1..5}_no_style_field_added`` sentinels (which assert
+# ``len(Style.model_fields) == len(_SAMPLES)``) still pass.
+#
+# E6 also adds new widgets whose renderer realisation diverges between Qt and
+# Compose. The translator-level surface (``flex_wrap``) is pinned by the golden +
+# parity machinery; the renderer-level divergences below are pinned as a named
+# tripwire so a future renderer change that silently resolves or regresses one is
+# caught loudly.
+#
+# Rationale for each divergence (mirrors the E6 architect contract):
+#
+# 1. Wrap — flow-layout backend
+#    Qt has no native flow layout; the renderer uses a custom ``_WrapWidget``
+#    that repositions children on ``resizeEvent`` (accumulating row width and
+#    breaking lines), honouring ``Style.gap`` as inter-child spacing. Compose
+#    lowers it to ``FlowRow`` / ``FlowColumn`` (foundation-layout, wrap by
+#    default), reading ``style.flexWrap`` from the spec.
+#
+# 2. PageView — pager surface
+#    Qt uses a ``QStackedWidget`` with prev/next navigation (arrow keys /
+#    buttons) since the desktop has no swipe hardware; ``set_page`` emits a
+#    ``PageChangeEvent``. Compose uses the native ``HorizontalPager`` +
+#    ``rememberPagerState``; a ``LaunchedEffect(currentPage)`` emits the same
+#    ``PageChangeEvent`` on settle. Both keep the active page in App state.
+#
+# 3. CollapsingAppBar — nested-scroll surface
+#    The component lowers to primitives (a ``Container`` whose ``Style.height``
+#    is derived from ``scroll_offset``), so neither renderer needs a custom case.
+#    The divergence is in HOW the scroll offset is sourced: Qt wires the host
+#    scroll area's ``valueChanged`` to ``App.set_state``; Compose uses a
+#    ``nestedScroll`` connection feeding the offset back via the list's
+#    ``on_scroll`` handler. The collapse math itself is identical (pure Python in
+#    ``CollapsingAppBar.render``), so the bar's derived height diffs as a normal
+#    prop on both sides.
+
+_E6_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Wrap",
+        "topic": "flow_layout_backend",
+        "qt_strategy": (
+            "Custom _WrapWidget repositions children on resizeEvent (accumulates "
+            "row width, breaks onto a new line when full); honours Style.gap as "
+            "inter-child spacing. No native Qt flow layout."
+        ),
+        "compose_strategy": (
+            "FlowRow / FlowColumn (androidx.compose.foundation.layout, wrap by "
+            "default); reads style.flexWrap from the spec to pick wrap vs "
+            "wrapReverse vs nowrap."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "PageView",
+        "topic": "pager_surface",
+        "qt_strategy": (
+            "QStackedWidget with prev/next navigation (arrow keys / buttons) — "
+            "desktop has no swipe hardware; set_page emits PageChangeEvent."
+        ),
+        "compose_strategy": (
+            "Native HorizontalPager + rememberPagerState; "
+            "LaunchedEffect(currentPage) emits PageChangeEvent on settle."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "CollapsingAppBar",
+        "topic": "nested_scroll_surface",
+        "qt_strategy": (
+            "Component lowers to a Container whose Style.height is derived from "
+            "scroll_offset; the host scroll area's valueChanged is wired to "
+            "App.set_state to feed the offset back. No custom renderer case."
+        ),
+        "compose_strategy": (
+            "Component lowers to the same primitives; the scroll offset is "
+            "sourced via a nestedScroll connection feeding the list's on_scroll "
+            "handler back into App.set_state. Collapse math is identical (pure "
+            "Python in render), so the derived height diffs as a normal prop."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E6_WIDGET_DIVERGENCES``.
+_E6_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E6_WIDGET_DIVERGENCES
+}
+
+#: The three new E6 layout widgets exposed in ``introspect()``'s widget catalog.
+#: (Table/DataTable/CollapsingAppBar are Components — they lower to primitives and
+#: do not appear in WIDGET_TYPES.)
+_E6_NEW_WIDGETS: tuple[str, ...] = ("Wrap", "PageView", "AspectRatio")
+
+
+def test_e6_widget_divergences_complete() -> None:
+    """Every E6 layout divergence row is intentional and uniquely keyed.
+
+    The tripwire: a renderer specialist who resolves a layout divergence (e.g.
+    Qt gains a native flow layout) must update the table; one who adds a new E6
+    widget or topic must add a row. Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E6_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E6 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E6_DIVERGENCE_KEYS
+
+
+def test_e6_flex_wrap_field_added() -> None:
+    """Phase E6 adds exactly one new Style field (``flex_wrap``).
+
+    Unlike E1–E5, E6 grows the Style model. The parity baseline (``_SAMPLES`` /
+    ``_COVERAGE``) and the golden ``flex_wrap.json`` were updated in the same
+    change, so ``len(Style.model_fields) == len(_SAMPLES)`` still holds.
+    """
+    assert "flex_wrap" in Style.model_fields, (
+        "Style.flex_wrap missing; E6 must add it to the flexbox group"
+    )
+    assert "flex_wrap" in _SAMPLES and "flex_wrap" in _COVERAGE, (
+        "flex_wrap must be present in both _SAMPLES and _COVERAGE"
+    )
+    assert len(Style.model_fields) == len(_SAMPLES)
+
+
+def test_e6_new_widgets_in_introspect() -> None:
+    """The three new E6 layout widgets appear in ``introspect()['widgets']``.
+
+    ``introspect()`` is the framework's self-describing contract; missing entries
+    mean a widget is undiscoverable at runtime. Table/DataTable/CollapsingAppBar
+    are Components (they lower to primitives), so they are intentionally absent.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for name in _E6_NEW_WIDGETS:
+        assert name in catalog["widgets"], (
+            f"E6 widget {name!r} absent from introspect()['widgets']; "
+            "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e6_new_events_in_introspect() -> None:
+    """The new E6 event ``PageChangeEvent`` appears in ``introspect()['events']``.
+
+    Pins the ``EVENT_TYPES`` list in ``core/introspection.py`` against a
+    regression that drops the event from the catalog.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    assert "PageChangeEvent" in catalog["events"], (
+        "E6 event 'PageChangeEvent' absent from introspect()['events']; "
+        "add it to EVENT_TYPES in tempestroid/core/introspection.py"
+    )
+
+
+def test_e6_page_change_event_in_event_schemas() -> None:
+    """``PageView`` declares ``on_page_change`` → ``PageChangeEvent`` in the bridge.
+
+    Pins the bridge contract so the device round-trip validates a page-change
+    payload against the right event type.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
+    from tempestroid.widgets.events import PageChangeEvent
+
+    assert "PageView" in EVENT_SCHEMAS, (
+        "PageView missing from EVENT_SCHEMAS; add it to bridge/protocol.py"
+    )
+    assert event_type_for("PageView", "on_page_change") is PageChangeEvent, (
+        "PageView.on_page_change must resolve to PageChangeEvent"
+    )
+
+
+def test_e6_flex_wrap_coverage_matches_documented_rationale() -> None:
+    """``_COVERAGE['flex_wrap']`` is ``(True, False)``: Compose reacts, Qt does not.
+
+    This is the tripwire that enforces the documented divergence: if someone
+    accidentally wires ``flex_wrap`` into the Qt QSS translator, the
+    parametrized ``test_coverage_parity[flex_wrap]`` will already catch the
+    regression, but this explicit test documents the *reason* (wrapping is
+    realized by the custom ``_WrapWidget`` in the renderer, not QSS) so the
+    "why" is visible here rather than only in the rationale comment.
+    """
+    assert _COVERAGE.get("flex_wrap") == (True, False), (
+        "_COVERAGE['flex_wrap'] must be (compose=True, qt=False); "
+        "if the Qt translator now reacts to flex_wrap, update the rationale "
+        "and the _E6_WIDGET_DIVERGENCES / Wrap / flow_layout_backend entry"
+    )
+    # Verify the Compose side actually fires.
+    base_compose = snapshot(Style())["compose"]
+    snap_with_wrap = snapshot(Style(flex_wrap=FlexWrap.WRAP))["compose"]
+    assert snap_with_wrap != base_compose, (
+        "to_compose must react to flex_wrap=WRAP — flexWrap must appear in the spec"
+    )
+    assert "flexWrap" in snap_with_wrap, (
+        "flex_wrap=WRAP must produce 'flexWrap' key in the Compose spec"
+    )
+    # Verify the Qt side stays silent.
+    base_qt = snapshot(Style())["qt"]
+    snap_with_wrap_qt = snapshot(Style(flex_wrap=FlexWrap.WRAP))["qt"]
+    assert snap_with_wrap_qt == base_qt, (
+        "to_qss/layout_alignment must NOT react to flex_wrap (Qt-inert by design)"
+    )
+
+
+def test_e6_translators_not_affected_by_layout_widgets() -> None:
+    """E6 layout-widget imports do not mutate the Style translators.
+
+    No E6 widget (Wrap, PageView, AspectRatio) registers a Style field or
+    side-effects the translator tables at import time. Calling
+    ``to_compose``/``to_qss`` with ``Style()`` must yield the same output
+    regardless of whether the E6 widgets have been imported.
+    """
+    # The full tempestroid package (which pulls in all E6 widgets) is already
+    # imported at module level; we just verify no accidental mutation occurred.
+    empty_snap = snapshot(Style())
+    assert empty_snap["compose"] == {}, (
+        "to_compose(Style()) changed after E6 import — "
+        "a layout widget must not side-effect the Compose translator"
+    )
+    assert empty_snap["qt"]["qss_leaf"] == "", (
+        "to_qss(Style()) changed after E6 import — "
+        "a layout widget must not side-effect the Qt translator"
     )

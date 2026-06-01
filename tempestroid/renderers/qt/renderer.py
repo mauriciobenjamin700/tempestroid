@@ -46,6 +46,7 @@ from PySide6.QtGui import (
     QFont,
     QFontMetricsF,
     QIcon,
+    QKeyEvent,
     QLinearGradient,
     QMouseEvent,
     QPainter,
@@ -129,6 +130,7 @@ from tempestroid.widgets import (
     LongPressEvent,
     MenuItem,
     MenuSelectEvent,
+    PageChangeEvent,
     PanEvent,
     RangeChangeEvent,
     ReorderEvent,
@@ -683,6 +685,318 @@ class _StackWidget(QWidget):
             width = max(width, hint.width())
             height = max(height, hint.height())
         return QSize(width, height)
+
+
+class _WrapWidget(QWidget):
+    """A flow-layout container that wraps its children onto new lines.
+
+    Children are direct Qt children (no box layout). On every resize — and
+    whenever the renderer changes the child set — they are reflowed left to
+    right, breaking onto a new line once the current row would overflow the
+    available width. The inter-child spacing (both horizontal and vertical) is
+    the style ``gap``, and the surrounding ``padding`` becomes the widget's
+    contents margins. This is the Qt realization of the
+    :class:`~tempestroid.widgets.Wrap` primitive (Compose lowers it to a
+    ``FlowRow``/``FlowColumn`` — a documented divergence).
+    """
+
+    def __init__(self) -> None:
+        """Create an empty wrap container."""
+        super().__init__()
+        self._children: list[QWidget] = []
+        self._gap: int = 0
+        self._left: int = 0
+        self._top: int = 0
+        self._right: int = 0
+        self._bottom: int = 0
+
+    def set_children(self, children: list[QWidget]) -> None:
+        """Replace the flowed child set and re-lay it out.
+
+        Args:
+            children: The ordered child widgets, flowed in order.
+        """
+        self._children = children
+        for child in children:
+            child.setParent(self)
+            child.show()
+        self._relayout()
+
+    def add_child(self, widget: QWidget, index: int) -> None:
+        """Insert a child at ``index`` and reflow.
+
+        Args:
+            widget: The child widget to add.
+            index: The flow position to insert at.
+        """
+        widget.setParent(self)
+        widget.show()
+        self._children.insert(index, widget)
+        self._relayout()
+
+    def remove_child(self, widget: QWidget) -> None:
+        """Detach a child from the flow and reflow.
+
+        Args:
+            widget: The child widget to remove (geometry only; the caller owns
+                discarding the widget itself).
+        """
+        if widget in self._children:
+            self._children.remove(widget)
+        self._relayout()
+
+    def set_spacing(
+        self, gap: int, margins: tuple[int, int, int, int]
+    ) -> None:
+        """Set the inter-child gap and the surrounding contents margins.
+
+        Args:
+            gap: The horizontal and vertical spacing between children, in pixels.
+            margins: The ``(left, top, right, bottom)`` contents margins.
+        """
+        self._gap = gap
+        self._left, self._top, self._right, self._bottom = margins
+        self._relayout()
+
+    def _flow(self, available_width: int) -> int:
+        """Reflow the children for the given content width, returning the height.
+
+        Args:
+            available_width: The content width (excluding horizontal margins).
+
+        Returns:
+            The total content height the flow occupies (excluding margins).
+        """
+        x = 0
+        y = 0
+        line_height = 0
+        for child in self._children:
+            hint = child.sizeHint()
+            w = hint.width()
+            h = hint.height()
+            if x > 0 and x + w > available_width:
+                # Quebra de linha: o filho não cabe no resto da linha atual.
+                x = 0
+                y += line_height + self._gap
+                line_height = 0
+            child.setGeometry(self._left + x, self._top + y, w, h)
+            x += w + self._gap
+            line_height = max(line_height, h)
+        return y + line_height
+
+    def _relayout(self) -> None:
+        """Reflow the children for the current width and update the geometry."""
+        available = max(0, self.width() - self._left - self._right)
+        self._flow(available)
+        self.updateGeometry()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Reflow the children whenever the wrap is resized.
+
+        Args:
+            event: The Qt resize event (name mandated by the PySide override).
+        """
+        self._relayout()
+        super().resizeEvent(event)
+
+    def hasHeightForWidth(self) -> bool:
+        """Report that the wrap's height depends on its width.
+
+        Returns:
+            Always ``True`` — a flow's height grows as the width shrinks.
+        """
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        """Compute the flow height for a candidate width without mutating layout.
+
+        Args:
+            width: The candidate widget width (including horizontal margins).
+
+        Returns:
+            The total height (including vertical margins) the flow needs.
+        """
+        available = max(0, width - self._left - self._right)
+        x = 0
+        y = 0
+        line_height = 0
+        for child in self._children:
+            hint = child.sizeHint()
+            w = hint.width()
+            h = hint.height()
+            if x > 0 and x + w > available:
+                x = 0
+                y += line_height + self._gap
+                line_height = 0
+            x += w + self._gap
+            line_height = max(line_height, h)
+        return self._top + y + line_height + self._bottom
+
+    def sizeHint(self) -> QSize:
+        """Size to a single-row width and the flow height at the current width.
+
+        Returns:
+            The preferred size: the natural single-row width and the wrapped
+            height at the widget's current width.
+        """
+        width = (
+            self._left
+            + sum(child.sizeHint().width() for child in self._children)
+            + self._gap * max(0, len(self._children) - 1)
+            + self._right
+        )
+        height = self.heightForWidth(self.width() or width)
+        return QSize(width, height)
+
+
+class _PageViewWidget(QStackedWidget):
+    """A paginated carousel: one full-size page visible, navigated by arrow keys.
+
+    Wraps a :class:`QStackedWidget` whose pages are the carousel children. The
+    left/right arrow keys move between pages; every settled page change invokes
+    the wired callback with a :class:`PageChangeEvent` carrying the new and
+    previous indices. This is the Qt stand-in for Compose's ``HorizontalPager``
+    (the device gets real swipe gestures — a documented divergence).
+    """
+
+    def __init__(self) -> None:
+        """Create an empty, focusable page view."""
+        super().__init__()
+        self._page: int = 0
+        self._on_change: Callable[[PageChangeEvent], None] | None = None
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def set_on_change(
+        self, callback: Callable[[PageChangeEvent], None] | None
+    ) -> None:
+        """Install (or clear) the page-change callback.
+
+        Args:
+            callback: Invoked as ``callback(PageChangeEvent(...))`` whenever the
+                active page changes, or ``None`` to disable notification.
+        """
+        self._on_change = callback
+
+    def set_page(self, index: int) -> None:
+        """Show page ``index``, emitting a :class:`PageChangeEvent` on a change.
+
+        Clamps to the valid page range; a no-op (same page) emits nothing, so an
+        app driving the index from its own state never triggers a feedback loop.
+
+        Args:
+            index: The page index to show (0-based).
+        """
+        count = self.count()
+        if count == 0:
+            self._page = 0
+            return
+        target = max(0, min(index, count - 1))
+        if target == self.currentIndex():
+            self._page = target
+            return
+        previous = self.currentIndex()
+        self.setCurrentIndex(target)
+        self._page = target
+        if self._on_change is not None:
+            self._on_change(PageChangeEvent(page=target, previous=previous))
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Navigate pages with the left/right arrow keys.
+
+        Args:
+            event: The Qt key event (name mandated by the PySide override).
+        """
+        key = event.key()
+        if key == Qt.Key.Key_Right:
+            self.set_page(self.currentIndex() + 1)
+            event.accept()
+            return
+        if key == Qt.Key.Key_Left:
+            self.set_page(self.currentIndex() - 1)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class _AspectRatioWidget(QWidget):
+    """A single-child box that constrains its content to a fixed width/height ratio.
+
+    The ``ratio`` is ``width / height``. The widget reports
+    :meth:`heightForWidth` so a parent box layout can size it, and on resize it
+    centers a single child fitted to the largest rectangle of the right ratio
+    inside the available bounds. This mirrors Compose's
+    ``Modifier.aspectRatio`` (a documented divergence: Qt derives the box
+    imperatively, Compose via a modifier).
+    """
+
+    def __init__(self, ratio: float) -> None:
+        """Create the aspect-ratio box.
+
+        Args:
+            ratio: The ``width / height`` ratio to enforce (must be positive).
+        """
+        super().__init__()
+        self._ratio: float = ratio if ratio > 0 else 1.0
+        self._child: QWidget | None = None
+
+    def set_child(self, widget: QWidget) -> None:
+        """Set the single fitted child and lay it out.
+
+        Args:
+            widget: The child widget to fit to the ratio.
+        """
+        self._child = widget
+        widget.setParent(self)
+        widget.show()
+        self._relayout()
+
+    def clear_child(self) -> None:
+        """Forget the current child (the caller owns discarding the widget)."""
+        self._child = None
+
+    def hasHeightForWidth(self) -> bool:
+        """Report that the box's height is derived from its width.
+
+        Returns:
+            Always ``True``.
+        """
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        """Derive the height from the width and the fixed ratio.
+
+        Args:
+            width: The candidate width.
+
+        Returns:
+            ``width / ratio`` rounded to an integer.
+        """
+        return int(width / self._ratio)
+
+    def _relayout(self) -> None:
+        """Center the child fitted to the largest in-ratio rectangle."""
+        if self._child is None:
+            return
+        width, height = self.width(), self.height()
+        if width <= 0 or height <= 0:
+            return
+        fit_w = width
+        fit_h = int(width / self._ratio)
+        if fit_h > height:
+            fit_h = height
+            fit_w = int(height * self._ratio)
+        x = (width - fit_w) // 2
+        y = (height - fit_h) // 2
+        self._child.setGeometry(x, y, fit_w, fit_h)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Re-fit the child whenever the box is resized.
+
+        Args:
+            event: The Qt resize event (name mandated by the PySide override).
+        """
+        self._relayout()
+        super().resizeEvent(event)
 
 
 class _GestureWidget(QWidget):
@@ -3402,6 +3716,30 @@ class QtRenderer:
             self._discard(old.widget)
             self._relayout_grid(parent)
             return
+        if parent.type == "Wrap":
+            cast("_WrapWidget", parent.widget).remove_child(old.widget)
+            new.widget.setParent(parent.widget)
+            parent.children[index] = new
+            self._purge_connections(old)
+            self._discard(old.widget)
+            self._sync_wrap(parent)
+            return
+        if parent.type == "PageView":
+            page_view = cast("_PageViewWidget", parent.widget)
+            page_view.removeWidget(old.widget)
+            page_view.insertWidget(index, new.widget)
+            parent.children[index] = new
+            self._purge_connections(old)
+            self._discard(old.widget)
+            self._sync_page_view(parent)
+            return
+        if parent.type == "AspectRatio":
+            cast("_AspectRatioWidget", parent.widget).clear_child()
+            cast("_AspectRatioWidget", parent.widget).set_child(new.widget)
+            parent.children[index] = new
+            self._purge_connections(old)
+            self._discard(old.widget)
+            return
         layout = self._require_layout(parent)
         # Strip spacers so the IR index maps to the layout slot for the insert.
         self._strip_spacers(layout)
@@ -3515,15 +3853,27 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = self._create(patch.node)
-        if parent.type in ("Stack", "RouteDrawer", "LazyGrid"):
+        if parent.type in ("Stack", "RouteDrawer", "LazyGrid", "Wrap"):
             child.widget.setParent(parent.widget)
             parent.children.insert(patch.index, child)
             if parent.type == "RouteDrawer":
                 self._sync_drawer(parent)
             elif parent.type == "LazyGrid":
                 self._relayout_grid(parent)
+            elif parent.type == "Wrap":
+                self._sync_wrap(parent)
             else:
                 self._relayout_stack(parent)
+            return
+        if parent.type == "PageView":
+            page_view = cast("_PageViewWidget", parent.widget)
+            page_view.insertWidget(patch.index, child.widget)
+            parent.children.insert(patch.index, child)
+            self._sync_page_view(parent)
+            return
+        if parent.type == "AspectRatio":
+            cast("_AspectRatioWidget", parent.widget).set_child(child.widget)
+            parent.children.insert(patch.index, child)
             return
         layout = self._require_layout(parent)
         # Strip spacers so the IR index maps to the layout slot for the insert.
@@ -3548,15 +3898,30 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = parent.children.pop(patch.index)
-        if parent.type in ("Stack", "RouteDrawer", "LazyGrid"):
+        if parent.type in ("Stack", "RouteDrawer", "LazyGrid", "Wrap"):
+            if parent.type == "Wrap":
+                cast("_WrapWidget", parent.widget).remove_child(child.widget)
             self._purge_connections(child)
             self._discard(child.widget)
             if parent.type == "RouteDrawer":
                 self._sync_drawer(parent)
             elif parent.type == "LazyGrid":
                 self._relayout_grid(parent)
+            elif parent.type == "Wrap":
+                self._sync_wrap(parent)
             else:
                 self._relayout_stack(parent)
+            return
+        if parent.type == "PageView":
+            cast("_PageViewWidget", parent.widget).removeWidget(child.widget)
+            self._purge_connections(child)
+            self._discard(child.widget)
+            self._sync_page_view(parent)
+            return
+        if parent.type == "AspectRatio":
+            cast("_AspectRatioWidget", parent.widget).clear_child()
+            self._purge_connections(child)
+            self._discard(child.widget)
             return
         if parent.type == "AnimatedList":
             self._purge_connections(child)
@@ -3612,6 +3977,19 @@ class QtRenderer:
             parent.children = new_children
             self._relayout_grid(parent)
             return
+        if parent.type == "Wrap":
+            parent.children = new_children
+            self._sync_wrap(parent)
+            return
+        if parent.type == "PageView":
+            page_view = cast("_PageViewWidget", parent.widget)
+            for child in old_children:
+                page_view.removeWidget(child.widget)
+            for child in new_children:
+                page_view.addWidget(child.widget)
+            parent.children = new_children
+            self._sync_page_view(parent)
+            return
         layout = self._require_layout(parent)
         # Drop spacers first so they don't survive interleaved in the new order.
         self._strip_spacers(layout)
@@ -3654,9 +4032,15 @@ class QtRenderer:
                 cast("_InteractiveViewerWidget", rendered.widget).set_child(
                     child.widget
                 )
-            elif rendered.type in ("Stack", "RouteDrawer", "LazyGrid"):
+            elif rendered.type in ("Stack", "RouteDrawer", "LazyGrid", "Wrap"):
                 # Direct children (no box layout): geometry is renderer-driven.
                 child.widget.setParent(rendered.widget)
+            elif rendered.type == "PageView":
+                # Each child is a carousel page stacked in the QStackedWidget.
+                cast("_PageViewWidget", rendered.widget).addWidget(child.widget)
+            elif rendered.type == "AspectRatio":
+                # A single fitted child centered to the ratio (renderer-driven).
+                cast("_AspectRatioWidget", rendered.widget).set_child(child.widget)
             elif rendered.type in ("Toast", "Tooltip", "Menu", "ActionSheet"):
                 # Leaf overlays render their content from props (message/items),
                 # not from a child box layout — keep the child node for the IR
@@ -3676,6 +4060,10 @@ class QtRenderer:
             self._sync_drawer(rendered)
         elif rendered.type == "LazyGrid":
             self._relayout_grid(rendered)
+        elif rendered.type == "Wrap":
+            self._sync_wrap(rendered)
+        elif rendered.type == "PageView":
+            self._sync_page_view(rendered)
         elif rendered.type in _LAZY_LIST_TYPES:
             self._sync_main_axis(rendered)
             if rendered.type == "SectionList":
@@ -3846,6 +4234,15 @@ class QtRenderer:
             return _Rendered(node.type, node.key, shimmer, shimmer.box_layout())
         if node.type == "Skeleton":
             return _Rendered(node.type, node.key, _SkeletonWidget(), None)
+        if node.type == "Wrap":
+            # Direct-children flow container: geometry is renderer-driven, so it
+            # carries no box layout (layout=None) like Stack/LazyGrid.
+            return _Rendered(node.type, node.key, _WrapWidget(), None)
+        if node.type == "PageView":
+            return _Rendered(node.type, node.key, _PageViewWidget(), None)
+        if node.type == "AspectRatio":
+            ratio = float(cast("float", node.props.get("ratio", 1.0)))
+            return _Rendered(node.type, node.key, _AspectRatioWidget(ratio), None)
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (
@@ -3961,6 +4358,10 @@ class QtRenderer:
             cast("_DrawerHost", node.widget).set_open(
                 bool(node.props.get("open", False))
             )
+        elif node.type == "Wrap":
+            self._sync_wrap(node)
+        elif node.type == "PageView":
+            self._apply_page_view(node)
         elif node.type in _LAZY_LIST_TYPES:
             self._apply_lazy_list(node)
             if node.type == "SectionList":
@@ -4272,6 +4673,55 @@ class QtRenderer:
         if len(parent.children) >= 2:
             host.set_children(parent.children[0].widget, parent.children[1].widget)
         host.set_open(bool(parent.props.get("open", False)))
+
+    def _sync_wrap(self, parent: _Rendered) -> None:
+        """Push the current child set + ``gap``/``padding`` into a wrap widget.
+
+        ``Wrap`` flows its children imperatively, so the renderer hands the live
+        child widget list to the :class:`_WrapWidget` and maps the style ``gap``
+        to the inter-child spacing and ``padding`` to its contents margins.
+
+        Args:
+            parent: The ``Wrap`` rendered node.
+        """
+        widget = cast("_WrapWidget", parent.widget)
+        style = cast("Style | None", parent.props.get("style"))
+        gap = int(style.gap) if style is not None and style.gap is not None else 0
+        margins = (0, 0, 0, 0)
+        if style is not None and style.padding is not None:
+            edge = style.padding
+            margins = (
+                int(edge.left),
+                int(edge.top),
+                int(edge.right),
+                int(edge.bottom),
+            )
+        widget.set_spacing(gap, margins)
+        widget.set_children([child.widget for child in parent.children])
+
+    def _sync_page_view(self, parent: _Rendered) -> None:
+        """Wire the page-change callback and show the active page.
+
+        Args:
+            parent: The ``PageView`` rendered node.
+        """
+        widget = cast("_PageViewWidget", parent.widget)
+        handler = parent.props.get("on_page_change")
+        if handler is None:
+            widget.set_on_change(None)
+        else:
+            callback = cast("Callable[..., Any]", handler)
+            widget.set_on_change(lambda event: self._invoke(callback, event))
+        self._apply_page_view(parent)
+
+    def _apply_page_view(self, parent: _Rendered) -> None:
+        """Show the page named by the node's ``page`` prop.
+
+        Args:
+            parent: The ``PageView`` rendered node.
+        """
+        widget = cast("_PageViewWidget", parent.widget)
+        widget.set_page(int(cast("int", parent.props.get("page", 0))))
 
     def _bind_gestures(self, widget: _GestureWidget, props: dict[str, Any]) -> None:
         """(Re)install the gesture handlers on a ``GestureDetector`` widget.

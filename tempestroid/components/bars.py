@@ -15,10 +15,17 @@ from tempestroid.components.base import (
     SURFACE,
     merge_style,
 )
-from tempestroid.style import AlignItems, Edge, FontWeight, Style
-from tempestroid.widgets import Column, Component, Row, Text, Widget
+from tempestroid.style import (
+    AlignItems,
+    Color,
+    Edge,
+    FontWeight,
+    JustifyContent,
+    Style,
+)
+from tempestroid.widgets import Column, Component, Container, Row, Text, Widget
 
-__all__ = ["AppBar", "Header", "Footer"]
+__all__ = ["AppBar", "Header", "Footer", "CollapsingAppBar"]
 
 
 def _no_widgets() -> list[Widget]:
@@ -151,4 +158,84 @@ class Footer(Component):
             key=self.key or "footer",
             style=merge_style(default, self.style),
             children=self.children,
+        )
+
+
+class CollapsingAppBar(Component):
+    """A sliver-style app bar that shrinks as the user scrolls the content down.
+
+    Coordinates with a scrollable container's ``on_scroll`` handler entirely
+    through state: the application reads the current scroll offset from the
+    list's :class:`~tempestroid.ScrollEvent`, stores it, and passes it back as
+    :attr:`scroll_offset`. The component derives a height that eases from
+    :attr:`expanded_height` (offset ``0``) down to :attr:`collapsed_height` (once
+    the offset exceeds the collapse distance) and renders accordingly — so the
+    reconciler simply diffs the derived ``Style.height`` as an ordinary prop,
+    needing no new IR, no new event and no renderer change. The title's font
+    shrinks in step with the bar.
+
+    Attributes:
+        title: The bar's title text.
+        expanded_height: The bar height at the top of the scroll (offset ``0``).
+        collapsed_height: The minimum bar height once fully collapsed.
+        scroll_offset: The current scroll offset (logical pixels) driven by the
+            application from the scrollable's ``on_scroll`` handler.
+        background: An optional background color (defaults to the surface token).
+        style: An optional style overlaid on the bar's derived default.
+    """
+
+    title: str = ""
+    expanded_height: float = 200.0
+    collapsed_height: float = 56.0
+    scroll_offset: float = 0.0
+    background: Color | None = None
+    style: Style | None = None
+
+    def _height(self) -> float:
+        """Derive the current bar height from the scroll offset.
+
+        The bar collapses linearly over a distance equal to the difference
+        between the expanded and collapsed heights, clamped to that band.
+
+        Returns:
+            The current bar height in logical pixels.
+        """
+        span = max(0.0, self.expanded_height - self.collapsed_height)
+        consumed = min(max(self.scroll_offset, 0.0), span)
+        return self.expanded_height - consumed
+
+    def render(self) -> Widget:
+        """Lower the collapsing app bar into a primitive container with a title.
+
+        Returns:
+            A bottom-aligned ``Container`` whose height tracks the scroll offset,
+            wrapping the title (whose size eases between expanded and collapsed).
+        """
+        height = self._height()
+        span = max(1.0, self.expanded_height - self.collapsed_height)
+        progress = (self.expanded_height - height) / span  # 0 expanded .. 1 collapsed
+        font_size = 28.0 - 8.0 * progress  # 28 expanded -> 20 collapsed
+        default = Style(
+            height=height,
+            padding=Edge.symmetric(vertical=10.0, horizontal=16.0),
+            justify=JustifyContent.END,
+            background=self.background or SURFACE,
+        )
+        return Container(
+            key=self.key or "collapsing-app-bar",
+            style=merge_style(default, self.style),
+            child=Column(
+                style=Style(justify=JustifyContent.END, align=AlignItems.START),
+                children=[
+                    Text(
+                        content=self.title,
+                        style=Style(
+                            font_size=font_size,
+                            font_weight=FontWeight.BOLD,
+                            color=ON_SURFACE,
+                        ),
+                        key="collapsing-title",
+                    )
+                ],
+            ),
         )

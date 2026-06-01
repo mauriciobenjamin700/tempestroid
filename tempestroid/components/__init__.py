@@ -19,7 +19,12 @@ components in the same idiom.
 
 from __future__ import annotations
 
-from tempestroid.components.bars import AppBar, Footer, Header
+from tempestroid.components.bars import (
+    AppBar,
+    CollapsingAppBar,
+    Footer,
+    Header,
+)
 from tempestroid.components.base import (
     ACCENT,
     BACKGROUND,
@@ -43,9 +48,11 @@ from tempestroid.components.selection import (
     Rating,
     SegmentedControl,
 )
+from tempestroid.components.table import DataTable, Table, TableCell, TableRow
 
 __all__ = [
     "AppBar",
+    "CollapsingAppBar",
     "Header",
     "Footer",
     "Sidebar",
@@ -71,6 +78,10 @@ __all__ = [
     "Banner",
     "EmptyState",
     "Badge",
+    "Table",
+    "DataTable",
+    "TableCell",
+    "TableRow",
     "merge_style",
     "BACKGROUND",
     "SURFACE",

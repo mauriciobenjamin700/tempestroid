@@ -36,6 +36,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowColumn
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -138,6 +142,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
@@ -380,6 +386,12 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         "Skeleton" -> RenderSkeleton(node, style)
 
         "Hero" -> RenderHero(node, onEvent)
+
+        "Wrap" -> RenderWrap(node, style, onEvent)
+
+        "PageView" -> RenderPageView(node, style, onEvent)
+
+        "AspectRatio" -> RenderAspectRatio(node, style, onEvent)
 
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
@@ -814,6 +826,134 @@ private fun RenderHero(node: TempestNode, onEvent: (String, String) -> Unit) {
         }
     } else {
         RenderNode(child, onEvent)
+    }
+}
+
+/**
+ * Render a [Wrap] (E6): a flow-layout container whose children wrap to the next
+ * line/column when the main axis is full — the Kotlin counterpart of the Qt
+ * `_WrapWidget`.
+ *
+ * The direction comes from the serialized style `direction` (`"column"` →
+ * [FlowColumn], anything else → [FlowRow], the default). The `flexWrap` style spec
+ * (`"nowrap"` / `"wrap"` / `"wrapReverse"`, from `Style.flex_wrap` via the Compose
+ * translator) selects the wrap policy: `"nowrap"` pins `maxItemsInEachRow`/`Column`
+ * to [Int.MAX_VALUE] (one line, never wraps); `"wrap"`/`"wrapReverse"` let it flow.
+ * `gap` and `arrangement` drive the main- and cross-axis spacing the same way as a
+ * plain Column/Row.
+ *
+ * Documented divergence: Qt reflows children manually in `_WrapWidget.resizeEvent`;
+ * Compose uses the native `FlowRow`/`FlowColumn`. Both honour `Style.gap`.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RenderWrap(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val column = style["direction"] == "column"
+    // A nowrap policy collapses the flow to a single line by capping the per-line
+    // item count; wrap/wrapReverse (and an absent flexWrap) flow freely.
+    val nowrap = style["flexWrap"] == "nowrap"
+    val maxPerLine = if (nowrap) 1 else Int.MAX_VALUE
+    if (column) {
+        FlowColumn(
+            modifier = baseModifier(style),
+            verticalArrangement = verticalArrangement(style),
+            horizontalArrangement = horizontalArrangement(style),
+            maxItemsInEachColumn = maxPerLine,
+        ) {
+            node.children.forEach { RenderNode(it, onEvent) }
+        }
+    } else {
+        FlowRow(
+            modifier = baseModifier(style),
+            horizontalArrangement = horizontalArrangement(style),
+            verticalArrangement = verticalArrangement(style),
+            maxItemsInEachRow = maxPerLine,
+        ) {
+            node.children.forEach { RenderNode(it, onEvent) }
+        }
+    }
+}
+
+/**
+ * Render a [PageView] (E6): a horizontally paginated carousel — the Kotlin
+ * counterpart of the Qt `_PageViewWidget` (`QStackedWidget` + prev/next).
+ *
+ * The active page lives in Python (`node.props["page"]`); a [rememberPagerState]
+ * seeds its initial page from that prop and counts pages from `node.children`. A
+ * [LaunchedEffect] keyed on the declared page scrolls the pager when Python pushes
+ * a new page (declarative state drives the pager). A second [LaunchedEffect] keyed
+ * on the settled `currentPage` reports a [PageChangeEvent]-shaped payload
+ * `{"page": i, "previous": j}` on `on_page_change`, but only when the swipe settled
+ * away from the declared page (so a programmatic scroll-to does not echo).
+ *
+ * Documented divergence: Qt swaps `QStackedWidget` pages via prev/next buttons (no
+ * swipe hardware); Compose uses a native swipeable `HorizontalPager`. Both emit the
+ * same `PageChangeEvent`.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RenderPageView(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val declared = (node.props["page"] as? Number)?.toInt() ?: 0
+    val pageCount = node.children.size
+    if (pageCount == 0) return
+    val pagerState = rememberPagerState(
+        initialPage = declared.coerceIn(0, pageCount - 1),
+        pageCount = { pageCount },
+    )
+    // Declarative state drives the pager: when Python pushes a new active page,
+    // animate the pager to it (a no-op when already there).
+    LaunchedEffect(declared) {
+        val target = declared.coerceIn(0, pageCount - 1)
+        if (pagerState.currentPage != target) pagerState.animateScrollToPage(target)
+    }
+    // Report a user-driven page change back to Python. Keying on currentPage runs
+    // after the swipe settles; only emit when the settled page differs from what
+    // Python last declared, so a programmatic scroll-to (above) does not echo.
+    LaunchedEffect(pagerState.currentPage) {
+        val current = pagerState.currentPage
+        if (current != declared) {
+            handlerToken(node, "on_page_change")?.let { token ->
+                val payload = JSONObject().put("page", current).put("previous", declared)
+                onEvent(token, payload.toString())
+            }
+        }
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier = baseModifier(style).fillMaxWidth(),
+    ) { page ->
+        node.children.getOrNull(page)?.let { RenderNode(it, onEvent) }
+    }
+}
+
+/**
+ * Render an [AspectRatio] (E6): a single-child box whose width/height ratio is
+ * fixed by the `ratio` prop (width / height) via [Modifier.aspectRatio] — the
+ * Kotlin counterpart of the Qt `_AspectRatioWidget` (`heightForWidth`).
+ *
+ * Distinct from the `Style.aspect_ratio` field (also Compose-only): this is the
+ * explicit wrapper widget where the ratio is the container's sole purpose. A
+ * non-positive or missing ratio renders the child without the constraint.
+ */
+@Composable
+private fun RenderAspectRatio(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val ratio = (node.props["ratio"] as? Number)?.toFloat() ?: 1f
+    val child = node.children.firstOrNull()
+    val modifier = if (ratio > 0f) baseModifier(style).aspectRatio(ratio) else baseModifier(style)
+    Box(modifier = modifier) {
+        if (child != null) RenderNode(child, onEvent)
     }
 }
 
