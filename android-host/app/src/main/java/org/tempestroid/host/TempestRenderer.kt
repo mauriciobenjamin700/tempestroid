@@ -5,6 +5,15 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -31,12 +40,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +69,21 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -227,8 +258,245 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
 
         "FilePicker" -> RenderFilePicker(node, style, onEvent)
 
+        "Navigator" -> RenderNavigator(node, style, onEvent)
+
+        "TabView" -> RenderTabView(node, style, onEvent)
+
+        "TabBar" -> RenderTabBar(node, style, onEvent)
+
+        "RouteDrawer" -> RenderRouteDrawer(node, style, onEvent)
+
+        "LazyColumn" -> RenderLazyList(node, style, onEvent, horizontal = false)
+
+        "LazyRow" -> RenderLazyList(node, style, onEvent, horizontal = true)
+
+        "LazyGrid" -> RenderLazyGrid(node, style, onEvent)
+
+        "SectionList" -> RenderSectionList(node, style, onEvent)
+
+        "RefreshControl" -> RenderRefreshControl(node, style, onEvent)
+
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
+        }
+    }
+}
+
+/**
+ * A navigation-stack host that animates the swap of its single top screen — the
+ * Kotlin counterpart of the Qt `_NavHost` (Navigator path, no tab strip).
+ *
+ * The top screen is `node.children[0]`. A push/pop is observed as that child's
+ * `key` (or, lacking a key, the `depth` prop) changing; the slide direction comes
+ * from the delta of `depth` against the last depth seen (deeper → push, slide in
+ * from the right; shallower → pop, slide in from the left). The `transition` prop
+ * picks the animation: `"fade"` cross-fades, `"none"` swaps instantly, anything
+ * else (default `"slide"`) slides horizontally.
+ */
+@Composable
+private fun RenderNavigator(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val child = node.children.firstOrNull()
+    val depth = (node.props["depth"] as? Number)?.toInt() ?: 0
+    val transition = node.props["transition"] as? String ?: "slide"
+    // Remember the last depth to tell a push (deeper) from a pop (shallower); the
+    // initial render has no previous screen, so it must not animate a direction.
+    var lastDepth by remember { mutableStateOf(depth) }
+    val forward = depth >= lastDepth
+    // Drive AnimatedContent off a stable per-screen key so a same-typed screen
+    // swap (diffed as an Update on this Navigator) still triggers the animation.
+    val targetKey = child?.key ?: "depth:$depth"
+    Box(modifier = baseModifier(style)) {
+        AnimatedContent(
+            targetState = targetKey,
+            transitionSpec = {
+                when (transition) {
+                    "fade" -> fadeIn() togetherWith fadeOut()
+                    "none" -> EnterTransition.None togetherWith ExitTransition.None
+                    else -> {
+                        val sign = if (forward) 1 else -1
+                        (slideInHorizontally { full -> sign * full } togetherWith
+                            slideOutHorizontally { full -> -sign * full })
+                    }
+                }
+            },
+            label = "navigator",
+        ) { key ->
+            // Render the current top screen; `key` keys the slot so Compose keeps
+            // the outgoing and incoming subtrees distinct during the transition.
+            if (child != null && key == targetKey) {
+                RenderNode(child, onEvent)
+            }
+        }
+    }
+    // Record the depth *after* this composition so the next swap compares against it.
+    LaunchedEffect(depth) { lastDepth = depth }
+}
+
+/**
+ * A tabbed host: a [TabRow] strip above the active tab's content — the Kotlin
+ * counterpart of the Qt `_NavHost` with a tab strip plus `_TabBarWidget`.
+ *
+ * `tabs` are the labels, `active` the selected index, and `node.children[0]` the
+ * active tab's content. Tapping tab `i` emits the same `RouteChangeEvent` payload
+ * as the Qt `_TabBarWidget._make_tap`: `{"name": label, "params": {"index": i}}`.
+ */
+@Composable
+private fun RenderTabView(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val active = (node.props["active"] as? Number)?.toInt() ?: 0
+    val child = node.children.firstOrNull()
+    Column(modifier = baseModifier(style)) {
+        TabStrip(node, active, onEvent)
+        AnimatedContent(
+            targetState = active,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "tabview",
+        ) { selected ->
+            // The content is built by Python for the active tab; key the slot by
+            // the selected index so a tab swap cross-fades the new content.
+            if (child != null && selected == active) {
+                RenderNode(child, onEvent)
+            }
+        }
+    }
+}
+
+/**
+ * A standalone tab strip (no content) — the Kotlin counterpart of the Qt
+ * `_TabBarWidget` used on its own. Same tap payload as [RenderTabView].
+ */
+@Composable
+private fun RenderTabBar(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val active = (node.props["active"] as? Number)?.toInt() ?: 0
+    Box(modifier = baseModifier(style)) {
+        TabStrip(node, active, onEvent)
+    }
+}
+
+/**
+ * Render the shared tab strip for [RenderTabView]/[RenderTabBar].
+ *
+ * Reads `tabs` (labels) and highlights `active`. Tapping tab `i` with label
+ * `label` fires `handlerToken(node, "on_change")` with the
+ * `RouteChangeEvent`-shaped JSON `{"name": label, "params": {"index": i}}`.
+ */
+@Composable
+private fun TabStrip(
+    node: TempestNode,
+    active: Int,
+    onEvent: (String, String) -> Unit,
+) {
+    @Suppress("UNCHECKED_CAST")
+    val tabs = (node.props["tabs"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+    if (tabs.isEmpty()) return
+    val selected = active.coerceIn(0, tabs.size - 1)
+    TabRow(selectedTabIndex = selected) {
+        tabs.forEachIndexed { index, label ->
+            Tab(
+                selected = index == selected,
+                onClick = {
+                    handlerToken(node, "on_change")?.let { token ->
+                        val payload = JSONObject()
+                            .put("name", label)
+                            .put("params", JSONObject().put("index", index))
+                        onEvent(token, payload.toString())
+                    }
+                },
+                text = { Text(text = label) },
+            )
+        }
+    }
+}
+
+/**
+ * A drawer-as-route host: main content with a slide-over side panel — the Kotlin
+ * counterpart of the Qt `_DrawerHost`, realized with Material3's
+ * [ModalNavigationDrawer].
+ *
+ * The open/closed state lives in Python (`node.props["open"]`); a unidirectional
+ * [LaunchedEffect] drives the internal [rememberDrawerState] to match, so the
+ * Compose-internal drag/scrim never fights the declared state. `node.children[0]`
+ * is the content, `node.children[1]` is the drawer panel. Dismissing the drawer
+ * (scrim tap or back gesture) emits `{"name": "drawer", "params": {"open": false}}`
+ * so the Python handler can flip the flag.
+ */
+@Composable
+private fun RenderRouteDrawer(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val open = node.props["open"] as? Boolean ?: false
+    val content = node.children.getOrNull(0)
+    val drawer = node.children.getOrNull(1)
+    val drawerState = rememberDrawerState(
+        initialValue = if (open) DrawerValue.Open else DrawerValue.Closed,
+    )
+    // Unidirectional sync: the declared `open` flag drives the internal state.
+    LaunchedEffect(open) {
+        if (open) drawerState.open() else drawerState.close()
+    }
+    // A user-driven dismiss (scrim tap / back) settles the internal state to
+    // Closed; when that happens while Python still declares it open, report the
+    // toggle-off so the declarative flag follows the gesture. Keying on
+    // currentValue re-runs the effect each time the drawer settles.
+    LaunchedEffect(drawerState.currentValue) {
+        snapshotIsClosedThenReport(
+            isClosed = drawerState.currentValue == DrawerValue.Closed,
+            declaredOpen = open,
+            node = node,
+            onEvent = onEvent,
+        )
+    }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                if (drawer != null) RenderNode(drawer, onEvent)
+            }
+        },
+        modifier = baseModifier(style),
+    ) {
+        Box(modifier = Modifier) {
+            if (content != null) RenderNode(content, onEvent)
+        }
+    }
+}
+
+/**
+ * Report a user-driven drawer dismiss back to Python.
+ *
+ * When the internal drawer state has become closed while Python still believes it
+ * is open (a scrim tap or back gesture), emit the toggle-off `RouteChangeEvent`.
+ *
+ * @param isClosed whether the internal drawer state is currently closed.
+ * @param declaredOpen the open flag Python last declared.
+ * @param node the RouteDrawer node (for its `on_change` handler token).
+ * @param onEvent the event sink back to Python.
+ */
+private fun snapshotIsClosedThenReport(
+    isClosed: Boolean,
+    declaredOpen: Boolean,
+    node: TempestNode,
+    onEvent: (String, String) -> Unit,
+) {
+    if (isClosed && declaredOpen) {
+        handlerToken(node, "on_change")?.let { token ->
+            val payload = JSONObject()
+                .put("name", "drawer")
+                .put("params", JSONObject().put("open", false))
+            onEvent(token, payload.toString())
         }
     }
 }
@@ -529,6 +797,264 @@ private fun RenderScrollView(
             node.children.forEach { RenderNode(it, onEvent) }
         }
     }
+}
+
+/**
+ * A virtualized list — the Kotlin counterpart of the Qt `LazyColumn`/`LazyRow`.
+ *
+ * The serialized node carries `props["item_count"]` (the *full* logical length)
+ * but only the materialized window in `node.children` (each keyed by its absolute
+ * index). Compose iterates the materialized window natively via [LazyColumn]/
+ * [LazyRow]; Python widens/slides the window in response to the events emitted
+ * here:
+ *  - `on_scroll` → [ScrollEvent] `{offset, direction}` on every scroll-offset tick;
+ *  - `on_refresh` → [RefreshEvent] `{}` when the [PullToRefreshBox] gesture fires;
+ *  - `on_end_reached` → [EndReachedEvent] `{}` when the last visible item's
+ *    absolute index crosses `end_reached_threshold` of `item_count` (NOT of the
+ *    partial window).
+ *
+ * @param horizontal render a [LazyRow] (`direction="horizontal"`) instead of a
+ *   vertical [LazyColumn].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderLazyList(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+    horizontal: Boolean,
+) {
+    val listState = rememberLazyListState()
+    val refreshing = node.props["refreshing"] as? Boolean ?: false
+    val direction = if (horizontal) "horizontal" else "vertical"
+
+    ReportScroll(listState, direction) { offset ->
+        handlerToken(node, "on_scroll")?.let {
+            onEvent(it, JSONObject().put("offset", offset.toDouble()).put("direction", direction).toString())
+        }
+    }
+    ReportEndReached(listState, itemCountOf(node), thresholdOf(node)) {
+        handlerToken(node, "on_end_reached")?.let { onEvent(it, "{}") }
+    }
+
+    // Snapshot the window once: itemsIndexed reads `children` eagerly, and a
+    // window slide that mutates `node.children` re-runs this composable, so the
+    // LazyColumn/LazyRow content block rebuilds with the new materialized window.
+    val children = node.children.toList()
+    val onRefresh = { handlerToken(node, "on_refresh")?.let { onEvent(it, "{}") }; Unit }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = baseModifier(style),
+    ) {
+        if (horizontal) {
+            LazyRow(state = listState, modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(
+                    items = children,
+                    key = { i, child -> child.key ?: i.toString() },
+                ) { _, child -> RenderNode(child, onEvent) }
+            }
+        } else {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(
+                    items = children,
+                    key = { i, child -> child.key ?: i.toString() },
+                ) { _, child -> RenderNode(child, onEvent) }
+            }
+        }
+    }
+}
+
+/**
+ * A virtualized grid — the Kotlin counterpart of the Qt `LazyGrid`.
+ *
+ * `props["columns"]` fixes the column count; the materialized window flows across
+ * the rows. Like [RenderLazyList], the full length is `props["item_count"]` and
+ * `on_scroll`/`on_end_reached` drive the Python-side window.
+ */
+@Composable
+private fun RenderLazyGrid(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val gridState = rememberLazyGridState()
+    val columns = (node.props["columns"] as? Number)?.toInt() ?: 2
+
+    ReportGridScroll(gridState) { offset ->
+        handlerToken(node, "on_scroll")?.let {
+            onEvent(it, JSONObject().put("offset", offset.toDouble()).put("direction", "vertical").toString())
+        }
+    }
+    ReportGridEndReached(gridState, itemCountOf(node), thresholdOf(node)) {
+        handlerToken(node, "on_end_reached")?.let { onEvent(it, "{}") }
+    }
+
+    val children = node.children.toList()
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns.coerceAtLeast(1)),
+        state = gridState,
+        modifier = baseModifier(style),
+    ) {
+        gridItemsIndexed(
+            items = children,
+            key = { i, child -> child.key ?: i.toString() },
+        ) { _, child -> RenderNode(child, onEvent) }
+    }
+}
+
+/**
+ * A sectioned list with pinned headers — the Kotlin counterpart of the Qt
+ * `SectionList`. Compose pins each section header natively via `stickyHeader {}`.
+ *
+ * The serialized window is a flat, already-materialized child list: each child
+ * carries the reconciler `key` the IR core assigned (`sec:<title>:header` for a
+ * section header, `sec:<title>:<index>` for a row). A child whose key matches
+ * [isSectionHeaderKey] is pinned with `stickyHeader {}`; everything else is a
+ * plain `item {}`. `on_scroll`/`on_end_reached` mirror [RenderLazyList], using
+ * `props["item_count"]` as the full logical length.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun RenderSectionList(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val listState = rememberLazyListState()
+
+    ReportScroll(listState, "vertical") { offset ->
+        handlerToken(node, "on_scroll")?.let {
+            onEvent(it, JSONObject().put("offset", offset.toDouble()).put("direction", "vertical").toString())
+        }
+    }
+    ReportEndReached(listState, itemCountOf(node), thresholdOf(node)) {
+        handlerToken(node, "on_end_reached")?.let { onEvent(it, "{}") }
+    }
+
+    // Snapshot the live child list once per recomposition: each `key`/`item`
+    // lambda below captures `i` (not the SnapshotStateList directly) so a window
+    // slide that mutates `node.children` recomposes the LazyColumn content block.
+    val children = node.children.toList()
+    LazyColumn(state = listState, modifier = baseModifier(style)) {
+        children.forEachIndexed { i, child ->
+            val itemKey = child.key ?: i.toString()
+            if (isSectionHeaderKey(child.key)) {
+                stickyHeader(key = itemKey) { RenderNode(child, onEvent) }
+            } else {
+                item(key = itemKey) { RenderNode(child, onEvent) }
+            }
+        }
+    }
+}
+
+/**
+ * Whether a materialized child is a pinned section header.
+ *
+ * The IR core keys section children `sec:<title>:header` (header) and
+ * `sec:<title>:<index>` (row); only the header form ends in `:header`.
+ *
+ * @param key the child's reconciler key (may be null for an unkeyed child).
+ * @return true when [key] denotes a section header.
+ */
+private fun isSectionHeaderKey(key: String?): Boolean =
+    key != null && key.startsWith("sec:") && key.endsWith(":header")
+
+/**
+ * A standalone pull-to-refresh container — the Kotlin counterpart of the Qt
+ * `RefreshControl`. `props["refreshing"]` drives the [PullToRefreshBox] spinner;
+ * the gesture emits `on_refresh` → [RefreshEvent]. Its child (if any) scrolls
+ * inside.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderRefreshControl(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val refreshing = node.props["refreshing"] as? Boolean ?: false
+    val onRefresh = { handlerToken(node, "on_refresh")?.let { onEvent(it, "{}") }; Unit }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = baseModifier(style),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            node.children.forEach { RenderNode(it, onEvent) }
+        }
+    }
+}
+
+/** The full logical item count of a list node (`item_count`), defaulting to the
+ *  materialized window size when absent. */
+private fun itemCountOf(node: TempestNode): Int =
+    (node.props["item_count"] as? Number)?.toInt() ?: node.children.size
+
+/** The `[0,1]` fraction of the scroll past which `on_end_reached` fires. */
+private fun thresholdOf(node: TempestNode): Float =
+    (node.props["end_reached_threshold"] as? Number)?.toFloat() ?: 0.8f
+
+/** Emit [report] (with the live scroll offset) on every scroll-offset change. */
+@Composable
+private fun ReportScroll(
+    listState: LazyListState,
+    @Suppress("UNUSED_PARAMETER") direction: String,
+    report: (Int) -> Unit,
+) {
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemScrollOffset }
+            .collectLatest { offset -> report(offset) }
+    }
+}
+
+/** Emit [report] (with the live scroll offset) on every grid scroll-offset change. */
+@Composable
+private fun ReportGridScroll(gridState: LazyGridState, report: (Int) -> Unit) {
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.firstVisibleItemScrollOffset }
+            .collectLatest { offset -> report(offset) }
+    }
+}
+
+/**
+ * Fire [report] once each time the last visible item's *absolute* index crosses
+ * [threshold] of [itemCount] — the denominator is the full logical length, not
+ * the materialized window, so paging triggers at the true list end.
+ */
+@Composable
+private fun ReportEndReached(
+    listState: LazyListState,
+    itemCount: Int,
+    threshold: Float,
+    report: () -> Unit,
+) {
+    val isEndReached by remember(itemCount, threshold) {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            last != null && itemCount > 0 &&
+                (last.index + 1).toFloat() / itemCount >= threshold
+        }
+    }
+    LaunchedEffect(isEndReached) { if (isEndReached) report() }
+}
+
+/** Grid variant of [ReportEndReached]. */
+@Composable
+private fun ReportGridEndReached(
+    gridState: LazyGridState,
+    itemCount: Int,
+    threshold: Float,
+    report: () -> Unit,
+) {
+    val isEndReached by remember(itemCount, threshold) {
+        derivedStateOf {
+            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()
+            last != null && itemCount > 0 &&
+                (last.index + 1).toFloat() / itemCount >= threshold
+        }
+    }
+    LaunchedEffect(isEndReached) { if (isEndReached) report() }
 }
 
 /**

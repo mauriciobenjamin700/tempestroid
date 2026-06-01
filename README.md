@@ -270,6 +270,14 @@ The declarative IR — bare-noun widgets.
 - **`GestureDetector`** — wraps a `child` and reports pointer gestures via
   **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
   (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
+- Navigation hosts — render the `NavStack` into a tree (a route change diffs to
+  an `Update`/`Replace`, no new patch kind): **`Navigator`** (stack host: shows
+  the top `child`, `transition` slide/fade/none + `depth` drive the animation),
+  **`TabView`** (tab strip + active tab `child`), **`TabBar`** (standalone tab
+  strip), **`RouteDrawer`** (main `child` + a slide-over `drawer` panel toggled
+  by `open`). Each emits **`RouteChangeEvent`** via an **`on_change`**
+  (**`RouteChangeHandler`**) prop. In the Qt simulator `Esc` maps to back
+  (`App.pop`); the device back button is the Compose/device half.
 - **`Component`** (base) — a composite widget that lowers to a primitive tree via
   `render()`; the reconciler expands it before diffing, so renderers never see it.
 - Value-bearing inputs: **`Input`** (text — with `secure` password masking +
@@ -279,6 +287,22 @@ The declarative IR — bare-noun widgets.
   (file selection).
 - Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
   **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
+- Virtualized lists (only the visible window is materialized; declare an
+  `item_count` + an `item_builder(index) -> Widget`, never a static child list):
+  **`LazyColumn`** / **`LazyRow`** (vertical/horizontal lazy lists),
+  **`LazyGrid`** (`columns`-wide lazy grid), **`SectionList`** (a list of
+  **`SectionHeader`** sections with sticky headers) and **`RefreshControl`**
+  (standalone pull-to-refresh). The widgets materialize their **initial window**
+  at `build` time — `child_nodes()` builds the items in `window` (when set) or the
+  first `window_size` items (default **`DEFAULT_WINDOW_SIZE`** = 20), each keyed by
+  its absolute index — so the very first mount has content. The app slides the
+  window with `App.slide_window(key, start, end)` (and
+  `App.slide_section_window(key, title, start, end)` for sections) from a scroll
+  handler; the keyed diff turns a slide into a minimal remove/reorder/insert. They
+  emit **`ScrollEvent`** (`on_scroll`), **`RefreshEvent`** (`on_refresh`) and
+  **`EndReachedEvent`** (`on_end_reached`, fired past `end_reached_threshold` —
+  wire it to paginate). The matching handler aliases are **`ScrollHandler`** /
+  **`RefreshHandler`** / **`EndReachedHandler`**.
 - Enums: **`KeyboardType`** (text/number/email/phone/url/password),
   **`ImageFit`** (contain/cover/fill/none).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
@@ -332,6 +356,12 @@ renderer changes and are fully device-ready. Every component takes an optional
 - Gesture events (from `GestureDetector`): **`LongPressEvent`** (optional
   `x`/`y`), **`SwipeEvent`** (`direction` + `dx`/`dy`) with the
   **`SwipeDirection`** enum (left/right/up/down).
+- **`RouteChangeEvent`** (`name` + typed `params`) — emitted when navigation
+  settles on a new route.
+- Virtualized-list events: **`ScrollEvent`** (`offset` + `direction`),
+  **`RefreshEvent`** (pull-to-refresh) and **`EndReachedEvent`** (threshold
+  reached) — emitted by `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` /
+  `RefreshControl`.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -344,7 +374,23 @@ renderer changes and are fully device-ready. Every component takes an optional
   **`Replace`**, and the **`Patch`** union.
 - **`build(widget) -> Node`**, **`diff(old, new) -> list[Patch]`**.
 - **`App[S]`** — renderer-agnostic state container: owns state, builds via
-  `view(app)`, diffs, hands patches to an `apply_patches` callback.
+  `view(app)`, diffs, hands patches to an `apply_patches` callback. It also owns
+  a `NavStack` (`app.nav`) and exposes navigation helpers:
+  **`push(route)`** / **`pop() -> bool`** / **`replace(route)`** /
+  **`reset(stack)`** — each mutates the stack and schedules the same coalesced
+  rebuild (no new patch kind). `pop()` returns `False` at the root.
+
+### Navigation (`tempestroid`)
+
+- **`Route`** — a frozen navigation destination: `name` + typed `params`.
+- **`NavStack`** — the mutable route stack (defaults to `[Route(name="/")]`);
+  `top` is the visible screen and `can_pop` is `True` past the root. The stack is
+  not a new IR node — `view(app)` reads `app.nav.top` to build the current
+  screen, so changing routes diffs through the existing reconciler.
+- **`routes_from_path(path) -> list[Route]`** — resolve a deep-link path into an
+  initial stack (`"/a/b"` → `["/", "/a", "/a/b"]`, so back pops through the
+  intermediate screens). The entry point hands the result to `App.reset` so a
+  deep link opens directly on the linked screen with its back stack built.
 
 ### Introspection (`tempestroid.core`)
 
@@ -386,6 +432,12 @@ transport (B3) and the Kotlin Compose renderer (B4) are implemented in
 - **`MountMessage` / `PatchMessage` / `EventMessage`** — the wire protocol across
   the bridge: `mount` carries the full serialized tree, `patch` an incremental
   patch list, `event` a device→Python callback addressed by handler token.
+  `mount`/`patch` also carry **`can_pop`** (the live `app.nav.can_pop`), so the
+  host can gate its system-back handler without a round-trip.
+- **`BACK_TOKEN`** (`"__back__"`) — the reserved event token the host sends on a
+  system back action (e.g. the Android back gesture). The bridge routes it
+  straight to `App.pop` (no widget handler, no new JNI entry) — it pops a screen,
+  or is a no-op at the root where the host's default close-the-app action runs.
 - **`DeviceApp`** + **`Bridge`** / **`LoopbackBridge`** — wire an `App` to a
   device transport; the device-side analogue of `run_qt`. Events come back by
   handler token, are validated by `parse_event`, and trigger coalesced patches.

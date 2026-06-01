@@ -14,7 +14,7 @@ tree (see ``protocol.handler_token``).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from tempestroid.bridge.protocol import event_type_for, handler_token
 from tempestroid.core.ir import (
@@ -101,6 +101,21 @@ def _serialize_props(
     for name, value in props.items():
         if value is None:
             continue
+        if name in ("item_builder", "header_builder"):
+            # Virtualized-list factories are pure Python builders: they never
+            # cross the boundary (the device iterates items natively). Drop them
+            # before the generic callable branch treats them as handlers.
+            continue
+        if name == "sections":
+            # SectionList.sections holds SectionHeader models carrying Python
+            # builders (item_builder/header_builder) — not JSON-serializable. The
+            # boundary only needs each section's metadata (title + item_count);
+            # the visible widgets cross as the materialized window children.
+            out[name] = [
+                {"title": section.title, "item_count": section.item_count}
+                for section in value
+            ]
+            continue
         if name == "style" and isinstance(value, Style):
             out[name] = to_compose(value)
         elif callable(value):
@@ -109,6 +124,11 @@ def _serialize_props(
             if event is not None:
                 ref["event"] = event.__name__
             out[name] = ref
+        elif isinstance(value, tuple):
+            # Virtualized lists carry their `window` as a (start, end) tuple;
+            # JSON has no tuple, so it crosses as a 2-element array. Any other
+            # tuple-valued prop normalizes to a list the same way.
+            out[name] = list(cast("tuple[Any, ...]", value))
         elif isinstance(value, _JSON_SCALARS) or isinstance(value, (list, dict)):
             out[name] = value
         # Anything else is silently dropped — v1 widgets carry only the above.

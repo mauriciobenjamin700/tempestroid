@@ -25,6 +25,15 @@ def test_widget_catalog_lists_all_widgets():
         "Spinner",
         "Stack",
         "GestureDetector",
+        "Navigator",
+        "TabView",
+        "TabBar",
+        "RouteDrawer",
+        "LazyColumn",
+        "LazyRow",
+        "LazyGrid",
+        "SectionList",
+        "RefreshControl",
     }
 
 
@@ -56,6 +65,10 @@ def test_event_catalog_lists_events():
         "FileSelectEvent",
         "LongPressEvent",
         "SwipeEvent",
+        "RouteChangeEvent",
+        "ScrollEvent",
+        "RefreshEvent",
+        "EndReachedEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

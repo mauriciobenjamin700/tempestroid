@@ -7,14 +7,22 @@ sink wiring without a device.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import types
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
-from tempestroid.bridge.jni import JniBridge
+from tempestroid.bridge.device import DeviceApp, LoopbackBridge
+from tempestroid.bridge.jni import JniBridge, make_event_sink, run_device
+from tempestroid.bridge.protocol import BACK_TOKEN
+from tempestroid.core.state import App
+from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX
+from tempestroid.navigation import Route
+from tempestroid.widgets import Text, Widget
 
 
 def _fake_host() -> types.ModuleType:
@@ -57,3 +65,177 @@ async def test_jni_bridge_sends_json() -> None:
     assert len(host.sent) == 1  # type: ignore[attr-defined]
     decoded = json.loads(host.sent[0])  # type: ignore[attr-defined]
     assert decoded == {"kind": "mount", "root": {"type": "Text"}}
+
+
+# --- E0d: event-sink routing of the reserved channels ------------------------
+#
+# The event sink (the host → Python entry point) multiplexes three channels over
+# the single JNI event transport: the reserved BACK_TOKEN, the NATIVE_RESULT_PREFIX
+# tokens, and ordinary widget-handler tokens. These tests pin each branch so a
+# regression that reorders/collapses them (e.g. routing __back__ through the
+# widget registry, or treating a payload-bearing back as a widget event) is caught.
+
+
+@dataclass
+class _NavState:
+    """Minimal state for the device-app event-sink tests."""
+
+    value: int = 0
+
+
+def _route_view(app: App[_NavState]) -> Widget:
+    """Build a screen labelled by the active route name."""
+    return Text(content=app.nav.top.name)
+
+
+def _device_with_stack(*names: str) -> tuple[DeviceApp[_NavState], LoopbackBridge]:
+    """Build a started device app whose nav stack holds the given route names.
+
+    Args:
+        names: The route names, root first.
+
+    Returns:
+        The device app and its loopback bridge (already mounted).
+    """
+    bridge = LoopbackBridge()
+    device: DeviceApp[_NavState] = DeviceApp(_NavState(), _route_view, bridge)
+    device.app.nav.stack = [Route(name=name) for name in names]
+    return device, bridge
+
+
+async def test_back_token_routes_to_pop_not_to_handle_event() -> None:
+    """``__back__`` reaches ``App.pop`` and is never dispatched as a widget event.
+
+    Guards the contract that the back channel short-circuits *before* the widget
+    handler path: ``handle_event`` (the registry dispatch) must never see the
+    reserved token.
+    """
+    device, _ = _device_with_stack("/", "/a")
+    seen: list[dict[str, Any]] = []
+    original = device.handle_event
+
+    async def _spy(message: dict[str, Any]) -> None:
+        seen.append(message)
+        await original(message)
+
+    device.handle_event = _spy  # type: ignore[method-assign]
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(BACK_TOKEN, "")
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert [r.name for r in device.app.nav.stack] == ["/"]
+    # the reserved token must not have been dispatched as a widget handler event
+    assert seen == []
+
+
+async def test_back_token_with_nonempty_payload_still_pops() -> None:
+    """A ``__back__`` event still pops even if the host attaches a payload.
+
+    The host sends ``dispatchEvent("__back__", "{}")``; the routing keys off the
+    token alone, so a non-empty (but valid-JSON) payload must not divert it.
+    """
+    device, _ = _device_with_stack("/", "/a", "/b")
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(BACK_TOKEN, '{"ignored": true}')
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert [r.name for r in device.app.nav.stack] == ["/", "/a"]
+
+
+async def test_native_result_branch_is_independent_of_back() -> None:
+    """A native-result token resolves its future and does not touch the nav stack.
+
+    Pins that ``__back__`` and ``__native_result__:`` are *distinct* branches:
+    the native channel keeps working unchanged alongside the new back channel.
+    """
+    device, _ = _device_with_stack("/", "/a")
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[dict[str, Any]] = loop.create_future()
+    from tempestroid.native import dispatch as _dispatch
+
+    _dispatch._pending["42"] = future  # type: ignore[attr-defined]
+    try:
+        sink = make_event_sink(loop, device)
+        sink(f"{NATIVE_RESULT_PREFIX}42", '{"ok": true}')
+        for _ in range(4):
+            await asyncio.sleep(0)
+
+        assert future.done()
+        assert future.result() == {"ok": True}
+        # the native result must not have disturbed navigation
+        assert [r.name for r in device.app.nav.stack] == ["/", "/a"]
+    finally:
+        _dispatch._pending.pop("42", None)  # type: ignore[attr-defined]
+
+
+def test_back_token_constant_has_no_payload_separator() -> None:
+    """``BACK_TOKEN`` carries no ``:`` separator (payload-free, unlike handler tokens).
+
+    Handler tokens are ``"<path>:<prop>"`` and native results ``"<prefix>:<id>"``;
+    the back token is a bare sentinel so it can never collide with either.
+    """
+    assert ":" not in BACK_TOKEN
+    assert not BACK_TOKEN.startswith(NATIVE_RESULT_PREFIX)
+
+
+# --- E0d: deep link wired through the run_device entry point -----------------
+
+
+def test_run_device_resolves_route_into_initial_stack() -> None:
+    """``run_device(route=...)`` opens on the deep-linked stack via ``reset``.
+
+    Exercises the actual device entry point (with a stubbed native host and a
+    loop that exits immediately) to prove the ``tempest_route`` intent extra is
+    resolved into the initial :class:`NavStack` before the first mount — the
+    Python half of the Android deep-link path.
+    """
+    host = _fake_host()
+    sys.modules["_tempest_host"] = host
+    captured: list[list[Route]] = []
+
+    def _view(app: App[_NavState]) -> Widget:
+        # record the stack the app booted with (read at first build)
+        captured.append(list(app.nav.stack))
+        return Text(content=app.nav.top.name)
+
+    real_new_loop = asyncio.new_event_loop
+
+    def _fake_new_loop() -> asyncio.AbstractEventLoop:
+        # build a real loop, but replace its blocking run_forever with a single
+        # drain so run_device returns after the scheduled start() completes.
+        # run_until_complete delegates to run_forever, so keep the original bound
+        # method to avoid recursing into the override.
+        loop = real_new_loop()
+        original_run_forever = loop.run_forever
+
+        def _drain() -> None:
+            loop.call_later(0.01, loop.stop)
+            original_run_forever()
+
+        loop.run_forever = _drain  # type: ignore[method-assign]
+        return loop
+
+    asyncio.new_event_loop = _fake_new_loop  # type: ignore[assignment]
+    try:
+        run_device(_NavState(), _view, route="/shop/item")
+    finally:
+        asyncio.new_event_loop = real_new_loop  # type: ignore[assignment]
+        del sys.modules["_tempest_host"]
+        asyncio.set_event_loop(None)
+
+    assert captured, "view was never built"
+    assert [r.name for r in captured[0]] == ["/", "/shop", "/shop/item"]
+    # the mount the host received reflects the deep-linked (poppable) stack
+    mount = json.loads(host.sent[-1])  # type: ignore[attr-defined]
+    assert mount["kind"] == "mount"
+    assert mount["can_pop"] is True

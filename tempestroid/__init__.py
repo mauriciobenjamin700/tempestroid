@@ -9,6 +9,7 @@ extra) and is imported on demand.
 from importlib.metadata import PackageNotFoundError, version
 
 from tempestroid.bridge import (
+    BACK_TOKEN,
     Bridge,
     DeviceApp,
     EventMessage,
@@ -76,6 +77,7 @@ from tempestroid.devserver import (
     serve_device,
 )
 from tempestroid.native import notify
+from tempestroid.navigation import NavStack, Route, routes_from_path
 from tempestroid.renderers.compose import to_compose
 from tempestroid.style import (
     AlignItems,
@@ -102,6 +104,7 @@ from tempestroid.style import (
     Transition,
 )
 from tempestroid.widgets import (
+    DEFAULT_WINDOW_SIZE,
     Button,
     Checkbox,
     Column,
@@ -109,6 +112,8 @@ from tempestroid.widgets import (
     Container,
     DateChangeEvent,
     DatePicker,
+    EndReachedEvent,
+    EndReachedHandler,
     Event,
     EventHandler,
     EventValidationError,
@@ -120,13 +125,27 @@ from tempestroid.widgets import (
     ImageFit,
     Input,
     KeyboardType,
+    LazyColumn,
+    LazyGrid,
+    LazyRow,
     LongPressEvent,
     LongPressHandler,
+    Navigator,
     ProgressBar,
+    RefreshControl,
+    RefreshEvent,
+    RefreshHandler,
+    RouteChangeEvent,
+    RouteChangeHandler,
+    RouteDrawer,
     Row,
     SafeArea,
     SafeAreaEdge,
+    ScrollEvent,
+    ScrollHandler,
     ScrollView,
+    SectionHeader,
+    SectionList,
     SlideEvent,
     Slider,
     Spinner,
@@ -135,6 +154,8 @@ from tempestroid.widgets import (
     SwipeEvent,
     SwipeHandler,
     Switch,
+    TabBar,
+    TabView,
     TapEvent,
     TapHandler,
     Text,
@@ -188,6 +209,10 @@ __all__ = [
     "SafeAreaEdge",
     "Stack",
     "GestureDetector",
+    "Navigator",
+    "TabView",
+    "TabBar",
+    "RouteDrawer",
     "Input",
     "TextArea",
     "Checkbox",
@@ -201,6 +226,13 @@ __all__ = [
     "Icon",
     "ProgressBar",
     "Spinner",
+    "DEFAULT_WINDOW_SIZE",
+    "LazyColumn",
+    "LazyRow",
+    "LazyGrid",
+    "SectionList",
+    "RefreshControl",
+    "SectionHeader",
     "EventHandler",
     # Composite components (lower to primitives via Component.render)
     "AppBar",
@@ -234,6 +266,10 @@ __all__ = [
     "TapHandler",
     "LongPressHandler",
     "SwipeHandler",
+    "RouteChangeHandler",
+    "ScrollHandler",
+    "RefreshHandler",
+    "EndReachedHandler",
     # Events (typed boundary contract)
     "Event",
     "TapEvent",
@@ -245,8 +281,16 @@ __all__ = [
     "SwipeDirection",
     "LongPressEvent",
     "SwipeEvent",
+    "RouteChangeEvent",
+    "ScrollEvent",
+    "RefreshEvent",
+    "EndReachedEvent",
     "EventValidationError",
     "parse_event",
+    # Navigation (routes + stack)
+    "Route",
+    "NavStack",
+    "routes_from_path",
     # Core (IR + reconciler)
     "Path",
     "Node",
@@ -266,6 +310,7 @@ __all__ = [
     # Compose renderer (Python side, phase B4)
     "to_compose",
     # Bridge (Python↔Kotlin boundary, phase B3)
+    "BACK_TOKEN",
     "Bridge",
     "LoopbackBridge",
     "JniBridge",

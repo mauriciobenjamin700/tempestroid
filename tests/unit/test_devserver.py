@@ -38,6 +38,28 @@ def view(app):
 """
 
 
+_NAV_SRC = """
+from dataclasses import dataclass
+from tempestroid import App, Button, Column, Route, Text, Widget
+
+
+@dataclass
+class State:
+    pass
+
+
+def make_state() -> State:
+    return State()
+
+
+def view(app):
+    return Column(children=[
+        Text(content="route=" + app.nav.top.name),
+        Button(label="go", on_click=lambda: app.push(Route(name="/b"))),
+    ])
+"""
+
+
 def _get(url: str) -> str:
     """Fetch a URL body (blocking)."""
     with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310
@@ -176,6 +198,62 @@ async def test_dev_client_routes_native_result_to_resolver(
     sink["cb"]("1:on_click", "{}")
     await asyncio.sleep(0.05)
     assert any(m["kind"] == "patch" for m in bridges[0].sent)
+
+
+async def test_dev_client_routes_back_token_to_pop() -> None:
+    """The reserved BACK_TOKEN pops a navigation screen over code-push.
+
+    Regression: the dev client's event sink must route BACK_TOKEN straight to
+    ``App.pop`` (as the on-device ``run_device`` does), or the Android system
+    back button would not pop under ``tempest serve`` — it would be dropped as
+    an unmatched widget event even though the bundled-APK path pops correctly.
+    """
+    import asyncio
+
+    from tempestroid.bridge.protocol import BACK_TOKEN
+
+    bridges: list[LoopbackBridge] = []
+
+    def make_bridge() -> Bridge:
+        bridge = LoopbackBridge()
+        bridges.append(bridge)
+        return bridge
+
+    sink: dict[str, Any] = {}
+
+    def register_sink(cb: Any) -> None:
+        sink["cb"] = cb
+
+    responses = {
+        "/version": json.dumps({"hash": "h1"}),
+        "/app": json.dumps({"hash": "h1", "source": _NAV_SRC}),
+    }
+
+    async def fetch(url: str) -> str:
+        for path, body in responses.items():
+            if url.endswith(path):
+                return body
+        raise ValueError(url)
+
+    await run_dev_client(
+        "http://dev",
+        make_bridge=make_bridge,
+        register_sink=register_sink,
+        fetch=fetch,
+        poll_interval=0,
+        max_polls=1,
+        log=lambda _: None,
+    )
+
+    # Push a screen via the button handler → the stack is now ["/", "/b"].
+    sink["cb"]("1:on_click", "{}")
+    await asyncio.sleep(0.05)
+    assert any("route=/b" in json.dumps(m) for m in bridges[0].sent)
+
+    # The system back token pops it → the latest patch reflects the root route.
+    sink["cb"](BACK_TOKEN, "{}")
+    await asyncio.sleep(0.05)
+    assert "route=/" in json.dumps(bridges[0].sent[-1])
 
 
 def test_dev_client_imports_without_typer() -> None:

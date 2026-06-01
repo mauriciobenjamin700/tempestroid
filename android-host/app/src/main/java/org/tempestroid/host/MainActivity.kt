@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.system.Os
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,8 +32,26 @@ class MainActivity : ComponentActivity() {
     /** Native capability router; registers its activity-result launchers here. */
     private lateinit var native: NativeModules
 
+    /**
+     * System-back handler (E0d). Disabled by default so the platform's default
+     * back action (closing the activity) runs at the navigation root. It is
+     * enabled/disabled from the `can_pop` flag Python reflects on every
+     * mount/patch envelope; when enabled, a back press is forwarded to Python as
+     * the reserved [BACK_TOKEN] event, which pops one navigation screen.
+     */
+    private val backCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            PythonRuntime.dispatchEvent(BACK_TOKEN, "{}")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Register the system-back handler. It stays disabled until Python
+        // reports a poppable stack (`can_pop`), so at the root the default
+        // close-the-app behaviour runs (mirrors App.pop's root no-op).
+        onBackPressedDispatcher.addCallback(this, backCallback)
 
         // Draw under the system bars so a `SafeArea` widget can inset against the
         // real `WindowInsets.safeDrawing`. Without this the system consumes those
@@ -60,10 +79,18 @@ class MainActivity : ComponentActivity() {
         PythonRuntime.messageSink = { json ->
             runOnUiThread {
                 val message = JSONObject(json)
-                if (message.optString("kind") == "native") {
-                    native.handle(message)
-                } else {
-                    tree.apply(message)
+                when (message.optString("kind")) {
+                    "native" -> native.handle(message)
+                    else -> {
+                        // mount/patch envelopes carry `can_pop` (E0d): gate the
+                        // system-back handler off the live navigation depth so a
+                        // back press pops a screen only when one exists, else the
+                        // default close-the-app action runs.
+                        if (message.has("can_pop")) {
+                            backCallback.isEnabled = message.optBoolean("can_pop", false)
+                        }
+                        tree.apply(message)
+                    }
                 }
             }
         }
@@ -89,6 +116,14 @@ class MainActivity : ComponentActivity() {
         //      `tempest build` → load + run it.
         //   3. otherwise: the bundled demo.
         val devUrl = intent?.getStringExtra("tempest_dev_url")
+        // Deep link (E0d): a `tempest_route` extra resolves to the initial
+        // navigation stack via `routes_from_path`, so the app opens on the
+        // linked screen with its back stack built. Pass it through to the file
+        // loader as the `route` argument (App.reset under the hood).
+        //   adb shell am start -n org.tempestroid.host/.MainActivity \
+        //     --es tempest_route /details
+        val route = intent?.getStringExtra("tempest_route")
+        val routeArg = if (route != null) ", route='$route'" else ""
         val entry = when {
             // Dev mode wins: poll the dev server and hot-reload over LAN.
             devUrl != null ->
@@ -100,7 +135,7 @@ class MainActivity : ComponentActivity() {
                 val appFile = File(filesDir, BUNDLED_APP_ASSET)
                 extractAssets(BUNDLED_APP_ASSET, appFile)
                 "from tempestroid.bridge.jni import run_device_file; " +
-                    "run_device_file('${appFile.absolutePath}')"
+                    "run_device_file('${appFile.absolutePath}'$routeArg)"
             }
             // No bundled app and no dev URL: the built-in demo (B4/B6).
             else -> DEVICE_DEMO
@@ -163,6 +198,14 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "tempestroid"
+
+        /**
+         * Reserved event token Python routes straight to `App.pop` (E0d). Must
+         * stay in sync with `tempestroid.bridge.protocol.BACK_TOKEN`. Forwarding
+         * the system back press as this event needs no new JNI entry — it reuses
+         * [PythonRuntime.dispatchEvent], the same channel widget taps use.
+         */
+        const val BACK_TOKEN = "__back__"
 
         /** Asset slot a `tempest build` APK stages the user's app source into. */
         private const val BUNDLED_APP_ASSET = "tempest_app.py"

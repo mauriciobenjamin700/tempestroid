@@ -4,7 +4,7 @@ Importing this package requires the optional ``qt`` extra (PySide6). It exposes
 the renderer and the ``Style -> Qt`` translator.
 """
 
-from tempestroid.renderers.qt.app_runner import run_qt
+from tempestroid.renderers.qt.app_runner import BackKeyFilter, run_qt
 from tempestroid.renderers.qt.dev_loop import run_dev
 from tempestroid.renderers.qt.renderer import QtRenderer
 from tempestroid.renderers.qt.simulator import Simulator
@@ -17,4 +17,5 @@ __all__ = [
     "run_dev",
     "to_qss",
     "layout_alignment",
+    "BackKeyFilter",
 ]

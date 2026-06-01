@@ -22,6 +22,7 @@ from tempestroid.bridge.protocol import EventMessage, MountMessage, PatchMessage
 from tempestroid.bridge.serializer import serialize_node, serialize_patch
 from tempestroid.core.ir import Patch
 from tempestroid.core.state import App
+from tempestroid.navigation import NavStack
 from tempestroid.widgets import Widget
 
 __all__ = ["Bridge", "LoopbackBridge", "DeviceApp"]
@@ -70,6 +71,7 @@ class DeviceApp(Generic[S]):
         state: S,
         view: Callable[[App[S]], Widget],
         bridge: Bridge,
+        nav: NavStack | None = None,
     ) -> None:
         """Initialize the device app.
 
@@ -77,10 +79,14 @@ class DeviceApp(Generic[S]):
             state: The initial application state.
             view: Builds the widget tree from the app.
             bridge: The transport to the device.
+            nav: The initial navigation stack (e.g. from a deep link resolved on
+                boot). Defaults to a fresh stack with the root route.
         """
         self._bridge: Bridge = bridge
         self._registry: HandlerRegistry = HandlerRegistry()
-        self._app: App[S] = App(state, view, apply_patches=self._on_patches)
+        self._app: App[S] = App(
+            state, view, apply_patches=self._on_patches, nav=nav
+        )
         # Strong refs to in-flight send tasks so the loop does not GC them.
         self._pending: set[asyncio.Task[None]] = set()
 
@@ -97,7 +103,12 @@ class DeviceApp(Generic[S]):
         """Build the initial tree, register handlers, and send the mount message."""
         root = self._app.start()
         self._registry.refresh(root)
-        await self._bridge.send(MountMessage(root=serialize_node(root)).model_dump())
+        await self._bridge.send(
+            MountMessage(
+                root=serialize_node(root),
+                can_pop=self._app.nav.can_pop,
+            ).model_dump()
+        )
 
     def reload(self, view: Callable[[App[S]], Widget]) -> None:
         """Hot-reload the view, preserving state and patching the device.
@@ -141,7 +152,8 @@ class DeviceApp(Generic[S]):
         """
         self._registry.refresh(self._app.current_tree)
         message = PatchMessage(
-            patches=[serialize_patch(p) for p in patches]
+            patches=[serialize_patch(p) for p in patches],
+            can_pop=self._app.nav.can_pop,
         ).model_dump()
         task = asyncio.get_running_loop().create_task(self._bridge.send(message))
         self._pending.add(task)

@@ -8,8 +8,9 @@ a device via :class:`LoopbackBridge`.
 
 from tempestroid.bridge.device import Bridge, DeviceApp, LoopbackBridge
 from tempestroid.bridge.handlers import HandlerRegistry
-from tempestroid.bridge.jni import JniBridge, run_device
+from tempestroid.bridge.jni import JniBridge, make_event_sink, run_device
 from tempestroid.bridge.protocol import (
+    BACK_TOKEN,
     EventMessage,
     MountMessage,
     PatchMessage,
@@ -22,9 +23,11 @@ __all__ = [
     "Bridge",
     "LoopbackBridge",
     "JniBridge",
+    "make_event_sink",
     "run_device",
     "DeviceApp",
     "HandlerRegistry",
+    "BACK_TOKEN",
     "MountMessage",
     "PatchMessage",
     "EventMessage",
