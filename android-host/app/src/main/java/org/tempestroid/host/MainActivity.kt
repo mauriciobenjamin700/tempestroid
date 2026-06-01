@@ -11,6 +11,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -97,7 +98,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                // The host draws edge-to-edge (enableEdgeToEdge above), so the
+                // root content must inset itself off the system bars (status bar
+                // top, navigation bar bottom, display cutout/notch) or it would
+                // render under them — the SafeArea-by-default contract. We apply
+                // safeDrawing on the Surface that wraps the whole tempestroid tree.
+                //
+                // This composes correctly with the explicit `SafeArea` widget:
+                // Compose's windowInsetsPadding tracks *consumed* insets down the
+                // tree, so a nested SafeArea (also using safeDrawing) sees the
+                // insets already consumed here and adds zero — no double inset.
+                // Likewise, future overlays that escape this Surface via a
+                // separate window (Dialog/ModalBottomSheet, phase E2) get the
+                // full, un-consumed insets and inset themselves independently.
+                Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
                     tree.root?.let { root ->
                         RenderNode(root) { token, payload ->
                             PythonRuntime.dispatchEvent(token, payload)
