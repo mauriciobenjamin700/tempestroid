@@ -252,7 +252,8 @@ Frozen Pydantic value objects, diffed by value.
   (Compose maps it to `animate*AsState`; Qt animation is renderer-imperative).
 - Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
   **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
-  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing),
+  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing —
+  `LINEAR`/`EASE_IN`/`EASE_OUT`/`EASE_IN_OUT` plus `EASE`/`BOUNCE`/`ELASTIC`),
   **`StackAlign`** (overlay child alignment in a `Stack`).
 
 ### Widgets (`tempestroid.widgets`)
@@ -270,6 +271,18 @@ The declarative IR — bare-noun widgets.
 - **`GestureDetector`** — wraps a `child` and reports pointer gestures via
   **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
   (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
+- Animation widgets (phase E3) — the interpolation runs in the **core**
+  (`AnimationController` advances a 0..1 value on the app's frame clock, `Tween`
+  interpolates a `float`/`Color`/`Edge`, the `view` folds the result into a
+  `Style`), so both renderers receive only the final per-frame props.
+  **`Animated`** (wraps a `child` rebuilt with interpolated style each frame),
+  **`AnimatedList`** (a `Column`/`Row` whose items fade + expand in on insert and
+  collapse out on remove — `enter_duration_ms`/`exit_duration_ms`/curves),
+  **`Hero`** (a `hero_tag` shared-element transition across `Navigator` screens),
+  **`Shimmer`** (sweeps a gradient highlight over a `child` as a loading
+  placeholder) and **`Skeleton`** (the childless rectangular shimmer). Qt
+  interpolates in the core and drives `QPropertyAnimation`/`QTimer`; Compose can
+  use its native animation engine (a documented conformance divergence).
 - Navigation hosts — render the `NavStack` into a tree (a route change diffs to
   an `Update`/`Replace`, no new patch kind): **`Navigator`** (stack host: shows
   the top `child`, `transition` slide/fade/none + `depth` drive the animation),
@@ -408,6 +421,29 @@ renderer changes and are fully device-ready. Every component takes an optional
   and **`dismiss(overlay_id)`**. Each schedules the same coalesced rebuild;
   **`OverlayEntry`** is the internal overlay slot.
 
+### Animation (`tempestroid.animation`)
+
+The interpolation runs in the **core**, so both renderers only ever see final
+per-frame props (the divergence — Qt interpolates in the core, Compose may drive
+its native engine — is pinned by the conformance suite).
+
+- **`AnimationController`** — drives a normalized `value` (0.0..1.0) on the app's
+  frame clock: `forward()` ramps toward 1.0, `reverse()` toward 0.0, `stop()`
+  halts and unregisters. Constructed with `duration_s` + `curve`, or a
+  `Spring` for physics-based motion. Injectable `time_source` for deterministic
+  tests.
+- **`Tween[T]`** — a frozen linear interpolator (`begin` → `end`); `at(t)`
+  interpolates `float`, `Color` (per channel), `Edge` (per side) or a numeric
+  `tuple`. The `view` reads `at(controller.value)` to feed an interpolated
+  `Style`.
+- **`Spring`** — frozen spring parameters (`stiffness`/`damping`/`mass`) for an
+  `AnimationController` instead of a fixed duration.
+- `App` owns the frame clock: **`register_animation(ctrl)`** starts a coalesced
+  `loop.call_later(1/60)` tick that advances every active controller and requests
+  a rebuild; the clock stops re-arming once no controller remains. The reserved
+  `__frame__` device token routes to `App._tick_from_device()` (one advance per
+  host frame). `App.__init__` accepts an optional `time_source` kwarg.
+
 ### Navigation (`tempestroid`)
 
 - **`Route`** — a frozen navigation destination: `name` + typed `params`.
@@ -463,11 +499,17 @@ transport (B3) and the Kotlin Compose renderer (B4) are implemented in
   ride under the `("overlay", …)` path), `event` a device→Python callback
   addressed by handler token. `mount`/`patch` also carry **`can_pop`** (the live
   `app.nav.can_pop`), so the host can gate its system-back handler without a
-  round-trip.
+  round-trip, and **`has_animations`** (`app.has_animations`), so the host can
+  start/stop its `withFrameNanos` frame loop without a round-trip.
 - **`BACK_TOKEN`** (`"__back__"`) — the reserved event token the host sends on a
   system back action (e.g. the Android back gesture). The bridge routes it
   straight to `App.pop` (no widget handler, no new JNI entry) — it pops a screen,
   or is a no-op at the root where the host's default close-the-app action runs.
+- **`FRAME_TOKEN`** (`"__frame__"`) — the reserved event token the host sends
+  once per frame from its `withFrameNanos` loop while `has_animations` is `True`.
+  The bridge routes it straight to `App._tick_from_device`, which advances every
+  active `AnimationController` one frame and re-renders (no widget handler, no new
+  JNI entry). The Qt simulator drives its own clock and never emits this token.
 - **`DISMISS_TOKEN_PREFIX`** (`"__dismiss__"`) — the reserved event-token prefix
   the host sends when an overlay is dismissed by a host-owned gesture (scrim tap,
   swipe-down): `"__dismiss__:<overlay_id>"`. The bridge strips the prefix and
@@ -588,6 +630,10 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | B0–B6 | Android runtime: CPython 3.14 arm64, native wheels, Kotlin host, JNI bridge, Compose renderer, LAN code-push, native capabilities | ✅ |
 | C | Polish: `new`/`build`/`run` + stateful hot reload | ✅ |
 | D | Conformance golden snapshots (Qt vs Compose) | ✅ |
+| E0 | Navigation + routes (push/pop, tabs, drawer, back button, deep link) | ✅ |
+| E1 | Virtualized lists + scroll (lazy, sticky section, pull-to-refresh, infinite) | ✅ |
+| E2 | Overlays + feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ |
+| E3 | Animation framework (`AnimationController`/`Tween`/`Spring`, `Animated`/`AnimatedList`/`Hero`/`Shimmer`/`Skeleton`) | ✅ |
 
 ---
 

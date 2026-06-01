@@ -8,9 +8,15 @@ extra) and is imported on demand.
 
 from importlib.metadata import PackageNotFoundError, version
 
+from tempestroid.animation import (
+    AnimationController,
+    Spring,
+    Tween,
+)
 from tempestroid.bridge import (
     BACK_TOKEN,
     DISMISS_TOKEN_PREFIX,
+    FRAME_TOKEN,
     Bridge,
     DeviceApp,
     EventMessage,
@@ -111,6 +117,8 @@ from tempestroid.style import (
 from tempestroid.widgets import (
     DEFAULT_WINDOW_SIZE,
     ActionSheet,
+    Animated,
+    AnimatedList,
     BottomSheet,
     Button,
     Checkbox,
@@ -130,6 +138,7 @@ from tempestroid.widgets import (
     FilePicker,
     FileSelectEvent,
     GestureDetector,
+    Hero,
     Icon,
     Image,
     ImageFit,
@@ -161,6 +170,8 @@ from tempestroid.widgets import (
     ScrollView,
     SectionHeader,
     SectionList,
+    Shimmer,
+    Skeleton,
     SlideEvent,
     Slider,
     Spinner,
@@ -190,6 +201,10 @@ except PackageNotFoundError:  # running from a source tree without an install
 
 __all__ = [
     "__version__",
+    # Animation
+    "AnimationController",
+    "Tween",
+    "Spring",
     # Style
     "Style",
     "Color",
@@ -225,6 +240,11 @@ __all__ = [
     "SafeArea",
     "SafeAreaEdge",
     "Stack",
+    "Animated",
+    "AnimatedList",
+    "Hero",
+    "Shimmer",
+    "Skeleton",
     "GestureDetector",
     "Navigator",
     "TabView",
@@ -346,6 +366,7 @@ __all__ = [
     # Bridge (Python↔Kotlin boundary, phase B3)
     "BACK_TOKEN",
     "DISMISS_TOKEN_PREFIX",
+    "FRAME_TOKEN",
     "Bridge",
     "LoopbackBridge",
     "JniBridge",

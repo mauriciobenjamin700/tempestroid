@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict
 from tempestroid.core.ir import Path
 from tempestroid.widgets import (
     ActionSheet,
+    Animated,
+    AnimatedList,
     BottomSheet,
     Button,
     Checkbox,
@@ -32,6 +34,7 @@ from tempestroid.widgets import (
     Event,
     FilePicker,
     GestureDetector,
+    Hero,
     Icon,
     Image,
     Input,
@@ -47,6 +50,8 @@ from tempestroid.widgets import (
     Row,
     ScrollView,
     SectionList,
+    Shimmer,
+    Skeleton,
     Slider,
     Spinner,
     Stack,
@@ -62,6 +67,7 @@ from tempestroid.widgets import (
 __all__ = [
     "BACK_TOKEN",
     "DISMISS_TOKEN_PREFIX",
+    "FRAME_TOKEN",
     "handler_token",
     "event_type_for",
     "EVENT_SCHEMAS",
@@ -84,8 +90,20 @@ BACK_TOKEN: str = "__back__"
 #: result prefix, it rides the existing event channel — no new JNI entry point.
 DISMISS_TOKEN_PREFIX: str = "__dismiss__"
 
+#: Reserved event token the device host sends once per frame (from its
+#: ``withFrameNanos`` loop) while an animation is active. It carries no payload
+#: and addresses no widget handler: the bridge routes it to
+#: :meth:`~tempestroid.core.state.App._tick_from_device`, which advances the
+#: animation clock one frame. Like :data:`BACK_TOKEN` it rides the existing event
+#: channel — no new JNI entry point. Optional for the Qt simulator, which drives
+#: its own clock via ``loop.call_later`` and never emits this token.
+FRAME_TOKEN: str = "__frame__"
+
 #: ``{widget_type: {handler_prop: event_type}}`` derived from each widget's
 #: ``event_schemas`` classvar — the contract used to validate event payloads.
+#: Handler-bearing widgets are kept via the ``if widget.event_schemas`` filter;
+#: the handler-free animation widgets are added unconditionally afterward so they
+#: still appear in the introspected contract.
 EVENT_SCHEMAS: dict[str, dict[str, type[Event]]] = {
     widget.__name__: dict(widget.event_schemas)
     for widget in (
@@ -127,6 +145,12 @@ EVENT_SCHEMAS: dict[str, dict[str, type[Event]]] = {
     )
     if widget.event_schemas
 }
+EVENT_SCHEMAS.update(
+    {
+        widget.__name__: dict(widget.event_schemas)
+        for widget in (Animated, AnimatedList, Hero, Shimmer, Skeleton)
+    }
+)
 
 
 def handler_token(path: Path, prop: str) -> str:
@@ -172,6 +196,12 @@ class MountMessage(BaseModel):
             handler without a synchronous round-trip: when ``False`` the device's
             default back action runs (e.g. close the app on Android); when
             ``True`` the host sends :data:`BACK_TOKEN` to pop a screen instead.
+        has_animations: Whether at least one animation controller is active on
+            the app's frame clock. The host reads this to start/stop its
+            ``withFrameNanos`` loop: while ``True`` it sends :data:`FRAME_TOKEN`
+            once per frame to drive the animation clock; while ``False`` it idles
+            the frame loop. Re-evaluated on every mount/patch so the host's frame
+            loop tracks the live set of active controllers.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -180,6 +210,7 @@ class MountMessage(BaseModel):
     root: dict[str, Any]
     overlays: list[dict[str, Any]] = []
     can_pop: bool = False
+    has_animations: bool = False
 
 
 class PatchMessage(BaseModel):
@@ -191,6 +222,10 @@ class PatchMessage(BaseModel):
         can_pop: Whether the navigation stack can be popped (see
             :class:`MountMessage`). Re-sent on every patch batch so the host's
             back handler tracks the live stack depth after each rebuild.
+        has_animations: Whether at least one animation controller is active (see
+            :class:`MountMessage`). Re-sent on every patch batch so the host's
+            ``withFrameNanos`` loop starts when an animation begins and stops once
+            the last controller settles.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -198,6 +233,7 @@ class PatchMessage(BaseModel):
     kind: str = "patch"
     patches: list[dict[str, Any]]
     can_pop: bool = False
+    has_animations: bool = False
 
 
 class EventMessage(BaseModel):

@@ -15,6 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import java.io.File
 import org.json.JSONObject
@@ -30,6 +35,20 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
 
     private val tree = TempestTree()
+
+    /**
+     * E3 device frame clock gate, as Compose snapshot state.
+     *
+     * Set from the `has_animations` flag every mount/patch envelope carries
+     * (defaulting `false`). Because it is `mutableStateOf`, the `LaunchedEffect`
+     * keyed on it restarts when the flag flips: `true` spins up a per-frame
+     * `withFrameNanos` loop that fires the reserved [PythonRuntime.FRAME_TOKEN]
+     * each frame; flipping back to `false` cancels that effect entirely, so the
+     * host parks no coroutine and sends no frame traffic while idle (no
+     * busy-loop). `PythonRuntime.needsFrames` is kept in sync for any non-Compose
+     * reader, but this state is the one the renderer observes.
+     */
+    private var needsFrames by mutableStateOf(false)
 
     /** Native capability router; registers its activity-result launchers here. */
     private lateinit var native: NativeModules
@@ -91,6 +110,19 @@ class MainActivity : ComponentActivity() {
                         if (message.has("can_pop")) {
                             backCallback.isEnabled = message.optBoolean("can_pop", false)
                         }
+                        // E3: gate the device frame clock off `has_animations`
+                        // (default false). When true, the withFrameNanos loop below
+                        // sends FRAME_TOKEN each frame so Python advances its
+                        // animation controllers at the panel's refresh rate. The
+                        // Python core also runs its own loop.call_later clock, so
+                        // this is purely additive — absent flag → no frame traffic.
+                        // Drive the Compose snapshot state (which keys the
+                        // LaunchedEffect) and mirror it onto PythonRuntime for any
+                        // non-Compose reader. This runs on the UI thread, so it is
+                        // a safe snapshot write.
+                        val animating = message.optBoolean("has_animations", false)
+                        needsFrames = animating
+                        PythonRuntime.needsFrames = animating
                         tree.apply(message)
                     }
                 }
@@ -116,6 +148,23 @@ class MainActivity : ComponentActivity() {
                 // inset (the M3 Dialog/Sheet manage their own WindowInsets).
                 val onEvent: (String, String) -> Unit = { token, payload ->
                     PythonRuntime.dispatchEvent(token, payload)
+                }
+                // E3 device frame clock: while Python reports active animations
+                // (`needsFrames`, set from `has_animations`), send the reserved
+                // FRAME_TOKEN once per real display frame so Python's
+                // `App._tick_from_device` advances its controllers at the panel's
+                // native refresh rate. Keying the effect on `needsFrames` means the
+                // loop only EXISTS while animations are active: flipping the flag
+                // false cancels this coroutine (no parked frame callback, no bridge
+                // traffic) — not a busy-loop. withFrameNanos parks until the next
+                // display frame, so while active this paces exactly to vsync.
+                LaunchedEffect(needsFrames) {
+                    if (needsFrames) {
+                        while (true) {
+                            withFrameNanos { /* park until the next display frame */ }
+                            PythonRuntime.dispatchEvent(PythonRuntime.FRAME_TOKEN, "{}")
+                        }
+                    }
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
                     Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {

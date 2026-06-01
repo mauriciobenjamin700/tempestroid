@@ -12,6 +12,11 @@ def test_widget_catalog_lists_all_widgets():
         "Row",
         "Container",
         "ScrollView",
+        "Animated",
+        "AnimatedList",
+        "Hero",
+        "Shimmer",
+        "Skeleton",
         "Input",
         "TextArea",
         "Checkbox",
@@ -95,6 +100,23 @@ def test_introspect_is_json_serializable():
     dumped = json.dumps(spec)  # must not raise
     assert "widgets" in json.loads(dumped)
     assert "events" in spec
+
+
+# --- E3 animation widget catalog (phase E3) ----------------------------------
+
+
+def test_animation_widgets_appear_in_catalog():
+    """The five E3 animation widgets are introspected with prop schemas.
+
+    Regression: ``Animated``/``AnimatedList``/``Hero``/``Shimmer``/``Skeleton``
+    were initially absent from ``WIDGET_TYPES`` so ``tempest spec`` did not list
+    them. They are handler-free, so their ``events`` map is empty.
+    """
+    catalog = widget_catalog()
+    for name in ("Animated", "AnimatedList", "Hero", "Shimmer", "Skeleton"):
+        assert name in catalog, f"{name} missing from widget catalog"
+        assert "properties" in catalog[name]["schema"]
+        assert catalog[name]["events"] == {}
 
 
 # --- E2 overlay widget event contracts (phase E2) ----------------------------

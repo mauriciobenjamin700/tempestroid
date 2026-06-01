@@ -1,0 +1,15 @@
+{
+  "compose": {
+    "transition": {
+      "curve": "ease",
+      "delayMs": 0,
+      "durationMs": 200
+    }
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

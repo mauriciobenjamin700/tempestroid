@@ -6,10 +6,23 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.InfiniteRepeatableSpec
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -60,14 +73,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -289,6 +307,16 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         "SectionList" -> RenderSectionList(node, style, onEvent)
 
         "RefreshControl" -> RenderRefreshControl(node, style, onEvent)
+
+        "Animated" -> RenderAnimated(node, style, onEvent)
+
+        "AnimatedList" -> RenderAnimatedList(node, style, onEvent)
+
+        "Shimmer" -> RenderShimmer(node, style, onEvent)
+
+        "Skeleton" -> RenderSkeleton(node, style)
+
+        "Hero" -> RenderHero(node, onEvent)
 
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
@@ -540,6 +568,197 @@ private fun emitDismiss(node: TempestNode, onEvent: (String, String) -> Unit) {
 private const val DISMISS_TOKEN_PREFIX = "__dismiss__"
 
 /**
+ * The enclosing [SharedTransitionScope] (E3d), published by [RenderNavigator]'s
+ * `SharedTransitionLayout`. A [RenderHero] descendant reads it to register its
+ * child as a shared element; `null` outside any Navigator (then `Hero` renders
+ * its child plainly, with no shared-element animation — a documented divergence).
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+private val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
+
+/**
+ * The enclosing [AnimatedVisibilityScope] (E3d) of the current route slot,
+ * published by [RenderNavigator]'s `AnimatedContent`. `Modifier.sharedElement`
+ * needs both this and [LocalSharedTransitionScope]; `null` outside a Navigator.
+ */
+private val LocalAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
+
+/**
+ * Render an [Animated] wrapper (E3c). The interpolation already happened in the
+ * Python core: `App.view` read the `AnimationController.value`, applied the
+ * `Tween`, and built the single serialized child with its style already at the
+ * current frame's target. So the device just renders that child — every frame
+ * arrives as an `Update` patch carrying the next interpolated style.
+ *
+ * This is the documented Qt/Compose divergence in action: rather than driving a
+ * second, native `animate*AsState` engine (which would fight the core clock and
+ * double-animate), the Compose leaf faithfully paints the per-frame props the
+ * core computed. The serialized `transition` spec (durationMs/curve) is carried
+ * on the child's style for parity, but the core owns the cadence.
+ */
+@Composable
+private fun RenderAnimated(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val child = node.children.firstOrNull()
+    Box(modifier = baseModifier(style)) {
+        if (child != null) RenderNode(child, onEvent)
+    }
+}
+
+/**
+ * Render an [AnimatedList] (E3c): a column/row whose children animate in/out
+ * natively via [AnimatedVisibility] (`fadeIn`+`expandVertically` on enter,
+ * `fadeOut`+`shrinkVertically` on exit). Unlike [RenderAnimated], the entry/exit
+ * choreography IS owned by the Compose engine here (the Qt leaf uses
+ * `QPropertyAnimation` instead — the documented divergence).
+ *
+ * Each child is keyed by its reconciler `key`; a `LaunchedEffect` flips its
+ * visibility to `true` on first appearance so the enter transition plays. A
+ * child removed from `node.children` is dropped by the reconciler's `Remove`
+ * patch; Compose's keyed slot machinery plays the exit transition as it leaves.
+ */
+@Composable
+private fun RenderAnimatedList(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val enterMs = (node.props["enter_duration_ms"] as? Number)?.toInt() ?: 300
+    val exitMs = (node.props["exit_duration_ms"] as? Number)?.toInt() ?: 300
+    val horizontal = (node.props["direction"] as? String) == "row"
+    val children = node.children.toList()
+    val content: @Composable () -> Unit = {
+        children.forEachIndexed { index, child ->
+            val itemKey = child.key ?: index.toString()
+            androidx.compose.runtime.key(itemKey) {
+                val visible = remember(itemKey) { mutableStateOf(false) }
+                LaunchedEffect(itemKey) { visible.value = true }
+                AnimatedVisibility(
+                    visible = visible.value,
+                    enter = fadeIn(tween(enterMs)) + expandVertically(tween(enterMs)),
+                    exit = fadeOut(tween(exitMs)) + shrinkVertically(tween(exitMs)),
+                ) {
+                    RenderNode(child, onEvent)
+                }
+            }
+        }
+    }
+    if (horizontal) {
+        Row(modifier = baseModifier(style)) { content() }
+    } else {
+        Column(modifier = baseModifier(style)) { content() }
+    }
+}
+
+/**
+ * Render a [Shimmer] (E3c): wrap the single child in a [Box] painted with a
+ * left-to-right [Brush.linearGradient] that sweeps between `base_color` and
+ * `highlight_color`, driven by an [rememberInfiniteTransition] looping over
+ * `duration_ms`. The native infinite loop is the device clock here (the Qt leaf
+ * animates a `QLinearGradient` instead — the documented divergence), so this
+ * needs no Python `__frame__` ticks.
+ */
+@Composable
+private fun RenderShimmer(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val durationMs = (node.props["duration_ms"] as? Number)?.toInt() ?: 1200
+    val base = colorFromProp(node.props["base_color"]) ?: Color(0xFFE0E0E0)
+    val highlight = colorFromProp(node.props["highlight_color"]) ?: Color(0xFFF5F5F5)
+    val brush = shimmerBrush(durationMs, base, highlight)
+    val child = node.children.firstOrNull()
+    Box(modifier = baseModifier(style).background(brush)) {
+        if (child != null) RenderNode(child, onEvent)
+    }
+}
+
+/**
+ * Render a [Skeleton] (E3c): a childless rounded placeholder rectangle painted
+ * with the same sweeping shimmer [Brush] as [RenderShimmer]. Sizes to its
+ * `width`/`height` props (height defaults to a single text-line band).
+ */
+@Composable
+private fun RenderSkeleton(node: TempestNode, style: Map<String, Any?>) {
+    val durationMs = (node.props["duration_ms"] as? Number)?.toInt() ?: 1200
+    val radius = (node.props["radius"] as? Number)?.toFloat() ?: 4f
+    val width = (node.props["width"] as? Number)?.toFloat()
+    val height = (node.props["height"] as? Number)?.toFloat() ?: 16f
+    val base = colorFromProp(node.props["base_color"]) ?: Color(0xFFE0E0E0)
+    val highlight = colorFromProp(node.props["highlight_color"]) ?: Color(0xFFF5F5F5)
+    val brush = shimmerBrush(durationMs, base, highlight)
+    var m: Modifier = if (width != null) Modifier.width(width.dp) else Modifier.fillMaxWidth()
+    m = m.height(height.dp).clip(RoundedCornerShape(radius.dp)).background(brush)
+    Box(modifier = m)
+}
+
+/**
+ * Build the looping shimmer [Brush]: a horizontal gradient
+ * `base → highlight → base` whose highlight band slides across via an
+ * [rememberInfiniteTransition] animating its start/end offsets over [durationMs].
+ */
+@Composable
+private fun shimmerBrush(durationMs: Int, base: Color, highlight: Color): Brush {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translate by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = InfiniteRepeatableSpec(
+            animation = tween(durationMillis = durationMs.coerceAtLeast(1), easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "shimmerTranslate",
+    )
+    val span = 600f
+    val x = translate * (span * 2) - span
+    return Brush.linearGradient(
+        colors = listOf(base, highlight, base),
+        start = Offset(x, 0f),
+        end = Offset(x + span, 0f),
+    )
+}
+
+/**
+ * Render a [Hero] (E3d): tag its single child as a shared element so it animates
+ * across a Navigator route swap. Resolves the [SharedTransitionScope] and the
+ * route slot's [AnimatedVisibilityScope] from the CompositionLocals
+ * [RenderNavigator] publishes; both must be present. When either is absent (a
+ * `Hero` used outside any Navigator), the child renders plainly — a documented
+ * divergence (Qt interpolates geometry by hero_tag on the page swap).
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun RenderHero(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val child = node.children.firstOrNull()
+    val tag = node.props["hero_tag"] as? String
+    val sharedScope = LocalSharedTransitionScope.current
+    val visibilityScope = LocalAnimatedVisibilityScope.current
+    if (child == null) return
+    if (tag != null && sharedScope != null && visibilityScope != null) {
+        with(sharedScope) {
+            Box(
+                modifier = Modifier.sharedElement(
+                    rememberSharedContentState(key = tag),
+                    animatedVisibilityScope = visibilityScope,
+                ),
+            ) {
+                RenderNode(child, onEvent)
+            }
+        }
+    } else {
+        RenderNode(child, onEvent)
+    }
+}
+
+/** Parse a serialized color prop (a `#rrggbb`/`#aarrggbb` hex string) to a [Color]. */
+private fun colorFromProp(value: Any?): Color? =
+    (value as? String)?.let { parseHexColor(it) }
+
+/**
  * A navigation-stack host that animates the swap of its single top screen — the
  * Kotlin counterpart of the Qt `_NavHost` (Navigator path, no tab strip).
  *
@@ -550,6 +769,7 @@ private const val DISMISS_TOKEN_PREFIX = "__dismiss__"
  * picks the animation: `"fade"` cross-fades, `"none"` swaps instantly, anything
  * else (default `"slide"`) slides horizontally.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun RenderNavigator(
     node: TempestNode,
@@ -566,26 +786,40 @@ private fun RenderNavigator(
     // Drive AnimatedContent off a stable per-screen key so a same-typed screen
     // swap (diffed as an Update on this Navigator) still triggers the animation.
     val targetKey = child?.key ?: "depth:$depth"
+    // E3d: wrap the AnimatedContent in a SharedTransitionLayout so a `Hero` node
+    // present on both the outgoing and incoming screen (matched by hero_tag)
+    // animates as one shared element across the route swap. The
+    // SharedTransitionScope is published to descendants via a CompositionLocal so
+    // the (deeply nested) `Hero` case can resolve it without threading it through
+    // every RenderNode call (mirrors the Qt "interpolate geometry by hero_tag").
     Box(modifier = baseModifier(style)) {
-        AnimatedContent(
-            targetState = targetKey,
-            transitionSpec = {
-                when (transition) {
-                    "fade" -> fadeIn() togetherWith fadeOut()
-                    "none" -> EnterTransition.None togetherWith ExitTransition.None
-                    else -> {
-                        val sign = if (forward) 1 else -1
-                        (slideInHorizontally { full -> sign * full } togetherWith
-                            slideOutHorizontally { full -> -sign * full })
+        SharedTransitionLayout {
+            CompositionLocalProvider(LocalSharedTransitionScope provides this) {
+                AnimatedContent(
+                    targetState = targetKey,
+                    transitionSpec = {
+                        when (transition) {
+                            "fade" -> fadeIn() togetherWith fadeOut()
+                            "none" -> EnterTransition.None togetherWith ExitTransition.None
+                            else -> {
+                                val sign = if (forward) 1 else -1
+                                (slideInHorizontally { full -> sign * full } togetherWith
+                                    slideOutHorizontally { full -> -sign * full })
+                            }
+                        }
+                    },
+                    label = "navigator",
+                ) { key ->
+                    // Publish this AnimatedContent's AnimatedVisibilityScope so a
+                    // `Hero` descendant can call `sharedElement(...)` with the
+                    // required scope. `key` keys the slot so Compose keeps the
+                    // outgoing/incoming subtrees distinct during the transition.
+                    CompositionLocalProvider(LocalAnimatedVisibilityScope provides this) {
+                        if (child != null && key == targetKey) {
+                            RenderNode(child, onEvent)
+                        }
                     }
                 }
-            },
-            label = "navigator",
-        ) { key ->
-            // Render the current top screen; `key` keys the slot so Compose keeps
-            // the outgoing and incoming subtrees distinct during the transition.
-            if (child != null && key == targetKey) {
-                RenderNode(child, onEvent)
             }
         }
     }

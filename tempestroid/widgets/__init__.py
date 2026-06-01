@@ -5,6 +5,13 @@ reconciler diffs and the leaf renderers apply. Import them from this package
 level rather than from submodules.
 """
 
+from tempestroid.widgets.animated import (
+    Animated,
+    AnimatedList,
+    Hero,
+    Shimmer,
+    Skeleton,
+)
 from tempestroid.widgets.base import (
     Component,
     DateChangeHandler,
@@ -123,6 +130,11 @@ __all__ = [
     "SafeArea",
     "SafeAreaEdge",
     "Stack",
+    "Animated",
+    "AnimatedList",
+    "Hero",
+    "Shimmer",
+    "Skeleton",
     "GestureDetector",
     "Navigator",
     "TabView",

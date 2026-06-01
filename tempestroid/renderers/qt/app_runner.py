@@ -107,7 +107,10 @@ def run_qt(
     asyncio.set_event_loop(loop)
 
     renderer = QtRenderer()
-    app = App(state, view, apply_patches=renderer.apply)
+    # Drive the animation frame clock off the fused qasync loop's monotonic clock
+    # so ``App._tick`` computes each frame's ``dt`` from the same time base the
+    # ``loop.call_later(1/60)`` scheduling uses.
+    app = App(state, view, apply_patches=renderer.apply, time_source=loop.time)
     # The app builds a `Scene` (root tree + floating overlay layer). The Qt
     # renderer mounts both; a host-owned overlay dismissal (dialog close, menu
     # select, scrim tap) is routed back to `App.dismiss` — the desktop analogue
