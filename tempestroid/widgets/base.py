@@ -18,10 +18,13 @@ from pydantic import BaseModel, ConfigDict, WithJsonSchema
 from tempestroid.style import Style
 from tempestroid.widgets.events import (
     DateChangeEvent,
+    EndReachedEvent,
     Event,
     FileSelectEvent,
     LongPressEvent,
+    RefreshEvent,
     RouteChangeEvent,
+    ScrollEvent,
     SlideEvent,
     SwipeEvent,
     TapEvent,
@@ -40,6 +43,9 @@ __all__ = [
     "LongPressHandler",
     "SwipeHandler",
     "RouteChangeHandler",
+    "ScrollHandler",
+    "RefreshHandler",
+    "EndReachedHandler",
     "Widget",
     "Component",
     "handler_accepts_event",
@@ -152,6 +158,24 @@ SwipeHandler: TypeAlias = Annotated[
 RouteChangeHandler: TypeAlias = Annotated[
     Callable[[RouteChangeEvent], Any]
     | Callable[[RouteChangeEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+ScrollHandler: TypeAlias = Annotated[
+    Callable[[ScrollEvent], Any]
+    | Callable[[ScrollEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+RefreshHandler: TypeAlias = Annotated[
+    Callable[[RefreshEvent], Any]
+    | Callable[[RefreshEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+EndReachedHandler: TypeAlias = Annotated[
+    Callable[[EndReachedEvent], Any]
+    | Callable[[EndReachedEvent], Awaitable[Any]]
     | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]

@@ -15,16 +15,19 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 from tempestroid.core.ir import Node, Patch
 from tempestroid.core.reconciler import build, diff
 from tempestroid.navigation import NavStack, Route
-from tempestroid.widgets import Widget
+from tempestroid.widgets import LazyColumn, LazyGrid, LazyRow, SectionList, Widget
 
 __all__ = ["App"]
 
 S = TypeVar("S")
+
+#: The virtualized list widgets whose visible window the app tracks and slides.
+_LAZY_LISTS: tuple[type[Widget], ...] = (LazyColumn, LazyRow, LazyGrid)
 
 
 class App(Generic[S]):
@@ -68,6 +71,12 @@ class App(Generic[S]):
         self._apply: Callable[[list[Patch]], None] = apply_patches
         self._current: Node | None = None
         self._rebuild_scheduled: bool = False
+        # Visible-window overrides for virtualized lists, keyed by the list's
+        # `key`; SectionList sections are keyed `"<list_key>::<section_title>"`.
+        # Injected into the freshly built tree (see `_build`) so a slid window
+        # survives the view re-running, and the materialized window children
+        # cross to the renderer as the list node's `children`.
+        self._windows: dict[str, tuple[int, int]] = {}
 
     def start(self) -> Node:
         """Build the initial IR tree and record it as the current tree.
@@ -75,7 +84,7 @@ class App(Generic[S]):
         Returns:
             The root IR node, ready to hand to a renderer's ``mount``.
         """
-        self._current = build(self._view(self))
+        self._current = self._build()
         return self._current
 
     @property
@@ -113,7 +122,7 @@ class App(Generic[S]):
             raise RuntimeError("cannot swap_view before start()")
         # Build with the new view eagerly so a failure aborts before we commit;
         # the old self._view is untouched until the build succeeds.
-        new = build(view(self))
+        new = build(self._inject_windows(view(self)))
         self._view = view
         patches = diff(self._current, new)
         self._current = new
@@ -130,6 +139,116 @@ class App(Generic[S]):
         if mutate is not None:
             mutate(self.state)
         self.request_rebuild()
+
+    def slide_window(self, key: str, start: int, end: int) -> None:
+        """Set the visible window of a virtualized list and request a rebuild.
+
+        A renderer (or the device bridge) calls this from a list's scroll handler:
+        the new ``[start, end)`` window is recorded by the list's ``key`` and
+        injected into the next build, so :class:`LazyColumn`/:class:`LazyRow`/
+        :class:`LazyGrid` materialize the slid window. Through the keyed diff this
+        becomes a minimal remove/reorder/insert patch sequence.
+
+        Args:
+            key: The ``key`` of the target list widget.
+            start: The first visible index (inclusive).
+            end: The one-past-last visible index (exclusive).
+        """
+        self._windows[key] = (start, end)
+        self.request_rebuild()
+
+    def slide_section_window(
+        self, key: str, section_title: str, start: int, end: int
+    ) -> None:
+        """Set the visible window of one section of a :class:`SectionList`.
+
+        Args:
+            key: The ``key`` of the target :class:`SectionList` widget.
+            section_title: The ``title`` of the section to slide.
+            start: The first visible index (inclusive) within that section.
+            end: The one-past-last visible index (exclusive) within that section.
+        """
+        self._windows[f"{key}::{section_title}"] = (start, end)
+        self.request_rebuild()
+
+    def _build(self) -> Node:
+        """Build the current view, injecting any tracked list windows first.
+
+        Returns:
+            The freshly built IR node tree with virtualized lists materialized at
+            their tracked windows.
+        """
+        return build(self._inject_windows(self._view(self)))
+
+    def _inject_windows(self, widget: Widget) -> Widget:
+        """Rewrite a widget tree to carry the app's tracked list windows.
+
+        Walks the tree by ``child_field_names``; a virtualized list with a tracked
+        window (matched by ``key``) is copied with its ``window`` set, so its
+        ``child_nodes`` materializes the slid window at build time. Trees without
+        any tracked window are returned untouched (the common, allocation-free
+        path), so lists fall back to their declared initial window on first mount.
+
+        Args:
+            widget: The root widget built by the view.
+
+        Returns:
+            The (possibly rewritten) widget tree.
+        """
+        if not self._windows:
+            return widget
+        return self._inject(widget)
+
+    def _inject(self, widget: Widget) -> Widget:
+        """Recursively apply tracked windows to a widget and its children.
+
+        Args:
+            widget: The widget to rewrite.
+
+        Returns:
+            The rewritten widget (a copy when a window applies or a child changed).
+        """
+        updates: dict[str, object] = {}
+
+        if isinstance(widget, _LAZY_LISTS) and widget.key in self._windows:
+            updates["window"] = self._windows[widget.key]
+        elif isinstance(widget, SectionList):
+            sections = [
+                section.model_copy(update={"window": window})
+                if (
+                    widget.key is not None
+                    and (
+                        window := self._windows.get(
+                            f"{widget.key}::{section.title}"
+                        )
+                    )
+                    is not None
+                )
+                else section
+                for section in widget.sections
+            ]
+            if any(
+                new is not old
+                for new, old in zip(sections, widget.sections, strict=True)
+            ):
+                updates["sections"] = sections
+
+        for field in type(widget).child_field_names:
+            value = getattr(widget, field)
+            if isinstance(value, list):
+                children = cast("list[Widget]", value)
+                new_children = [self._inject(child) for child in children]
+                if any(
+                    new is not old
+                    for new, old in zip(new_children, children, strict=True)
+                ):
+                    updates[field] = new_children
+            elif isinstance(value, Widget):
+                new_child = self._inject(value)
+                if new_child is not value:
+                    updates[field] = new_child
+
+        return widget.model_copy(update=updates) if updates else widget
 
     def push(self, route: Route) -> None:
         """Push a route onto the navigation stack and request a rebuild.
@@ -194,7 +313,7 @@ class App(Generic[S]):
         self._rebuild_scheduled = False
         if self._current is None:
             return
-        new = build(self._view(self))
+        new = self._build()
         patches = diff(self._current, new)
         self._current = new
         if patches:

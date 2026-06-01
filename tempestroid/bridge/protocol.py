@@ -31,11 +31,16 @@ from tempestroid.widgets import (
     Icon,
     Image,
     Input,
+    LazyColumn,
+    LazyGrid,
+    LazyRow,
     Navigator,
     ProgressBar,
+    RefreshControl,
     RouteDrawer,
     Row,
     ScrollView,
+    SectionList,
     Slider,
     Spinner,
     Stack,
@@ -91,6 +96,11 @@ EVENT_SCHEMAS: dict[str, dict[str, type[Event]]] = {
         TabView,
         TabBar,
         RouteDrawer,
+        LazyColumn,
+        LazyRow,
+        LazyGrid,
+        SectionList,
+        RefreshControl,
     )
     if widget.event_schemas
 }

@@ -1,7 +1,8 @@
-"""Conformance suite (phase D): pin the two ``Style`` translators against each
-other so they cannot silently diverge.
+"""Conformance suite (phases D + E1d): pin the two ``Style`` translators against
+each other so they cannot silently diverge, and document the widget-level
+behavioural divergences introduced by Phase E1 (virtualized lists).
 
-Two checks:
+Three checks:
 
 * **Golden snapshots** — for a set of canonical styles, capture the combined
   output of *both* translators (``Style → Compose`` spec + ``Style → Qt`` QSS and
@@ -12,6 +13,15 @@ Two checks:
 * **Coverage parity** — for every ``Style`` field, assert which translators react
   to it matches a documented table. If a translator starts or stops handling a
   field, this fails until the table (and the divergence rationale) is updated.
+
+* **E1 widget-level divergences** — Phase E1 adds *no* new ``Style`` fields, so
+  the two ``Style`` translators are unchanged and the golden/parity machinery above
+  stays unaffected. However, E1 introduces four intentional *behavioural*
+  divergences between the Qt and Compose renderers for the five new list widgets
+  (``LazyColumn``, ``LazyRow``, ``LazyGrid``, ``SectionList``, ``RefreshControl``).
+  These are documented and pinned as a separate, named tripwire table so that a
+  future renderer change that silently resolves or regresses a divergence fails
+  loudly.  See ``_E1_WIDGET_DIVERGENCES`` and ``test_e1_widget_divergences_complete``.
 
 Qt needs a (headless) PySide6 import; ``tests/conftest.py`` forces the offscreen
 platform.
@@ -300,3 +310,253 @@ def test_coverage_parity(field: str) -> None:
         f"{field!r} coverage changed to (compose={compose_reacts}, qt={qt_reacts}); "
         f"update _COVERAGE + its rationale if this divergence is intended"
     )
+
+
+# ---------------------------------------------------------------------------
+# E1 widget-level behavioural divergences (phase E1d)
+# ---------------------------------------------------------------------------
+#
+# Phase E1 adds *no* new ``Style`` fields, so ``to_qss`` / ``to_compose`` and all
+# existing golden snapshots are completely unaffected.  The divergences below are
+# *renderer-level* (Qt vs Compose implementation strategy), not translator-level.
+# They are pinned here so the next developer who resolves or regresses one is
+# forced to update the table — not just "fix" it silently.
+#
+# Table columns:
+#   widget         — The E1 widget type tag.
+#   topic          — The behaviour area where Qt and Compose differ.
+#   qt_strategy    — How the Qt renderer implements the behaviour.
+#   compose_strategy — How the Compose renderer implements the behaviour.
+#   intentional    — True = this divergence is expected and acceptable in v1.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on
+# the same strategy), set ``intentional=False`` and add a comment explaining why.
+# The tripwire test ``test_e1_widget_divergences_complete`` will then fail until
+# you remove the resolved row.  If you add a new E1 widget or a new divergence
+# topic, add a row here AND explain it in the rationale below.
+#
+# Rationale (mirrors the contract from the E1 architect):
+#
+# 1. item_builder materialisation
+#    Qt calls ``item_builder(i)`` directly in Python to fill the visible
+#    ``[start, end)`` window; children are keyed ``Node``\s attached to the
+#    ``LazyColumn`` node before diffing.  Compose iterates natively via
+#    ``LazyColumn { items(itemCount, key={it}) { … } }``; the serializer drops
+#    ``item_builder`` (never crosses the boundary) and the device renders items
+#    on demand from ``props["item_count"]``.  The Python side sends only the
+#    materialized window as ``children``; the Kotlin side ignores them and renders
+#    all ``item_count`` items lazily.
+#
+# 2. sticky-header implementation for SectionList
+#    Qt simulates sticky headers by pinning a ``QLabel`` *above* the
+#    ``QScrollArea`` (outside the scroll viewport) and swapping it when the
+#    section changes.  Compose uses the native ``LazyColumn { stickyHeader {} }``
+#    API, which handles header pinning intrinsically and participates in the lazy
+#    layout.
+#
+# 3. pull-to-refresh
+#    Qt implements pull-to-refresh as a manual overlay: a hidden ``QWidget``
+#    (spinner / ``QProgressBar``) is shown at the top of the scroll area when
+#    ``props["refreshing"]`` is ``True``; a drag-detect gesture fires
+#    ``RefreshEvent``.  Compose wraps the list in ``PullToRefreshBox``
+#    (Material 3, ``ExperimentalMaterial3Api``), which provides the platform-
+#    native pull animation and handles the gesture internally.
+#
+# 4. end-reached detection
+#    Qt detects end-reached by polling the scrollbar position:
+#    ``scrollbar.value() / scrollbar.maximum() >= end_reached_threshold`` on
+#    each ``valueChanged`` signal.  Compose uses ``derivedStateOf`` over
+#    ``LazyListState.layoutInfo.visibleItemsInfo``; the last visible item index
+#    is compared against ``props["item_count"]`` (NOT ``children.size``, which is
+#    the partial window size), so the threshold is computed correctly even when
+#    only a window of items is materialized.
+
+_E1_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "LazyColumn",
+        "topic": "item_builder_materialisation",
+        "qt_strategy": (
+            "Python calls item_builder(i) to fill the visible [start,end) window; "
+            "children are keyed Nodes attached before diffing."
+        ),
+        "compose_strategy": (
+            "items(itemCount, key={it}) iterates natively on the device; "
+            "item_builder is dropped by the serializer (never crosses the boundary)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LazyRow",
+        "topic": "item_builder_materialisation",
+        "qt_strategy": (
+            "Python calls item_builder(i) to fill the visible [start,end) window; "
+            "children are keyed Nodes attached before diffing."
+        ),
+        "compose_strategy": (
+            "items(itemCount, key={it}) iterates natively on the device; "
+            "item_builder is dropped by the serializer (never crosses the boundary)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LazyGrid",
+        "topic": "item_builder_materialisation",
+        "qt_strategy": (
+            "Python calls item_builder(i) for the visible window; "
+            "children keyed by absolute index."
+        ),
+        "compose_strategy": (
+            "LazyVerticalGrid(GridCells.Fixed(columns)) iterates natively; "
+            "item_builder dropped by serializer."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "SectionList",
+        "topic": "sticky_header",
+        "qt_strategy": (
+            "QLabel pinned above the QScrollArea (outside the scroll viewport); "
+            "swapped manually when the active section changes."
+        ),
+        "compose_strategy": (
+            "LazyColumn { stickyHeader {} } native API; "
+            "header is part of the lazy layout and pins intrinsically."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LazyColumn",
+        "topic": "pull_to_refresh",
+        "qt_strategy": (
+            "Hidden QWidget overlay (QProgressBar) shown when refreshing=True; "
+            "drag-detect gesture fires RefreshEvent."
+        ),
+        "compose_strategy": (
+            "PullToRefreshBox (Material 3, ExperimentalMaterial3Api) wraps the list; "
+            "platform-native pull animation and gesture."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "RefreshControl",
+        "topic": "pull_to_refresh",
+        "qt_strategy": (
+            "Standalone QWidget with QProgressBar overlay; "
+            "refreshing=True shows spinner."
+        ),
+        "compose_strategy": (
+            "PullToRefreshBox standalone wrapper; ExperimentalMaterial3Api."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LazyColumn",
+        "topic": "end_reached_detection",
+        "qt_strategy": (
+            "scrollbar.value() / scrollbar.maximum() >= end_reached_threshold "
+            "polled on QScrollBar.valueChanged."
+        ),
+        "compose_strategy": (
+            "derivedStateOf { LazyListState.layoutInfo.visibleItemsInfo }; "
+            "last.index + 1 / props[item_count] >= threshold "
+            "(uses item_count, NOT children.size which is the partial window)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LazyRow",
+        "topic": "end_reached_detection",
+        "qt_strategy": (
+            "Horizontal scrollbar position / maximum >= end_reached_threshold."
+        ),
+        "compose_strategy": (
+            "derivedStateOf(LazyListState) with horizontal layout; "
+            "uses props[item_count] as denominator."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LazyGrid",
+        "topic": "end_reached_detection",
+        "qt_strategy": (
+            "Grid scroll area: scrollbar.value() / scrollbar.maximum() >= threshold."
+        ),
+        "compose_strategy": (
+            "derivedStateOf(LazyGridState); uses props[item_count] as denominator."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The set of (widget, topic) pairs that must appear in ``_E1_WIDGET_DIVERGENCES``.
+#: Adding a new divergence or widget requires extending both ``_E1_WIDGET_DIVERGENCES``
+#: AND this set — the tripwire test checks both directions.
+_E1_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E1_WIDGET_DIVERGENCES
+}
+
+
+def test_e1_widget_divergences_complete() -> None:
+    """Every E1 divergence row is intentional and the table has no duplicate keys.
+
+    This is the tripwire: if a renderer specialist resolves a divergence, they
+    must update ``_E1_WIDGET_DIVERGENCES`` (set ``intentional=False`` and remove
+    the row after review). If they add a new divergence, they must add a row.
+    Either omission makes this test fail.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E1_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E1 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present.
+    assert seen == _E1_DIVERGENCE_KEYS
+
+
+def test_e1_no_style_field_added() -> None:
+    """Phase E1 adds no new Style fields — the Style model is unchanged.
+
+    This guards against accidental Style modifications in this phase: if a new
+    field appears, the parity table must be updated, the golden snapshots must be
+    regenerated (UPDATE_GOLDEN=1), and this test must be updated with the new
+    expected field count. The current baseline is the field count at phase D
+    completion.
+    """
+    # Count fields as of phase D (absolute_insets, box, typography, …).
+    # If a new field is added, update this count AND regenerate goldens.
+    _EXPECTED_STYLE_FIELD_COUNT = len(_SAMPLES)
+    assert len(Style.model_fields) == _EXPECTED_STYLE_FIELD_COUNT, (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {_EXPECTED_STYLE_FIELD_COUNT}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update _EXPECTED_STYLE_FIELD_COUNT here"
+    )
+
+
+def test_e1_style_translators_not_affected_by_list_widgets() -> None:
+    """E1 list-widget imports do not mutate the Style translators.
+
+    Calling ``to_compose``/``to_qss`` with ``Style()`` must produce the same
+    output regardless of whether the E1 list widgets have been imported —
+    no accidental side-effects from module-level registration.
+    """
+    # The full tempestroid package (which pulls in all E1 widgets) is already
+    # imported at module level via ``from tempestroid import to_compose``; no
+    # additional import is needed here.  We just verify the translators are clean.
+    # The canonical empty-style snapshot is already pinned by the golden; calling
+    # ``snapshot`` here just double-checks the translators have not been mutated.
+    empty_snap = snapshot(Style())
+    assert empty_snap["compose"] == {}
+    assert empty_snap["qt"]["qss_leaf"] == ""

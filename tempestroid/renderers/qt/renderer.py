@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QGraphicsEffect,
     QGraphicsOpacityEffect,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -62,6 +63,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QScrollBar,
     QSlider,
     QStackedWidget,
     QStyle,
@@ -96,10 +98,12 @@ from tempestroid.style import (
 )
 from tempestroid.widgets import (
     DateChangeEvent,
+    EndReachedEvent,
     Event,
     FileSelectEvent,
     LongPressEvent,
     RouteChangeEvent,
+    ScrollEvent,
     SlideEvent,
     SwipeDirection,
     SwipeEvent,
@@ -112,6 +116,20 @@ from tempestroid.widgets import (
 __all__ = ["QtRenderer"]
 
 _CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView", "SafeArea"})
+
+#: Virtual-list node types the renderer renders the *materialized window* for.
+#: Since the E1 core change these nodes are **not leaves**: ``build`` already
+#: materialized the visible window into ``node.children`` (each keyed by its
+#: absolute index), so the renderer mounts those children directly into a scroll
+#: area and applies child patches through the generic container path — it never
+#: self-materializes from ``item_count`` anymore.
+_LAZY_LIST_TYPES = frozenset({"LazyColumn", "LazyRow", "SectionList"})
+_LAZY_TYPES = frozenset({"LazyColumn", "LazyRow", "LazyGrid", "SectionList"})
+
+#: Key prefix marking a :class:`SectionList` header child (``sec:<title>:header``);
+#: used to pin the sticky header to the topmost visible section.
+_SECTION_HEADER_SUFFIX = ":header"
+_SECTION_KEY_PREFIX = "sec:"
 
 #: Approximate Android system-bar insets (logical px) the desktop simulator
 #: reserves for a ``SafeArea``. The device queries the real
@@ -996,6 +1014,318 @@ class _DrawerHost(QWidget):
         super().resizeEvent(event)
 
 
+class _RefreshOverlay(QWidget):
+    """A thin pull-to-refresh banner pinned to the top of a virtualized list.
+
+    Hidden by default; shown (with a busy progress bar) while the node's
+    ``refreshing`` prop is ``True``. The device renderer uses Material's
+    ``PullToRefreshBox`` — the simulator stands in with this manual overlay
+    (a documented Qt-vs-Compose divergence).
+    """
+
+    _HEIGHT = 28
+
+    def __init__(self, parent: QWidget) -> None:
+        """Create the overlay parented to a scroll area's viewport.
+
+        Args:
+            parent: The widget the overlay floats over (the scroll viewport).
+        """
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        self._bar: QProgressBar = QProgressBar()
+        self._bar.setRange(0, 0)  # busy/indeterminate
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(6)
+        layout.addWidget(self._bar)
+        self.setVisible(False)
+
+    def set_refreshing(self, refreshing: bool) -> None:
+        """Show or hide the refresh banner.
+
+        Args:
+            refreshing: Whether the list is currently refreshing.
+        """
+        self.setVisible(refreshing)
+        parent = self.parentWidget()
+        if refreshing and parent is not None:
+            self.resize(parent.width(), self._HEIGHT)
+            self.move(0, 0)
+            self.raise_()
+
+
+class _LazyScrollArea(QScrollArea):
+    """A scroll area that renders the materialized window of a virtual list.
+
+    Since the E1 core change a ``LazyColumn``/``LazyRow``/``SectionList`` arrives
+    at the renderer with its visible window already materialized into the IR
+    ``children`` (each keyed by absolute index). This area is therefore an
+    ordinary scrollable box container: the renderer mounts those children into the
+    inner content layout (exposed as the rendered node's ``layout``) through the
+    generic container path, and child patches (insert/remove/reorder/update) — the
+    minimal patch sequence the keyed diff produces when the application slides the
+    window — apply unchanged.
+
+    On top of that it wires virtual-list behaviour: the scrollbar's movement is
+    forwarded as a :class:`~tempestroid.widgets.events.ScrollEvent` offset (the
+    application turns that offset into a new ``window`` via
+    :meth:`~tempestroid.core.state.App.slide_window`), an
+    :class:`~tempestroid.widgets.events.EndReachedEvent` fires once the scroll
+    crosses ``end_reached_threshold``, and a refresh overlay shows while
+    ``refreshing`` is set. The window is **never** computed here — the app owns it.
+    """
+
+    def __init__(self, *, horizontal: bool) -> None:
+        """Create the area with an empty content widget and its scroll wiring.
+
+        Args:
+            horizontal: ``True`` for a ``LazyRow`` (items laid left-to-right),
+                ``False`` for a ``LazyColumn``/``SectionList`` (top-to-bottom).
+        """
+        super().__init__()
+        self.setWidgetResizable(True)
+        self._horizontal: bool = horizontal
+        content = QWidget()
+        self._content: QWidget = content
+        layout: QBoxLayout = (
+            QHBoxLayout(content) if horizontal else QVBoxLayout(content)
+        )
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.content_layout: QBoxLayout = layout
+        self.setWidget(content)
+        self._on_scroll: Callable[[float], None] | None = None
+        self._on_end_reached: Callable[[], None] | None = None
+        self._threshold: float = 0.8
+        self._end_fired: bool = False
+        self.overlay: _RefreshOverlay = _RefreshOverlay(self)
+        #: Sticky section header floated over the viewport top (``SectionList``
+        #: only; hidden for plain lazy lists). The simulator's stand-in for
+        #: Compose's native ``stickyHeader`` (a documented divergence).
+        self.sticky: QLabel = QLabel(self.viewport())
+        self.sticky.setAutoFillBackground(True)
+        self.sticky.setVisible(False)
+        #: ``(header-widget, section-title)`` anchors used to pick the sticky title.
+        self._sticky_anchors: list[tuple[QWidget, str]] = []
+        self._scrollbar().valueChanged.connect(self._on_scrollbar_value)
+
+    def _scrollbar(self) -> QScrollBar:
+        """Return the scroll axis' scrollbar (horizontal or vertical)."""
+        if self._horizontal:
+            return self.horizontalScrollBar()
+        return self.verticalScrollBar()
+
+    def configure_scroll(
+        self,
+        *,
+        threshold: float,
+        on_scroll: Callable[[float], None] | None,
+        on_end_reached: Callable[[], None] | None,
+    ) -> None:
+        """Install the scroll/end-reached callbacks and the end threshold.
+
+        Idempotent: re-applied on every ``Update`` to the list node so handler
+        changes take effect without rebuilding the area.
+
+        Args:
+            threshold: Fraction ``0..1`` of total scroll firing ``on_end_reached``.
+            on_scroll: Callback receiving the current scroll offset (logical px).
+            on_end_reached: Callback fired once the threshold is crossed.
+        """
+        self._threshold = threshold
+        self._on_scroll = on_scroll
+        self._on_end_reached = on_end_reached
+        self._end_fired = False
+
+    def set_sticky_anchors(self, anchors: list[tuple[QWidget, str]]) -> None:
+        """Install the section header anchors and seed the sticky label.
+
+        Args:
+            anchors: Ordered ``(header-widget, section-title)`` pairs for each
+                section in the flattened list (empty for a plain lazy list).
+        """
+        self._sticky_anchors = anchors
+        if not anchors:
+            self.sticky.setVisible(False)
+            return
+        self.sticky.setText(anchors[0][1])
+        self.sticky.setVisible(True)
+        self.sticky.adjustSize()
+        self.sticky.resize(self.viewport().width(), self.sticky.height())
+        self.sticky.move(0, 0)
+        self.sticky.raise_()
+
+    def _update_sticky(self) -> None:
+        """Pin the sticky label to the topmost section at the current offset."""
+        if not self._sticky_anchors:
+            return
+        offset = self.verticalScrollBar().value()
+        current = self._sticky_anchors[0][1]
+        for header, title in self._sticky_anchors:
+            if header.y() <= offset:
+                current = title
+            else:
+                break
+        if self.sticky.text() != current:
+            self.sticky.setText(current)
+            self.sticky.adjustSize()
+            self.sticky.resize(self.viewport().width(), self.sticky.height())
+        self.sticky.raise_()
+
+    def _on_scrollbar_value(self, _value: int) -> None:
+        """Scrollbar slot: emit the scroll offset and the end-reached crossing.
+
+        Args:
+            _value: The new scrollbar value (unused; read directly for clarity).
+        """
+        bar = self._scrollbar()
+        offset = float(bar.value())
+        if self._on_scroll is not None:
+            self._on_scroll(offset)
+        maximum = bar.maximum()
+        fraction = offset / maximum if maximum > 0 else 0.0
+        if fraction >= self._threshold and maximum > 0:
+            if not self._end_fired and self._on_end_reached is not None:
+                self._end_fired = True
+                self._on_end_reached()
+        else:
+            self._end_fired = False
+        self._update_sticky()
+
+    def item_widgets(self) -> list[QWidget]:
+        """Return the currently materialized window item widgets, in order.
+
+        Returns:
+            The window item widgets the inner content layout holds (skipping any
+            stretch spacers the main-axis sync may have inserted).
+        """
+        widgets: list[QWidget] = []
+        for index in range(self.content_layout.count()):
+            item = self.content_layout.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widgets.append(widget)
+        return widgets
+
+    def resizeEvent(self, arg__1: QResizeEvent) -> None:
+        """Keep the refresh overlay and sticky header spanning the viewport width.
+
+        Args:
+            arg__1: The Qt resize event (name mandated by the PySide override).
+        """
+        super().resizeEvent(arg__1)
+        if self.overlay.isVisible():
+            self.overlay.resize(self.viewport().width(), self.overlay.height())
+        if self.sticky.isVisible():
+            self.sticky.resize(self.viewport().width(), self.sticky.height())
+            self.sticky.move(0, 0)
+            self.sticky.raise_()
+
+
+class _LazyGridArea(QScrollArea):
+    """A scroll area that renders a virtual grid's materialized window.
+
+    Like :class:`_LazyScrollArea` but lays the window children in a fixed-column
+    ``QGridLayout`` (filling left-to-right, top-to-bottom). Because a grid is not a
+    ``QBoxLayout``, the renderer does **not** drive it through the generic
+    container path: it owns the child ordering in the ``_Rendered`` node and calls
+    :meth:`set_items` to re-place every window child on each structural patch
+    (mirroring how the renderer drives a ``Stack``).
+    """
+
+    def __init__(self) -> None:
+        """Create the grid area with an empty content widget and scroll wiring."""
+        super().__init__()
+        self.setWidgetResizable(True)
+        content = QWidget()
+        self._content: QWidget = content
+        grid = QGridLayout(content)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(0)
+        self._grid: QGridLayout = grid
+        self.setWidget(content)
+        self._columns: int = 2
+        self._items: list[QWidget] = []
+        self._on_scroll: Callable[[float], None] | None = None
+        self._on_end_reached: Callable[[], None] | None = None
+        self._threshold: float = 0.8
+        self._end_fired: bool = False
+        self.verticalScrollBar().valueChanged.connect(self._on_scrollbar_value)
+
+    def configure_scroll(
+        self,
+        *,
+        columns: int,
+        threshold: float,
+        on_scroll: Callable[[float], None] | None,
+        on_end_reached: Callable[[], None] | None,
+    ) -> None:
+        """Install the column count and the scroll/end-reached callbacks.
+
+        Idempotent. A ``columns`` change re-flows the current window children.
+
+        Args:
+            columns: Fixed number of grid columns.
+            threshold: Fraction ``0..1`` of total scroll firing ``on_end_reached``.
+            on_scroll: Callback receiving the current scroll offset (logical px).
+            on_end_reached: Callback fired once the threshold is crossed.
+        """
+        self._threshold = threshold
+        self._on_scroll = on_scroll
+        self._on_end_reached = on_end_reached
+        self._end_fired = False
+        if columns != self._columns:
+            self._columns = max(1, columns)
+            self._reflow()
+
+    def set_items(self, widgets: list[QWidget]) -> None:
+        """Replace the grid's window children and re-flow them.
+
+        Args:
+            widgets: The materialized window item widgets, in window order.
+        """
+        self._items = widgets
+        self._reflow()
+
+    def _reflow(self) -> None:
+        """Re-place the current window children in a ``columns``-wide grid."""
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.setParent(None)  # type: ignore[call-overload]
+        for index, widget in enumerate(self._items):
+            widget.setParent(self._content)
+            self._grid.addWidget(widget, index // self._columns, index % self._columns)
+
+    def _on_scrollbar_value(self, _value: int) -> None:
+        """Scrollbar slot: emit the scroll offset and the end-reached crossing.
+
+        Args:
+            _value: The new scrollbar value (unused; read directly for clarity).
+        """
+        bar = self.verticalScrollBar()
+        offset = float(bar.value())
+        if self._on_scroll is not None:
+            self._on_scroll(offset)
+        maximum = bar.maximum()
+        fraction = offset / maximum if maximum > 0 else 0.0
+        if fraction >= self._threshold and maximum > 0:
+            if not self._end_fired and self._on_end_reached is not None:
+                self._end_fired = True
+                self._on_end_reached()
+        else:
+            self._end_fired = False
+
+    def item_widgets(self) -> list[QWidget]:
+        """Return the currently placed window item widgets, in window order.
+
+        Returns:
+            The grid's window item widgets.
+        """
+        return list(self._items)
+
 class _Rendered:
     """A live Qt node mirroring one IR :class:`Node`.
 
@@ -1191,6 +1521,13 @@ class QtRenderer:
             self._discard(old.widget)
             self._relayout_stack(parent)
             return
+        if parent.type == "LazyGrid":
+            new.widget.setParent(parent.widget)
+            parent.children[index] = new
+            self._purge_connections(old)
+            self._discard(old.widget)
+            self._relayout_grid(parent)
+            return
         layout = self._require_layout(parent)
         # Strip spacers so the IR index maps to the layout slot for the insert.
         self._strip_spacers(layout)
@@ -1200,6 +1537,8 @@ class QtRenderer:
         self._purge_connections(old)
         self._discard(old.widget)
         self._sync_main_axis(parent)
+        if parent.type == "SectionList":
+            self._sync_sticky_header(parent)
 
     def _replace_screen(
         self, parent: _Rendered, index: int, old: _Rendered, new: _Rendered
@@ -1238,11 +1577,13 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = self._create(patch.node)
-        if parent.type in ("Stack", "RouteDrawer"):
+        if parent.type in ("Stack", "RouteDrawer", "LazyGrid"):
             child.widget.setParent(parent.widget)
             parent.children.insert(patch.index, child)
             if parent.type == "RouteDrawer":
                 self._sync_drawer(parent)
+            elif parent.type == "LazyGrid":
+                self._relayout_grid(parent)
             else:
                 self._relayout_stack(parent)
             return
@@ -1253,6 +1594,8 @@ class QtRenderer:
         layout.insertWidget(patch.index, child.widget, self._stretch(child))
         self._place_alignment(parent, child)
         self._sync_main_axis(parent)
+        if parent.type == "SectionList":
+            self._sync_sticky_header(parent)
 
     def _apply_remove(self, patch: Remove) -> None:
         """Remove a child subtree from a parent.
@@ -1262,11 +1605,13 @@ class QtRenderer:
         """
         parent = self._at(patch.path)
         child = parent.children.pop(patch.index)
-        if parent.type in ("Stack", "RouteDrawer"):
+        if parent.type in ("Stack", "RouteDrawer", "LazyGrid"):
             self._purge_connections(child)
             self._discard(child.widget)
             if parent.type == "RouteDrawer":
                 self._sync_drawer(parent)
+            elif parent.type == "LazyGrid":
+                self._relayout_grid(parent)
             else:
                 self._relayout_stack(parent)
             return
@@ -1274,6 +1619,8 @@ class QtRenderer:
         self._purge_connections(child)
         self._discard(child.widget)
         self._sync_main_axis(parent)
+        if parent.type == "SectionList":
+            self._sync_sticky_header(parent)
 
     def _apply_reorder(self, patch: Reorder) -> None:
         """Reorder a parent's children per a permutation.
@@ -1293,6 +1640,10 @@ class QtRenderer:
             parent.children = new_children
             self._sync_drawer(parent)
             return
+        if parent.type == "LazyGrid":
+            parent.children = new_children
+            self._relayout_grid(parent)
+            return
         layout = self._require_layout(parent)
         # Drop spacers first so they don't survive interleaved in the new order.
         self._strip_spacers(layout)
@@ -1303,6 +1654,8 @@ class QtRenderer:
             self._place_alignment(parent, child)
         parent.children = new_children
         self._sync_main_axis(parent)
+        if parent.type == "SectionList":
+            self._sync_sticky_header(parent)
 
     # --- tree construction -------------------------------------------------
 
@@ -1327,10 +1680,13 @@ class QtRenderer:
         for child_node in node.children:
             child = self._create(child_node)
             rendered.children.append(child)
-            if rendered.type in ("Stack", "RouteDrawer"):
+            if rendered.type in ("Stack", "RouteDrawer", "LazyGrid"):
                 # Direct children (no box layout): geometry is renderer-driven.
                 child.widget.setParent(rendered.widget)
             else:
+                # LazyColumn/LazyRow/SectionList expose their scroll-area content
+                # layout, so the materialized window children flow through the
+                # generic container path exactly like a Column/Row.
                 self._require_layout(rendered).addWidget(
                     child.widget, self._stretch(child)
                 )
@@ -1339,6 +1695,12 @@ class QtRenderer:
             self._relayout_stack(rendered)
         elif rendered.type == "RouteDrawer":
             self._sync_drawer(rendered)
+        elif rendered.type == "LazyGrid":
+            self._relayout_grid(rendered)
+        elif rendered.type in _LAZY_LIST_TYPES:
+            self._sync_main_axis(rendered)
+            if rendered.type == "SectionList":
+                self._sync_sticky_header(rendered)
         elif rendered.layout is not None:
             self._sync_main_axis(rendered)
         return rendered
@@ -1381,6 +1743,15 @@ class QtRenderer:
             return _Rendered(node.type, node.key, QPushButton(), None)
         if node.type == "ScrollView":
             return self._new_scrollview(node)
+        if node.type in _LAZY_LIST_TYPES:
+            area = _LazyScrollArea(horizontal=node.type == "LazyRow")
+            # The scroll area's inner content layout is the diffable child slot, so
+            # the materialized window children flow through the generic path.
+            return _Rendered(node.type, node.key, area, area.content_layout)
+        if node.type == "LazyGrid":
+            return _Rendered(node.type, node.key, _LazyGridArea(), None)
+        if node.type == "RefreshControl":
+            return _Rendered(node.type, node.key, QProgressBar(), None)
         if node.type in ("Navigator", "TabView"):
             host = _NavHost(with_tab_bar=node.type == "TabView")
             return _Rendered(node.type, node.key, host, host.content_layout)
@@ -1492,6 +1863,14 @@ class QtRenderer:
             cast("_DrawerHost", node.widget).set_open(
                 bool(node.props.get("open", False))
             )
+        elif node.type in _LAZY_LIST_TYPES:
+            self._apply_lazy_list(node)
+            if node.type == "SectionList":
+                self._sync_sticky_header(node)
+        elif node.type == "LazyGrid":
+            self._apply_lazy_grid(node)
+        elif node.type == "RefreshControl":
+            self._apply_refresh_control(cast("QProgressBar", node.widget), node.props)
         self._apply_letter_spacing(node.widget, style)
         self._apply_sizing(node.widget, style)
         self._apply_effects(node.widget, style)
@@ -2072,6 +2451,163 @@ class QtRenderer:
             return
         name = path.rsplit("/", 1)[-1]
         self._invoke(handler, FileSelectEvent(uri=path, name=name))
+
+    # --- virtualized lists -------------------------------------------------
+
+    def _scroll_handler(
+        self, node: _Rendered, direction: str
+    ) -> Callable[[float], None] | None:
+        """Build the offset callback that forwards a list's ``on_scroll``.
+
+        The renderer reports only the raw scroll *offset*; the application turns
+        it into a new visible ``window`` (via
+        :meth:`~tempestroid.core.state.App.slide_window`) and rebuilds, so the
+        keyed diff slides the materialized children. The renderer never computes
+        the window itself.
+
+        Args:
+            node: The rendered virtual-list node.
+            direction: The scroll axis (``"vertical"``/``"horizontal"``).
+
+        Returns:
+            A callback taking the scroll offset, or ``None`` when no handler is
+            wired.
+        """
+        on_scroll = node.props.get("on_scroll")
+        if on_scroll is None:
+            return None
+        callback = cast("Callable[..., Any]", on_scroll)
+        return lambda offset: self._invoke(
+            callback, ScrollEvent(offset=offset, direction=direction)
+        )
+
+    def _end_reached_handler(self, node: _Rendered) -> Callable[[], None] | None:
+        """Build the callback that forwards a list's ``on_end_reached``.
+
+        Args:
+            node: The rendered virtual-list node.
+
+        Returns:
+            A zero-argument callback, or ``None`` when no handler is wired.
+        """
+        on_end_reached = node.props.get("on_end_reached")
+        if on_end_reached is None:
+            return None
+        callback = cast("Callable[..., Any]", on_end_reached)
+        return lambda: self._invoke(callback, EndReachedEvent())
+
+    def _apply_lazy_list(self, node: _Rendered) -> None:
+        """Wire scroll/end-reached/refresh on a lazy list (column/row/section).
+
+        The materialized window children are mounted through the generic container
+        path (this node's ``layout`` is the scroll area's content layout), so this
+        only installs the scroll behaviour. Idempotent: re-applied on every
+        ``Update`` so handler/threshold/refresh changes take effect in place.
+
+        Args:
+            node: The rendered ``LazyColumn``/``LazyRow``/``SectionList`` node.
+        """
+        area = cast("_LazyScrollArea", node.widget)
+        props = node.props
+        direction = "horizontal" if node.type == "LazyRow" else "vertical"
+        area.configure_scroll(
+            threshold=float(cast("float", props.get("end_reached_threshold", 0.8))),
+            on_scroll=self._scroll_handler(node, direction),
+            on_end_reached=self._end_reached_handler(node),
+        )
+        area.overlay.set_refreshing(bool(props.get("refreshing", False)))
+
+    def _apply_lazy_grid(self, node: _Rendered) -> None:
+        """Wire scroll/end-reached and the column count on a ``LazyGrid``.
+
+        The window children are placed by :meth:`_relayout_grid` (the grid is not a
+        box layout, so the renderer owns its child ordering); this installs the
+        scroll behaviour and the column count.
+
+        Args:
+            node: The rendered ``LazyGrid`` node.
+        """
+        area = cast("_LazyGridArea", node.widget)
+        props = node.props
+        area.configure_scroll(
+            columns=int(cast("int", props.get("columns", 2))),
+            threshold=float(cast("float", props.get("end_reached_threshold", 0.8))),
+            on_scroll=self._scroll_handler(node, "vertical"),
+            on_end_reached=self._end_reached_handler(node),
+        )
+
+    def _relayout_grid(self, node: _Rendered) -> None:
+        """Push the current window children into the grid in window order.
+
+        Args:
+            node: The rendered ``LazyGrid`` node.
+        """
+        area = cast("_LazyGridArea", node.widget)
+        area.set_items([child.widget for child in node.children])
+
+    @staticmethod
+    def _is_section_header(child: _Rendered) -> bool:
+        """Whether a flattened ``SectionList`` child is a section header.
+
+        Args:
+            child: A materialized ``SectionList`` child rendered node.
+
+        Returns:
+            ``True`` when the child's key marks it as a section header
+            (``sec:<title>:header``).
+        """
+        return (
+            child.key is not None
+            and child.key.startswith(_SECTION_KEY_PREFIX)
+            and child.key.endswith(_SECTION_HEADER_SUFFIX)
+        )
+
+    def _sync_sticky_header(self, node: _Rendered) -> None:
+        """Pin the first section's title into the area's sticky header label.
+
+        The simulator stands in for Compose's native ``stickyHeader`` by floating
+        a label over the top of the scroll viewport (a documented Qt-vs-Compose
+        divergence). The label tracks the topmost visible section as the list
+        scrolls; here it is seeded/refreshed to the first section after a
+        structural change.
+
+        Args:
+            node: The rendered ``SectionList`` node.
+        """
+        area = cast("_LazyScrollArea", node.widget)
+        anchors = [
+            (child.widget, self._section_title(child))
+            for child in node.children
+            if self._is_section_header(child)
+        ]
+        area.set_sticky_anchors(anchors)
+
+    @staticmethod
+    def _section_title(child: _Rendered) -> str:
+        """Recover a section title from a header child's key.
+
+        Args:
+            child: A ``SectionList`` header rendered node (key ``sec:<title>:header``).
+
+        Returns:
+            The section title, or the empty string when the key is unexpected.
+        """
+        key = child.key or ""
+        body = key[len(_SECTION_KEY_PREFIX) : -len(_SECTION_HEADER_SUFFIX)]
+        return body
+
+    @staticmethod
+    def _apply_refresh_control(widget: QProgressBar, props: dict[str, Any]) -> None:
+        """Apply props to a standalone ``RefreshControl`` (busy bar when active).
+
+        Args:
+            widget: The Qt progress bar standing in for the refresh control.
+            props: The node's current props.
+        """
+        refreshing = bool(props.get("refreshing", False))
+        widget.setRange(0, 0 if refreshing else 1)
+        widget.setTextVisible(False)
+        widget.setVisible(refreshing)
 
     def _bind_value(
         self,

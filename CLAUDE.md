@@ -227,6 +227,31 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
   Conformance divergence to document on the Compose side: Qt animates with
   `QPropertyAnimation` vs Compose `AnimatedContent`/`ModalDrawer` — the device
   back button (vs `Esc`) is the Compose/device half (E0c/E0d), not exercised here.
+- **Virtualized lists (E1b).** Since the E1 core change `LazyColumn`/`LazyRow`/
+  `LazyGrid`/`SectionList` are **not leaves**: `build` materializes the visible
+  window into `node.children` (keyed `str(absolute_index)`; sections
+  `sec:<title>:header` / `sec:<title>:<index>`). The Qt renderer renders those
+  children directly — it no longer self-materializes from `item_count`. The old
+  `_LazyArea`/`_LazyGridArea`/`_SectionListArea` auto-materializers are gone.
+  `LazyColumn`/`LazyRow`/`SectionList` are `_LazyScrollArea`s whose inner content
+  box layout is the diffable child slot, so a window slide (the keyed
+  remove/reorder/insert sequence the app produces) flows through the **generic
+  container path** unchanged. `LazyGrid` is a `_LazyGridArea` driven like `Stack`
+  (no box layout: children re-placed in a `columns`-wide `QGridLayout` via
+  `_relayout_grid` on every structural patch). Scroll wiring: the scrollbar's
+  `valueChanged` emits a `ScrollEvent(offset)` via `on_scroll`; the **app** turns
+  the offset into a new `window` (`App.slide_window`) and rebuilds — the renderer
+  never computes the window. Past `end_reached_threshold` → `EndReachedEvent` via
+  `on_end_reached`; `refreshing=True` shows a `_RefreshOverlay` busy banner.
+  **Qt-vs-Compose divergences (document in the conformance table):** (1) the Qt
+  scroll area spans only the *materialized window* (no reserved virtual extent),
+  so the scrollbar can only travel within the current window — to scroll further
+  the app must already widen the window; Compose's native `LazyColumn` reports
+  `layoutInfo` against the full `itemCount`. (2) `SectionList` sticky headers are
+  a floated `QLabel` over the viewport top tracking the topmost visible section
+  (key prefix `sec:…:header`), vs Compose's intrinsic `stickyHeader`. (3) Desktop
+  has no pull-to-refresh gesture → `on_refresh` is driven by the `refreshing`
+  prop/overlay only (no pull), vs Compose `PullToRefreshBox`.
 
 **A4 notes / known limits:**
 

@@ -29,6 +29,11 @@ def test_widget_catalog_lists_all_widgets():
         "TabView",
         "TabBar",
         "RouteDrawer",
+        "LazyColumn",
+        "LazyRow",
+        "LazyGrid",
+        "SectionList",
+        "RefreshControl",
     }
 
 
@@ -61,6 +66,9 @@ def test_event_catalog_lists_events():
         "LongPressEvent",
         "SwipeEvent",
         "RouteChangeEvent",
+        "ScrollEvent",
+        "RefreshEvent",
+        "EndReachedEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 
