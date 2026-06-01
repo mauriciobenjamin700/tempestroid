@@ -1384,3 +1384,457 @@ def test_e4_translators_not_affected_by_gesture_widgets() -> None:
         "to_qss(Style()) changed after E4 import — "
         "a gesture widget must not side-effect the Qt translator"
     )
+
+
+# ---------------------------------------------------------------------------
+# E5 widget-level behavioural divergences (inputs + forms)
+# ---------------------------------------------------------------------------
+#
+# Phase E5 adds *no* new ``Style`` fields, so the golden/parity machinery above
+# stays unaffected. E5 introduces six new input controls (Dropdown, TimePicker,
+# RangeSlider, Autocomplete, PinInput, MaskedInput) plus two form-aggregation
+# widgets (Form, FormField). The renderers realize these controls through
+# different platform surfaces; those divergences are pinned here as a named
+# tripwire so a future renderer change that silently resolves or regresses one
+# is caught loudly.
+#
+# Key architectural constraint:
+#   Form/Validator/FormState validation logic runs 100 % in Python via
+#   ``Form.validate()`` before any patch is sent to either renderer.  Both
+#   renderers receive a tree already carrying each ``FormField.error`` string;
+#   they display it but contain zero validation logic.  A ``SubmitEvent`` is
+#   only dispatched when the application (Python side) decides the form is
+#   valid — the renderer cannot block or allow a submit independently.
+#
+# Rationale for each divergence (mirrors the architect contract):
+#
+# 1. TimePicker — affordance
+#    Qt uses an inline ``QTimeEdit`` spinner (always visible, value edited
+#    in-place by scrolling/typing).  Compose uses a ``TimePicker`` M3 dialog
+#    (requires user to open a modal dialog, confirm, then dismiss).  Both
+#    emit ``TimeChangeEvent{value: "HH:MM"}``.
+#
+# 2. RangeSlider — widget surface
+#    PySide6 has no native range slider.  Qt implements it as a custom
+#    ``_RangeSliderWidget`` containing two ``QSlider``s side by side, each
+#    constraining the other so that ``low <= high`` is always maintained.
+#    Compose uses the native M3 ``RangeSlider`` composable.  Both emit
+#    ``RangeChangeEvent{low: float, high: float}`` — floats, never a tuple.
+#
+# 3. Autocomplete — completion popup
+#    Qt uses a ``QCompleter`` attached to a ``QLineEdit``; the popup is the
+#    native OS completion dropdown.  Compose uses a custom ``DropdownMenu``
+#    that filters ``options`` by the current text — no native autocomplete
+#    composable in M3.  Both emit ``TextChangeEvent`` (on text change) and
+#    ``SelectEvent{value, index}`` (on item selection).
+#
+# 4. PinInput — cell focus management
+#    Qt uses ``length`` chained ``QLineEdit``s (``maxLength=1``) that
+#    auto-advance focus via ``textChanged`` signal.  Compose uses ``length``
+#    ``BasicTextField``s coordinated by ``FocusRequester`` list.  Both emit
+#    ``TextChangeEvent`` on each cell change and ``SubmitEvent`` when all
+#    cells are filled.
+#
+# 5. MaskedInput — mask application
+#    Qt converts the framework mask notation (``9`` = digit, ``A`` = letter,
+#    literal chars preserved) to Qt's ``inputMask`` notation (``0`` = digit,
+#    ``A`` = letter) via ``QLineEdit.setInputMask``.  Compose applies a
+#    custom ``VisualTransformation`` (``MaskTransformation``) that inserts
+#    non-editable separator characters.  Both emit ``TextChangeEvent``; on
+#    the Compose side the raw digits (without mask separators) are reported.
+#
+# Invariants shared by both renderers (NOT divergences):
+#   - ``FormField.validators`` are dropped by the serializer (pure-Python
+#     callables, never cross the bridge).
+#   - ``FormState`` serializes as ``{"errors": dict[str, str], "valid": bool}``
+#     with no nested Pydantic models.
+#   - ``Form.fields`` serializes as the Form node's children — ``fields`` does
+#     not appear in the serialized ``props`` dict.
+#   - ``FormField.child`` serializes as the FormField node's first child.
+#
+# Updating this table: if a divergence is resolved (both renderers converge),
+# set ``intentional=False`` and explain why. The tripwire test
+# ``test_e5_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new E5 widget or topic is added, add a row here AND update
+# the pinned key set.
+
+_E5_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "TimePicker",
+        "topic": "time_affordance",
+        "qt_strategy": (
+            "Inline QTimeEdit spinner (always visible); value edited in-place "
+            "by scrolling or typing. format HH:mm set via setDisplayFormat. "
+            "timeChanged signal -> TimeChangeEvent{value: HH:MM string}."
+        ),
+        "compose_strategy": (
+            "TimePicker M3 modal dialog (TimePickerState + rememberTimePickerState); "
+            "user opens via a read-only OutlinedTextField click, confirms via "
+            "AlertDialog buttons. Confirmed -> TimeChangeEvent{value: HH:MM string}."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "RangeSlider",
+        "topic": "widget_surface",
+        "qt_strategy": (
+            "Custom _RangeSliderWidget (QWidget container with two QSliders "
+            "side by side — low and high handles). Each slider constrains the "
+            "other so low <= high is maintained. Both sliders' valueChanged "
+            "signals -> RangeChangeEvent{low: float, high: float}."
+        ),
+        "compose_strategy": (
+            "Native M3 RangeSlider composable (androidx.compose.material3). "
+            "onValueChange updates a remembered range state; "
+            "onValueChangeFinished -> RangeChangeEvent{low: float, high: float}."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Autocomplete",
+        "topic": "completion_popup",
+        "qt_strategy": (
+            "QLineEdit + QCompleter (native OS completion popup). "
+            "QCompleter.activated(str) -> SelectEvent{value, index}. "
+            "QLineEdit.textChanged -> TextChangeEvent{value}."
+        ),
+        "compose_strategy": (
+            "OutlinedTextField + DropdownMenu filtravel (options filtered "
+            "by current text via contains(ignoreCase=true)) — no native "
+            "autocomplete composable in M3. Item click -> SelectEvent{value, index}. "
+            "onValueChange -> TextChangeEvent{value}."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "PinInput",
+        "topic": "cell_focus_management",
+        "qt_strategy": (
+            "length chained QLineEdit cells (maxLength=1, fixed ~40px width); "
+            "textChanged on each cell auto-advances focus to the next. "
+            "Last cell filled -> SubmitEvent{}. Per-cell change -> "
+            "TextChangeEvent{value = joined cells}."
+        ),
+        "compose_strategy": (
+            "length BasicTextField composables coordinated by a "
+            "List<FocusRequester>(length). onValueChange advances focus via "
+            "focusRequesters[i+1].requestFocus(). All cells filled -> "
+            "SubmitEvent{}. Per-cell change -> TextChangeEvent{value = joined}."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "MaskedInput",
+        "topic": "mask_application",
+        "qt_strategy": (
+            "Framework mask notation converted to Qt inputMask: '9' -> '0' "
+            "(digit), 'A' -> 'A' (letter), literal chars preserved. "
+            "QLineEdit.setInputMask applies the mask; textChanged -> "
+            "TextChangeEvent{value = masked string including separators}."
+        ),
+        "compose_strategy": (
+            "OutlinedTextField + custom VisualTransformation (MaskTransformation) "
+            "inserts non-editable separator characters. Raw digits only are "
+            "stored in state. onValueChange -> TextChangeEvent{value = raw digits "
+            "without separators}. OffsetMapping handles bidirectional cursor "
+            "placement. Mask chars 'A' (letter) documented as limited support."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E5_WIDGET_DIVERGENCES``.
+_E5_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E5_WIDGET_DIVERGENCES
+}
+
+#: The six new E5 input-control widgets (excludes Form/FormField which are
+#: containers with shared behaviour on both renderers).
+_E5_INPUT_WIDGETS: tuple[str, ...] = (
+    "Dropdown",
+    "TimePicker",
+    "RangeSlider",
+    "Autocomplete",
+    "PinInput",
+    "MaskedInput",
+)
+
+#: All eight E5 widgets (input controls + form aggregation).
+_E5_ALL_WIDGETS: tuple[str, ...] = _E5_INPUT_WIDGETS + ("Form", "FormField")
+
+#: The five new E5 events.
+_E5_NEW_EVENTS: tuple[str, ...] = (
+    "SelectEvent",
+    "TimeChangeEvent",
+    "RangeChangeEvent",
+    "SubmitEvent",
+    "ValidationEvent",
+)
+
+
+def test_e5_widget_divergences_complete() -> None:
+    """Every E5 input divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves an input control
+    divergence (e.g. PySide6 gains a native range slider) must update the
+    table; one who adds a new E5 widget or divergence topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E5_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E5 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E5_DIVERGENCE_KEYS
+
+
+def test_e5_no_style_field_added() -> None:
+    """Phase E5 adds no new Style fields — the ``_SAMPLES``/``_COVERAGE`` tables
+    remain complete without update.
+
+    E5 introduces eight new widgets and five new events, but no new top-level
+    ``Style`` field.  If a new field appears, update ``_SAMPLES``, ``_COVERAGE``,
+    regenerate goldens (``UPDATE_GOLDEN=1``), and update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+def test_e5_new_widgets_in_event_schemas() -> None:
+    """All eight E5 widgets appear in ``bridge.protocol.EVENT_SCHEMAS``.
+
+    Each widget must be present so the bridge contract is complete.  The exact
+    event bindings for each are verified by ``test_input_widgets.py`` and
+    ``test_forms.py``; this test is a quick completeness guard.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+
+    for name in _E5_ALL_WIDGETS:
+        assert name in EVENT_SCHEMAS, (
+            f"E5 widget {name!r} missing from EVENT_SCHEMAS; "
+            "add it to bridge/protocol.py"
+        )
+
+
+def test_e5_input_widgets_event_schemas_non_empty() -> None:
+    """The six E5 input controls each declare at least one event schema.
+
+    ``Form`` and ``FormField`` are containers (``on_submit`` / ``on_validate``
+    respectively) and are also covered, but this test targets the leaf controls
+    to ensure none accidentally regresses to an empty schema.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+
+    for name in _E5_INPUT_WIDGETS:
+        schemas = EVENT_SCHEMAS.get(name, {})
+        assert schemas, (
+            f"E5 input widget {name!r} has an empty EVENT_SCHEMAS entry; "
+            "it must declare at least one event"
+        )
+
+
+def test_e5_new_widgets_in_introspect() -> None:
+    """All eight E5 widgets appear in the output of ``introspect()``.
+
+    ``introspect()`` is the framework's self-describing typed contract — both
+    the device bridge and tooling rely on it to discover every widget.  Missing
+    entries mean a widget is undiscoverable at runtime.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for name in _E5_ALL_WIDGETS:
+        assert name in catalog["widgets"], (
+            f"E5 widget {name!r} absent from introspect()['widgets']; "
+            "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e5_new_events_in_introspect() -> None:
+    """The five new E5 event types appear in ``introspect()['events']``.
+
+    Pins the ``EVENT_TYPES`` list in ``core/introspection.py`` against a
+    regression that drops one of the new events from the catalog.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for event in _E5_NEW_EVENTS:
+        assert event in catalog["events"], (
+            f"E5 event {event!r} absent from introspect()['events']; "
+            "add it to EVENT_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e5_event_type_for_resolves_all_bindings() -> None:
+    """``event_type_for`` resolves every E5 widget/handler pair correctly.
+
+    This pins the ``EVENT_SCHEMAS`` mapping against accidental key renames or
+    type swaps for the eight new widgets.  The per-pair assertions mirror the
+    architect contract exactly.
+    """
+    from tempestroid.bridge.protocol import event_type_for
+    from tempestroid.widgets.events import (
+        RangeChangeEvent,
+        SelectEvent,
+        SubmitEvent,
+        TextChangeEvent,
+        TimeChangeEvent,
+        ValidationEvent,
+    )
+
+    # Dropdown — single handler
+    assert event_type_for("Dropdown", "on_select") is SelectEvent, (
+        "Dropdown.on_select must resolve to SelectEvent"
+    )
+    # TimePicker — single handler
+    assert event_type_for("TimePicker", "on_change") is TimeChangeEvent, (
+        "TimePicker.on_change must resolve to TimeChangeEvent"
+    )
+    # RangeSlider — single handler
+    assert event_type_for("RangeSlider", "on_change") is RangeChangeEvent, (
+        "RangeSlider.on_change must resolve to RangeChangeEvent"
+    )
+    # Autocomplete — two distinct handlers
+    assert event_type_for("Autocomplete", "on_change") is TextChangeEvent, (
+        "Autocomplete.on_change must resolve to TextChangeEvent"
+    )
+    assert event_type_for("Autocomplete", "on_select") is SelectEvent, (
+        "Autocomplete.on_select must resolve to SelectEvent"
+    )
+    # PinInput — two distinct handlers
+    assert event_type_for("PinInput", "on_change") is TextChangeEvent, (
+        "PinInput.on_change must resolve to TextChangeEvent"
+    )
+    assert event_type_for("PinInput", "on_complete") is SubmitEvent, (
+        "PinInput.on_complete must resolve to SubmitEvent"
+    )
+    # MaskedInput — single handler
+    assert event_type_for("MaskedInput", "on_change") is TextChangeEvent, (
+        "MaskedInput.on_change must resolve to TextChangeEvent"
+    )
+    # Form — submit handler
+    assert event_type_for("Form", "on_submit") is SubmitEvent, (
+        "Form.on_submit must resolve to SubmitEvent"
+    )
+    # FormField — validate handler
+    assert event_type_for("FormField", "on_validate") is ValidationEvent, (
+        "FormField.on_validate must resolve to ValidationEvent"
+    )
+
+
+def test_e5_form_validation_not_in_renderer() -> None:
+    """Documented invariant: validation logic stays 100 % in Python.
+
+    The test is structural — it asserts facts about the serialized node shape
+    that enforce the invariant on both renderers:
+
+    1. ``FormField.validators`` do **not** appear in the serialized props dict
+       (pure-Python callables, never cross the bridge).
+    2. ``Form.fields`` does **not** appear in the serialized props dict
+       (fields serialize as the Form node's children, not as props).
+    3. Both renderers receive ``FormField.error`` as a plain string prop —
+       they display it but cannot compute it themselves.
+    """
+    from tempestroid import build
+    from tempestroid.bridge import serialize_node
+    from tempestroid.widgets.forms import Form, FormField
+    from tempestroid.widgets.inputs import Input
+
+    def _any_validator(v: object) -> str | None:
+        return None
+
+    form = Form(
+        fields=[
+            FormField(
+                name="email",
+                validators=[_any_validator],
+                label="E-mail",
+                error="bad address",
+                child=Input(value="x"),
+            )
+        ]
+    )
+    payload = serialize_node(build(form))
+
+    # Form.fields must serialize as children, not as a prop.
+    assert "fields" not in payload["props"], (
+        "Form.fields must cross as node.children, not as a props entry; "
+        "both renderers iterate node.children to render each FormField"
+    )
+    assert payload["children"], "Form must have at least one child node"
+
+    field_payload = payload["children"][0]
+    assert field_payload["type"] == "FormField"
+
+    # validators must be dropped — callables cannot cross the bridge.
+    assert "validators" not in field_payload["props"], (
+        "FormField.validators must be dropped by the serializer (pure-Python "
+        "callables); neither renderer should receive or execute them"
+    )
+
+    # error must cross as a plain string prop so each renderer can display it.
+    assert field_payload["props"]["error"] == "bad address", (
+        "FormField.error must cross as a plain string prop so the renderer "
+        "can display it without any validation logic"
+    )
+
+
+def test_e5_translators_not_affected_by_input_widgets() -> None:
+    """E5 input-widget imports do not mutate the Style translators.
+
+    No E5 widget adds a ``Style`` field; calling ``to_compose``/``to_qss`` with
+    ``Style()`` must yield the same output as before E5 was imported — no
+    accidental side-effects from module-level registration.
+    """
+    empty_snap = snapshot(Style())
+    assert empty_snap["compose"] == {}, (
+        "to_compose(Style()) changed after E5 import — "
+        "an input widget must not side-effect the Compose translator"
+    )
+    assert empty_snap["qt"]["qss_leaf"] == "", (
+        "to_qss(Style()) changed after E5 import — "
+        "an input widget must not side-effect the Qt translator"
+    )
+
+
+def test_e5_form_and_field_event_schemas() -> None:
+    """Form and FormField declare the correct event bindings.
+
+    Pins the event schema declarations on the two form-aggregation widgets
+    against accidental renames: ``Form.on_submit`` -> ``SubmitEvent``,
+    ``FormField.on_validate`` -> ``ValidationEvent``.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+    from tempestroid.widgets.events import SubmitEvent, ValidationEvent
+
+    form_schemas = EVENT_SCHEMAS.get("Form", {})
+    assert "on_submit" in form_schemas, (
+        "Form must declare on_submit in event_schemas"
+    )
+    assert form_schemas["on_submit"] is SubmitEvent, (
+        "Form.on_submit must be bound to SubmitEvent"
+    )
+
+    field_schemas = EVENT_SCHEMAS.get("FormField", {})
+    assert "on_validate" in field_schemas, (
+        "FormField must declare on_validate in event_schemas"
+    )
+    assert field_schemas["on_validate"] is ValidationEvent, (
+        "FormField.on_validate must be bound to ValidationEvent"
+    )

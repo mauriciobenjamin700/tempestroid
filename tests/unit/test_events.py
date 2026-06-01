@@ -6,9 +6,14 @@ from tempestroid import (
     EventValidationError,
     FileSelectEvent,
     MenuSelectEvent,
+    RangeChangeEvent,
+    SelectEvent,
+    SubmitEvent,
     TapEvent,
     TextChangeEvent,
+    TimeChangeEvent,
     ToggleEvent,
+    ValidationEvent,
     parse_event,
 )
 
@@ -169,3 +174,122 @@ def test_menu_select_event_is_frozen():
     event = MenuSelectEvent(value="x", label="X")
     with pytest.raises(Exception):  # noqa: B017
         event.value = "y"  # type: ignore[misc]
+
+
+# --- SelectEvent (E5) --------------------------------------------------------
+
+
+def test_select_event_round_trip():
+    """SelectEvent round-trips via parse_event."""
+    event = SelectEvent(value="Brazil", index=2)
+    restored = parse_event(SelectEvent, event.model_dump())
+    assert restored == event
+    assert restored.value == "Brazil"
+    assert restored.index == 2
+
+
+def test_select_event_requires_index():
+    """SelectEvent without `index` fails with a structured error on `index`."""
+    with pytest.raises(EventValidationError) as exc:
+        parse_event(SelectEvent, {"value": "Brazil"})
+    assert exc.value.event_type is SelectEvent
+    assert ("index",) in {e["loc"] for e in exc.value.errors}
+
+
+def test_select_event_rejects_non_int_index():
+    """A non-integer index raises EventValidationError with a loc on `index`."""
+    with pytest.raises(EventValidationError) as exc:
+        parse_event(SelectEvent, {"value": "x", "index": "two"})
+    assert ("index",) in {e["loc"] for e in exc.value.errors}
+
+
+def test_select_event_is_frozen():
+    """SelectEvent is immutable (Pydantic frozen model)."""
+    event = SelectEvent(value="x", index=0)
+    with pytest.raises(Exception):  # noqa: B017
+        event.index = 1  # type: ignore[misc]
+
+
+# --- TimeChangeEvent (E5) ----------------------------------------------------
+
+
+def test_time_change_event_round_trip():
+    """TimeChangeEvent round-trips via parse_event."""
+    event = TimeChangeEvent(value="14:30")
+    restored = parse_event(TimeChangeEvent, event.model_dump())
+    assert restored.value == "14:30"
+
+
+def test_time_change_event_requires_value():
+    """TimeChangeEvent without `value` fails with a structured error."""
+    with pytest.raises(EventValidationError) as exc:
+        parse_event(TimeChangeEvent, {})
+    assert ("value",) in {e["loc"] for e in exc.value.errors}
+
+
+# --- RangeChangeEvent (E5) ---------------------------------------------------
+
+
+def test_range_change_event_round_trip():
+    """RangeChangeEvent carries both bounds as floats and round-trips."""
+    event = RangeChangeEvent(low=10.0, high=80.0)
+    restored = parse_event(RangeChangeEvent, event.model_dump())
+    assert restored.low == 10.0
+    assert restored.high == 80.0
+
+
+def test_range_change_event_requires_both_bounds():
+    """RangeChangeEvent missing a bound fails with a structured error."""
+    with pytest.raises(EventValidationError) as exc:
+        parse_event(RangeChangeEvent, {"low": 1.0})
+    assert ("high",) in {e["loc"] for e in exc.value.errors}
+
+
+# --- SubmitEvent (E5) --------------------------------------------------------
+
+
+def test_submit_event_round_trip():
+    """SubmitEvent carries a flat dict of values and round-trips."""
+    event = SubmitEvent(values={"email": "a@b.com", "name": "x"})
+    restored = parse_event(SubmitEvent, event.model_dump())
+    assert restored.values == {"email": "a@b.com", "name": "x"}
+
+
+def test_submit_event_defaults_to_empty_values():
+    """SubmitEvent accepts an empty payload; values defaults to an empty dict."""
+    event = parse_event(SubmitEvent, {})
+    assert event.values == {}
+
+
+def test_submit_event_is_json_serializable():
+    """SubmitEvent.model_dump yields a flat dict[str, str] — no nested models."""
+    event = SubmitEvent(values={"a": "1"})
+    dumped = event.model_dump()
+    assert dumped == {"values": {"a": "1"}}
+
+
+# --- ValidationEvent (E5) ----------------------------------------------------
+
+
+def test_validation_event_round_trip_valid():
+    """ValidationEvent with no error (valid) round-trips."""
+    event = ValidationEvent(field="email", value="a@b")
+    restored = parse_event(ValidationEvent, event.model_dump())
+    assert restored.field == "email"
+    assert restored.error is None
+
+
+def test_validation_event_round_trip_with_error():
+    """ValidationEvent carrying an error message round-trips."""
+    event = ValidationEvent(field="email", value="x", error="invalid")
+    restored = parse_event(ValidationEvent, event.model_dump())
+    assert restored.error == "invalid"
+
+
+def test_validation_event_requires_field_and_value():
+    """ValidationEvent missing required fields fails with structured errors."""
+    with pytest.raises(EventValidationError) as exc:
+        parse_event(ValidationEvent, {})
+    locs = {e["loc"] for e in exc.value.errors}
+    assert ("field",) in locs
+    assert ("value",) in locs

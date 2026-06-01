@@ -26,16 +26,21 @@ from tempestroid.widgets.events import (
     LongPressEvent,
     MenuSelectEvent,
     PanEvent,
+    RangeChangeEvent,
     RefreshEvent,
     ReorderEvent,
     RouteChangeEvent,
     ScaleEvent,
     ScrollEvent,
+    SelectEvent,
     SlideEvent,
+    SubmitEvent,
     SwipeEvent,
     TapEvent,
     TextChangeEvent,
+    TimeChangeEvent,
     ToggleEvent,
+    ValidationEvent,
 )
 
 __all__ = [
@@ -58,6 +63,11 @@ __all__ = [
     "ScaleHandler",
     "DragHandler",
     "ReorderHandler",
+    "SelectHandler",
+    "TimeChangeHandler",
+    "RangeChangeHandler",
+    "SubmitHandler",
+    "ValidationHandler",
     "Widget",
     "Component",
     "handler_accepts_event",
@@ -224,6 +234,36 @@ DragHandler: TypeAlias = Annotated[
 ReorderHandler: TypeAlias = Annotated[
     Callable[[ReorderEvent], Any]
     | Callable[[ReorderEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+SelectHandler: TypeAlias = Annotated[
+    Callable[[SelectEvent], Any]
+    | Callable[[SelectEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+TimeChangeHandler: TypeAlias = Annotated[
+    Callable[[TimeChangeEvent], Any]
+    | Callable[[TimeChangeEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+RangeChangeHandler: TypeAlias = Annotated[
+    Callable[[RangeChangeEvent], Any]
+    | Callable[[RangeChangeEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+SubmitHandler: TypeAlias = Annotated[
+    Callable[[SubmitEvent], Any]
+    | Callable[[SubmitEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+ValidationHandler: TypeAlias = Annotated[
+    Callable[[ValidationEvent], Any]
+    | Callable[[ValidationEvent], Awaitable[Any]]
     | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]

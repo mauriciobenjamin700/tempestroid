@@ -124,6 +124,12 @@ def _serialize_props(
             # cross the boundary (the device iterates items natively). Drop them
             # before the generic callable branch treats them as handlers.
             continue
+        if name == "validators":
+            # FormField.validators is a list of pure-Python callables that run
+            # entirely on the Python side (the host receives only the resulting
+            # `error` string). The list is not JSON-serializable, so drop it
+            # before the generic list branch would pass the callables through.
+            continue
         if name == "sections":
             # SectionList.sections holds SectionHeader models carrying Python
             # builders (item_builder/header_builder) — not JSON-serializable. The

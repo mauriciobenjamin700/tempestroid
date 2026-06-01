@@ -24,6 +24,14 @@ def test_widget_catalog_lists_all_widgets():
         "Slider",
         "DatePicker",
         "FilePicker",
+        "Dropdown",
+        "TimePicker",
+        "RangeSlider",
+        "Autocomplete",
+        "PinInput",
+        "MaskedInput",
+        "Form",
+        "FormField",
         "Image",
         "Icon",
         "ProgressBar",
@@ -95,6 +103,11 @@ def test_event_catalog_lists_events():
         "ScaleEvent",
         "DragEvent",
         "ReorderEvent",
+        "SelectEvent",
+        "TimeChangeEvent",
+        "RangeChangeEvent",
+        "SubmitEvent",
+        "ValidationEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

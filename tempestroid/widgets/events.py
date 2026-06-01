@@ -37,6 +37,11 @@ __all__ = [
     "ScaleEvent",
     "DragEvent",
     "ReorderEvent",
+    "SelectEvent",
+    "TimeChangeEvent",
+    "RangeChangeEvent",
+    "SubmitEvent",
+    "ValidationEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -302,6 +307,73 @@ class ReorderEvent(Event):
 
     from_index: int
     to_index: int
+
+
+class SelectEvent(Event):
+    """An option was selected from a dropdown / select control.
+
+    Attributes:
+        value: The selected option string.
+        index: The 0-based index of the option in the control's options list.
+    """
+
+    value: str
+    index: int
+
+
+class TimeChangeEvent(Event):
+    """A time picker's value changed.
+
+    Attributes:
+        value: The new time as a 24-hour ``"HH:MM"`` string (``""`` when cleared).
+    """
+
+    value: str
+
+
+class RangeChangeEvent(Event):
+    """A range slider's bounds changed.
+
+    The two bounds cross the boundary as separate top-level floats (never a raw
+    tuple) so the payload stays JSON-serializable.
+
+    Attributes:
+        low: The lower bound of the selected range.
+        high: The upper bound of the selected range.
+    """
+
+    low: float
+    high: float
+
+
+class SubmitEvent(Event):
+    """A form (or completable input) was submitted.
+
+    Carries the raw field values captured at submit time as a flat
+    ``dict[str, str]`` — no nested models — so the payload is JSON-serializable.
+
+    Attributes:
+        values: A mapping of field name to its raw string value at submit time.
+    """
+
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class ValidationEvent(Event):
+    """A single form field was validated.
+
+    Emitted by ``FormField`` when its validators run, so a handler can react to
+    a per-field validation result without re-running the rules.
+
+    Attributes:
+        field: The field's name.
+        value: The field's raw string value at validation time.
+        error: The validation message, or ``None`` when the field is valid.
+    """
+
+    field: str
+    value: str
+    error: str | None = None
 
 
 E = TypeVar("E", bound=Event)

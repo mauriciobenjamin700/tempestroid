@@ -122,6 +122,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`stopwatch`](examples/stopwatch/app.py) | Async loop ticking the UI via `asyncio.sleep`. |
 | [`colorpicker`](examples/colorpicker/app.py) | Dynamic `Style` updates (swatches + toggles). |
 | [`form`](examples/form/app.py) | The value-bearing inputs (`Input` / `Checkbox` / `DatePicker` / `FilePicker`) + their typed change events. |
+| [`forms`](examples/forms/app.py) | A validating `Form` of `FormField`s (typed validators block an invalid submit, per-field error inline) + `Dropdown` + `PinInput` OTP. |
 | [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
 
 The framework and the Qt simulator support the full widget set. The device
@@ -311,6 +312,27 @@ The declarative IR — bare-noun widgets.
   (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
   **`Slider`** (numeric range), **`DatePicker`** (ISO date), **`FilePicker`**
   (file selection).
+- Selection + segmented inputs (phase E5): **`Dropdown`** (single-choice select —
+  `options` + `value`, emits **`SelectEvent`** with the option `value` + `index`),
+  **`TimePicker`** (`"HH:MM"` value, emits **`TimeChangeEvent`**), **`RangeSlider`**
+  (dual-handle `low`/`high` over `[min_value, max_value]`, emits
+  **`RangeChangeEvent`**), **`Autocomplete`** (text + filtered suggestions; emits
+  **`TextChangeEvent`** while typing and **`SelectEvent`** on pick), **`PinInput`**
+  (segmented PIN/OTP of `length` cells; emits **`TextChangeEvent`** per edit and a
+  **`SubmitEvent`** once full) and **`MaskedInput`** (input `mask` — `'9'` digit,
+  `'A'` letter, else literal — emits **`TextChangeEvent`**).
+- Forms (phase E5, `tempestroid.widgets.forms`): **`Form`** (a container of
+  **`FormField`**s, `on_submit` → **`SubmitEvent`**) and **`FormField`** (a
+  labelled wrapper around a `child` input, carrying typed **`Validator`** rules,
+  `name`, `error`, `on_validate` → **`ValidationEvent`**). A **`Validator`** is a
+  `Callable[[Any], str | None]` (an error string or `None`). `Form.validate(values)`
+  runs every field's validators **purely in Python** — the same boundary-validation
+  philosophy as `parse_event` — and returns a **`FormState`** (a frozen
+  `{"errors": dict[str, str], "valid": bool}` that serializes to plain JSON, with no
+  nested models), so a renderer receives an already-validated tree with each
+  field's `error` filled in; the app gates `SubmitEvent` on `FormState.valid`. Both
+  `Form.fields` and `FormField.child` cross the bridge as child nodes (never as
+  props); validators are pure Python and are never serialized.
 - Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
   **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
 - Virtualized lists (only the visible window is materialized; declare an
@@ -406,6 +428,12 @@ renderer changes and are fully device-ready. Every component takes an optional
 - Overlay events: **`DismissEvent`** (optional `overlay_id`) — an overlay
   dismissed by a host-owned gesture (`Dialog` / `BottomSheet` / `Popover`); and
   **`MenuSelectEvent`** (`value` + `label`) — a `Menu` / `ActionSheet` selection.
+- Input + form events (phase E5): **`SelectEvent`** (`value` + 0-based `index`),
+  **`TimeChangeEvent`** (`"HH:MM"` `value`), **`RangeChangeEvent`** (`low` + `high`
+  floats), **`SubmitEvent`** (flat `values: dict[str, str]`) and
+  **`ValidationEvent`** (`field` + `value` + optional `error`). The matching
+  handler aliases are **`SelectHandler`** / **`TimeChangeHandler`** /
+  **`RangeChangeHandler`** / **`SubmitHandler`** / **`ValidationHandler`**.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -652,6 +680,7 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | E1 | Virtualized lists + scroll (lazy, sticky section, pull-to-refresh, infinite) | ✅ |
 | E2 | Overlays + feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ |
 | E3 | Animation framework (`AnimationController`/`Tween`/`Spring`, `Animated`/`AnimatedList`/`Hero`/`Shimmer`/`Skeleton`) | ✅ |
+| E5 | Inputs + forms (`Dropdown`/`TimePicker`/`RangeSlider`/`Autocomplete`/`PinInput`/`MaskedInput`, `Form`/`FormField`/`Validator`/`FormState`) | 🚧 IR + Qt + Compose |
 
 ---
 

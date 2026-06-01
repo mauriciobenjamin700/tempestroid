@@ -114,7 +114,7 @@ E0/E2 nas transições; E4–E9 acoplam menos e reordenam por demanda.
 | E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ done | cada overlay abre/fecha por handler; barrier bloqueia; toast expira; menu ancorado (device) |
 | E3 | Framework de animação (controller, tween/curva, implícita, gesto-dirigida, Hero, shimmer) | ✅ done | `Animated`/`AnimatedList`/`Hero`/`Shimmer`/`Skeleton` animam nos dois renderizadores; `AnimationController`/`Tween`/`Spring` testados com clock determinístico; o clock cruza o bridge via `FRAME_TOKEN` (`App._tick_from_device`) e `has_animations` em `MountMessage`/`PatchMessage` liga o `withFrameNanos` no host |
 | E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder, viewer) | ✅ done | cada gesto dispara evento tipado e muda estado; swipe-to-delete + reorder (diff) + pinça-zoom (device) |
-| E5 | Inputs e formulários (dropdown/select, time, range, form/validação, autocomplete, OTP, máscara) | 🔜 planned | formulário valida e bloqueia submit inválido com erro por campo nos dois renderizadores |
+| E5 | Inputs e formulários (dropdown/select, time, range, form/validação, autocomplete, OTP, máscara) | ✅ done | formulário valida e bloqueia submit inválido com erro por campo nos dois renderizadores |
 | E6 | Layout refinado (flex-wrap, pager/carousel, sliver/app bar colapsável, tabela, aspect ratio) | 🔜 planned | `Wrap` quebra linha igual (conformância); pager pagina; app bar colapsa ao rolar (device) |
 | E7 | Mídia e gráficos (vídeo, webview, canvas/desenho, svg, câmera live, QR scanner, mapa, blur, clip) | 🔜 planned | vídeo/webview no device; canvas desenha chart idêntico (conformância); preview câmera + QR (device); placeholders Qt sinalizados |
 | E8 | Plataforma/sistema (haptics, sensores, lifecycle, deep link, permissões, biometria, secure storage, prefs, SQLite, connectivity, push, background) | 🔜 planned | metade Python unit-testada off-device; capacidades validadas no device; stubs do simulador avisam o que é device-only |
@@ -282,6 +282,27 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
   to a global point via a depth-first `key` lookup in the root tree (falling back
   to the host origin when unresolved), vs Compose anchoring by composition.
   Example: `examples/overlays/app.py` (`make run APP=examples/overlays/app.py`).
+- **Inputs & forms (E5c).** `Dropdown`→`QComboBox` (`currentIndexChanged`→
+  `SelectEvent(value,index)`); `TimePicker`→`QTimeEdit` (inline `HH:mm` spinner,
+  `timeChanged`→`TimeChangeEvent`); `RangeSlider`→`_RangeSliderWidget` (two stacked
+  `QSlider`s clamped `low<=high`, no native `QRangeSlider`; emits
+  `RangeChangeEvent(low,high)` as floats); `Autocomplete`→`QLineEdit`+`QCompleter`
+  (two distinct signals — `textChanged`→`TextChangeEvent` via `_value_conns`,
+  completer `activated`→`SelectEvent` via the new `_select_conns`); `PinInput`→
+  `_PinInputWidget` (N chained one-char `QLineEdit`s with auto focus-advance;
+  `TextChangeEvent` per edit + `SubmitEvent` when full); `MaskedInput`→`QLineEdit`
+  with `setInputMask` (framework `9`→Qt `0`, `A` kept, other chars escaped if a Qt
+  metachar — `_to_qt_input_mask`). `FormField`→`_FormFieldWidget` (a `QVBoxLayout`
+  whose middle `content_layout` is the IR child slot, label `QLabel` above + red
+  error `QLabel` below, hidden when `error==""`); `Form`→plain `QVBoxLayout`
+  container of its `FormField` children — all validation (`Form.validate` →
+  `FormState`) runs in Python before patches, so the renderer only renders the
+  `error` it is handed and never gates submit. Qt-vs-Compose divergences to pin in
+  conformance: `TimePicker` inline spinner vs Compose modal `TimePickerDialog`;
+  `RangeSlider` dual `QSlider` vs native M3 `RangeSlider`; `PinInput` chained
+  `QLineEdit`s vs `BasicTextField`+`FocusRequester`; `Autocomplete` `QCompleter`
+  popup vs filterable `DropdownMenu` — every emitted event payload is identical.
+  Example: `examples/forms/app.py` (`make run APP=examples/forms/app.py`).
 
 **A4 notes / known limits:**
 
