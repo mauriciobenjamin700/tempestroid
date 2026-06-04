@@ -41,7 +41,7 @@ async def test_async_handler_awaits_then_updates_screen():
         )
 
     app: App[Counter] = App(Counter(), view, apply_patches=renderer.apply)
-    renderer.mount(app.start())
+    renderer.mount(app.start().root)
     assert _labels(renderer) == ["Count: 0"]
 
     _button(renderer).click()  # schedules the async handler as a loop task
@@ -68,7 +68,7 @@ async def test_sync_handler_updates_screen_on_next_tick():
         )
 
     app: App[Counter] = App(Counter(), view, apply_patches=renderer.apply)
-    renderer.mount(app.start())
+    renderer.mount(app.start().root)
 
     _button(renderer).click()
     await asyncio.sleep(0)  # rebuild is coalesced onto the loop

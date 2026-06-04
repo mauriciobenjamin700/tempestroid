@@ -20,9 +20,10 @@ async def test_start_returns_initial_node():
     app: App[Counter] = App(
         Counter(), _view, apply_patches=lambda p: captured.append(list(p))
     )
-    node = app.start()
-    assert node.type == "Text"
-    assert node.props["content"] == "n=0"
+    scene = app.start()
+    assert scene.root.type == "Text"
+    assert scene.root.props["content"] == "n=0"
+    assert scene.overlays == []
     assert captured == []
 
 
@@ -101,7 +102,7 @@ def test_swap_view_rolls_back_on_incompatible_view():
         app.swap_view(_view_bad)
     # The failed swap is rolled back: the old view still renders correctly.
     assert app.current_tree is not None
-    assert app.current_tree.props["content"] == "n=3"
+    assert app.current_tree.root.props["content"] == "n=3"
     assert captured == []  # nothing applied on failure
 
 

@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
     QBoxLayout,
     QCheckBox,
     QDateEdit,
+    QDialog,
     QFileDialog,
     QGraphicsDropShadowEffect,
     QGraphicsEffect,
@@ -59,6 +60,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -76,9 +78,11 @@ from tempestroid.core.ir import (
     Insert,
     Node,
     Patch,
+    Path,
     Remove,
     Reorder,
     Replace,
+    Scene,
     Update,
 )
 from tempestroid.renderers.qt.style_translator import (
@@ -98,10 +102,13 @@ from tempestroid.style import (
 )
 from tempestroid.widgets import (
     DateChangeEvent,
+    DismissEvent,
     EndReachedEvent,
     Event,
     FileSelectEvent,
     LongPressEvent,
+    MenuItem,
+    MenuSelectEvent,
     RouteChangeEvent,
     ScrollEvent,
     SlideEvent,
@@ -114,6 +121,21 @@ from tempestroid.widgets import (
 )
 
 __all__ = ["QtRenderer"]
+
+#: The reserved leading path step that addresses the :class:`Scene` overlay
+#: layer (mirrors ``reconciler.OVERLAY_STEP``). A patch whose path starts with
+#: this token targets the floating overlay layer, not the root tree.
+_OVERLAY_STEP = "overlay"
+
+#: Overlay node types the renderer realizes as a floating top-level surface
+#: (``QDialog``/``QMenu``/``QLabel``) rather than a child of the root tree.
+_OVERLAY_TYPES = frozenset(
+    {"Dialog", "BottomSheet", "Toast", "Tooltip", "Menu", "Popover", "ActionSheet"}
+)
+
+#: Toast fade-out duration (ms) — the QLabel fades just before the Python-side
+#: ``loop.call_later`` removes it; the Python timer stays authoritative.
+_TOAST_FADE_MS = 350
 
 _CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView", "SafeArea"})
 
@@ -198,6 +220,28 @@ _STACK_BANDS: dict[StackAlign, tuple[str, str]] = {
 _LONG_PRESS_MS = 500
 _SWIPE_THRESHOLD = 40.0
 _TAP_SLOP = 12.0
+
+
+def _child_index(step: int | str) -> int:
+    """Narrow a (re-based) path step to the integer child index it must be.
+
+    Both the root tree and a re-based overlay subtree are addressed by integer
+    child indices — the reserved ``"overlay"`` token is stripped by
+    :meth:`QtRenderer._apply_overlay` before a patch reaches here. This guards the
+    boundary so a stray overlay token fails loudly instead of mis-indexing.
+
+    Args:
+        step: A path step from a (root-tree or re-based overlay) patch.
+
+    Returns:
+        The integer child index.
+
+    Raises:
+        RuntimeError: If ``step`` is unexpectedly the reserved overlay token.
+    """
+    if not isinstance(step, int):
+        raise RuntimeError(f"unexpected non-integer path step {step!r}")
+    return step
 
 
 def _band_offset(band: str, extent: int, child_extent: int) -> int:
@@ -1326,6 +1370,95 @@ class _LazyGridArea(QScrollArea):
         """
         return list(self._items)
 
+class _ScrimWidget(QWidget):
+    """A semi-transparent barrier drawn over the root while an overlay is open.
+
+    Parented to the renderer's host, raised above the root tree, and stretched to
+    cover it. It paints a ``rgba(0,0,0,0.4)`` veil and swallows mouse presses so
+    taps never reach the blocked content behind it; a press on the scrim invokes
+    the dismiss callback (the Qt analogue of the device's ``__dismiss__:<id>``
+    barrier tap). Hidden whenever no barrier overlay is open.
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        """Create the scrim parented to (and covering) the host.
+
+        Args:
+            parent: The host widget the scrim veils.
+        """
+        super().__init__(parent)
+        self.setStyleSheet("background: rgba(0, 0, 0, 0.4);")
+        self.setVisible(False)
+        self._on_tap: Callable[[], None] = lambda: None
+
+    def configure(self, on_tap: Callable[[], None]) -> None:
+        """Install the barrier-tap callback (dismiss the topmost barrier overlay).
+
+        Args:
+            on_tap: Invoked when the user taps the scrim.
+        """
+        self._on_tap = on_tap
+
+    def cover(self) -> None:
+        """Stretch the scrim to fill its parent and raise it above the root."""
+        parent = self.parentWidget()
+        if parent is not None:
+            self.setGeometry(0, 0, parent.width(), parent.height())
+        self.raise_()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Swallow the press and dismiss the barrier overlay.
+
+        Args:
+            event: The Qt mouse press event (consumed, not forwarded).
+        """
+        self._on_tap()
+        event.accept()
+
+
+class _DismissDialog(QDialog):
+    """A ``QDialog`` that reports its close (X / Esc) through a callback.
+
+    Used for ``Dialog``/``BottomSheet``/``Popover`` overlays: closing the dialog
+    by any host-owned means (the title-bar close, ``Esc``, or a programmatic
+    ``close``) fires the dismiss callback once, so the renderer can route it to
+    ``on_dismiss`` + ``App.dismiss`` exactly like the device's barrier tap.
+    """
+
+    def __init__(self) -> None:
+        """Create the dialog with no dismiss callback yet."""
+        super().__init__()
+        self._on_dismiss: Callable[[], None] = lambda: None
+        self._suppress: bool = False
+
+    def configure_dismiss(self, on_dismiss: Callable[[], None]) -> None:
+        """Install the dismiss callback fired on a user-initiated close.
+
+        Args:
+            on_dismiss: Invoked once when the dialog is closed by the user.
+        """
+        self._on_dismiss = on_dismiss
+
+    def close_silently(self) -> None:
+        """Close the dialog without firing the dismiss callback.
+
+        Used when the overlay leaves via a ``Remove`` patch (the app already
+        dismissed it), so the dialog tears down without re-entering dismiss.
+        """
+        self._suppress = True
+        self.close()
+
+    def closeEvent(self, arg__1: Any) -> None:  # noqa: ANN401 — Qt close event
+        """Fire the dismiss callback on a user-initiated close, then close.
+
+        Args:
+            arg__1: The Qt close event (name mandated by the PySide override).
+        """
+        if not self._suppress:
+            self._on_dismiss()
+        super().closeEvent(arg__1)
+
+
 class _Rendered:
     """A live Qt node mirroring one IR :class:`Node`.
 
@@ -1370,6 +1503,19 @@ class QtRenderer:
         self._host_layout: QVBoxLayout = QVBoxLayout(self.host)
         self._host_layout.setContentsMargins(0, 0, 0, 0)
         self._root: _Rendered | None = None
+        # The floating overlay layer, parallel to ``Scene.overlays`` (ascending
+        # z-order). Each overlay's backing widget is a top-level surface
+        # (QDialog/QMenu/QLabel), not a child of the host tree.
+        self._overlays: list[_Rendered] = []
+        # Shared barrier scrim drawn over the root when a ``barrier`` overlay is
+        # open; tapping it dismisses the topmost barrier overlay.
+        self._scrim: _ScrimWidget = _ScrimWidget(self.host)
+        # Callback invoked to remove an overlay from the app layer (the Qt
+        # analogue of the device's ``__dismiss__:<id>`` token). Wired by
+        # ``run_qt``/``Simulator`` to ``App.dismiss``; a no-op otherwise so the
+        # renderer works standalone in unit tests (it still tears the widget down
+        # when the matching ``Remove`` patch arrives).
+        self._dismiss_overlay: Callable[[str], None] = lambda _overlay_id: None
         # Track each button's live click connection so we can cleanly replace it
         # on update without poking signal internals.
         self._click_conns: dict[int, QMetaObject.Connection] = {}
@@ -1380,32 +1526,72 @@ class QtRenderer:
         # Strong refs to in-flight handler coroutines so the loop does not GC
         # them before they finish (structured cancellation is post-v1).
         self._pending: set[asyncio.Task[Any]] = set()
+        # Strong refs to in-flight overlay animations (bottom-sheet slide) so Qt
+        # does not GC them mid-flight.
+        self._pending_anims: set[QAbstractAnimation] = set()
         # Live password-reveal toggle actions, keyed by line-edit id, so a secure
         # Input keeps a single eye action across idempotent re-applies.
         self._eye_actions: dict[int, QAction] = {}
 
-    def mount(self, root: Node) -> QWidget:
-        """Build the initial widget tree and place it in the host.
+    def set_dismiss_overlay(self, dismiss: Callable[[str], None]) -> None:
+        """Wire the callback that removes an overlay from the app layer.
+
+        The app runner (``run_qt``/``Simulator``) passes ``App.dismiss`` here so a
+        host-owned overlay dismissal (a dialog closed, a menu selected, the scrim
+        tapped) removes the overlay from the floating layer — the Qt analogue of
+        the device bridge routing ``__dismiss__:<id>`` to ``App.dismiss``.
 
         Args:
-            root: The root IR node to render.
+            dismiss: Callback taking an overlay id to remove.
+        """
+        self._dismiss_overlay = dismiss
+
+    @staticmethod
+    def _as_scene(root: Node | Scene) -> Scene:
+        """Coerce a bare root node into a :class:`Scene` with no overlays.
+
+        The runtime always mounts a :class:`Scene`; tests (and any caller with
+        only a root tree) may pass a bare :class:`Node`, which is wrapped into an
+        overlay-free scene so both call shapes work.
+
+        Args:
+            root: A :class:`Scene`, or a bare root :class:`Node`.
+
+        Returns:
+            The scene to mount.
+        """
+        return root if isinstance(root, Scene) else Scene(root=root)
+
+    def mount(self, root: Node | Scene) -> QWidget:
+        """Build the initial scene (root tree + overlay layer) into the host.
+
+        Args:
+            root: The :class:`Scene` to render — its root tree fills the host and
+                its overlay layer is realized as floating top-level surfaces. A
+                bare :class:`Node` is accepted too (wrapped as an overlay-free
+                scene) for callers/tests that only have a root tree.
 
         Returns:
             The host widget to embed in a window or another layout.
         """
-        self._root = self._create(root)
+        scene = self._as_scene(root)
+        self._root = self._create(scene.root)
         self._host_layout.addWidget(self._root.widget)
+        for index, overlay_node in enumerate(scene.overlays):
+            self._mount_overlay(index, overlay_node)
+        self._sync_scrim()
         return self.host
 
-    def remount(self, root: Node) -> QWidget:
-        """Tear down the current tree and mount a fresh one (hot restart).
+    def remount(self, root: Node | Scene) -> QWidget:
+        """Tear down the current scene and mount a fresh one (hot restart).
 
-        Discards the old root widget, cancels in-flight handler tasks and clears
-        stale click connections, then mounts ``root`` from scratch — clean state,
-        as a hot *restart* should be.
+        Discards the old root widget and any open overlays, cancels in-flight
+        handler tasks and clears stale click connections, then mounts the scene
+        from scratch — clean state, as a hot *restart* should be.
 
         Args:
-            root: The new root IR node to render.
+            root: The new :class:`Scene` to render (a bare :class:`Node` is
+                accepted too).
 
         Returns:
             The host widget (unchanged across remounts).
@@ -1416,6 +1602,9 @@ class QtRenderer:
         self._click_conns.clear()
         self._value_conns.clear()
         self._eye_actions.clear()
+        for overlay in self._overlays:
+            self._teardown_overlay(overlay)
+        self._overlays = []
         if self._root is not None:
             self._host_layout.removeWidget(self._root.widget)
             self._discard(self._root.widget)
@@ -1448,11 +1637,18 @@ class QtRenderer:
     # --- patch dispatch ----------------------------------------------------
 
     def _apply_one(self, patch: Patch) -> None:
-        """Apply a single patch.
+        """Apply a single patch, routing overlay-layer patches separately.
+
+        A patch whose path starts with the reserved ``"overlay"`` token targets
+        the floating overlay layer; everything else flows through the root-tree
+        path unchanged.
 
         Args:
             patch: The patch to apply.
         """
+        if patch.path and patch.path[0] == _OVERLAY_STEP:
+            self._apply_overlay(patch)
+            return
         if isinstance(patch, Update):
             self._apply_update(patch)
         elif isinstance(patch, Replace):
@@ -1463,6 +1659,403 @@ class QtRenderer:
             self._apply_remove(patch)
         else:
             self._apply_reorder(patch)
+
+    # --- overlay layer -----------------------------------------------------
+
+    def _apply_overlay(self, patch: Patch) -> None:
+        """Apply a patch whose path targets the floating overlay layer.
+
+        Three shapes are handled, mirroring ``diff_scene``'s overlay paths:
+
+        * ``("overlay",)`` — a layer-level structural patch (insert/remove/reorder
+          an overlay).
+        * ``("overlay", i)`` — an :class:`Update`/:class:`Replace` of overlay
+          ``i`` itself.
+        * ``("overlay", i, ...)`` — a patch inside overlay ``i``'s subtree.
+
+        Args:
+            patch: The overlay-layer patch (its path starts with ``"overlay"``).
+        """
+        if len(patch.path) == 1:
+            self._apply_overlay_layer(patch)
+            return
+        index = _child_index(patch.path[1])
+        overlay = self._overlays[index]
+        # Re-base the patch onto the overlay subtree: drop the ("overlay", i)
+        # prefix and run the standard machinery with the overlay as the root.
+        rebased = self._rebase(patch)
+        if len(patch.path) == 2 and isinstance(patch, Replace):
+            self._replace_overlay(index, overlay, patch)
+            return
+        if len(patch.path) == 2 and isinstance(patch, Update):
+            self._update_overlay(overlay, patch)
+            return
+        saved = self._root
+        self._root = overlay
+        try:
+            self._apply_one(rebased)
+        finally:
+            self._root = saved
+
+    @staticmethod
+    def _rebase(patch: Patch) -> Patch:
+        """Strip the leading ``("overlay", i)`` prefix from a patch's path.
+
+        Args:
+            patch: An overlay patch whose path is ``("overlay", i, ...)``.
+
+        Returns:
+            A copy of the patch with the two-step overlay prefix removed, so the
+            standard root-tree machinery can apply it against the overlay subtree.
+        """
+        return patch.model_copy(update={"path": patch.path[2:]})
+
+    def _apply_overlay_layer(self, patch: Patch) -> None:
+        """Apply an ``("overlay",)`` layer-level insert/remove/reorder.
+
+        Args:
+            patch: The layer-level patch.
+        """
+        if isinstance(patch, Insert):
+            self._mount_overlay(patch.index, patch.node)
+        elif isinstance(patch, Remove):
+            overlay = self._overlays.pop(patch.index)
+            self._teardown_overlay(overlay)
+        elif isinstance(patch, Reorder):
+            self._overlays = [self._overlays[old] for old in patch.order]
+            self._restack_overlays()
+        self._sync_scrim()
+
+    def _update_overlay(self, overlay: _Rendered, patch: Update) -> None:
+        """Update an overlay node's own props (title/items/barrier/handlers).
+
+        Args:
+            overlay: The rendered overlay node.
+            patch: The update patch (its path is ``("overlay", i)``).
+        """
+        overlay.props.update(patch.set_props)
+        for name in patch.unset_props:
+            overlay.props.pop(name, None)
+        self._refresh_overlay(overlay)
+        self._sync_scrim()
+
+    def _replace_overlay(
+        self, index: int, old: _Rendered, patch: Replace
+    ) -> None:
+        """Replace a whole overlay (type/key changed) at ``index``.
+
+        Args:
+            index: The overlay's z-order index.
+            old: The outgoing rendered overlay.
+            patch: The replace patch carrying the new overlay node.
+        """
+        self._teardown_overlay(old)
+        self._overlays.pop(index)
+        self._mount_overlay(index, patch.node)
+        self._sync_scrim()
+
+    def _mount_overlay(self, index: int, node: Node) -> None:
+        """Build an overlay subtree and show its top-level surface.
+
+        Args:
+            index: The z-order index to insert the overlay at.
+            node: The overlay IR node (carries ``barrier`` + the widget props).
+        """
+        overlay = self._create(node)
+        self._overlays.insert(index, overlay)
+        self._present_overlay(overlay)
+
+    def _overlay_id(self, overlay: _Rendered) -> str:
+        """Return an overlay's stable id (its ``key``), or the empty string.
+
+        Args:
+            overlay: The rendered overlay node.
+
+        Returns:
+            The overlay id used to route a dismiss back to ``App.dismiss``.
+        """
+        return overlay.key or ""
+
+    def _dismiss(self, overlay: _Rendered, handler: object) -> None:
+        """Route a host-owned overlay dismissal: handler + ``App.dismiss``.
+
+        Invokes the overlay's ``on_dismiss`` handler (when wired) with a typed
+        :class:`DismissEvent`, then removes it from the app layer via the wired
+        ``App.dismiss`` — mirroring the device bridge's ``__dismiss__:<id>``
+        routing. Both are idempotent, so a handler that already dismisses is safe.
+
+        Args:
+            overlay: The rendered overlay being dismissed.
+            handler: The overlay's ``on_dismiss`` handler, or ``None``.
+        """
+        overlay_id = self._overlay_id(overlay)
+        if handler is not None:
+            self._invoke(
+                cast("Callable[..., Any]", handler),
+                DismissEvent(overlay_id=overlay_id or None),
+            )
+        self._dismiss_overlay(overlay_id)
+
+    def _select(self, overlay: _Rendered, item: MenuItem) -> None:
+        """Route a menu/action-sheet selection: ``on_select`` + dismiss.
+
+        Args:
+            overlay: The rendered menu/action-sheet overlay.
+            item: The selected item.
+        """
+        handler = overlay.props.get("on_select")
+        if handler is not None:
+            self._invoke(
+                cast("Callable[..., Any]", handler),
+                MenuSelectEvent(value=item.value, label=item.label),
+            )
+        self._dismiss_overlay(self._overlay_id(overlay))
+
+    def _present_overlay(self, overlay: _Rendered) -> None:
+        """Show an overlay's top-level surface for the first time.
+
+        ``QDialog``-backed overlays are shown non-modally (the scrim provides the
+        barrier so the asyncio loop keeps running); ``QMenu`` overlays pop up at
+        their anchor/cursor; the ``QLabel`` toast floats over the host.
+
+        Args:
+            overlay: The freshly created rendered overlay.
+        """
+        widget = overlay.widget
+        if isinstance(widget, _DismissDialog):
+            self._show_dialog_surface(overlay, widget)
+        elif isinstance(widget, QMenu):
+            self._popup_menu(overlay, widget)
+        elif overlay.type in ("Toast", "Tooltip"):
+            self._float_label(overlay, cast("QLabel", widget))
+
+    def _show_dialog_surface(
+        self, overlay: _Rendered, dialog: _DismissDialog
+    ) -> None:
+        """Position and show a ``Dialog``/``BottomSheet``/``Popover`` surface.
+
+        A ``BottomSheet`` is anchored to the host's bottom edge and slides up; a
+        ``Popover`` is placed near its anchor; a ``Dialog`` centres on the host.
+
+        Args:
+            overlay: The rendered overlay.
+            dialog: The backing dialog widget.
+        """
+        dialog.show()
+        host_geom = self.host.geometry()
+        host_global = self.host.mapToGlobal(QPoint(0, 0))
+        dialog.adjustSize()
+        if overlay.type == "BottomSheet":
+            width = host_geom.width()
+            dialog.setFixedWidth(max(width, 1))
+            target_y = host_global.y() + host_geom.height() - dialog.height()
+            start = QPoint(host_global.x(), host_global.y() + host_geom.height())
+            dialog.move(start)
+            anim = QPropertyAnimation(dialog, b"pos", dialog)
+            anim.setDuration(_NAV_ANIM_MS)
+            anim.setStartValue(start)
+            anim.setEndValue(QPoint(host_global.x(), target_y))
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.start()
+            # Keep a strong ref so Qt does not GC the animation mid-slide.
+            self._pending_anims.add(anim)
+            anim.finished.connect(lambda: self._pending_anims.discard(anim))
+        elif overlay.type == "Popover":
+            anchor = self._anchor_global(overlay)
+            dialog.move(anchor if anchor is not None else host_global)
+        else:
+            x = host_global.x() + (host_geom.width() - dialog.width()) // 2
+            y = host_global.y() + (host_geom.height() - dialog.height()) // 2
+            dialog.move(x, y)
+
+    def _popup_menu(self, overlay: _Rendered, menu: QMenu) -> None:
+        """Pop up a ``Menu``/``ActionSheet`` at its anchor (or the cursor).
+
+        ``exec`` is intentionally avoided (it spins a nested modal loop that would
+        block the qasync loop); ``popup`` shows the menu non-blocking and the
+        ``triggered`` signal (wired at creation) carries the selection back.
+
+        Args:
+            overlay: The rendered menu overlay.
+            menu: The backing ``QMenu``.
+        """
+        anchor = self._anchor_global(overlay)
+        if anchor is None:
+            host_global = self.host.mapToGlobal(QPoint(0, 0))
+            anchor = host_global
+        menu.popup(anchor)
+
+    def _float_label(self, overlay: _Rendered, label: QLabel) -> None:
+        """Float a toast/tooltip label over the host and (for toasts) fade it.
+
+        Args:
+            overlay: The rendered overlay.
+            label: The backing label widget.
+        """
+        label.adjustSize()
+        host_geom = self.host.geometry()
+        host_global = self.host.mapToGlobal(QPoint(0, 0))
+        x = host_global.x() + (host_geom.width() - label.width()) // 2
+        if overlay.type == "Toast":
+            y = host_global.y() + host_geom.height() - label.height() - 24
+        else:
+            anchor = self._anchor_global(overlay)
+            y = (anchor.y() if anchor is not None else host_global.y() + 24)
+        label.move(x, y)
+        label.show()
+        if overlay.type == "Toast":
+            self._schedule_toast_fade(overlay, label)
+
+    def _schedule_toast_fade(self, overlay: _Rendered, label: QLabel) -> None:
+        """Fade a toast out just before the app-side timer removes it.
+
+        The Python ``App.toast`` ``loop.call_later`` stays authoritative for the
+        actual removal (a ``Remove`` patch); this only adds a visual fade so the
+        toast does not vanish abruptly.
+
+        Args:
+            overlay: The rendered toast overlay.
+            label: The toast label.
+        """
+        duration_s = float(cast("float", overlay.props.get("duration_s", 2.5)))
+        effect = QGraphicsOpacityEffect(label)
+        label.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", label)
+        anim.setDuration(_TOAST_FADE_MS)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.InQuad)
+        timer = QTimer(label)
+        timer.setSingleShot(True)
+        start_after = max(int(duration_s * 1000) - _TOAST_FADE_MS, 0)
+        timer.setInterval(start_after)
+        timer.timeout.connect(anim.start)
+        timer.start()
+
+    def _anchor_global(self, overlay: _Rendered) -> QPoint | None:
+        """Resolve an overlay's anchor key to a global screen point.
+
+        Args:
+            overlay: The rendered overlay (its ``anchor`` prop names a widget key).
+
+        Returns:
+            The bottom-left corner of the anchor widget in global coords, or
+            ``None`` when the overlay has no anchor or the key is not found.
+        """
+        anchor_key = cast("str | None", overlay.props.get("anchor"))
+        if anchor_key is None or self._root is None:
+            return None
+        target = self._find_by_key(self._root, anchor_key)
+        if target is None:
+            return None
+        return target.widget.mapToGlobal(QPoint(0, target.widget.height()))
+
+    def _find_by_key(self, node: _Rendered, key: str) -> _Rendered | None:
+        """Depth-first search the root subtree for a node with ``key``.
+
+        Args:
+            node: The subtree root to search.
+            key: The target node key.
+
+        Returns:
+            The matching rendered node, or ``None``.
+        """
+        if node.key == key:
+            return node
+        for child in node.children:
+            found = self._find_by_key(child, key)
+            if found is not None:
+                return found
+        return None
+
+    def _fill_menu(self, overlay: _Rendered, menu: QMenu) -> None:
+        """(Re)build a ``QMenu`` from an overlay's ``items`` and wire selection.
+
+        Idempotent: the menu is cleared and rebuilt each call so an ``Update`` to
+        ``items``/``title`` re-renders cleanly. An ``ActionSheet`` title becomes a
+        disabled section header at the top.
+
+        Args:
+            overlay: The rendered ``Menu``/``ActionSheet`` overlay.
+            menu: The backing ``QMenu``.
+        """
+        menu.clear()
+        title = cast("str | None", overlay.props.get("title"))
+        if title:
+            menu.addSection(title)
+        items = cast("list[MenuItem]", overlay.props.get("items", []))
+        for item in items:
+            action = menu.addAction(item.label)
+            action.triggered.connect(self._make_select(overlay, item))
+
+    def _make_select(
+        self, overlay: _Rendered, item: MenuItem
+    ) -> Callable[[], None]:
+        """Build a triggered slot that selects ``item`` from ``overlay``.
+
+        Args:
+            overlay: The rendered menu overlay.
+            item: The item the action represents.
+
+        Returns:
+            A zero-argument slot for ``QAction.triggered``.
+        """
+        return lambda: self._select(overlay, item)
+
+    def _refresh_overlay(self, overlay: _Rendered) -> None:
+        """Re-apply an overlay node's own visual after a prop ``Update``.
+
+        ``_apply_visual`` already re-renders the overlay's content (menu items,
+        toast text, dialog title) and re-wires its handlers idempotently, so this
+        is a thin delegation kept distinct for the dismiss/scrim re-sync around it.
+
+        Args:
+            overlay: The rendered overlay node.
+        """
+        self._apply_visual(overlay)
+
+    def _restack_overlays(self) -> None:
+        """Re-raise overlay surfaces in ascending z-order after a reorder."""
+        for overlay in self._overlays:
+            widget = overlay.widget
+            if widget.isWindow():
+                widget.raise_()
+
+    def _teardown_overlay(self, overlay: _Rendered) -> None:
+        """Close and discard an overlay's top-level surface and connections.
+
+        Args:
+            overlay: The rendered overlay leaving the layer (via ``Remove`` or a
+                hot remount).
+        """
+        self._purge_connections(overlay)
+        widget = overlay.widget
+        if isinstance(widget, _DismissDialog):
+            widget.close_silently()
+        elif isinstance(widget, QMenu):
+            widget.close()
+        self._discard(widget)
+
+    def _sync_scrim(self) -> None:
+        """Show/hide and position the barrier scrim under the topmost barrier.
+
+        The scrim sits directly below the topmost ``barrier`` overlay's surface
+        and dismisses that overlay when tapped. With no barrier overlay open it is
+        hidden.
+        """
+        barrier_overlays = [
+            overlay
+            for overlay in self._overlays
+            if bool(overlay.props.get("barrier", False))
+        ]
+        if not barrier_overlays:
+            self._scrim.setVisible(False)
+            return
+        topmost = barrier_overlays[-1]
+        handler = topmost.props.get("on_dismiss")
+        self._scrim.configure(lambda: self._dismiss(topmost, handler))
+        self._scrim.cover()
+        self._scrim.setVisible(True)
 
     def _apply_update(self, patch: Update) -> None:
         """Merge prop changes into a node and re-apply its visual.
@@ -1502,7 +2095,7 @@ class QtRenderer:
                 self._discard(old.widget)
             return
         parent = self._at(patch.path[:-1])
-        index = patch.path[-1]
+        index = _child_index(patch.path[-1])
         old = parent.children[index]
         if parent.type in ("Navigator", "TabView"):
             self._replace_screen(parent, index, old, new)
@@ -1683,6 +2276,11 @@ class QtRenderer:
             if rendered.type in ("Stack", "RouteDrawer", "LazyGrid"):
                 # Direct children (no box layout): geometry is renderer-driven.
                 child.widget.setParent(rendered.widget)
+            elif rendered.type in ("Toast", "Tooltip", "Menu", "ActionSheet"):
+                # Leaf overlays render their content from props (message/items),
+                # not from a child box layout — keep the child node for the IR
+                # mirror but do not add it to a (non-existent) layout.
+                continue
             else:
                 # LazyColumn/LazyRow/SectionList expose their scroll-area content
                 # layout, so the materialized window children flow through the
@@ -1766,6 +2364,27 @@ class QtRenderer:
             return _Rendered(
                 node.type, node.key, gesture, cast("QBoxLayout", gesture.layout())
             )
+        if node.type in ("Dialog", "BottomSheet", "Popover"):
+            dialog = _DismissDialog()
+            layout = QVBoxLayout(dialog)
+            if node.type == "Dialog":
+                dialog.setWindowFlag(Qt.WindowType.Dialog, True)
+            else:
+                # Frameless for sheet/popover; the scrim provides the barrier.
+                dialog.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+            return _Rendered(node.type, node.key, dialog, layout)
+        if node.type in ("Menu", "ActionSheet"):
+            return _Rendered(node.type, node.key, QMenu(), None)
+        if node.type in ("Toast", "Tooltip"):
+            label = QLabel()
+            label.setWindowFlags(
+                Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
+            )
+            label.setStyleSheet(
+                "background: rgba(33, 33, 33, 0.92); color: white;"
+                " padding: 8px 14px; border-radius: 8px;"
+            )
+            return _Rendered(node.type, node.key, label, None)
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (
@@ -1871,6 +2490,26 @@ class QtRenderer:
             self._apply_lazy_grid(node)
         elif node.type == "RefreshControl":
             self._apply_refresh_control(cast("QProgressBar", node.widget), node.props)
+        elif node.type in ("Dialog", "BottomSheet", "Popover"):
+            dialog = cast("_DismissDialog", node.widget)
+            if node.type == "Dialog":
+                dialog.setWindowTitle(cast("str", node.props.get("title", "") or ""))
+            dialog.configure_dismiss(
+                lambda: self._dismiss(node, node.props.get("on_dismiss"))
+            )
+        elif node.type in ("Menu", "ActionSheet"):
+            self._fill_menu(node, cast("QMenu", node.widget))
+        elif node.type in ("Toast", "Tooltip"):
+            label = cast("QLabel", node.widget)
+            label.setText(cast("str", node.props.get("message", "")))
+            # ``_apply_visual`` wiped the constructor QSS with the (usually empty)
+            # node style; restore the floating-pill look (a custom style still
+            # wins via the merged QSS set above when one is provided).
+            if style is None:
+                label.setStyleSheet(
+                    "background: rgba(33, 33, 33, 0.92); color: white;"
+                    " padding: 8px 14px; border-radius: 8px;"
+                )
         self._apply_letter_spacing(node.widget, style)
         self._apply_sizing(node.widget, style)
         self._apply_effects(node.widget, style)
@@ -2668,11 +3307,16 @@ class QtRenderer:
 
     # --- helpers -----------------------------------------------------------
 
-    def _at(self, path: tuple[int, ...]) -> _Rendered:
-        """Resolve a rendered node by its path from the root.
+    def _at(self, path: Path) -> _Rendered:
+        """Resolve a rendered node by its path from the current base.
+
+        ``self._root`` is temporarily re-pointed at an overlay subtree by
+        :meth:`_apply_overlay` while applying within-overlay patches (whose path
+        has had the ``("overlay", i)`` prefix stripped), so the same traversal
+        serves both the root tree and overlay subtrees.
 
         Args:
-            path: Child indices from the root.
+            path: Child-index steps from the current base.
 
         Returns:
             The rendered node at that path.
@@ -2683,8 +3327,8 @@ class QtRenderer:
         if self._root is None:
             raise RuntimeError("nothing mounted")
         node = self._root
-        for index in path:
-            node = node.children[index]
+        for step in path:
+            node = node.children[_child_index(step)]
         return node
 
     def _require_layout(self, node: _Rendered) -> QBoxLayout:

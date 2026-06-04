@@ -525,6 +525,169 @@ def test_e1_widget_divergences_complete() -> None:
     assert seen == _E1_DIVERGENCE_KEYS
 
 
+# ---------------------------------------------------------------------------
+# E2 widget-level behavioural divergences (overlays + feedback)
+# ---------------------------------------------------------------------------
+#
+# Phase E2 adds *no* new ``Style`` fields, so the golden/parity machinery above
+# stays unaffected. E2 introduces the floating overlay layer (Dialog, BottomSheet,
+# Toast, Tooltip, Menu, Popover, ActionSheet), serialized as a separate
+# ``Scene.overlays`` list and addressed under the reserved ``("overlay", i, …)``
+# path prefix. The two renderers realize overlays through very different
+# platform surfaces; those divergences are pinned here as a named tripwire.
+#
+# Rationale:
+#
+# 1. dialog surface
+#    Qt floats a modal ``QDialog`` over the host window; the barrier is the
+#    dialog's own modality (it blocks input to the window beneath). Compose uses
+#    the Material 3 ``AlertDialog``, which creates its own platform window and
+#    manages its own ``WindowInsets.safeDrawing`` — it must NOT be wrapped in the
+#    root ``safeDrawingPadding`` (double-inset bug).
+#
+# 2. bottom-sheet surface + safe-area inset
+#    Qt anchors a frameless ``QDialog`` to the bottom edge with a slide
+#    animation. Compose uses ``ModalBottomSheet`` (M3), which respects the bottom
+#    system inset natively and supplies its own scrim — again, NOT wrapped in the
+#    root safe-area padding.
+#
+# 3. toast lifetime + timer authority
+#    The Python ``App.toast`` is authoritative over a toast's lifetime via
+#    ``loop.call_later(duration_s, dismiss)``. Qt mirrors this with a floating
+#    ``QLabel`` + ``QTimer`` + fade; Compose mirrors it with a ``Popup`` +
+#    ``LaunchedEffect(delay)`` that emits ``__dismiss__:<id>``. The Python timer
+#    is the source of truth; the renderer timer is a UX optimisation only.
+#
+# 4. menu / action-sheet anchoring
+#    Qt presents a ``QMenu`` anchored at the cursor / anchor widget global
+#    position. Compose presents a ``DropdownMenu`` (or ``ModalBottomSheet`` with a
+#    ``LazyColumn`` for action sheets) anchored via the ``anchor`` key. Both route
+#    selection back as a ``MenuSelectEvent``.
+#
+# 5. barrier / scrim + dismiss routing
+#    A host-owned dismiss (scrim tap, swipe-down) rides the event channel under
+#    the reserved ``__dismiss__:<id>`` token and is routed to ``App.dismiss`` — no
+#    new patch kind, no new JNI entry. Qt draws the scrim as a semi-transparent
+#    ``QWidget`` z-ordered above the root; Compose relies on the M3 surfaces'
+#    built-in scrim (dialog/sheet) or a bare ``Popup`` (no scrim) for anchored
+#    menus.
+
+_E2_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Dialog",
+        "topic": "dialog_surface_and_inset",
+        "qt_strategy": (
+            "Modal QDialog floated over the host window; barrier is the dialog's "
+            "own modality blocking input beneath."
+        ),
+        "compose_strategy": (
+            "Material 3 AlertDialog in its own platform window; manages its own "
+            "WindowInsets.safeDrawing (NOT wrapped in root safeDrawingPadding)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "BottomSheet",
+        "topic": "sheet_surface_and_bottom_inset",
+        "qt_strategy": (
+            "Frameless QDialog anchored to the bottom edge with a slide animation."
+        ),
+        "compose_strategy": (
+            "Material 3 ModalBottomSheet respects the bottom system inset "
+            "natively and supplies its own scrim (NOT root safeDrawingPadding)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Toast",
+        "topic": "toast_lifetime_timer",
+        "qt_strategy": (
+            "Floating QLabel + QTimer + fade; auto-dismiss mirrors the Python "
+            "loop.call_later timer (which is authoritative)."
+        ),
+        "compose_strategy": (
+            "Popup + LaunchedEffect(delay) emits __dismiss__:<id>; the Python "
+            "loop.call_later timer remains the source of truth."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Menu",
+        "topic": "menu_anchoring",
+        "qt_strategy": (
+            "QMenu exec()-ed at the cursor / anchor widget global position; "
+            "triggered fires MenuSelectEvent."
+        ),
+        "compose_strategy": (
+            "DropdownMenu anchored via the anchor key; each item tap emits a "
+            "MenuSelectEvent JSON payload."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "ActionSheet",
+        "topic": "menu_anchoring",
+        "qt_strategy": (
+            "QMenu with a QAction per item; selection fires MenuSelectEvent."
+        ),
+        "compose_strategy": (
+            "ModalBottomSheet with a LazyColumn of items; each tap emits a "
+            "MenuSelectEvent."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Dialog",
+        "topic": "barrier_scrim_and_dismiss",
+        "qt_strategy": (
+            "Scrim drawn as a semi-transparent QWidget z-ordered above the root; "
+            "barrier tap dispatches __dismiss__:<id>."
+        ),
+        "compose_strategy": (
+            "M3 surface's built-in scrim; onDismissRequest dispatches "
+            "__dismiss__:<id> over the event channel to App.dismiss."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E2_WIDGET_DIVERGENCES``.
+_E2_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E2_WIDGET_DIVERGENCES
+}
+
+
+def test_e2_widget_divergences_complete() -> None:
+    """Every E2 overlay divergence row is intentional and uniquely keyed.
+
+    The tripwire: a renderer specialist who resolves an overlay divergence (e.g.
+    both renderers converge on the same surface) must update the table; one who
+    adds a new overlay or topic must add a row. Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E2_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E2 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E2_DIVERGENCE_KEYS
+
+
+def test_e2_no_style_field_added() -> None:
+    """Phase E2 adds no new Style fields — the parity baseline is unchanged."""
+    assert len(Style.model_fields) == len(_SAMPLES)
+
+
 def test_e1_no_style_field_added() -> None:
     """Phase E1 adds no new Style fields — the Style model is unchanged.
 

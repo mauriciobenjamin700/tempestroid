@@ -62,6 +62,9 @@ class Simulator:
         app: App[Any] = App(
             spec.make_state(), spec.view, apply_patches=self.renderer.apply
         )
+        # `App.start` builds a `Scene`; the Qt renderer mounts its root tree and
+        # floating overlay layer, routing host-owned dismissals to `App.dismiss`.
+        self.renderer.set_dismiss_overlay(app.dismiss)
         self.renderer.remount(app.start())
         self._app = app
 

@@ -34,8 +34,8 @@ def test_load_app_spec_exposes_view_and_state(tmp_path: Path):
     _write_app(app_file, "first")
     spec = load_app_spec(app_file)
     app: App[object] = App(spec.make_state(), spec.view, apply_patches=lambda p: None)
-    node = app.start()
-    assert node.props["content"] == "first"
+    scene = app.start()
+    assert scene.root.props["content"] == "first"
 
 
 def test_reload_picks_up_edits(tmp_path: Path):

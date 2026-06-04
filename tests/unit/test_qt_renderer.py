@@ -8,36 +8,51 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QLabel,
     QLineEdit,
+    QMenu,
     QProgressBar,
     QPushButton,
     QWidget,
 )
 
 from tempestroid import (
+    ActionSheet,
+    BottomSheet,
     Button,
     Checkbox,
     Column,
     Container,
     DatePicker,
+    Dialog,
     EndReachedEvent,
     FilePicker,
     Input,
     LazyColumn,
     LazyGrid,
+    Menu,
+    MenuItem,
+    Popover,
     RefreshControl,
     Row,
+    Scene,
     ScrollEvent,
     SectionHeader,
     SectionList,
     Text,
+    Toast,
+    Tooltip,
     build,
+    build_scene,
     diff,
+    diff_scene,
 )
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.renderer import (
+    _DismissDialog,
     _LazyGridArea,
     _LazyScrollArea,
+    _ScrimWidget,
 )
+from tempestroid.widgets import Widget
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -429,3 +444,358 @@ def test_refresh_control_busy_when_refreshing():
     # An active refresh shows an indeterminate (busy) bar: range collapses to 0.
     assert widget.minimum() == 0
     assert widget.maximum() == 0
+
+
+# --- overlays (E2c) --------------------------------------------------------
+
+
+def _scene(root: Widget, overlays: list[tuple[str, Widget, bool]]) -> Scene:
+    """Build a Scene from a root widget and (id, widget, barrier) overlays."""
+    return build_scene(root, overlays)
+
+
+def test_mount_scene_renders_root_and_no_overlay():
+    renderer = QtRenderer()
+    host = renderer.mount(_scene(Column(children=[Text(content="hi")]), []))
+    assert _labels(host) == ["hi"]
+    assert renderer._overlays == []
+    assert renderer._scrim.isHidden()
+
+
+def test_dialog_overlay_mounts_as_dialog_with_body():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(title="Hello", children=[Text(content="body")]), True)],
+        )
+    )
+    assert len(renderer._overlays) == 1
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, _DismissDialog)
+    assert overlay.widget.windowTitle() == "Hello"
+    assert _labels(overlay.widget) == ["body"]
+
+
+def test_barrier_overlay_shows_blocking_scrim():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(children=[Text(content="x")]), True)],
+        )
+    )
+    assert not renderer._scrim.isHidden()
+
+
+def test_barrierless_menu_does_not_show_scrim():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("m1", Menu(items=[MenuItem(label="One", value="1")]), False)],
+        )
+    )
+    assert renderer._scrim.isHidden()
+
+
+def test_scrim_tap_dismisses_topmost_barrier_overlay():
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(children=[Text(content="x")]), True)],
+        )
+    )
+    # Tapping the scrim dismisses the topmost barrier overlay by its id.
+    renderer._scrim._on_tap()
+    assert dismissed == ["d1"]
+
+
+def test_dialog_on_dismiss_handler_and_app_dismiss_both_fire():
+    fired: list[str] = []
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "d1",
+                    Dialog(
+                        children=[Text(content="x")],
+                        on_dismiss=lambda _e: fired.append("dismiss"),
+                    ),
+                    True,
+                )
+            ],
+        )
+    )
+    dialog = renderer._overlays[0].widget
+    assert isinstance(dialog, _DismissDialog)
+    # A user-initiated close routes on_dismiss + App.dismiss (mirrors __dismiss__).
+    dialog.close()
+    assert fired == ["dismiss"]
+    assert dismissed == ["d1"]
+
+
+def test_dismiss_removes_overlay_via_diff_scene():
+    renderer = QtRenderer()
+    old = _scene(
+        Column(children=[Text(content="root")]),
+        [("d1", Dialog(children=[Text(content="x")]), True)],
+    )
+    renderer.mount(old)
+    new = _scene(Column(children=[Text(content="root")]), [])
+    renderer.apply(diff_scene(old, new))
+    assert renderer._overlays == []
+    assert renderer._scrim.isHidden()
+
+
+def test_toast_renders_label_with_message():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("t1", Toast(message="Saved", duration_s=2.5), False)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, QLabel)
+    assert overlay.widget.text() == "Saved"
+
+
+def test_toast_removal_tears_down_label():
+    renderer = QtRenderer()
+    root = Column(children=[Text(content="root")])
+    old = _scene(root, [("t1", Toast(message="Saved"), False)])
+    renderer.mount(old)
+    # The app-side timer fires App.dismiss → a Remove patch removes the toast.
+    new = _scene(root, [])
+    renderer.apply(diff_scene(old, new))
+    assert renderer._overlays == []
+
+
+def test_menu_lists_items_and_select_routes_event():
+    selected: list[tuple[str, str]] = []
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "m1",
+                    Menu(
+                        items=[
+                            MenuItem(label="Copy", value="copy"),
+                            MenuItem(label="Paste", value="paste"),
+                        ],
+                        on_select=lambda e: selected.append((e.value, e.label)),
+                    ),
+                    False,
+                )
+            ],
+        )
+    )
+    menu = renderer._overlays[0].widget
+
+    assert isinstance(menu, QMenu)
+    actions = menu.actions()
+    assert [a.text() for a in actions] == ["Copy", "Paste"]
+    # Triggering the second action routes a MenuSelectEvent + App.dismiss.
+    actions[1].trigger()
+    assert selected == [("paste", "Paste")]
+    assert dismissed == ["m1"]
+
+
+def test_action_sheet_title_becomes_section_header():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "a1",
+                    ActionSheet(
+                        title="Actions",
+                        items=[MenuItem(label="Delete", value="del")],
+                    ),
+                    True,
+                )
+            ],
+        )
+    )
+
+    menu = renderer._overlays[0].widget
+    assert isinstance(menu, QMenu)
+    # The title is a (disabled) section action ahead of the item action.
+    texts = [a.text() for a in menu.actions()]
+    assert "Delete" in texts
+
+
+def test_bottom_sheet_overlay_mounts_with_body():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("s1", BottomSheet(children=[Text(content="sheet body")]), True)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, _DismissDialog)
+    assert _labels(overlay.widget) == ["sheet body"]
+
+
+def test_overlay_update_changes_toast_message():
+    renderer = QtRenderer()
+    root = Column(children=[Text(content="root")])
+    old = _scene(root, [("t1", Toast(message="One"), False)])
+    renderer.mount(old)
+    new = _scene(root, [("t1", Toast(message="Two"), False)])
+    renderer.apply(diff_scene(old, new))
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, QLabel)
+    assert overlay.widget.text() == "Two"
+
+
+def test_remount_clears_open_overlays():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(children=[Text(content="x")]), True)],
+        )
+    )
+    assert len(renderer._overlays) == 1
+    renderer.remount(_scene(Column(children=[Text(content="fresh")]), []))
+    assert renderer._overlays == []
+    assert renderer._scrim.isHidden()
+    assert _labels(renderer.host) == ["fresh"]
+
+
+def test_scrim_widget_swallows_press():
+    from PySide6.QtCore import QPointF
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QMouseEvent
+
+    scrim = _ScrimWidget(QWidget())
+    fired: list[bool] = []
+    scrim.configure(lambda: fired.append(True))
+    event = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(1.0, 1.0),
+        QPointF(1.0, 1.0),
+        _Qt.MouseButton.LeftButton,
+        _Qt.MouseButton.LeftButton,
+        _Qt.KeyboardModifier.NoModifier,
+    )
+    scrim.mousePressEvent(event)
+    assert fired == [True]
+    assert event.isAccepted()
+
+
+# --- Tooltip and Popover overlays (E2c) ----------------------------------------
+
+
+def test_tooltip_overlay_mounts_as_qlabel():
+    """Tooltip overlay renders as a floating QLabel carrying the message."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("tip1", Tooltip(message="Hint text"), False)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, QLabel)
+    assert overlay.widget.text() == "Hint text"
+
+
+def test_tooltip_is_barrierless():
+    """A Tooltip overlay has no barrier and must not trigger the scrim."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("tip1", Tooltip(message="Hint"), False)],
+        )
+    )
+    assert renderer._scrim.isHidden()
+
+
+def test_popover_overlay_mounts_as_dismiss_dialog():
+    """Popover overlay renders as a frameless _DismissDialog panel."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("pop1", Popover(child=Text(content="popover body")), False)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, _DismissDialog)
+    assert _labels(overlay.widget) == ["popover body"]
+
+
+def test_popover_on_dismiss_fires_on_close():
+    """Closing a Popover dialog triggers the on_dismiss handler and app dismiss."""
+    fired: list[str] = []
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "pop1",
+                    Popover(
+                        child=Text(content="content"),
+                        on_dismiss=lambda _e: fired.append("dismissed"),
+                    ),
+                    False,
+                )
+            ],
+        )
+    )
+    dialog = renderer._overlays[0].widget
+    assert isinstance(dialog, _DismissDialog)
+    dialog.close()
+    assert fired == ["dismissed"]
+    assert dismissed == ["pop1"]
+
+
+def test_multiple_overlay_types_stack_in_order():
+    """A mix of overlay types (dialog + toast + tooltip) preserves push order."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                ("d1", Dialog(children=[Text(content="dlg")]), True),
+                ("t1", Toast(message="msg"), False),
+                ("tip1", Tooltip(message="hint"), False),
+            ],
+        )
+    )
+    assert len(renderer._overlays) == 3
+    assert renderer._overlays[0].key == "d1"
+    assert renderer._overlays[1].key == "t1"
+    assert renderer._overlays[2].key == "tip1"
+
+
+def test_overlay_insert_appends_to_layer():
+    """A diff_scene Insert at ('overlay',) appends a new overlay to the renderer."""
+    renderer = QtRenderer()
+    root = Column(children=[Text(content="root")])
+    old = _scene(root, [])
+    renderer.mount(old)
+    new = _scene(root, [("tip1", Tooltip(message="new tip"), False)])
+    renderer.apply(diff_scene(old, new))
+    assert len(renderer._overlays) == 1
+    assert isinstance(renderer._overlays[0].widget, QLabel)

@@ -17,14 +17,16 @@ from tempestroid.core.ir import (
     Remove,
     Reorder,
     Replace,
+    Scene,
     Update,
 )
-from tempestroid.core.reconciler import build, diff
-from tempestroid.core.state import App
+from tempestroid.core.reconciler import build, build_scene, diff, diff_scene
+from tempestroid.core.state import App, OverlayEntry
 
 __all__ = [
     "Path",
     "Node",
+    "Scene",
     "Replace",
     "Update",
     "Insert",
@@ -33,7 +35,10 @@ __all__ = [
     "Patch",
     "build",
     "diff",
+    "build_scene",
+    "diff_scene",
     "App",
+    "OverlayEntry",
     "introspect",
     "widget_catalog",
     "event_catalog",

@@ -303,6 +303,16 @@ The declarative IR — bare-noun widgets.
   **`EndReachedEvent`** (`on_end_reached`, fired past `end_reached_threshold` —
   wire it to paginate). The matching handler aliases are **`ScrollHandler`** /
   **`RefreshHandler`** / **`EndReachedHandler`**.
+- Overlay + feedback widgets (pushed onto the floating overlay layer via the
+  `App` overlay API, not nested in the screen tree): **`Dialog`** (modal, optional
+  `title` + body `children`, `on_dismiss`), **`BottomSheet`** (`children`,
+  `on_dismiss`), **`Toast`** (transient `message` + `duration_s`, auto-dismisses),
+  **`Tooltip`** (`message` + optional `child`), **`Menu`** (selectable
+  **`MenuItem`** `items`, optional `anchor` key, `on_select`), **`Popover`**
+  (anchored `child`, `on_dismiss`) and **`ActionSheet`** (titled `items`,
+  `on_select`). `MenuItem` is a frozen value model (`label` / `value` / `icon`)
+  that crosses the bridge as plain JSON. The matching handler aliases are
+  **`DismissHandler`** and **`MenuSelectHandler`**.
 - Enums: **`KeyboardType`** (text/number/email/phone/url/password),
   **`ImageFit`** (contain/cover/fill/none).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
@@ -362,6 +372,9 @@ renderer changes and are fully device-ready. Every component takes an optional
   **`RefreshEvent`** (pull-to-refresh) and **`EndReachedEvent`** (threshold
   reached) — emitted by `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` /
   `RefreshControl`.
+- Overlay events: **`DismissEvent`** (optional `overlay_id`) — an overlay
+  dismissed by a host-owned gesture (`Dialog` / `BottomSheet` / `Popover`); and
+  **`MenuSelectEvent`** (`value` + `label`) — a `Menu` / `ActionSheet` selection.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -369,16 +382,31 @@ renderer changes and are fully device-ready. Every component takes an optional
 
 ### Core — IR + reconciler (`tempestroid.core`)
 
-- **`Node`**, **`Path`** — the lowered IR.
+- **`Node`**, **`Path`** — the lowered IR. `Path` is `tuple[int | str, ...]`: a
+  child-index path, except the reserved leading `"overlay"` token that addresses
+  the overlay layer (`("overlay", i, …)`).
+- **`Scene`** — a full UI document: a `root` node plus an ascending z-order
+  `overlays` layer (each overlay node keyed by its stable overlay id).
 - Patches: **`Insert`**, **`Remove`**, **`Update`**, **`Reorder`**,
-  **`Replace`**, and the **`Patch`** union.
-- **`build(widget) -> Node`**, **`diff(old, new) -> list[Patch]`**.
+  **`Replace`**, and the **`Patch`** union. Overlays reuse these — no new kind.
+- **`build(widget) -> Node`**, **`diff(old, new) -> list[Patch]`**,
+  **`build_scene(widget, overlays) -> Scene`** (overlays as `(id, widget,
+  barrier)` tuples), **`diff_scene(old, new) -> list[Patch]`** (root diffed as
+  before; overlays diffed keyed under the `("overlay", …)` prefix).
 - **`App[S]`** — renderer-agnostic state container: owns state, builds via
-  `view(app)`, diffs, hands patches to an `apply_patches` callback. It also owns
-  a `NavStack` (`app.nav`) and exposes navigation helpers:
-  **`push(route)`** / **`pop() -> bool`** / **`replace(route)`** /
-  **`reset(stack)`** — each mutates the stack and schedules the same coalesced
-  rebuild (no new patch kind). `pop()` returns `False` at the root.
+  `view(app)` into a `Scene` (root tree + overlay layer), diffs, hands patches to
+  an `apply_patches` callback. `App.start()` returns the `Scene` and
+  `App.current_tree` is the live `Scene`. It also owns a `NavStack` (`app.nav`)
+  and exposes navigation helpers: **`push(route)`** / **`pop() -> bool`** /
+  **`replace(route)`** / **`reset(stack)`** — each mutates the stack and schedules
+  the same coalesced rebuild (no new patch kind). `pop()` returns `False` at the
+  root.
+- Overlay API (imperative, returns a stable overlay id for `dismiss`):
+  **`show_dialog(widget, *, barrier=True)`**, **`show_sheet(widget, *,
+  barrier=True)`**, **`show_menu(widget, *, anchor=None, barrier=False)`**,
+  **`toast(widget, *, duration_s=2.5)`** (auto-dismisses via `loop.call_later`)
+  and **`dismiss(overlay_id)`**. Each schedules the same coalesced rebuild;
+  **`OverlayEntry`** is the internal overlay slot.
 
 ### Navigation (`tempestroid`)
 
@@ -430,14 +458,20 @@ transport (B3) and the Kotlin Compose renderer (B4) are implemented in
 - **`serialize_node` / `serialize_patch`** — lower the IR/patches to JSON-able
   dicts (handlers → path tokens, style → Compose spec).
 - **`MountMessage` / `PatchMessage` / `EventMessage`** — the wire protocol across
-  the bridge: `mount` carries the full serialized tree, `patch` an incremental
-  patch list, `event` a device→Python callback addressed by handler token.
-  `mount`/`patch` also carry **`can_pop`** (the live `app.nav.can_pop`), so the
-  host can gate its system-back handler without a round-trip.
+  the bridge: `mount` carries the full serialized tree (plus an `overlays` list of
+  serialized overlay nodes), `patch` an incremental patch list (overlay patches
+  ride under the `("overlay", …)` path), `event` a device→Python callback
+  addressed by handler token. `mount`/`patch` also carry **`can_pop`** (the live
+  `app.nav.can_pop`), so the host can gate its system-back handler without a
+  round-trip.
 - **`BACK_TOKEN`** (`"__back__"`) — the reserved event token the host sends on a
   system back action (e.g. the Android back gesture). The bridge routes it
   straight to `App.pop` (no widget handler, no new JNI entry) — it pops a screen,
   or is a no-op at the root where the host's default close-the-app action runs.
+- **`DISMISS_TOKEN_PREFIX`** (`"__dismiss__"`) — the reserved event-token prefix
+  the host sends when an overlay is dismissed by a host-owned gesture (scrim tap,
+  swipe-down): `"__dismiss__:<overlay_id>"`. The bridge strips the prefix and
+  routes the id to `App.dismiss` (no widget handler, no new JNI entry).
 - **`DeviceApp`** + **`Bridge`** / **`LoopbackBridge`** — wire an `App` to a
   device transport; the device-side analogue of `run_qt`. Events come back by
   handler token, are validated by `parse_event`, and trigger coalesced patches.

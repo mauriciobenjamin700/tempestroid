@@ -19,12 +19,16 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from tempestroid.core.ir import Path
 from tempestroid.widgets import (
+    ActionSheet,
+    BottomSheet,
     Button,
     Checkbox,
     Column,
     Container,
     DatePicker,
+    Dialog,
     Event,
     FilePicker,
     GestureDetector,
@@ -34,7 +38,9 @@ from tempestroid.widgets import (
     LazyColumn,
     LazyGrid,
     LazyRow,
+    Menu,
     Navigator,
+    Popover,
     ProgressBar,
     RefreshControl,
     RouteDrawer,
@@ -49,10 +55,13 @@ from tempestroid.widgets import (
     TabView,
     Text,
     TextArea,
+    Toast,
+    Tooltip,
 )
 
 __all__ = [
     "BACK_TOKEN",
+    "DISMISS_TOKEN_PREFIX",
     "handler_token",
     "event_type_for",
     "EVENT_SCHEMAS",
@@ -67,6 +76,13 @@ __all__ = [
 #: :data:`~tempestroid.native.dispatch.NATIVE_RESULT_PREFIX` in reusing the
 #: existing event channel, so the back wiring needs no new JNI/C entry point.
 BACK_TOKEN: str = "__back__"
+
+#: Reserved event-token prefix the host sends when the user dismisses an overlay
+#: through a host-owned gesture (tapping a dialog's scrim, swiping a sheet down).
+#: The token is ``"__dismiss__:<overlay_id>"``; the bridge strips the prefix and
+#: routes the id to ``App.dismiss``. Like :data:`BACK_TOKEN` and the native
+#: result prefix, it rides the existing event channel — no new JNI entry point.
+DISMISS_TOKEN_PREFIX: str = "__dismiss__"
 
 #: ``{widget_type: {handler_prop: event_type}}`` derived from each widget's
 #: ``event_schemas`` classvar — the contract used to validate event payloads.
@@ -101,20 +117,29 @@ EVENT_SCHEMAS: dict[str, dict[str, type[Event]]] = {
         LazyGrid,
         SectionList,
         RefreshControl,
+        Dialog,
+        BottomSheet,
+        Toast,
+        Tooltip,
+        Menu,
+        Popover,
+        ActionSheet,
     )
     if widget.event_schemas
 }
 
 
-def handler_token(path: tuple[int, ...], prop: str) -> str:
+def handler_token(path: Path, prop: str) -> str:
     """Build the stable token addressing a handler at ``path``/``prop``.
 
     Args:
-        path: The node's path (child indices from the root).
+        path: The node's path (child-index steps from the root; an overlay path
+            begins with the reserved ``"overlay"`` token).
         prop: The handler prop name (e.g. ``"on_click"``).
 
     Returns:
-        A token like ``"root:on_click"`` or ``"0/2:on_click"``.
+        A token like ``"root:on_click"``, ``"0/2:on_click"``, or
+        ``"overlay/0:on_dismiss"``.
     """
     location = "/".join(str(index) for index in path) if path else "root"
     return f"{location}:{prop}"
@@ -139,6 +164,9 @@ class MountMessage(BaseModel):
     Attributes:
         kind: The message discriminator (``"mount"``).
         root: The serialized root node.
+        overlays: The serialized overlay nodes, in ascending z-order (empty when
+            no overlay is open). Each carries its stable id as ``key`` and a
+            ``barrier`` prop; the host renders them above the root.
         can_pop: Whether the navigation stack can be popped (more than one route
             on the stack). The host reads this to enable/disable its system back
             handler without a synchronous round-trip: when ``False`` the device's
@@ -150,6 +178,7 @@ class MountMessage(BaseModel):
 
     kind: str = "mount"
     root: dict[str, Any]
+    overlays: list[dict[str, Any]] = []
     can_pop: bool = False
 
 

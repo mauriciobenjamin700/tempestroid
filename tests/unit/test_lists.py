@@ -676,7 +676,7 @@ def _lists_view(app: App[None]) -> Widget:
 def test_app_mount_materializes_initial_window_without_materializing_all():
     """App.start materializes a bounded initial window for both list kinds."""
     app: App[None] = App(None, _lists_view, lambda _patches: None)
-    root = app.start()
+    root = app.start().root
     lazy, section = root.children[0], root.children[1]
 
     # LazyColumn: content on first mount, but bounded — never all 10k items.
@@ -712,7 +712,7 @@ async def test_slide_window_slides_the_lazy_column_via_keyed_diff():
     assert len(removes) == 10
     assert {p.node.key for p in inserts} == {str(i) for i in range(20, 30)}
     # The list node still carries a bounded window after the slide.
-    feed = app.current_tree.children[0]  # type: ignore[union-attr]
+    feed = app.current_tree.root.children[0]  # type: ignore[union-attr]
     assert [c.key for c in feed.children] == [str(i) for i in range(10, 30)]
 
 
@@ -726,7 +726,7 @@ async def test_slide_section_window_slides_one_section():
     app.slide_section_window("grouped", "A", 50, 60)
     await asyncio.sleep(0)
 
-    section = app.current_tree.children[1]  # type: ignore[union-attr]
+    section = app.current_tree.root.children[1]  # type: ignore[union-attr]
     keys = [c.key for c in section.children]
     assert keys[0] == "sec:A:header"
     assert keys[1:] == [f"sec:A:{i}" for i in range(50, 60)]
@@ -737,7 +737,7 @@ def test_serialized_materialized_list_node_survives_json_dumps():
     import json
 
     app: App[None] = App(None, _lists_view, lambda _patches: None)
-    root = app.start()
+    root = app.start().root
     serialized = serialize_node(root)
     # The materialized window children cross as real serialized nodes...
     feed = serialized["children"][0]
@@ -759,7 +759,7 @@ async def test_window_tuple_serializes_as_json_array():
     app.slide_window("feed", 5, 25)
     await asyncio.sleep(0)
 
-    feed = app.current_tree.children[0]  # type: ignore[union-attr]
+    feed = app.current_tree.root.children[0]  # type: ignore[union-attr]
     props = serialize_node(feed)["props"]
     # JSON has no tuple — the window crosses as [start, end].
     assert props["window"] == [5, 25]

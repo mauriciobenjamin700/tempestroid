@@ -6,8 +6,11 @@ ordered child list — then **diffs** two node trees into a list of **patches**.
 Both halves live here so the reconciler and every leaf renderer share one
 vocabulary, fully decoupled from concrete widget classes.
 
-A node is addressed by a **path**: a tuple of child indices from the root.
-``()`` is the root, ``(0, 2)`` is the third child of the first child.
+A node is addressed by a **path**: a tuple of steps from the root. A step is a
+child index, except the reserved leading token ``"overlay"`` which addresses the
+:class:`Scene` overlay layer. ``()`` is the root, ``(0, 2)`` is the third child
+of the first child, and ``("overlay", 0, 1)`` is the second child of the first
+overlay.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 __all__ = [
     "Path",
     "Node",
+    "Scene",
     "Replace",
     "Update",
     "Insert",
@@ -27,8 +31,12 @@ __all__ = [
     "Patch",
 ]
 
-#: A node address: child indices from the root (``()`` is the root).
-Path: TypeAlias = tuple[int, ...]
+#: A node address: steps from the root (``()`` is the root). A step is a child
+#: index (``int``), except the reserved leading ``"overlay"`` token (``str``)
+#: that addresses the :class:`Scene` overlay layer (``("overlay", i, ...)``
+#: targets overlay ``i``). All non-overlay paths are ``tuple[int, ...]``, a
+#: subset of this alias, so existing diffs/renderers stay backward-compatible.
+Path: TypeAlias = tuple[int | str, ...]
 
 
 class _IRModel(BaseModel):
@@ -56,6 +64,26 @@ class Node(_IRModel):
     key: str | None = None
     props: dict[str, Any] = {}
     children: list[Node] = []
+
+
+class Scene(_IRModel):
+    """A full UI document: the root tree plus a z-ordered overlay layer.
+
+    A scene is the unit the runtime builds and diffs once overlays exist. The
+    ``root`` is the ordinary screen tree; ``overlays`` is the floating layer
+    (dialogs, sheets, toasts, menus) rendered above it in ascending z-order.
+    Each overlay node carries its stable overlay id as its ``key`` so the keyed
+    diff can match overlays across rebuilds. An empty ``overlays`` list reduces a
+    scene to its root tree, so the no-overlay path is unchanged.
+
+    Attributes:
+        root: The root screen node.
+        overlays: The floating overlay nodes, in ascending z-order. Each node's
+            ``key`` is its stable overlay id.
+    """
+
+    root: Node
+    overlays: list[Node] = []
 
 
 class Replace(_IRModel):

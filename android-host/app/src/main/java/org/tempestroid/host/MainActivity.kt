@@ -10,7 +10,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -97,12 +99,32 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    tree.root?.let { root ->
-                        RenderNode(root) { token, payload ->
-                            PythonRuntime.dispatchEvent(token, payload)
-                        }
+                // The host draws edge-to-edge (enableEdgeToEdge above), so the
+                // root content must inset itself off the system bars (status bar
+                // top, navigation bar bottom, display cutout/notch) or it would
+                // render under them — the SafeArea-by-default contract. We apply
+                // safeDrawing on the Surface that wraps the whole tempestroid tree.
+                //
+                // This composes correctly with the explicit `SafeArea` widget:
+                // Compose's windowInsetsPadding tracks *consumed* insets down the
+                // tree, so a nested SafeArea (also using safeDrawing) sees the
+                // insets already consumed here and adds zero — no double inset.
+                // Likewise, overlays (E2) that escape this Surface via a separate
+                // window (Dialog/ModalBottomSheet) get the full, un-consumed insets
+                // and inset themselves independently — so they render OUTSIDE the
+                // safeDrawing Surface, in the covering Box below, to avoid a double
+                // inset (the M3 Dialog/Sheet manage their own WindowInsets).
+                val onEvent: (String, String) -> Unit = { token, payload ->
+                    PythonRuntime.dispatchEvent(token, payload)
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+                        tree.root?.let { root -> RenderNode(root, onEvent) }
                     }
+                    // The floating overlay layer, in ascending z-order. Each overlay
+                    // node decides its own Compose surface (RenderOverlay) and owns
+                    // its inset; do NOT wrap these in safeDrawingPadding.
+                    tree.overlays.forEach { overlay -> RenderOverlay(overlay, onEvent) }
                 }
             }
         }
@@ -111,7 +133,8 @@ class MainActivity : ComponentActivity() {
         //   1. dev mode (B5): `tempest_dev_url` extra → code-push client.
         //        adb reverse tcp:8765 tcp:8765
         //        adb shell am start -n org.tempestroid.host/.MainActivity \
-        //          --es tempest_dev_url http://localhost:8765
+        //          --es tempest_dev_url http://127.0.0.1:8765
+        //      (use 127.0.0.1, NOT localhost — MIUI does not resolve "localhost").
         //   2. packaged app (C): a `tempest_app.py` asset embedded by
         //      `tempest build` → load + run it.
         //   3. otherwise: the bundled demo.

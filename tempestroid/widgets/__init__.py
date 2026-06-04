@@ -8,10 +8,12 @@ level rather than from submodules.
 from tempestroid.widgets.base import (
     Component,
     DateChangeHandler,
+    DismissHandler,
     EndReachedHandler,
     EventHandler,
     FileSelectHandler,
     LongPressHandler,
+    MenuSelectHandler,
     RefreshHandler,
     RouteChangeHandler,
     ScrollHandler,
@@ -26,11 +28,13 @@ from tempestroid.widgets.base import (
 from tempestroid.widgets.button import Button
 from tempestroid.widgets.events import (
     DateChangeEvent,
+    DismissEvent,
     EndReachedEvent,
     Event,
     EventValidationError,
     FileSelectEvent,
     LongPressEvent,
+    MenuSelectEvent,
     RefreshEvent,
     RouteChangeEvent,
     ScrollEvent,
@@ -79,6 +83,16 @@ from tempestroid.widgets.navigation_widgets import (
     TabBar,
     TabView,
 )
+from tempestroid.widgets.overlays import (
+    ActionSheet,
+    BottomSheet,
+    Dialog,
+    Menu,
+    MenuItem,
+    Popover,
+    Toast,
+    Tooltip,
+)
 from tempestroid.widgets.text import Text
 
 __all__ = [
@@ -95,6 +109,8 @@ __all__ = [
     "ScrollHandler",
     "RefreshHandler",
     "EndReachedHandler",
+    "DismissHandler",
+    "MenuSelectHandler",
     "handler_accepts_event",
     "Widget",
     "Component",
@@ -132,6 +148,14 @@ __all__ = [
     "SectionList",
     "RefreshControl",
     "SectionHeader",
+    "Dialog",
+    "BottomSheet",
+    "Toast",
+    "Tooltip",
+    "Menu",
+    "MenuItem",
+    "Popover",
+    "ActionSheet",
     "Event",
     "TapEvent",
     "TextChangeEvent",
@@ -146,6 +170,8 @@ __all__ = [
     "ScrollEvent",
     "RefreshEvent",
     "EndReachedEvent",
+    "DismissEvent",
+    "MenuSelectEvent",
     "EventValidationError",
     "parse_event",
 ]

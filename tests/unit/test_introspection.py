@@ -34,6 +34,13 @@ def test_widget_catalog_lists_all_widgets():
         "LazyGrid",
         "SectionList",
         "RefreshControl",
+        "Dialog",
+        "BottomSheet",
+        "Toast",
+        "Tooltip",
+        "Menu",
+        "Popover",
+        "ActionSheet",
     }
 
 
@@ -69,6 +76,8 @@ def test_event_catalog_lists_events():
         "ScrollEvent",
         "RefreshEvent",
         "EndReachedEvent",
+        "DismissEvent",
+        "MenuSelectEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 
@@ -86,3 +95,58 @@ def test_introspect_is_json_serializable():
     dumped = json.dumps(spec)  # must not raise
     assert "widgets" in json.loads(dumped)
     assert "events" in spec
+
+
+# --- E2 overlay widget event contracts (phase E2) ----------------------------
+
+
+def test_dialog_publishes_on_dismiss_event():
+    """Dialog.event_schemas maps on_dismiss → DismissEvent in the widget catalog."""
+    catalog = widget_catalog()
+    assert catalog["Dialog"]["events"] == {"on_dismiss": "DismissEvent"}
+
+
+def test_bottom_sheet_publishes_on_dismiss_event():
+    """BottomSheet.event_schemas maps on_dismiss → DismissEvent."""
+    catalog = widget_catalog()
+    assert catalog["BottomSheet"]["events"] == {"on_dismiss": "DismissEvent"}
+
+
+def test_popover_publishes_on_dismiss_event():
+    """Popover.event_schemas maps on_dismiss → DismissEvent."""
+    catalog = widget_catalog()
+    assert catalog["Popover"]["events"] == {"on_dismiss": "DismissEvent"}
+
+
+def test_menu_publishes_on_select_event():
+    """Menu.event_schemas maps on_select → MenuSelectEvent in the widget catalog."""
+    catalog = widget_catalog()
+    assert catalog["Menu"]["events"] == {"on_select": "MenuSelectEvent"}
+
+
+def test_action_sheet_publishes_on_select_event():
+    """ActionSheet.event_schemas maps on_select → MenuSelectEvent."""
+    catalog = widget_catalog()
+    assert catalog["ActionSheet"]["events"] == {"on_select": "MenuSelectEvent"}
+
+
+def test_toast_and_tooltip_have_no_events():
+    """Toast and Tooltip declare no event handlers (event_schemas is empty)."""
+    catalog = widget_catalog()
+    assert catalog["Toast"]["events"] == {}
+    assert catalog["Tooltip"]["events"] == {}
+
+
+def test_dismiss_event_schema_carries_overlay_id_field():
+    """DismissEvent schema exposes the overlay_id field for introspection."""
+    catalog = event_catalog()
+    props = catalog["DismissEvent"]["properties"]
+    assert "overlay_id" in props
+
+
+def test_menu_select_event_schema_carries_value_and_label():
+    """MenuSelectEvent schema exposes both value and label fields."""
+    catalog = event_catalog()
+    props = catalog["MenuSelectEvent"]["properties"]
+    assert "value" in props
+    assert "label" in props

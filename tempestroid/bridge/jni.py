@@ -21,7 +21,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
 from tempestroid.bridge.device import Bridge, DeviceApp
-from tempestroid.bridge.protocol import BACK_TOKEN
+from tempestroid.bridge.protocol import BACK_TOKEN, DISMISS_TOKEN_PREFIX
 from tempestroid.core.state import App
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.navigation import NavStack, routes_from_path
@@ -134,6 +134,15 @@ def make_event_sink(
         # back handler is enabled (can_pop True), so a root no-op is benign.
         if token == BACK_TOKEN:
             loop.call_soon_threadsafe(device.app.pop)
+            return
+        # An overlay dismissed by a host-owned gesture (scrim tap, swipe-down)
+        # rides the same event channel under the reserved __dismiss__:<id>
+        # token, so it needs no extra JNI entry point. Route the id straight to
+        # App.dismiss (a no-op if the overlay already closed).
+        dismiss_prefix = f"{DISMISS_TOKEN_PREFIX}:"
+        if token.startswith(dismiss_prefix):
+            overlay_id = token[len(dismiss_prefix) :]
+            loop.call_soon_threadsafe(device.app.dismiss, overlay_id)
             return
         # Native request/response results ride the same event channel under a
         # reserved token, so they need no extra JNI entry point. Route them to

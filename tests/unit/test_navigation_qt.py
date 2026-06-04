@@ -89,7 +89,7 @@ def test_navigator_different_screen_type_diffs_to_replace() -> None:
 def _nav_app(view: Any) -> tuple[App[object], QtRenderer]:
     renderer = QtRenderer()
     app: App[object] = App(object(), view, apply_patches=renderer.apply)
-    renderer.mount(app.start())
+    renderer.mount(app.start().root)
     return app, renderer
 
 
@@ -178,7 +178,7 @@ async def test_tab_view_tap_switches_active_content() -> None:
 
     renderer = QtRenderer()
     app: App[Any] = App({"active": 0}, view, apply_patches=renderer.apply)
-    renderer.mount(app.start())
+    renderer.mount(app.start().root)
     host = renderer.root_widget
     assert isinstance(host, _NavHost)
     assert host.tab_bar is not None
@@ -220,7 +220,7 @@ async def test_route_drawer_open_change_slides_panel() -> None:
 
     renderer = QtRenderer()
     app: App[Any] = App({"open": False}, view, apply_patches=renderer.apply)
-    host = renderer.mount(app.start())
+    host = renderer.mount(app.start().root)
     host.resize(400, 800)
     drawer_host = renderer.root_widget
     assert isinstance(drawer_host, _DrawerHost)

@@ -31,6 +31,8 @@ __all__ = [
     "ScrollEvent",
     "RefreshEvent",
     "EndReachedEvent",
+    "DismissEvent",
+    "MenuSelectEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -190,6 +192,35 @@ class EndReachedEvent(Event):
     Carries no payload. The handler typically paginates — loading the next page
     of items and growing the list's ``item_count``.
     """
+
+
+class DismissEvent(Event):
+    """An overlay was dismissed (barrier tap, swipe-down, or system back).
+
+    The renderer emits this when the user dismisses an overlay through a gesture
+    the host owns (tapping the scrim behind a dialog, dragging a sheet down). The
+    bridge routes it to ``App.dismiss``; the optional ``overlay_id`` lets the
+    host name the overlay, while ``None`` lets a renderer fire it without one
+    (the bridge then falls back to the token-encoded id).
+
+    Attributes:
+        overlay_id: The dismissed overlay's stable id, or ``None`` when the
+            renderer dispatches without one.
+    """
+
+    overlay_id: str | None = None
+
+
+class MenuSelectEvent(Event):
+    """The user selected an item from a menu or action sheet.
+
+    Attributes:
+        value: The selected item's stable value.
+        label: The selected item's display label.
+    """
+
+    value: str
+    label: str
 
 
 E = TypeVar("E", bound=Event)
