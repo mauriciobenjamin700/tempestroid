@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from tempestroid import (
     Button,
@@ -136,3 +137,42 @@ def test_update_handler_set_prop_uses_path_token():
     # An Update carrying a handler (no node type) still emits a path token.
     out = serialize_patch(Update(path=(2,), set_props={"on_click": lambda: None}))
     assert out["set"]["on_click"]["$handler"] == "2:on_click"
+
+
+def test_serialize_canvas_commands_are_json_safe():
+    from tempestroid import (
+        ArcTo,
+        Canvas,
+        Close,
+        DrawOval,
+        DrawRect,
+        DrawText,
+        FillCmd,
+        LineTo,
+        MoveTo,
+        StrokeCmd,
+    )
+
+    canvas = Canvas(
+        commands=[
+            MoveTo(x=0.0, y=0.0),
+            LineTo(x=10.0, y=10.0),
+            ArcTo(x=0.0, y=0.0, width=20.0, height=20.0,
+                  start_angle=0.0, sweep_angle=90.0),
+            Close(),
+            DrawRect(x=1.0, y=2.0, width=3.0, height=4.0),
+            DrawOval(x=5.0, y=6.0, width=7.0, height=8.0),
+            FillCmd(color=[1.0, 0.0, 0.0, 1.0]),
+            StrokeCmd(color=[0.0, 0.0, 1.0, 1.0], width=2.0),
+            DrawText(text="hi", x=1.0, y=2.0),
+        ]
+    )
+    node = serialize_node(build(canvas))
+    assert node["type"] == "Canvas"
+    commands: list[Any] = node["props"]["commands"]
+    assert isinstance(commands, list) and len(commands) == 9
+    assert all(isinstance(cmd, dict) and "kind" in cmd for cmd in commands)
+    # Round-trips through json with no custom encoder and no tuples.
+    json.dumps(node)
+    fill: dict[str, Any] = next(c for c in commands if c["kind"] == "fill")
+    assert fill["color"] == [1.0, 0.0, 0.0, 1.0]

@@ -25,9 +25,14 @@ from tempestroid.widgets import (
     Animated,
     AnimatedList,
     Autocomplete,
+    BackdropFilter,
+    Blur,
     BottomSheet,
     Button,
+    CameraPreview,
+    Canvas,
     Checkbox,
+    ClipPath,
     Column,
     Container,
     DatePicker,
@@ -50,6 +55,7 @@ from tempestroid.widgets import (
     LazyColumn,
     LazyGrid,
     LazyRow,
+    MapView,
     MaskedInput,
     Menu,
     Navigator,
@@ -58,6 +64,7 @@ from tempestroid.widgets import (
     PinInput,
     Popover,
     ProgressBar,
+    QrScanner,
     RangeSlider,
     RefreshControl,
     ReorderableList,
@@ -71,6 +78,7 @@ from tempestroid.widgets import (
     Slider,
     Spinner,
     Stack,
+    Svg,
     Switch,
     TabBar,
     TabView,
@@ -79,6 +87,8 @@ from tempestroid.widgets import (
     TimePicker,
     Toast,
     Tooltip,
+    VideoPlayer,
+    WebView,
 )
 
 __all__ = [
@@ -176,13 +186,29 @@ EVENT_SCHEMAS: dict[str, dict[str, type[Event]]] = {
         Menu,
         Popover,
         ActionSheet,
+        QrScanner,
     )
     if widget.event_schemas
 }
 EVENT_SCHEMAS.update(
     {
         widget.__name__: dict(widget.event_schemas)
-        for widget in (Animated, AnimatedList, Hero, Shimmer, Skeleton)
+        for widget in (
+            Animated,
+            AnimatedList,
+            Hero,
+            Shimmer,
+            Skeleton,
+            Canvas,
+            VideoPlayer,
+            WebView,
+            Svg,
+            CameraPreview,
+            MapView,
+            Blur,
+            BackdropFilter,
+            ClipPath,
+        )
     }
 )
 

@@ -107,9 +107,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.viewinterop.AndroidView
+import android.graphics.Paint as NativePaint
+import android.graphics.Path as NativePath
+import android.graphics.RectF
+import android.webkit.WebView as AndroidWebView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -392,6 +415,24 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         "PageView" -> RenderPageView(node, style, onEvent)
 
         "AspectRatio" -> RenderAspectRatio(node, style, onEvent)
+
+        "Canvas" -> RenderCanvas(node, style)
+
+        "VideoPlayer" -> RenderVideoPlayer(node, style)
+
+        "WebView" -> RenderWebView(node, style)
+
+        "Svg" -> RenderSvg(node, style)
+
+        "CameraPreview" -> RenderCameraPreview(node, style)
+
+        "QrScanner" -> RenderQrScanner(node, style, onEvent)
+
+        "MapView" -> RenderMapView(node, style)
+
+        "Blur", "BackdropFilter" -> RenderBlur(node, style, onEvent)
+
+        "ClipPath" -> RenderClipPath(node, style, onEvent)
 
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
@@ -953,6 +994,375 @@ private fun RenderAspectRatio(
     val child = node.children.firstOrNull()
     val modifier = if (ratio > 0f) baseModifier(style).aspectRatio(ratio) else baseModifier(style)
     Box(modifier = modifier) {
+        if (child != null) RenderNode(child, onEvent)
+    }
+}
+
+/**
+ * Render a [Canvas] (E7): a drawing surface that replays a serialized list of
+ * draw commands — the Kotlin counterpart of the Qt `_CanvasWidget.paintEvent`.
+ *
+ * Each command is a plain JSON map carrying a `kind` discriminator (`move_to`,
+ * `line_to`, `arc_to`, `close`, `fill`, `stroke`, `draw_text`, `draw_rect`,
+ * `draw_oval`). Colors arrive as JSON float arrays `[r,g,b,a]` in `[0,1]`. The
+ * commands accumulate into a native [NativePath]; a `fill`/`stroke` flushes that
+ * path with the given paint (then resets it), exactly mirroring the Qt renderer
+ * so the same command list draws identically on both leaves (the strong E7
+ * conformance item).
+ */
+@Composable
+private fun RenderCanvas(node: TempestNode, style: Map<String, Any?>) {
+    @Suppress("UNCHECKED_CAST")
+    val commands = (node.props["commands"] as? List<*>)
+        ?.mapNotNull { it as? Map<String, Any?> } ?: emptyList()
+    val width = (node.props["width"] as? Number)?.toFloat()
+    val height = (node.props["height"] as? Number)?.toFloat()
+    var m = baseModifier(style)
+    if (width != null) m = m.width(width.dp)
+    if (height != null) m = m.height(height.dp)
+    // A Canvas with no size hint and no Style size would collapse to zero; give a
+    // sensible default fill so the drawing is visible.
+    if (width == null && height == null) m = m.fillMaxSize()
+    Canvas(modifier = m) {
+        drawIntoCanvas { canvas -> interpretCanvasCommands(canvas.nativeCanvas, commands) }
+    }
+}
+
+/** Decode a `[r,g,b,a]` float list (channels in `[0,1]`) into an ARGB int. */
+private fun argbFromList(value: Any?, fallback: Int = 0xFF000000.toInt()): Int {
+    @Suppress("UNCHECKED_CAST")
+    val list = (value as? List<*>)?.mapNotNull { (it as? Number)?.toFloat() } ?: return fallback
+    if (list.size < 3) return fallback
+    val r = (list[0].coerceIn(0f, 1f) * 255).toInt()
+    val g = (list[1].coerceIn(0f, 1f) * 255).toInt()
+    val b = (list[2].coerceIn(0f, 1f) * 255).toInt()
+    val a = (list.getOrNull(3)?.coerceIn(0f, 1f) ?: 1f) * 255
+    return (a.toInt() shl 24) or (r shl 16) or (g shl 8) or b
+}
+
+/** Replay one serialized canvas command list onto a native [android.graphics.Canvas]. */
+private fun interpretCanvasCommands(
+    canvas: android.graphics.Canvas,
+    commands: List<Map<String, Any?>>,
+) {
+    var path = NativePath()
+    fun f(cmd: Map<String, Any?>, key: String): Float = (cmd[key] as? Number)?.toFloat() ?: 0f
+    for (cmd in commands) {
+        when (cmd["kind"] as? String) {
+            "move_to" -> path.moveTo(f(cmd, "x"), f(cmd, "y"))
+            "line_to" -> path.lineTo(f(cmd, "x"), f(cmd, "y"))
+            "arc_to" -> {
+                val rect = RectF(
+                    f(cmd, "x"), f(cmd, "y"),
+                    f(cmd, "x") + f(cmd, "width"), f(cmd, "y") + f(cmd, "height"),
+                )
+                path.arcTo(rect, f(cmd, "start_angle"), f(cmd, "sweep_angle"))
+            }
+            "close" -> path.close()
+            "draw_rect" -> path.addRect(
+                f(cmd, "x"), f(cmd, "y"),
+                f(cmd, "x") + f(cmd, "width"), f(cmd, "y") + f(cmd, "height"),
+                NativePath.Direction.CW,
+            )
+            "draw_oval" -> path.addOval(
+                RectF(
+                    f(cmd, "x"), f(cmd, "y"),
+                    f(cmd, "x") + f(cmd, "width"), f(cmd, "y") + f(cmd, "height"),
+                ),
+                NativePath.Direction.CW,
+            )
+            "fill" -> {
+                val paint = NativePaint(NativePaint.ANTI_ALIAS_FLAG).apply {
+                    style = NativePaint.Style.FILL
+                    color = argbFromList(cmd["color"])
+                }
+                canvas.drawPath(path, paint)
+                path = NativePath()
+            }
+            "stroke" -> {
+                val paint = NativePaint(NativePaint.ANTI_ALIAS_FLAG).apply {
+                    style = NativePaint.Style.STROKE
+                    color = argbFromList(cmd["color"])
+                    strokeWidth = f(cmd, "width").takeIf { it > 0f } ?: 1f
+                }
+                canvas.drawPath(path, paint)
+                path = NativePath()
+            }
+            "draw_text" -> {
+                val paint = NativePaint(NativePaint.ANTI_ALIAS_FLAG).apply {
+                    color = argbFromList(cmd["color"])
+                    textSize = (cmd["size"] as? Number)?.toFloat() ?: 14f
+                }
+                canvas.drawText(cmd["text"] as? String ?: "", f(cmd, "x"), f(cmd, "y"), paint)
+            }
+        }
+    }
+}
+
+/**
+ * Render a [VideoPlayer] (E7): a Media3 [ExoPlayer] hosted in a [PlayerView] via
+ * [AndroidView] — the Compose counterpart of the Qt `QMediaPlayer`+`QVideoWidget`.
+ * The `src` is loaded as a [MediaItem]; `autoplay`/`controls`/`muted` map to the
+ * player + view. The player is released when the view leaves the composition.
+ */
+@Composable
+private fun RenderVideoPlayer(node: TempestNode, style: Map<String, Any?>) {
+    val context = LocalContext.current
+    val src = node.props["src"] as? String ?: ""
+    val autoplay = node.props["autoplay"] as? Boolean ?: false
+    val loop = node.props["loop"] as? Boolean ?: false
+    val controls = node.props["controls"] as? Boolean ?: true
+    val muted = node.props["muted"] as? Boolean ?: false
+    val player = remember(src) {
+        ExoPlayer.Builder(context).build().apply {
+            if (src.isNotEmpty()) setMediaItem(MediaItem.fromUri(src))
+            repeatMode = if (loop) ExoPlayer.REPEAT_MODE_ONE else ExoPlayer.REPEAT_MODE_OFF
+            volume = if (muted) 0f else 1f
+            prepare()
+            playWhenReady = autoplay
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(player) {
+        onDispose { player.release() }
+    }
+    AndroidView(
+        modifier = baseModifier(style),
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                this.player = player
+                useController = controls
+            }
+        },
+    )
+}
+
+/**
+ * Render a [WebView] (E7): an `android.webkit.WebView` hosted in [AndroidView] —
+ * the Compose counterpart of the Qt `QWebEngineView`. JavaScript is gated by the
+ * `javascript_enabled` prop; the `url` is loaded once at factory time and on
+ * subsequent url changes via the update block.
+ */
+@Composable
+private fun RenderWebView(node: TempestNode, style: Map<String, Any?>) {
+    val url = node.props["url"] as? String ?: "about:blank"
+    val jsEnabled = node.props["javascript_enabled"] as? Boolean ?: true
+    AndroidView(
+        modifier = baseModifier(style),
+        factory = { ctx ->
+            AndroidWebView(ctx).apply {
+                settings.javaScriptEnabled = jsEnabled
+                loadUrl(url)
+            }
+        },
+        update = { webView ->
+            webView.settings.javaScriptEnabled = jsEnabled
+            if (webView.url != url) webView.loadUrl(url)
+        },
+    )
+}
+
+/**
+ * Render an [Svg] (E7): a Coil [AsyncImage] pointed at the `src` — the Compose
+ * counterpart of the Qt `QSvgRenderer`. Coil decodes raster sources and remote
+ * SVGs by URL out of the box; a local-asset SVG would additionally need the
+ * `coil-svg` decoder (documented as a follow-up — not bundled to keep deps lean).
+ */
+@Composable
+private fun RenderSvg(node: TempestNode, style: Map<String, Any?>) {
+    val src = node.props["src"] as? String ?: return
+    AsyncImage(
+        model = src,
+        contentDescription = null,
+        contentScale = contentScaleOf(node.props["fit"] as? String),
+        modifier = baseModifier(style),
+    )
+}
+
+/** Map the serialized `fit` value to a Compose [ContentScale]. */
+private fun contentScaleOf(fit: String?): ContentScale = when (fit) {
+    "cover" -> ContentScale.Crop
+    "fill" -> ContentScale.FillBounds
+    "none" -> ContentScale.None
+    else -> ContentScale.Fit
+}
+
+/**
+ * Render a [CameraPreview] (E7): a CameraX [PreviewView] hosted in [AndroidView]
+ * showing the live `facing` camera feed — the Compose counterpart of the Qt
+ * PLACEHOLDER (Qt has no camera surface in the sim). Binding to the lifecycle owner
+ * keeps the preview running while the composition is visible.
+ */
+@Composable
+private fun RenderCameraPreview(node: TempestNode, style: Map<String, Any?>) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val facing = node.props["facing"] as? String ?: "back"
+    AndroidView(
+        modifier = baseModifier(style),
+        factory = { ctx ->
+            PreviewView(ctx).also { previewView ->
+                val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                providerFuture.addListener({
+                    val provider = providerFuture.get()
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+                    val selector = if (facing == "front") {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    } else {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    }
+                    runCatching {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(lifecycleOwner, selector, preview)
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            }
+        },
+    )
+}
+
+/**
+ * Render a [QrScanner] (E7): a CameraX [PreviewView] with an [ImageAnalysis] stage
+ * feeding ML Kit [BarcodeScanning]. On a decode, the result rides the NORMAL event
+ * channel — `on_scan` fires a [QrScanEvent]-shaped payload `{data, format}` (NOT
+ * the `__native_result__` channel; the widget's `on_scan` handler is the sink).
+ * To avoid a flood, only the first non-blank value per analyzer lifetime is sent.
+ */
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+@Composable
+private fun RenderQrScanner(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val emitted = remember { mutableStateOf(false) }
+    AndroidView(
+        modifier = baseModifier(style),
+        factory = { ctx ->
+            PreviewView(ctx).also { previewView ->
+                val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                providerFuture.addListener({
+                    val provider = providerFuture.get()
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+                    val scanner = BarcodeScanning.getClient()
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                    analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
+                        val mediaImage = proxy.image
+                        if (mediaImage == null) { proxy.close(); return@setAnalyzer }
+                        val image = InputImage.fromMediaImage(
+                            mediaImage, proxy.imageInfo.rotationDegrees,
+                        )
+                        scanner.process(image)
+                            .addOnSuccessListener { codes ->
+                                val first = codes.firstOrNull { !it.rawValue.isNullOrEmpty() }
+                                if (first != null && !emitted.value) {
+                                    emitted.value = true
+                                    handlerToken(node, "on_scan")?.let { token ->
+                                        val payload = JSONObject()
+                                            .put("data", first.rawValue)
+                                            .put("format", barcodeFormatName(first.format))
+                                        onEvent(token, payload.toString())
+                                    }
+                                }
+                            }
+                            .addOnCompleteListener { proxy.close() }
+                    }
+                    runCatching {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            analysis,
+                        )
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            }
+        },
+    )
+}
+
+/** Map an ML Kit barcode format constant to the [QrScanEvent] `format` string. */
+private fun barcodeFormatName(format: Int): String = when (format) {
+    Barcode.FORMAT_QR_CODE -> "QR_CODE"
+    Barcode.FORMAT_EAN_13 -> "EAN_13"
+    Barcode.FORMAT_EAN_8 -> "EAN_8"
+    Barcode.FORMAT_CODE_128 -> "CODE_128"
+    Barcode.FORMAT_CODE_39 -> "CODE_39"
+    Barcode.FORMAT_UPC_A -> "UPC_A"
+    Barcode.FORMAT_UPC_E -> "UPC_E"
+    Barcode.FORMAT_DATA_MATRIX -> "DATA_MATRIX"
+    Barcode.FORMAT_PDF417 -> "PDF417"
+    Barcode.FORMAT_AZTEC -> "AZTEC"
+    else -> "QR_CODE"
+}
+
+/**
+ * Render a [MapView] (E7) — DOCUMENTED PLACEHOLDER. Google Maps Compose would
+ * require a `google-services.json` + a Maps API key in the manifest, without which
+ * the APK does not build; that config is out of scope for the host skeleton, so the
+ * widget renders an explicit placeholder on both leaves (mirrors the Qt sim
+ * PLACEHOLDER). Wiring `maps-compose` is a documented post-phase follow-up.
+ */
+@Composable
+private fun RenderMapView(node: TempestNode, style: Map<String, Any?>) {
+    val lat = (node.props["latitude"] as? Number)?.toDouble() ?: 0.0
+    val lng = (node.props["longitude"] as? Number)?.toDouble() ?: 0.0
+    Box(
+        modifier = baseModifier(style)
+            .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = "MapView — configure Google Maps API key ($lat, $lng)")
+    }
+}
+
+/**
+ * Render a [Blur] / [BackdropFilter] (E7): a single-child [Box] with
+ * [Modifier.blur] applied at `radius` dp — the Compose counterpart of the Qt
+ * `QGraphicsBlurEffect`. `BackdropFilter` shares the same path (blur over the
+ * content below); both are wrappers carrying one `child`.
+ */
+@Composable
+private fun RenderBlur(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val radius = (node.props["radius"] as? Number)?.toFloat() ?: 8f
+    val child = node.children.firstOrNull()
+    Box(modifier = baseModifier(style).blur(radius.dp)) {
+        if (child != null) RenderNode(child, onEvent)
+    }
+}
+
+/**
+ * Render a [ClipPath] (E7): a single-child [Box] clipped to a predefined shape via
+ * [Modifier.clip] — the Compose counterpart of the Qt `QPainterPath` mask. `circle`
+ * → [CircleShape]; `oval` → [CircleShape] (closest stock shape); `rounded_rect` →
+ * [RoundedCornerShape] of `radius` dp.
+ */
+@Composable
+private fun RenderClipPath(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val radius = (node.props["radius"] as? Number)?.toFloat() ?: 8f
+    val shape = when (node.props["shape"] as? String) {
+        "circle", "oval" -> CircleShape
+        else -> RoundedCornerShape(radius.dp)
+    }
+    val child = node.children.firstOrNull()
+    Box(modifier = baseModifier(style).clip(shape)) {
         if (child != null) RenderNode(child, onEvent)
     }
 }

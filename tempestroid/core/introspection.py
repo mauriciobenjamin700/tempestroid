@@ -17,9 +17,14 @@ from tempestroid.widgets import (
     AnimatedList,
     AspectRatio,
     Autocomplete,
+    BackdropFilter,
+    Blur,
     BottomSheet,
     Button,
+    CameraPreview,
+    Canvas,
     Checkbox,
+    ClipPath,
     Column,
     Container,
     DateChangeEvent,
@@ -48,6 +53,7 @@ from tempestroid.widgets import (
     LazyGrid,
     LazyRow,
     LongPressEvent,
+    MapView,
     MaskedInput,
     Menu,
     MenuSelectEvent,
@@ -59,6 +65,8 @@ from tempestroid.widgets import (
     PinInput,
     Popover,
     ProgressBar,
+    QrScanEvent,
+    QrScanner,
     RangeChangeEvent,
     RangeSlider,
     RefreshControl,
@@ -81,6 +89,7 @@ from tempestroid.widgets import (
     Spinner,
     Stack,
     SubmitEvent,
+    Svg,
     SwipeEvent,
     Switch,
     TabBar,
@@ -95,6 +104,8 @@ from tempestroid.widgets import (
     ToggleEvent,
     Tooltip,
     ValidationEvent,
+    VideoPlayer,
+    WebView,
     Widget,
     Wrap,
 )
@@ -168,6 +179,16 @@ WIDGET_TYPES: tuple[type[Widget], ...] = (
     Menu,
     Popover,
     ActionSheet,
+    Canvas,
+    VideoPlayer,
+    WebView,
+    Svg,
+    CameraPreview,
+    QrScanner,
+    MapView,
+    Blur,
+    BackdropFilter,
+    ClipPath,
 )
 
 #: The event payload types crossing the native boundary.
@@ -196,6 +217,7 @@ EVENT_TYPES: tuple[type[Event], ...] = (
     SubmitEvent,
     ValidationEvent,
     PageChangeEvent,
+    QrScanEvent,
 )
 
 

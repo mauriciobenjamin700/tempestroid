@@ -65,6 +65,16 @@ def test_widget_catalog_lists_all_widgets():
         "Menu",
         "Popover",
         "ActionSheet",
+        "Canvas",
+        "VideoPlayer",
+        "WebView",
+        "Svg",
+        "CameraPreview",
+        "QrScanner",
+        "MapView",
+        "Blur",
+        "BackdropFilter",
+        "ClipPath",
     }
 
 
@@ -112,6 +122,7 @@ def test_event_catalog_lists_events():
         "SubmitEvent",
         "ValidationEvent",
         "PageChangeEvent",
+        "QrScanEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

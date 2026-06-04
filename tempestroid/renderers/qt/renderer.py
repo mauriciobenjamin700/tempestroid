@@ -33,6 +33,7 @@ from PySide6.QtCore import (
     Qt,
     QTime,
     QTimer,
+    QUrl,
     SignalInstance,
 )
 from PySide6.QtGui import (
@@ -50,9 +51,12 @@ from PySide6.QtGui import (
     QLinearGradient,
     QMouseEvent,
     QPainter,
+    QPainterPath,
     QPaintEvent,
     QPalette,
+    QPen,
     QPixmap,
+    QRegion,
     QResizeEvent,
     QTextLayout,
     QTextLine,
@@ -69,6 +73,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGesture,
     QGestureEvent,
+    QGraphicsBlurEffect,
     QGraphicsDropShadowEffect,
     QGraphicsEffect,
     QGraphicsOpacityEffect,
@@ -192,6 +197,69 @@ _ANIM_CONTAINER_TYPES = frozenset({"Animated", "Hero", "AnimatedList"})
 
 #: Default per-sweep duration (ms) for a ``Shimmer``/``Skeleton`` gradient loop.
 _SHIMMER_DEFAULT_MS = 1200
+
+#: E7 media/graphics wrappers whose single IR child flows through the generic
+#: child-insertion path (a box-layout container, like ``Animated``); the effect
+#: (blur) or mask (clip) is applied on top in ``_apply_visual``.
+_E7_WRAPPER_TYPES = frozenset({"Blur", "BackdropFilter", "ClipPath"})
+
+#: E7 widgets with no faithful Qt equivalent in the desktop simulator: they
+#: render as a ``QLabel`` placeholder carrying an explicit ``device only`` notice.
+#: The device (Compose) renderer realizes the real camera/scanner/map surface.
+_E7_PLACEHOLDER_TYPES = frozenset({"CameraPreview", "QrScanner", "MapView"})
+
+#: Per-type placeholder text shown by the simulator for ``_E7_PLACEHOLDER_TYPES``.
+_E7_PLACEHOLDER_TEXT: dict[str, str] = {
+    "CameraPreview": "[CameraPreview — device only]",
+    "QrScanner": "[QrScanner — device only]",
+    "MapView": "[MapView — device only]",
+}
+
+
+def _load_multimedia() -> tuple[type[Any], type[Any], type[Any]] | None:
+    """Lazily import the Qt multimedia classes used by ``VideoPlayer``.
+
+    ``QtMultimedia`` (and its multimedia backend) may be absent on headless or
+    minimal Linux installs, so the import is deferred and failures degrade to a
+    placeholder instead of crashing the whole renderer at module load.
+
+    Returns:
+        A ``(QMediaPlayer, QAudioOutput, QVideoWidget)`` tuple, or ``None`` when
+        the multimedia stack is unavailable.
+    """
+    try:
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        from PySide6.QtMultimediaWidgets import QVideoWidget
+    except ImportError:
+        return None
+    return QMediaPlayer, QAudioOutput, QVideoWidget
+
+
+def _load_web_engine() -> type[Any] | None:
+    """Lazily import ``QWebEngineView`` (ships in a separate PySide6 wheel).
+
+    Returns:
+        The ``QWebEngineView`` class, or ``None`` when WebEngine is not
+        installed (then ``WebView`` falls back to a placeholder label).
+    """
+    try:
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+    except ImportError:
+        return None
+    return QWebEngineView
+
+
+def _load_svg_renderer() -> type[Any] | None:
+    """Lazily import ``QSvgRenderer`` from ``QtSvg``.
+
+    Returns:
+        The ``QSvgRenderer`` class, or ``None`` when ``QtSvg`` is unavailable.
+    """
+    try:
+        from PySide6.QtSvg import QSvgRenderer
+    except ImportError:
+        return None
+    return QSvgRenderer
 #: Repaint interval (ms) of the shimmer gradient loop (~30fps is plenty smooth
 #: for the simulator's loading placeholder).
 _SHIMMER_TICK_MS = 33
@@ -614,6 +682,156 @@ def _drop_shadow(shadow: Shadow, parent: QWidget) -> QGraphicsDropShadowEffect:
                    round(shadow.color.a * 255))
         )
     return effect
+
+
+class _CanvasWidget(QWidget):
+    """A drawing surface that interprets a JSON-able list of draw commands.
+
+    The command list mirrors the IR contract emitted by the ``Canvas`` widget
+    (and the ``to_compose`` spec): each command is a plain ``dict`` with a
+    ``kind`` discriminator. Colors are ``[r, g, b, a]`` float arrays in ``[0, 1]``
+    — never tuples — so the same list replays identically on both renderers.
+    ``fill``/``stroke`` flush the path accumulated since the previous flush.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize an empty canvas.
+
+        Args:
+            parent: The optional parent widget.
+        """
+        super().__init__(parent)
+        self._commands: list[dict[str, Any]] = []
+
+    def set_commands(self, commands: list[dict[str, Any]]) -> None:
+        """Replace the command list and schedule a repaint.
+
+        Args:
+            commands: The new draw-command dicts (each with a ``kind`` key).
+        """
+        self._commands = commands
+        self.update()
+
+    @staticmethod
+    def _qcolor(color: list[float] | None) -> QColor:
+        """Convert a ``[r, g, b, a]`` float array (in ``[0, 1]``) to a ``QColor``.
+
+        Args:
+            color: The color array, or ``None`` (defaults to opaque black).
+
+        Returns:
+            The equivalent ``QColor``.
+        """
+        if not color:
+            return QColor(0, 0, 0, 255)
+        r, g, b, a = (list(color) + [0.0, 0.0, 0.0, 1.0])[:4]
+        return QColor(int(r * 255), int(g * 255), int(b * 255), int(a * 255))
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 (Qt override)
+        """Replay the draw commands onto the widget surface.
+
+        Args:
+            event: The Qt paint event (unused; the full list is replayed).
+        """
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath()
+        for cmd in self._commands:
+            kind = cmd.get("kind")
+            if kind == "move_to":
+                path.moveTo(cmd["x"], cmd["y"])
+            elif kind == "line_to":
+                path.lineTo(cmd["x"], cmd["y"])
+            elif kind == "arc_to":
+                path.arcTo(
+                    cmd["x"],
+                    cmd["y"],
+                    cmd["width"],
+                    cmd["height"],
+                    cmd["start_angle"],
+                    cmd["sweep_angle"],
+                )
+            elif kind == "close":
+                path.closeSubpath()
+            elif kind == "draw_rect":
+                path.addRect(cmd["x"], cmd["y"], cmd["width"], cmd["height"])
+            elif kind == "draw_oval":
+                path.addEllipse(cmd["x"], cmd["y"], cmd["width"], cmd["height"])
+            elif kind == "fill":
+                painter.fillPath(path, QBrush(self._qcolor(cmd.get("color"))))
+                path = QPainterPath()
+            elif kind == "stroke":
+                pen = QPen(self._qcolor(cmd.get("color")))
+                pen.setWidthF(float(cmd.get("width", 1.0)))
+                painter.strokePath(path, pen)
+                path = QPainterPath()
+            elif kind == "draw_text":
+                painter.setPen(QPen(self._qcolor(cmd.get("color"))))
+                font = painter.font()
+                font.setPointSizeF(float(cmd.get("size", 14.0)))
+                painter.setFont(font)
+                painter.drawText(QPointF(cmd["x"], cmd["y"]), cmd["text"])
+        painter.end()
+
+
+class _ClipWidget(QWidget):
+    """A single-child wrapper that masks itself to a predefined shape.
+
+    Qt has no per-widget CSS ``clip-path``, so the mask is rebuilt from a
+    ``QPainterPath`` on every resize and applied via ``setMask(QRegion(...))``.
+    Supported shapes mirror the ``ClipShape`` enum: ``circle`` (centred disc),
+    ``oval`` (full-bounds ellipse) and ``rounded_rect`` (radius from the prop).
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize the clip wrapper with a vertical content layout.
+
+        Args:
+            parent: The optional parent widget.
+        """
+        super().__init__(parent)
+        self._shape: str = "rounded_rect"
+        self._radius: float = 8.0
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+    def configure_clip(self, shape: str, radius: float) -> None:
+        """Set the clip shape/radius and re-apply the mask.
+
+        Args:
+            shape: One of ``circle`` / ``oval`` / ``rounded_rect``.
+            radius: The corner radius used by ``rounded_rect``.
+        """
+        self._shape = shape
+        self._radius = radius
+        self._apply_mask()
+
+    def _apply_mask(self) -> None:
+        """Rebuild the clip path from the current size and apply it as a mask."""
+        rect = QRectF(0.0, 0.0, float(self.width()), float(self.height()))
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        path = QPainterPath()
+        if self._shape == "circle":
+            diameter = min(rect.width(), rect.height())
+            cx = (rect.width() - diameter) / 2.0
+            cy = (rect.height() - diameter) / 2.0
+            path.addEllipse(cx, cy, diameter, diameter)
+        elif self._shape == "oval":
+            path.addEllipse(rect)
+        else:  # rounded_rect (default)
+            path.addRoundedRect(rect, self._radius, self._radius)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 (Qt override)
+        """Re-apply the mask whenever the widget is resized.
+
+        Args:
+            event: The Qt resize event.
+        """
+        super().resizeEvent(event)
+        self._apply_mask()
 
 
 class _StackWidget(QWidget):
@@ -4243,6 +4461,29 @@ class QtRenderer:
         if node.type == "AspectRatio":
             ratio = float(cast("float", node.props.get("ratio", 1.0)))
             return _Rendered(node.type, node.key, _AspectRatioWidget(ratio), None)
+        if node.type == "Canvas":
+            return _Rendered(node.type, node.key, _CanvasWidget(), None)
+        if node.type == "VideoPlayer":
+            return _Rendered(node.type, node.key, self._new_video_widget(), None)
+        if node.type == "WebView":
+            return _Rendered(node.type, node.key, self._new_web_view(), None)
+        if node.type == "Svg":
+            return _Rendered(node.type, node.key, QLabel(), None)
+        if node.type in ("Blur", "BackdropFilter"):
+            # Single-child wrapper: the child flows through the generic child
+            # path into the box layout; the blur effect is applied in
+            # ``_apply_visual``.
+            wrapper = QWidget()
+            blur_layout: QBoxLayout = QVBoxLayout(wrapper)
+            blur_layout.setContentsMargins(0, 0, 0, 0)
+            return _Rendered(node.type, node.key, wrapper, blur_layout)
+        if node.type == "ClipPath":
+            clip = _ClipWidget()
+            return _Rendered(
+                node.type, node.key, clip, cast("QBoxLayout", clip.layout())
+            )
+        if node.type in _E7_PLACEHOLDER_TYPES:
+            return _Rendered(node.type, node.key, QLabel(), None)
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (
@@ -4251,6 +4492,51 @@ class QtRenderer:
             layout.setContentsMargins(0, 0, 0, 0)
             return _Rendered(node.type, node.key, widget, layout)
         raise ValueError(f"unknown node type: {node.type!r}")
+
+    @staticmethod
+    def _new_video_widget() -> QWidget:
+        """Build the backing widget for a ``VideoPlayer``.
+
+        When the Qt multimedia stack is available a ``QVideoWidget`` is returned
+        with its ``QMediaPlayer`` and ``QAudioOutput`` parented to it (so Qt
+        keeps them alive) and stashed as ``_player`` / ``_audio`` attributes for
+        ``_apply_visual``. When multimedia is unavailable (headless/minimal Qt)
+        a placeholder ``QLabel`` is returned instead — the device renderer plays
+        the real stream via Media3/ExoPlayer.
+
+        Returns:
+            A ``QVideoWidget`` (with player attached) or a placeholder ``QLabel``.
+        """
+        loaded = _load_multimedia()
+        if loaded is None:
+            label = QLabel("[VideoPlayer — multimedia backend unavailable]")
+            return label
+        media_player_cls, audio_output_cls, video_widget_cls = loaded
+        video = cast("QWidget", video_widget_cls())
+        player = media_player_cls(video)
+        audio = audio_output_cls(video)
+        player.setAudioOutput(audio)
+        player.setVideoOutput(video)
+        # Stash on the widget so ``_apply_visual`` can re-configure the source.
+        video._player = player  # pyright: ignore[reportAttributeAccessIssue]
+        video._audio = audio  # pyright: ignore[reportAttributeAccessIssue]
+        return video
+
+    @staticmethod
+    def _new_web_view() -> QWidget:
+        """Build the backing widget for a ``WebView``.
+
+        Uses ``QWebEngineView`` when the (separately packaged) WebEngine wheel is
+        installed; otherwise falls back to a placeholder ``QLabel`` so the
+        simulator never crashes on a minimal PySide6 install.
+
+        Returns:
+            A ``QWebEngineView`` or a placeholder ``QLabel``.
+        """
+        web_view_cls = _load_web_engine()
+        if web_view_cls is None:
+            return QLabel("[WebView — QtWebEngine unavailable]")
+        return cast("QWidget", web_view_cls())
 
     @staticmethod
     def _new_scrollview(node: Node) -> _Rendered:
@@ -4398,6 +4684,18 @@ class QtRenderer:
                     "background: rgba(33, 33, 33, 0.92); color: white;"
                     " padding: 8px 14px; border-radius: 8px;"
                 )
+        elif node.type == "Canvas":
+            self._apply_canvas(cast("_CanvasWidget", node.widget), node.props)
+        elif node.type == "VideoPlayer":
+            self._apply_video_player(node.widget, node.props)
+        elif node.type == "WebView":
+            self._apply_web_view(node.widget, node.props)
+        elif node.type == "Svg":
+            self._apply_svg(cast("QLabel", node.widget), node.props)
+        elif node.type == "ClipPath":
+            self._apply_clip_path(cast("_ClipWidget", node.widget), node.props)
+        elif node.type in _E7_PLACEHOLDER_TYPES:
+            cast("QLabel", node.widget).setText(_E7_PLACEHOLDER_TEXT[node.type])
         self._apply_letter_spacing(node.widget, style)
         self._apply_sizing(node.widget, style)
         if node.type == "Skeleton":
@@ -4406,6 +4704,11 @@ class QtRenderer:
             # flexible-size reset.
             self._apply_skeleton_size(cast("_SkeletonWidget", node.widget), node.props)
         self._apply_effects(node.widget, style)
+        if node.type in ("Blur", "BackdropFilter"):
+            # Blur is the wrapper's whole purpose, so it owns the single Qt
+            # graphics-effect slot — applied after ``_apply_effects`` so it is
+            # never clobbered by the (usually absent) shadow/opacity effect.
+            self._apply_blur(node.widget, node.props)
 
     @staticmethod
     def _apply_letter_spacing(widget: QWidget, style: Style | None) -> None:
@@ -5044,6 +5347,155 @@ class QtRenderer:
         widget.setText("")
         widget.setPixmap(pixmap)
         widget.setScaledContents(cast("str", props.get("fit", "contain")) == "fill")
+
+    def _apply_canvas(
+        self, widget: _CanvasWidget, props: dict[str, Any]
+    ) -> None:
+        """Push the Canvas draw commands (and optional fixed size) to the widget.
+
+        The IR carries ``commands`` as a list of frozen ``DrawCommand`` Pydantic
+        models; they are lowered to plain JSON-able dicts here so the
+        ``_CanvasWidget`` paint loop never depends on the IR types (the same
+        dict shape the device renderer replays).
+
+        Args:
+            widget: The backing canvas widget.
+            props: The node's current props.
+        """
+        raw = cast("list[Any]", props.get("commands", []))
+        commands: list[dict[str, Any]] = []
+        for cmd in raw:
+            if isinstance(cmd, dict):
+                commands.append(cast("dict[str, Any]", cmd))
+            else:
+                # Frozen ``DrawCommand`` Pydantic model → JSON-able dict.
+                commands.append(cast("dict[str, Any]", cmd.model_dump()))
+        widget.set_commands(commands)
+        width = props.get("width")
+        height = props.get("height")
+        if width is not None:
+            widget.setFixedWidth(int(cast("float", width)))
+        if height is not None:
+            widget.setFixedHeight(int(cast("float", height)))
+
+    @staticmethod
+    def _apply_video_player(widget: QWidget, props: dict[str, Any]) -> None:
+        """Configure a ``VideoPlayer``'s source and playback flags.
+
+        No-op when the widget is the placeholder ``QLabel`` (multimedia stack
+        unavailable). Loading a real stream in headless CI may emit a backend
+        warning but never raises; the test only asserts the widget mounts.
+
+        Args:
+            widget: The backing video widget (or placeholder label).
+            props: The node's current props.
+        """
+        player = getattr(widget, "_player", None)
+        audio = getattr(widget, "_audio", None)
+        if player is None:
+            return
+        src = cast("str", props.get("src", ""))
+        if src:
+            player.setSource(QUrl(src))
+        if audio is not None:
+            audio.setMuted(bool(props.get("muted", False)))
+        loops = -1 if bool(props.get("loop", False)) else 1
+        player.setLoops(loops)
+        if bool(props.get("autoplay", False)):
+            player.play()
+
+    @staticmethod
+    def _apply_web_view(widget: QWidget, props: dict[str, Any]) -> None:
+        """Load a ``WebView``'s URL (and toggle JavaScript when supported).
+
+        No-op when the widget is the placeholder ``QLabel`` (WebEngine absent).
+
+        Args:
+            widget: The backing web view (or placeholder label).
+            props: The node's current props.
+        """
+        if not hasattr(widget, "load"):
+            return
+        view = cast("Any", widget)
+        if hasattr(widget, "settings"):
+            try:
+                from PySide6.QtWebEngineCore import QWebEngineSettings
+
+                view.settings().setAttribute(
+                    QWebEngineSettings.WebAttribute.JavascriptEnabled,
+                    bool(props.get("javascript_enabled", True)),
+                )
+            except ImportError:
+                pass
+        url = cast("str", props.get("url", ""))
+        if url:
+            view.load(QUrl(url))
+
+    @staticmethod
+    def _apply_svg(widget: QLabel, props: dict[str, Any]) -> None:
+        """Render a local SVG source into the label's pixmap.
+
+        Uses ``QSvgRenderer`` to rasterize the SVG onto a transparent pixmap.
+        Remote (``http(s)``) sources and missing/invalid files fall back to the
+        source string as text — the device renderer fetches remote SVGs. No-op
+        crash path: a null renderer just shows the source text.
+
+        Args:
+            widget: The label backing the SVG.
+            props: The node's current props.
+        """
+        src = cast("str", props.get("src", ""))
+        renderer_cls = _load_svg_renderer()
+        is_local = bool(src) and not src.startswith(("http://", "https://"))
+        if renderer_cls is None or not is_local:
+            widget.setText(src)
+            return
+        svg = renderer_cls(src)
+        if not svg.isValid():
+            widget.setText(src)
+            return
+        size = svg.defaultSize()
+        if size.width() <= 0 or size.height() <= 0:
+            size = QSize(64, 64)
+        pixmap = QPixmap(size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        svg.render(painter)
+        painter.end()
+        widget.setText("")
+        widget.setPixmap(pixmap)
+        widget.setScaledContents(
+            cast("str", props.get("fit", "contain")) == "fill"
+        )
+
+    def _apply_blur(self, widget: QWidget, props: dict[str, Any]) -> None:
+        """Apply a Gaussian blur effect to a ``Blur``/``BackdropFilter`` wrapper.
+
+        Qt cannot blur the layers *behind* a widget, so ``BackdropFilter`` is
+        approximated identically to ``Blur`` (blurring the wrapper's own child)
+        — a documented Qt-vs-Compose divergence.
+
+        Args:
+            widget: The wrapper widget.
+            props: The node's current props (carries ``radius``).
+        """
+        radius = float(cast("float", props.get("radius", 8.0)))
+        effect = QGraphicsBlurEffect(widget)
+        effect.setBlurRadius(radius)
+        widget.setGraphicsEffect(effect)
+
+    @staticmethod
+    def _apply_clip_path(widget: _ClipWidget, props: dict[str, Any]) -> None:
+        """Configure a ``ClipPath`` wrapper's mask shape and radius.
+
+        Args:
+            widget: The clip wrapper widget.
+            props: The node's current props (``shape`` + ``radius``).
+        """
+        shape = props.get("shape", "rounded_rect")
+        shape_value = getattr(shape, "value", shape)
+        radius = float(cast("float", props.get("radius", 8.0)))
+        widget.configure_clip(str(shape_value), radius)
 
     @staticmethod
     def _apply_icon(widget: QLabel, props: dict[str, Any]) -> None:

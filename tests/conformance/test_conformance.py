@@ -2097,3 +2097,312 @@ def test_e6_translators_not_affected_by_layout_widgets() -> None:
         "to_qss(Style()) changed after E6 import — "
         "a layout widget must not side-effect the Qt translator"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase E7 — Media and graphics                                               #
+#                                                                             #
+# E7 adds media/graphics widgets (Canvas, VideoPlayer, WebView, Svg,          #
+# CameraPreview, QrScanner, MapView, Blur, BackdropFilter, ClipPath) and the  #
+# QrScanEvent. None of them registers a new Style field — Blur.radius and     #
+# ClipPath.shape are *widget* props, not Style fields — so the golden/parity  #
+# machinery stays untouched. The Canvas IR (a list of DrawCommand value       #
+# models) is the one renderer-agnostic spec, so it gets a JSON-serializable   #
+# tripwire here.                                                              #
+# --------------------------------------------------------------------------- #
+
+#: Intentional Qt × Compose divergences for the E7 media/graphics widgets.
+_E7_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "VideoPlayer",
+        "topic": "video_surface",
+        "qt_strategy": (
+            "QMediaPlayer + QVideoWidget (QtMultimedia); setSource(QUrl(src)), "
+            "play() on autoplay. WSL may lack a multimedia backend — the widget "
+            "still instantiates without playback."
+        ),
+        "compose_strategy": (
+            "AndroidView wrapping a Media3 ExoPlayer PlayerView; "
+            "setMediaItem(MediaItem.fromUri(src)) + play() on autoplay."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "WebView",
+        "topic": "web_surface",
+        "qt_strategy": (
+            "QWebEngineView.load(QUrl(url)) when PySide6-WebEngine is present; "
+            "otherwise a QLabel placeholder (the wheel does not always ship it)."
+        ),
+        "compose_strategy": (
+            "AndroidView wrapping android.webkit.WebView; settings.javaScriptEnabled "
+            "from the prop, loadUrl(url)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "CameraPreview",
+        "topic": "camera_surface",
+        "qt_strategy": (
+            "PLACEHOLDER QLabel '[CameraPreview — device only]' — the desktop "
+            "simulator does not bind a live camera."
+        ),
+        "compose_strategy": (
+            "AndroidView wrapping CameraX PreviewView bound to the lifecycle with "
+            "the selected facing."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "QrScanner",
+        "topic": "qr_scanner_surface",
+        "qt_strategy": (
+            "PLACEHOLDER QLabel '[QrScanner — device only]' — no on_scan events "
+            "fire in the simulator."
+        ),
+        "compose_strategy": (
+            "CameraX ImageAnalysis + ML Kit BarcodeScanning; on a decode it calls "
+            "dispatchEvent(on_scan token, {data, format}) — the widget's on_scan "
+            "handler is the channel (a normal typed event, not __native_result__)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "MapView",
+        "topic": "map_surface",
+        "qt_strategy": (
+            "PLACEHOLDER QLabel '[MapView — device only]' — the simulator embeds "
+            "no map engine."
+        ),
+        "compose_strategy": (
+            "Google Maps Compose (GoogleMap + markers) when the maps dependency "
+            "and API key are configured; otherwise a documented PLACEHOLDER Box "
+            "(the dependency requires google-services.json to compile)."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E7_WIDGET_DIVERGENCES``.
+_E7_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E7_WIDGET_DIVERGENCES
+}
+
+#: The E7 widgets that must be present in the bridge ``EVENT_SCHEMAS`` contract
+#: (so ``introspect()`` lists them and the device round-trip can validate them).
+_E7_NEW_WIDGETS: tuple[str, ...] = (
+    "Canvas",
+    "VideoPlayer",
+    "WebView",
+    "Svg",
+    "CameraPreview",
+    "QrScanner",
+    "MapView",
+    "Blur",
+    "BackdropFilter",
+    "ClipPath",
+)
+
+
+def test_e7_no_style_field_added() -> None:
+    """Phase E7 adds no new ``Style`` field.
+
+    The media/graphics widgets carry their own props (``Blur.radius``,
+    ``ClipPath.shape``, ``Canvas.commands``); none of them is a ``Style`` field,
+    so the ``_SAMPLES``/``_COVERAGE`` parity tables and the golden snapshots are
+    untouched. If a new field appears, update ``_SAMPLES``, ``_COVERAGE``, and
+    regenerate goldens with ``UPDATE_GOLDEN=1``.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); E7 must not add a Style field — "
+        "Blur.radius / ClipPath.shape are widget props, not Style fields"
+    )
+
+
+def test_e7_canvas_commands_are_json_serializable() -> None:
+    """A ``Canvas`` carrying every draw command serializes to pure JSON.
+
+    The Canvas IR is the single renderer-agnostic graphics spec. Each
+    ``DrawCommand`` must lower to plain dicts (colors are ``[r, g, b, a]`` lists,
+    never tuples), so ``serialize_node`` → ``json.dumps`` round-trips with no
+    custom encoder. This pins the contract both renderers consume.
+    """
+    from tempestroid import (
+        ArcTo,
+        Canvas,
+        Close,
+        DrawOval,
+        DrawRect,
+        DrawText,
+        FillCmd,
+        LineTo,
+        MoveTo,
+        StrokeCmd,
+    )
+    from tempestroid.bridge import serialize_node
+    from tempestroid.core.reconciler import build
+
+    canvas = Canvas(
+        commands=[
+            MoveTo(x=0.0, y=0.0),
+            LineTo(x=10.0, y=10.0),
+            ArcTo(x=0.0, y=0.0, width=20.0, height=20.0,
+                  start_angle=0.0, sweep_angle=90.0),
+            Close(),
+            DrawRect(x=1.0, y=2.0, width=3.0, height=4.0),
+            DrawOval(x=5.0, y=6.0, width=7.0, height=8.0),
+            FillCmd(color=[1.0, 0.0, 0.0, 1.0]),
+            StrokeCmd(color=[0.0, 0.0, 1.0, 1.0], width=2.0),
+            DrawText(text="hi", x=1.0, y=2.0, size=12.0, color=[0.0, 0.0, 0.0, 1.0]),
+        ]
+    )
+    node = build(canvas)
+    serialized = serialize_node(node)
+    json.dumps(serialized)  # must not raise — the contract is pure JSON
+    commands: list[Any] = serialized["props"]["commands"]
+    assert isinstance(commands, list) and len(commands) == 9
+    assert all("kind" in cmd for cmd in commands), (
+        "every serialized DrawCommand must carry its 'kind' discriminator"
+    )
+    # No tuples survive the round-trip — colors are JSON arrays.
+    fill: dict[str, Any] = next(cmd for cmd in commands if cmd["kind"] == "fill")
+    assert fill["color"] == [1.0, 0.0, 0.0, 1.0]
+    assert isinstance(fill["color"], list)
+
+
+def test_e7_new_widgets_in_event_schemas() -> None:
+    """Every E7 widget appears in the bridge ``EVENT_SCHEMAS`` contract.
+
+    Handler-free widgets (Canvas, VideoPlayer, …) are added unconditionally so
+    they still surface in ``introspect()``; ``QrScanner`` carries ``on_scan`` →
+    ``QrScanEvent``. A missing entry means a widget is undiscoverable at the
+    boundary.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
+    from tempestroid.widgets.events import QrScanEvent
+
+    for name in _E7_NEW_WIDGETS:
+        assert name in EVENT_SCHEMAS, (
+            f"E7 widget {name!r} absent from EVENT_SCHEMAS; "
+            "add it to bridge/protocol.py"
+        )
+    assert event_type_for("QrScanner", "on_scan") is QrScanEvent, (
+        "QrScanner.on_scan must resolve to QrScanEvent"
+    )
+
+
+def test_e7_widget_divergences() -> None:
+    """Every E7 media divergence row is intentional and uniquely keyed.
+
+    The tripwire: a renderer specialist who resolves a divergence (e.g. Qt gains
+    a real camera surface) must update the table; one who adds a new E7 surface
+    must add a row. Either omission fails this test. Five divergences are
+    documented (VideoPlayer, WebView, CameraPreview, QrScanner, MapView).
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E7_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E7 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (known gap)"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E7_DIVERGENCE_KEYS
+    assert len(_E7_WIDGET_DIVERGENCES) == 5, (
+        "E7 documents exactly five Qt × Compose divergences"
+    )
+
+
+def test_e7_new_widgets_in_introspect() -> None:
+    """All ten E7 media/graphics widgets appear in ``introspect()['widgets']``.
+
+    ``introspect()`` is the framework's self-describing typed contract. A widget
+    absent from the catalog is undiscoverable to tooling, the device bridge and
+    editor integrations. This test pins the ``WIDGET_TYPES`` list in
+    ``core/introspection.py`` against a regression that drops any E7 entry.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for name in _E7_NEW_WIDGETS:
+        assert name in catalog["widgets"], (
+            f"E7 widget {name!r} absent from introspect()['widgets']; "
+            "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e7_qr_scan_event_in_introspect() -> None:
+    """``QrScanEvent`` appears in ``introspect()['events']``.
+
+    Pins the ``EVENT_TYPES`` list in ``core/introspection.py``.  If the entry
+    is dropped, the device bridge cannot discover the event schema and
+    ``event_type_for("QrScanner", "on_scan")`` will silently return ``None``
+    at dispatch time — the on_scan payload would be dispatched unvalidated.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    assert "QrScanEvent" in catalog["events"], (
+        "QrScanEvent absent from introspect()['events']; "
+        "add it to EVENT_TYPES in tempestroid/core/introspection.py"
+    )
+    # The schema must describe the two fields (data + format).
+    schema = catalog["events"]["QrScanEvent"]
+    props = schema.get("properties", {})
+    assert "data" in props, (
+        "QrScanEvent schema is missing the 'data' field — "
+        "the QrScanner device half encodes this in the dispatch payload"
+    )
+    assert "format" in props, (
+        "QrScanEvent schema is missing the 'format' field — "
+        "the QrScanner device half encodes this in the dispatch payload"
+    )
+
+
+def test_e7_translators_not_affected_by_media_widgets() -> None:
+    """E7 media-widget imports do not mutate the ``Style`` translators.
+
+    No E7 widget adds a ``Style`` field, and none should register a side-effect
+    that alters the translator tables at import time.  Calling
+    ``to_compose``/``to_qss`` with ``Style()`` must yield the same empty output
+    regardless of whether the E7 widgets have been imported — same invariant
+    enforced for E1–E6.
+    """
+    empty_snap = snapshot(Style())
+    assert empty_snap["compose"] == {}, (
+        "to_compose(Style()) changed after E7 import — "
+        "a media widget must not side-effect the Compose translator"
+    )
+    assert empty_snap["qt"]["qss_leaf"] == "", (
+        "to_qss(Style()) changed after E7 import — "
+        "a media widget must not side-effect the Qt translator"
+    )
+
+
+def test_e7_canvas_non_divergence_both_renderers_share_same_spec() -> None:
+    """``Canvas`` is NOT a Qt × Compose divergence — both renderers share the spec.
+
+    ``Canvas``, ``Svg``, ``Blur``, ``BackdropFilter``, and ``ClipPath`` use the
+    same serialized IR on both sides (Qt interprets it with QPainter/QGraphicsEffect;
+    Compose interprets it with ``drawIntoCanvas``/``Modifier.blur``/``Modifier.clip``).
+    They must NOT appear in the ``_E7_WIDGET_DIVERGENCES`` table.  This test pins
+    that invariant: if Canvas is accidentally added to the divergence table (which
+    would imply separate IRs), this fails.
+    """
+    non_diverging = {"Canvas", "Svg", "Blur", "BackdropFilter", "ClipPath"}
+    diverging_widgets = {str(row["widget"]) for row in _E7_WIDGET_DIVERGENCES}
+    overlap = non_diverging & diverging_widgets
+    assert not overlap, (
+        f"Widgets {overlap!r} appear in _E7_WIDGET_DIVERGENCES but should not — "
+        "they use the same serialized IR on both renderers. "
+        "Only VideoPlayer/WebView/CameraPreview/QrScanner/MapView are divergent."
+    )

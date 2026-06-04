@@ -140,6 +140,16 @@ def _serialize_props(
                 for section in value
             ]
             continue
+        if name == "commands":
+            # Canvas.commands is a list of frozen DrawCommand value models; lower
+            # each via model_dump() so the device gets plain dicts (every field is
+            # JSON-safe — colors are [r, g, b, a] lists, never tuples).
+            out[name] = [cmd.model_dump() for cmd in value]
+            continue
+        if name == "markers":
+            # MapView.markers is already a list of JSON-safe dicts; pass it through.
+            out[name] = value
+            continue
         if name == "items" and _is_menu_item_list(value):
             # Menu/ActionSheet items are MenuItem value models; lower them to
             # plain dicts so the device gets the label/value/icon as JSON.
