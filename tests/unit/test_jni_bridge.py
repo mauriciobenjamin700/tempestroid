@@ -18,7 +18,7 @@ import pytest
 
 from tempestroid.bridge.device import DeviceApp, LoopbackBridge
 from tempestroid.bridge.jni import JniBridge, make_event_sink, run_device
-from tempestroid.bridge.protocol import BACK_TOKEN
+from tempestroid.bridge.protocol import BACK_TOKEN, FRAME_TOKEN
 from tempestroid.core.state import App
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX
 from tempestroid.navigation import Route
@@ -176,6 +176,76 @@ async def test_native_result_branch_is_independent_of_back() -> None:
         assert [r.name for r in device.app.nav.stack] == ["/", "/a"]
     finally:
         _dispatch._pending.pop("42", None)  # type: ignore[attr-defined]
+
+
+async def test_frame_token_routes_to_tick_not_to_handle_event() -> None:
+    """``__frame__`` reaches ``App._tick_from_device`` and is never a widget event.
+
+    The device host emits the reserved frame token once per ``withFrameNanos``
+    frame while an animation is active; the sink must route it straight to the
+    app's device-driven clock tick, short-circuiting before the widget handler
+    path (``handle_event`` must never see it).
+    """
+    device, _ = _device_with_stack("/")
+    ticks: list[int] = []
+    seen: list[dict[str, Any]] = []
+    original_handle = device.handle_event
+    original_tick = device.app._tick_from_device  # type: ignore[attr-defined]
+
+    async def _spy_handle(message: dict[str, Any]) -> None:
+        seen.append(message)
+        await original_handle(message)
+
+    def _spy_tick() -> None:
+        ticks.append(1)
+        original_tick()
+
+    device.handle_event = _spy_handle  # type: ignore[method-assign]
+    device.app._tick_from_device = _spy_tick  # type: ignore[method-assign]
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(FRAME_TOKEN, "")
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert ticks == [1]
+    # the frame token must not have been dispatched as a widget handler event
+    assert seen == []
+
+
+async def test_frame_token_with_payload_still_ticks() -> None:
+    """A ``__frame__`` event still ticks even if the host attaches a payload.
+
+    Routing keys off the token alone (and short-circuits before the JSON parse),
+    so a non-empty payload must not divert it to the widget path.
+    """
+    device, _ = _device_with_stack("/")
+    ticks: list[int] = []
+    original_tick = device.app._tick_from_device  # type: ignore[attr-defined]
+
+    def _spy_tick() -> None:
+        ticks.append(1)
+        original_tick()
+
+    device.app._tick_from_device = _spy_tick  # type: ignore[method-assign]
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(FRAME_TOKEN, '{"ignored": true}')
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert ticks == [1]
+
+
+def test_frame_token_constant_is_payload_free_sentinel() -> None:
+    """``FRAME_TOKEN`` carries no ``:`` separator and is distinct from BACK_TOKEN."""
+    assert ":" not in FRAME_TOKEN
+    assert FRAME_TOKEN != BACK_TOKEN
+    assert not FRAME_TOKEN.startswith(NATIVE_RESULT_PREFIX)
 
 
 def test_back_token_constant_has_no_payload_separator() -> None:

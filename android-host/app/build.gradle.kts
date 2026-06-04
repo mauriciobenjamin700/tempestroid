@@ -231,6 +231,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
+    // Animation engine (E3): AnimatedVisibility, InfiniteTransition,
+    // SharedTransitionLayout/sharedElement (shared-element Hero transitions, 1.7+).
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
     // Named Material icons for the `Icon` widget (string name -> vector glyph).
     implementation("androidx.compose.material:material-icons-extended")

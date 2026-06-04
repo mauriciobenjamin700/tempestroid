@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
+from tempestroid.animation import AnimationController
 from tempestroid.core.ir import Patch, Scene
 from tempestroid.core.reconciler import build_scene, diff_scene
 from tempestroid.navigation import NavStack, Route
@@ -73,6 +74,8 @@ class App(Generic[S]):
         view: Callable[[App[S]], Widget],
         apply_patches: Callable[[list[Patch]], None],
         nav: NavStack | None = None,
+        *,
+        time_source: Callable[[], float] | None = None,
     ) -> None:
         """Initialize the app.
 
@@ -83,6 +86,10 @@ class App(Generic[S]):
             apply_patches: Renderer callback that applies a patch list.
             nav: The initial navigation stack. Defaults to a fresh
                 :class:`~tempestroid.navigation.NavStack` with the root route.
+            time_source: Optional monotonic clock (seconds) used by the animation
+                frame loop to compute the per-frame ``dt``. Tests inject a
+                deterministic source; the Qt runner passes ``loop.time``. Defaults
+                to the event loop's clock.
         """
         self.state: S = state
         self.nav: NavStack = nav if nav is not None else NavStack()
@@ -94,6 +101,18 @@ class App(Generic[S]):
         # `dismiss`) and folded into every build as the scene's `overlays`.
         self._overlays: list[OverlayEntry] = []
         self._rebuild_scheduled: bool = False
+        # The animation frame clock. ``_animations`` holds every active
+        # controller; the clock runs (re-arming ``loop.call_later(1/60)``) only
+        # while it is non-empty. ``_time_source`` is injectable for deterministic
+        # tests; ``_last_tick`` records the previous frame's timestamp so each
+        # tick advances the controllers by the real elapsed ``dt``.
+        self._animations: set[AnimationController] = set()
+        # Resolved lazily by ``_now`` so construction never touches the loop
+        # (which would warn/raise outside a running loop). ``None`` means "use
+        # the event loop's clock".
+        self._time_source: Callable[[], float] | None = time_source
+        self._last_tick: float = 0.0
+        self._tick_scheduled: bool = False
         # Visible-window overrides for virtualized lists, keyed by the list's
         # `key`; SectionList sections are keyed `"<list_key>::<section_title>"`.
         # Injected into the freshly built tree (see `_build`) so a slid window
@@ -110,6 +129,21 @@ class App(Generic[S]):
         """
         self._current = self._build()
         return self._current
+
+    @property
+    def has_animations(self) -> bool:
+        """Whether at least one animation controller is active on the frame clock.
+
+        The device bridge reads this when serializing a ``mount``/``patch`` so the
+        Compose host knows whether to run its ``withFrameNanos`` loop (and emit the
+        reserved ``__frame__`` token). It flips ``True`` as soon as a controller is
+        registered (:meth:`register_animation`) and back to ``False`` once the last
+        controller settles and is dropped by :meth:`_tick`/:meth:`_tick_from_device`.
+
+        Returns:
+            ``True`` when one or more controllers are active, ``False`` otherwise.
+        """
+        return bool(self._animations)
 
     @property
     def current_tree(self) -> Scene | None:
@@ -439,6 +473,80 @@ class App(Generic[S]):
         self.request_rebuild()
         return overlay_id
 
+    def register_animation(self, ctrl: AnimationController) -> None:
+        """Register an active animation controller on the frame clock.
+
+        Binds the controller to this app (so it can later unregister itself) and
+        starts the frame clock if it was idle. Registering an already-tracked
+        controller is a no-op beyond (re)binding, so repeated
+        :meth:`~tempestroid.animation.AnimationController.forward` calls are safe.
+
+        Args:
+            ctrl: The controller to drive on each frame.
+        """
+        ctrl.bind(self)
+        self._animations.add(ctrl)
+        if not self._tick_scheduled:
+            self._tick_scheduled = True
+            self._last_tick = self._now()
+            self._loop().call_later(1.0 / 60.0, self._tick)
+
+    def unregister_animation(self, ctrl: AnimationController) -> None:
+        """Remove a controller from the frame clock.
+
+        A no-op when the controller is not tracked (e.g. a double
+        :meth:`~tempestroid.animation.AnimationController.stop`). The clock stops
+        re-arming once the set drains.
+
+        Args:
+            ctrl: The controller to remove.
+        """
+        self._animations.discard(ctrl)
+
+    def _tick(self) -> None:
+        """Advance every active controller by the elapsed ``dt`` and rebuild.
+
+        Computes ``dt`` from the injectable time source, advances each
+        controller, drops the ones that report completion, and requests a single
+        coalesced rebuild so the view re-reads the new ``value``s. Re-arms the
+        loop timer only while controllers remain active.
+        """
+        self._tick_scheduled = False
+        if not self._animations:
+            return
+        now = self._now()
+        dt = now - self._last_tick
+        self._last_tick = now
+        for ctrl in list(self._animations):
+            # ``App`` is the designated driver of a controller's per-frame step;
+            # ``_advance`` is the clock-facing internal API (see the E3 contract).
+            if ctrl._advance(dt):  # pyright: ignore[reportPrivateUsage]
+                self._animations.discard(ctrl)
+        self.request_rebuild()
+        if self._animations:
+            self._tick_scheduled = True
+            self._loop().call_later(1.0 / 60.0, self._tick)
+
+    def _tick_from_device(self) -> None:
+        """Advance the frame clock once, driven by the device's ``__frame__``.
+
+        The Compose host re-sends the reserved ``__frame__`` token every frame
+        while an animation is active, so — unlike :meth:`_tick` — this advances
+        the controllers once and never re-arms a loop timer itself (the host owns
+        the cadence). It is the device-side analogue of one :meth:`_tick` frame.
+        """
+        if not self._animations:
+            return
+        now = self._now()
+        dt = now - self._last_tick
+        self._last_tick = now
+        for ctrl in list(self._animations):
+            # ``App`` is the designated driver of a controller's per-frame step;
+            # ``_advance`` is the clock-facing internal API (see the E3 contract).
+            if ctrl._advance(dt):  # pyright: ignore[reportPrivateUsage]
+                self._animations.discard(ctrl)
+        self.request_rebuild()
+
     def request_rebuild(self) -> None:
         """Schedule a single rebuild on the event loop.
 
@@ -459,6 +567,19 @@ class App(Generic[S]):
         self._current = new
         if patches:
             self._apply(patches)
+
+    def _now(self) -> float:
+        """Return the current animation-clock timestamp in seconds.
+
+        Uses the injected ``time_source`` when set (deterministic in tests),
+        otherwise the event loop's monotonic clock.
+
+        Returns:
+            The current time in seconds.
+        """
+        if self._time_source is not None:
+            return self._time_source()
+        return self._loop().time()
 
     @staticmethod
     def _loop() -> asyncio.AbstractEventLoop:

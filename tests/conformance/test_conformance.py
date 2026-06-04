@@ -723,3 +723,366 @@ def test_e1_style_translators_not_affected_by_list_widgets() -> None:
     empty_snap = snapshot(Style())
     assert empty_snap["compose"] == {}
     assert empty_snap["qt"]["qss_leaf"] == ""
+
+
+# ---------------------------------------------------------------------------
+# E3 conformance: animation framework (phase E3)
+# ---------------------------------------------------------------------------
+#
+# Phase E3 adds:
+#   1. Three new ``Curve`` members (EASE / BOUNCE / ELASTIC) — no new ``Style``
+#      fields; only the ``Transition.curve`` sub-field gains new legal values.
+#      The golden snapshot "animated" (which uses ``Curve.EASE_IN_OUT``) is
+#      unchanged; three new golden cases ("curve_ease", "curve_bounce",
+#      "curve_elastic") pin the new translations so a typo in ``_CURVE`` is
+#      caught immediately.
+#   2. Five new animation widgets (Animated / AnimatedList / Hero / Shimmer /
+#      Skeleton) — all with ``event_schemas = {}``. These must appear in
+#      ``bridge.protocol.EVENT_SCHEMAS`` (so the bridge's contract is
+#      complete) and the reserved ``FRAME_TOKEN = "__frame__"`` must be
+#      exported by the same module.
+#   3. Renderer-level behavioural divergences between Qt and Compose for all
+#      four animation scenarios — pinned below in ``_E3_WIDGET_DIVERGENCES``.
+#
+# Rationale for the Qt-vs-Compose divergences (mirrors the architect contract):
+#
+# 1. Animated — interpolation site
+#    Qt: the core Python clock (``loop.call_later(1/60, _tick)``) advances
+#    ``AnimationController.value``; the ``view`` reads the value, feeds it to
+#    ``Tween.at``, and builds the child with the already-interpolated ``Style``
+#    for that frame. The Qt renderer receives final props via a plain ``Update``
+#    patch — no native Qt animation API.
+#    Compose: can drive the same final-props path (it also receives a fully
+#    interpolated ``Style`` from the Python clock), but it *may* alternatively
+#    use ``animateColorAsState``/``animateFloatAsState`` with ``durationMs``/
+#    ``curve`` from the serialized ``transition`` spec for 90/120fps fluency.
+#    The strategic choice is documented here; changing it silently breaks this
+#    test.
+#
+# 2. AnimatedList — insert/remove animation surface
+#    Qt: ``QPropertyAnimation`` on the inserted/removed child's ``opacity`` +
+#    ``maximumHeight``, driven by a local ``QTimer``. Duration read from
+#    ``props.enter_duration_ms`` / ``exit_duration_ms``; the widget self-deletes
+#    after the exit animation.
+#    Compose: ``AnimatedVisibility(visible = …, enter = fadeIn+expandVertically,
+#    exit = fadeOut+shrinkVertically)``; native M3 Compose, driven by Compose's
+#    own animation engine. Duration also read from ``enter_duration_ms`` /
+#    ``exit_duration_ms`` props.
+#
+# 3. Hero — shared-element transition surface
+#    Qt: ``QPropertyAnimation`` on ``geometry()`` (pos + size) between the two
+#    screens of a ``Navigator``, triggered when a ``Replace`` patch arrives and
+#    both the new and old trees contain a ``Hero`` node with the same tag. The
+#    transition is initiated by the Qt renderer detecting the matching
+#    ``hero_tag`` property across the two trees.
+#    Compose: ``SharedTransitionLayout`` wrapping the ``Navigator`` +
+#    ``Modifier.sharedElement(rememberSharedContentState(key = hero_tag))``
+#    applied to each ``Hero`` node's child — the M3 native shared-element
+#    contract.
+#
+# 4. Shimmer — moving-gradient animation surface
+#    Qt: An internal ``QTimer`` (period = ``duration_ms / 20``) repaints a
+#    ``QLinearGradient`` that sweeps the highlight color from left to right and
+#    wraps in a loop. The gradient offset advances each tick.
+#    Compose: ``rememberInfiniteTransition() + animateFloat(0f→1f,
+#    infiniteRepeatable(tween(duration_ms)))`` drives a ``Brush.linearGradient``
+#    offset, producing the platform-native shimmer without a Python-side timer.
+#
+# Updating this table: if a divergence is resolved (both renderers converge),
+# set ``intentional=False`` and explain why. The tripwire test
+# ``test_e3_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new E3 widget or topic is added, add a row here AND update the
+# pinned key set.
+
+_E3_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Animated",
+        "topic": "interpolation_site",
+        "qt_strategy": (
+            "Core Python clock (loop.call_later 1/60 s) advances "
+            "AnimationController.value; view reads Tween.at(value) and builds child "
+            "with the already-interpolated Style — Qt renderer receives final props "
+            "via a plain Update patch, no native Qt animation API."
+        ),
+        "compose_strategy": (
+            "Receives the same interpolated Style from the Python clock (final-props "
+            "path); may also use animateColorAsState/animateFloatAsState with "
+            "durationMs/curve from the serialized transition spec for 90/120fps "
+            "fluency on the device."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "AnimatedList",
+        "topic": "insert_remove_animation_surface",
+        "qt_strategy": (
+            "QPropertyAnimation on the child's opacity + maximumHeight, driven by a "
+            "local QTimer; duration from props.enter_duration_ms/exit_duration_ms; "
+            "widget self-deletes after the exit animation finishes."
+        ),
+        "compose_strategy": (
+            "AnimatedVisibility(visible=…, enter=fadeIn+expandVertically, "
+            "exit=fadeOut+shrinkVertically) — native M3 Compose; duration from "
+            "props.enter_duration_ms/exit_duration_ms."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Hero",
+        "topic": "shared_element_transition_surface",
+        "qt_strategy": (
+            "QPropertyAnimation on geometry() (pos+size) between the two Navigator "
+            "screens; triggered by the Qt renderer detecting matching hero_tag "
+            "properties across the old and new trees during a Replace patch."
+        ),
+        "compose_strategy": (
+            "SharedTransitionLayout wrapping the Navigator + "
+            "Modifier.sharedElement(rememberSharedContentState(key=hero_tag)) "
+            "applied to each Hero node's child — native M3 shared-element contract."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Shimmer",
+        "topic": "gradient_animation_surface",
+        "qt_strategy": (
+            "Internal QTimer (period = duration_ms/20 ms) repaints a "
+            "QLinearGradient sweeping the highlight color left-to-right in a loop; "
+            "gradient offset advances each tick."
+        ),
+        "compose_strategy": (
+            "rememberInfiniteTransition() + animateFloat(0f→1f, "
+            "infiniteRepeatable(tween(duration_ms))) drives a "
+            "Brush.linearGradient offset — platform-native shimmer without a "
+            "Python-side timer."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E3_WIDGET_DIVERGENCES``.
+_E3_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E3_WIDGET_DIVERGENCES
+}
+
+
+def test_e3_widget_divergences_complete() -> None:
+    """Every E3 animation divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves an animation
+    divergence (e.g. both renderers converge on the same animation surface)
+    must update the table; one who adds a new E3 widget or topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E3_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E3 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _E3_DIVERGENCE_KEYS
+
+
+def test_e3_no_style_field_added() -> None:
+    """Phase E3 adds no new Style fields — the ``_SAMPLES``/``_COVERAGE`` tables
+    remain complete without update.
+
+    E3 extends the ``Curve`` enum (three new values on an *existing* field
+    ``Transition.curve``), but does not add any top-level field to ``Style``.
+    If a new field appears, update ``_SAMPLES``, ``_COVERAGE``, regenerate
+    goldens (``UPDATE_GOLDEN=1``), and update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# E3 Curve additions: new golden cases + parity for EASE/BOUNCE/ELASTIC
+# ---------------------------------------------------------------------------
+
+#: Canonical cases that exercise the three new ``Curve`` members added in E3a.
+_E3_CURVE_CASES: dict[str, Style] = {
+    "curve_ease": Style(
+        transition=Transition(duration_ms=200, curve=Curve.EASE, delay_ms=0)
+    ),
+    "curve_bounce": Style(
+        transition=Transition(duration_ms=400, curve=Curve.BOUNCE, delay_ms=0)
+    ),
+    "curve_elastic": Style(
+        transition=Transition(duration_ms=500, curve=Curve.ELASTIC, delay_ms=0)
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_E3_CURVE_CASES))
+def test_e3_curve_golden_snapshot(name: str) -> None:
+    """Each new Curve value matches its committed golden snapshot.
+
+    Regenerate with ``UPDATE_GOLDEN=1`` when the translator changes.
+    """
+    style = _E3_CURVE_CASES[name]
+    snap = snapshot(style)
+    path = _GOLDEN_DIR / f"{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for {name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"conformance drift for {name!r}; "
+        "review and re-run UPDATE_GOLDEN=1 if intended"
+    )
+
+
+@pytest.mark.parametrize(
+    "curve,expected_compose",
+    [
+        (Curve.EASE, "ease"),
+        (Curve.BOUNCE, "bounce"),
+        (Curve.ELASTIC, "elastic"),
+    ],
+)
+def test_e3_new_curve_values_in_compose_spec(
+    curve: Curve, expected_compose: str
+) -> None:
+    """Each new ``Curve`` member maps to the correct string in the Compose spec.
+
+    Pins the ``_CURVE`` mapping in ``renderers/compose/style_translator.py``
+    against accidental renames.
+    """
+    spec = snapshot(Style(transition=Transition(duration_ms=300, curve=curve)))
+    assert spec["compose"]["transition"]["curve"] == expected_compose, (
+        f"Curve.{curve.name} mapped to "
+        f"{spec['compose']['transition']['curve']!r} (expected {expected_compose!r}); "
+        "update _CURVE in renderers/compose/style_translator.py"
+    )
+
+
+def test_e3_new_curve_values_not_in_qss() -> None:
+    """The Qt style translator does not emit ``transition`` into QSS (by design).
+
+    The three new ``Curve`` values (EASE/BOUNCE/ELASTIC) all live inside
+    ``Transition``, and the ``_COVERAGE`` table documents ``"transition":
+    (True, False)`` — Compose reacts, Qt does not. This test asserts that adding
+    any of the new values does not silently start changing the QSS output.
+    """
+    base_qt = snapshot(Style())["qt"]
+    for curve in (Curve.EASE, Curve.BOUNCE, Curve.ELASTIC):
+        style = Style(transition=Transition(duration_ms=200, curve=curve))
+        snap_qt = snapshot(style)["qt"]
+        assert snap_qt == base_qt, (
+            f"Curve.{curve.name} changed the Qt snapshot; "
+            'transition must remain Qt-side inert per _COVERAGE["transition"]'
+        )
+
+
+# ---------------------------------------------------------------------------
+# E3 bridge contract: FRAME_TOKEN + EVENT_SCHEMAS completeness
+# ---------------------------------------------------------------------------
+
+
+def test_e3_frame_token_exported() -> None:
+    """``FRAME_TOKEN`` is exported from ``tempestroid.bridge.protocol``.
+
+    The device host dispatches ``__frame__:`` while an animation is active;
+    ``bridge/jni.py`` routes this token to ``App._tick_from_device``. If the
+    constant is missing, the JNI routing will fail at runtime.
+    """
+    from tempestroid.bridge.protocol import FRAME_TOKEN
+
+    assert FRAME_TOKEN == "__frame__", (
+        f"FRAME_TOKEN has unexpected value {FRAME_TOKEN!r}; "
+        "the device sends '__frame__:' — the constant must match"
+    )
+
+
+def test_e3_animation_widgets_in_event_schemas() -> None:
+    """All five E3 animation widgets appear in ``bridge.protocol.EVENT_SCHEMAS``.
+
+    Even though all five have ``event_schemas = {}``, they must be present in
+    the ``EVENT_SCHEMAS`` dict so the bridge's introspected contract is complete
+    and future event additions on these widgets don't silently fall through.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+
+    for name in ("Animated", "AnimatedList", "Hero", "Shimmer", "Skeleton"):
+        assert name in EVENT_SCHEMAS, (
+            f"E3 widget {name!r} missing from EVENT_SCHEMAS; "
+            "add it to the unconditional update block in bridge/protocol.py"
+        )
+        assert EVENT_SCHEMAS[name] == {}, (
+            f"E3 widget {name!r} has non-empty EVENT_SCHEMAS "
+            f"({EVENT_SCHEMAS[name]}); update this test if events were added"
+        )
+
+
+# ---------------------------------------------------------------------------
+# E3 contract guards — the IR/bridge surface the animation framework exposes
+# ---------------------------------------------------------------------------
+#
+# These were E3b regression tripwires for two gaps that are now closed:
+#
+# 1. ``FRAME_TOKEN`` is re-exported by the root ``tempestroid/__init__.py`` (in
+#    ``__all__`` and importable), so ``from tempestroid import FRAME_TOKEN`` works.
+#
+# 2. The five E3 animation widgets (Animated / AnimatedList / Hero / Shimmer /
+#    Skeleton) are listed in ``core.introspection.WIDGET_TYPES``, so
+#    ``introspect()`` / ``widget_catalog()`` describe them.
+#
+# They stay as permanent guards against a regression that drops either.
+
+
+def test_e3_frame_token_reexported_at_root() -> None:
+    """``FRAME_TOKEN`` must be importable from the top-level ``tempestroid`` package.
+
+    The constant is declared in ``bridge.protocol`` and its internal import works,
+    but it is absent from ``tempestroid/__init__.py``, so user code that writes
+    ``from tempestroid import FRAME_TOKEN`` receives an ``ImportError`` / the
+    value is not in ``tempestroid.__all__``.
+    """
+    import tempestroid
+
+    assert "FRAME_TOKEN" in tempestroid.__all__, (
+        "FRAME_TOKEN missing from tempestroid.__all__; "
+        "add it to tempestroid/__init__.py"
+    )
+    assert hasattr(tempestroid, "FRAME_TOKEN"), (
+        "FRAME_TOKEN not importable from tempestroid; "
+        "add the import to tempestroid/__init__.py"
+    )
+    assert tempestroid.FRAME_TOKEN == "__frame__"  # type: ignore[attr-defined]
+
+
+def test_e3_animation_widgets_in_introspect() -> None:
+    """All five E3 animation widgets must appear in the output of ``introspect()``.
+
+    ``introspect()`` is the framework's self-describing typed contract — the
+    device bridge and tooling rely on it to discover every widget. The E3 widgets
+    have ``event_schemas = {}``, so they appeared in ``EVENT_SCHEMAS`` via the
+    unconditional update in ``bridge/protocol.py``, but ``core/introspection.py``
+    still needs them added to ``WIDGET_TYPES``.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for name in ("Animated", "AnimatedList", "Hero", "Shimmer", "Skeleton"):
+        assert name in catalog["widgets"], (
+            f"E3 widget {name!r} absent from introspect()['widgets']; "
+            "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
+        )

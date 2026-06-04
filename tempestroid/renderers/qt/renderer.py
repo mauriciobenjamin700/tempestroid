@@ -33,10 +33,12 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QAction,
+    QBrush,
     QColor,
     QFont,
     QFontMetricsF,
     QIcon,
+    QLinearGradient,
     QMouseEvent,
     QPainter,
     QPaintEvent,
@@ -138,6 +140,19 @@ _OVERLAY_TYPES = frozenset(
 _TOAST_FADE_MS = 350
 
 _CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView", "SafeArea"})
+
+#: Animation widget types whose backing widget is a box-layout container the
+#: generic child path can drive. ``Animated``/``Hero`` wrap one child (the
+#: ``view`` already interpolated ``Animated``'s style per frame, so the renderer
+#: just mounts the child); ``AnimatedList`` lays children along its main axis and
+#: animates inserts/removes via :class:`_AnimatedListWidget`.
+_ANIM_CONTAINER_TYPES = frozenset({"Animated", "Hero", "AnimatedList"})
+
+#: Default per-sweep duration (ms) for a ``Shimmer``/``Skeleton`` gradient loop.
+_SHIMMER_DEFAULT_MS = 1200
+#: Repaint interval (ms) of the shimmer gradient loop (~30fps is plenty smooth
+#: for the simulator's loading placeholder).
+_SHIMMER_TICK_MS = 33
 
 #: Virtual-list node types the renderer renders the *materialized window* for.
 #: Since the E1 core change these nodes are **not leaves**: ``build`` already
@@ -1459,6 +1474,260 @@ class _DismissDialog(QDialog):
         super().closeEvent(arg__1)
 
 
+def _qcolor(color: Any) -> QColor:  # noqa: ANN401 — a tempestroid Color value object
+    """Convert a tempestroid ``Color`` value object to a ``QColor``.
+
+    Args:
+        color: A :class:`~tempestroid.style.Color` (duck-typed: ``r``/``g``/``b``
+            ints and a float ``a``).
+
+    Returns:
+        The equivalent ``QColor`` (alpha scaled 0..255).
+    """
+    return QColor(
+        int(color.r), int(color.g), int(color.b), round(float(color.a) * 255)
+    )
+
+
+class _ShimmerMixin(QWidget):
+    """Shared moving-gradient paint loop for ``Shimmer`` and ``Skeleton``.
+
+    Holds the base/highlight colors, the sweep duration and a self-restarting
+    :class:`QTimer` that advances a normalized phase ``0..1`` and repaints. The
+    gradient band slides from left to right across the widget on each loop, the
+    simulator's stand-in for Compose's ``InfiniteTransition`` + animated
+    ``Brush.linearGradient`` (a documented divergence). Subclasses paint the band
+    in their own ``paintEvent`` via :meth:`_shimmer_brush`.
+    """
+
+    def __init__(self) -> None:
+        """Create the widget with a stopped shimmer loop and default colors."""
+        super().__init__()
+        self._base: QColor = QColor(224, 224, 224)
+        self._highlight: QColor = QColor(245, 245, 245)
+        self._phase: float = 0.0
+        self._steps: int = max(1, _SHIMMER_DEFAULT_MS // _SHIMMER_TICK_MS)
+        self._timer: QTimer = QTimer(self)
+        self._timer.setInterval(_SHIMMER_TICK_MS)
+        self._timer.timeout.connect(self._advance)
+        self._timer.start()
+
+    def configure_shimmer(
+        self, base: QColor, highlight: QColor, duration_ms: int
+    ) -> None:
+        """Set the gradient colors and per-sweep duration, then repaint.
+
+        Args:
+            base: The resting tone of the gradient.
+            highlight: The moving highlight tone.
+            duration_ms: Duration of one full sweep, in milliseconds.
+        """
+        self._base = base
+        self._highlight = highlight
+        self._steps = max(1, int(duration_ms) // _SHIMMER_TICK_MS)
+        self.update()
+
+    def _advance(self) -> None:
+        """Timer slot: advance the sweep phase and request a repaint."""
+        self._phase = (self._phase + 1.0 / self._steps) % 1.0
+        self.update()
+
+    def _shimmer_brush(self, width: int) -> QBrush:
+        """Build the moving-highlight gradient brush for the current phase.
+
+        Args:
+            width: The widget width the band sweeps across.
+
+        Returns:
+            A linear-gradient brush with the highlight centered at the phase.
+        """
+        gradient = QLinearGradient(0.0, 0.0, float(max(width, 1)), 0.0)
+        center = self._phase
+        lo = max(0.0, center - 0.25)
+        hi = min(1.0, center + 0.25)
+        gradient.setColorAt(0.0, self._base)
+        gradient.setColorAt(lo, self._base)
+        gradient.setColorAt(center, self._highlight)
+        gradient.setColorAt(hi, self._base)
+        gradient.setColorAt(1.0, self._base)
+        return QBrush(gradient)
+
+
+class _ShimmerWidget(_ShimmerMixin):
+    """A single-child container painting a moving gradient behind its child.
+
+    The child is laid out in a zero-margin box; the shimmer band is painted in the
+    widget background on every timer tick. Used to realize
+    :class:`~tempestroid.widgets.Shimmer`.
+    """
+
+    def __init__(self) -> None:
+        """Create the shimmer container with its single-child layout."""
+        super().__init__()
+        self._layout: QVBoxLayout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+
+    def box_layout(self) -> QVBoxLayout:
+        """Return the inner single-child layout.
+
+        Returns:
+            The zero-margin vertical layout holding the wrapped child.
+        """
+        return self._layout
+
+    def paintEvent(self, arg__1: QPaintEvent) -> None:
+        """Paint the moving gradient band behind the child.
+
+        Args:
+            arg__1: The Qt paint event (name mandated by the PySide override).
+        """
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), self._shimmer_brush(self.width()))
+        painter.end()
+        super().paintEvent(arg__1)
+
+
+class _SkeletonWidget(_ShimmerMixin):
+    """A childless rounded rectangle painting a moving gradient.
+
+    Realizes :class:`~tempestroid.widgets.Skeleton`: a clipped rounded rect filled
+    with the same sweeping gradient as :class:`_ShimmerWidget`, used as a content
+    placeholder while data loads.
+    """
+
+    def __init__(self) -> None:
+        """Create the skeleton with a default corner radius."""
+        super().__init__()
+        self._radius: float = 4.0
+
+    def set_radius(self, radius: float) -> None:
+        """Set the corner radius and repaint.
+
+        Args:
+            radius: The corner radius in logical pixels.
+        """
+        self._radius = radius
+        self.update()
+
+    def paintEvent(self, arg__1: QPaintEvent) -> None:
+        """Paint the rounded gradient rectangle.
+
+        Args:
+            arg__1: The Qt paint event (name mandated by the PySide override).
+        """
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._shimmer_brush(self.width()))
+        painter.drawRoundedRect(
+            QRectF(self.rect()), self._radius, self._radius
+        )
+        painter.end()
+
+
+class _AnimatedListWidget(QWidget):
+    """A flex container that animates children in on insert and out on remove.
+
+    Children are placed in a ``QVBoxLayout``/``QHBoxLayout`` like a Column/Row;
+    when the renderer inserts a child it fades and expands it in, and when it
+    removes one it fades and collapses it out before discarding it. This is the Qt
+    stand-in for Compose's ``AnimatedVisibility`` (a documented divergence).
+    """
+
+    def __init__(self, *, horizontal: bool) -> None:
+        """Create the animated-list container.
+
+        Args:
+            horizontal: ``True`` to lay children left-to-right (a row), ``False``
+                for top-to-bottom (a column).
+        """
+        super().__init__()
+        layout: QBoxLayout = QHBoxLayout(self) if horizontal else QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._box: QBoxLayout = layout
+        self._horizontal: bool = horizontal
+        # Strong refs to in-flight enter/exit animations so Qt does not GC them.
+        self._anims: set[QAbstractAnimation] = set()
+
+    def box_layout(self) -> QBoxLayout:
+        """Return the children's box layout.
+
+        Returns:
+            The container's box layout.
+        """
+        return self._box
+
+    def animate_in(self, widget: QWidget, duration_ms: int) -> None:
+        """Fade + expand a freshly inserted child into view.
+
+        Args:
+            widget: The just-inserted child widget.
+            duration_ms: The enter animation duration in milliseconds.
+        """
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        target = widget.sizeHint().height() or widget.height() or 1
+        widget.setMaximumHeight(0)
+        fade = QPropertyAnimation(effect, b"opacity", widget)
+        fade.setDuration(duration_ms)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        grow = QPropertyAnimation(widget, b"maximumHeight", widget)
+        grow.setDuration(duration_ms)
+        grow.setStartValue(0)
+        grow.setEndValue(int(target))
+        grow.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._start(fade)
+        self._start(grow, on_done=lambda: widget.setMaximumHeight(_QT_SIZE_MAX))
+
+    def animate_out(
+        self, widget: QWidget, duration_ms: int, on_done: Callable[[], None]
+    ) -> None:
+        """Fade + collapse a child out, then run ``on_done`` to discard it.
+
+        Args:
+            widget: The child widget leaving the list.
+            duration_ms: The exit animation duration in milliseconds.
+            on_done: Invoked once the collapse finishes (removes/deletes the
+                widget).
+        """
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        start_h = widget.height() or widget.sizeHint().height() or 1
+        fade = QPropertyAnimation(effect, b"opacity", widget)
+        fade.setDuration(duration_ms)
+        fade.setStartValue(1.0)
+        fade.setEndValue(0.0)
+        fade.setEasingCurve(QEasingCurve.Type.InCubic)
+        shrink = QPropertyAnimation(widget, b"maximumHeight", widget)
+        shrink.setDuration(duration_ms)
+        shrink.setStartValue(int(start_h))
+        shrink.setEndValue(0)
+        shrink.setEasingCurve(QEasingCurve.Type.InCubic)
+        self._start(fade)
+        self._start(shrink, on_done=on_done)
+
+    def _start(
+        self, anim: QPropertyAnimation, on_done: Callable[[], None] | None = None
+    ) -> None:
+        """Start an animation, keeping a strong ref until it settles.
+
+        Args:
+            anim: The configured animation to start.
+            on_done: Optional callback fired when the animation finishes.
+        """
+        self._anims.add(anim)
+
+        def _finish() -> None:
+            self._anims.discard(anim)
+            if on_done is not None:
+                on_done()
+
+        anim.finished.connect(_finish)
+        anim.start()
+
+
 class _Rendered:
     """A live Qt node mirroring one IR :class:`Node`.
 
@@ -2159,8 +2428,72 @@ class QtRenderer:
         self._place_alignment(parent, new)
         parent.layout = layout
         parent.children[index] = new
+        self._animate_heroes(old, new)
         host.animate_to(host.current_page, transition, forward)
         self._purge_connections(old)
+
+    def _collect_heroes(self, node: _Rendered) -> dict[str, _Rendered]:
+        """Map ``hero_tag`` → rendered ``Hero`` node within a subtree.
+
+        Args:
+            node: The subtree root to scan.
+
+        Returns:
+            A dict keyed by hero tag; later duplicates win (last one wins).
+        """
+        found: dict[str, _Rendered] = {}
+
+        def _walk(current: _Rendered) -> None:
+            if current.type == "Hero":
+                tag = cast("str", current.props.get("hero_tag", ""))
+                if tag:
+                    found[tag] = current
+            for child in current.children:
+                _walk(child)
+
+        _walk(node)
+        return found
+
+    def _animate_heroes(self, old: _Rendered, new: _Rendered) -> None:
+        """Interpolate geometry between matching heroes across a screen swap.
+
+        For every ``hero_tag`` present in *both* the outgoing and incoming
+        screens, the incoming hero widget is animated from the outgoing hero's
+        on-screen rectangle to its own — a shared-element transition. The
+        simulator approximates Compose's ``SharedTransitionLayout`` with a
+        ``QPropertyAnimation`` on ``geometry`` (a documented divergence). Heroes
+        present on only one side are left to the page transition.
+
+        Args:
+            old: The outgoing screen rendered node.
+            new: The incoming screen rendered node.
+        """
+        old_heroes = self._collect_heroes(old)
+        new_heroes = self._collect_heroes(new)
+        for tag, new_hero in new_heroes.items():
+            old_hero = old_heroes.get(tag)
+            if old_hero is None:
+                continue
+            start = old_hero.widget.geometry()
+            if start.width() <= 0 or start.height() <= 0:
+                continue
+            target = new_hero.widget
+            anim = QPropertyAnimation(target, b"geometry", target)
+            anim.setDuration(_NAV_ANIM_MS)
+            anim.setStartValue(QRect(start))
+            anim.setEndValue(target.geometry())
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._start_hero_anim(anim)
+
+    def _start_hero_anim(self, anim: QPropertyAnimation) -> None:
+        """Start a hero geometry animation, holding a strong ref until it ends.
+
+        Args:
+            anim: The configured geometry animation.
+        """
+        self._pending_anims.add(anim)
+        anim.finished.connect(lambda: self._pending_anims.discard(anim))
+        anim.start()
 
     def _apply_insert(self, patch: Insert) -> None:
         """Insert a new child subtree under a parent.
@@ -2187,6 +2520,11 @@ class QtRenderer:
         layout.insertWidget(patch.index, child.widget, self._stretch(child))
         self._place_alignment(parent, child)
         self._sync_main_axis(parent)
+        if parent.type == "AnimatedList":
+            cast("_AnimatedListWidget", parent.widget).animate_in(
+                child.widget,
+                int(cast("int", parent.props.get("enter_duration_ms", 300))),
+            )
         if parent.type == "SectionList":
             self._sync_sticky_header(parent)
 
@@ -2208,12 +2546,37 @@ class QtRenderer:
             else:
                 self._relayout_stack(parent)
             return
+        if parent.type == "AnimatedList":
+            self._purge_connections(child)
+            list_widget = cast("_AnimatedListWidget", parent.widget)
+            target = child.widget
+            list_widget.animate_out(
+                target,
+                int(cast("int", parent.props.get("exit_duration_ms", 300))),
+                on_done=lambda: self._finish_animated_remove(list_widget, target),
+            )
+            self._sync_main_axis(parent)
+            return
         self._require_layout(parent).removeWidget(child.widget)
         self._purge_connections(child)
         self._discard(child.widget)
         self._sync_main_axis(parent)
         if parent.type == "SectionList":
             self._sync_sticky_header(parent)
+
+    @staticmethod
+    def _finish_animated_remove(
+        list_widget: _AnimatedListWidget, widget: QWidget
+    ) -> None:
+        """Remove and delete a child once its exit animation has settled.
+
+        Args:
+            list_widget: The animated-list container the child left.
+            widget: The collapsed child widget to discard.
+        """
+        list_widget.box_layout().removeWidget(widget)
+        widget.setParent(None)  # type: ignore[call-overload]
+        widget.deleteLater()
 
     def _apply_reorder(self, patch: Reorder) -> None:
         """Reorder a parent's children per a permutation.
@@ -2385,6 +2748,22 @@ class QtRenderer:
                 " padding: 8px 14px; border-radius: 8px;"
             )
             return _Rendered(node.type, node.key, label, None)
+        if node.type in ("Animated", "Hero"):
+            # A single-child wrapper: the ``view`` already interpolated the child's
+            # style per frame (Animated) — the renderer just mounts it.
+            wrapper = QWidget()
+            wrap_layout = QVBoxLayout(wrapper)
+            wrap_layout.setContentsMargins(0, 0, 0, 0)
+            return _Rendered(node.type, node.key, wrapper, wrap_layout)
+        if node.type == "AnimatedList":
+            horizontal = str(node.props.get("direction", "column")) == "row"
+            anim_list = _AnimatedListWidget(horizontal=horizontal)
+            return _Rendered(node.type, node.key, anim_list, anim_list.box_layout())
+        if node.type == "Shimmer":
+            shimmer = _ShimmerWidget()
+            return _Rendered(node.type, node.key, shimmer, shimmer.box_layout())
+        if node.type == "Skeleton":
+            return _Rendered(node.type, node.key, _SkeletonWidget(), None)
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (
@@ -2499,6 +2878,14 @@ class QtRenderer:
             )
         elif node.type in ("Menu", "ActionSheet"):
             self._fill_menu(node, cast("QMenu", node.widget))
+        elif node.type == "Hero":
+            # Stamp the shared-element tag on the widget so a Navigator screen
+            # swap can pair the outgoing/incoming hero and interpolate geometry.
+            node.widget.setProperty(
+                "tempest_hero_tag", cast("str", node.props.get("hero_tag", ""))
+            )
+        elif node.type in ("Shimmer", "Skeleton"):
+            self._apply_shimmer(node)
         elif node.type in ("Toast", "Tooltip"):
             label = cast("QLabel", node.widget)
             label.setText(cast("str", node.props.get("message", "")))
@@ -2512,6 +2899,11 @@ class QtRenderer:
                 )
         self._apply_letter_spacing(node.widget, style)
         self._apply_sizing(node.widget, style)
+        if node.type == "Skeleton":
+            # Skeleton carries its own ``width``/``height`` props (not via
+            # ``Style``); apply them after ``_apply_sizing`` so they win over its
+            # flexible-size reset.
+            self._apply_skeleton_size(cast("_SkeletonWidget", node.widget), node.props)
         self._apply_effects(node.widget, style)
 
     @staticmethod
@@ -2976,6 +3368,57 @@ class QtRenderer:
         size = props.get("size")
         if size is not None:
             widget.setFixedHeight(int(cast("float", size)))
+
+    @staticmethod
+    def _apply_shimmer(node: _Rendered) -> None:
+        """Configure a ``Shimmer``/``Skeleton`` node's gradient loop.
+
+        Reads the node's ``base_color``/``highlight_color``/``duration_ms`` props
+        (and ``radius`` for a skeleton) and pushes them into the backing
+        shimmer widget so its repaint loop sweeps the right colors at the right
+        cadence. Idempotent.
+
+        Args:
+            node: The rendered ``Shimmer``/``Skeleton`` node.
+        """
+        widget = cast("_ShimmerMixin", node.widget)
+        props = node.props
+        base = props.get("base_color")
+        highlight = props.get("highlight_color")
+        base_q = _qcolor(base) if base is not None else QColor(224, 224, 224)
+        highlight_q = (
+            _qcolor(highlight) if highlight is not None else QColor(245, 245, 245)
+        )
+        duration = int(cast("int", props.get("duration_ms", _SHIMMER_DEFAULT_MS)))
+        widget.configure_shimmer(base_q, highlight_q, duration)
+        if node.type == "Skeleton":
+            cast("_SkeletonWidget", widget).set_radius(
+                float(cast("float", props.get("radius", 4.0)))
+            )
+
+    @staticmethod
+    def _apply_skeleton_size(widget: _SkeletonWidget, props: dict[str, Any]) -> None:
+        """Pin a ``Skeleton``'s own ``width``/``height`` props (not via ``Style``).
+
+        Idempotent: an unset dimension is restored to Qt's flexible range so a
+        later update that drops it lets the skeleton flex again.
+
+        Args:
+            widget: The skeleton widget.
+            props: The node's current props (``width``/``height``).
+        """
+        width = props.get("width")
+        height = props.get("height")
+        if width is not None:
+            widget.setFixedWidth(int(cast("float", width)))
+        else:
+            widget.setMinimumWidth(0)
+            widget.setMaximumWidth(_QT_SIZE_MAX)
+        if height is not None:
+            widget.setFixedHeight(int(cast("float", height)))
+        else:
+            widget.setMinimumHeight(0)
+            widget.setMaximumHeight(_QT_SIZE_MAX)
 
     @staticmethod
     def _apply_image(widget: QLabel, props: dict[str, Any]) -> None:

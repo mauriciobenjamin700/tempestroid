@@ -21,7 +21,11 @@ from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
 from tempestroid.bridge.device import Bridge, DeviceApp
-from tempestroid.bridge.protocol import BACK_TOKEN, DISMISS_TOKEN_PREFIX
+from tempestroid.bridge.protocol import (
+    BACK_TOKEN,
+    DISMISS_TOKEN_PREFIX,
+    FRAME_TOKEN,
+)
 from tempestroid.core.state import App
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.navigation import NavStack, routes_from_path
@@ -94,9 +98,13 @@ def make_event_sink(
 
     The returned callable is what the host invokes (from the UI thread, with the
     GIL held) for every incoming device event. It only schedules work onto the
-    loop via ``call_soon_threadsafe`` and returns fast, and it routes the three
+    loop via ``call_soon_threadsafe`` and returns fast, and it routes the
     reserved channels that share the event transport:
 
+    * :data:`~tempestroid.bridge.protocol.FRAME_TOKEN` — one animation frame from
+      the host's ``withFrameNanos`` loop → ``App._tick_from_device`` (advances the
+      animation clock one frame). Routed first since it is the highest-frequency,
+      payload-free channel.
     * :data:`~tempestroid.bridge.protocol.BACK_TOKEN` — a system back action →
       :meth:`~tempestroid.App.pop` (pops a screen, or a no-op at the root).
     * :data:`~tempestroid.native.dispatch.NATIVE_RESULT_PREFIX` — a native
@@ -118,6 +126,15 @@ def make_event_sink(
             token: The handler token addressed by the event.
             payload_json: The raw JSON payload (``""`` for none).
         """
+        # An animation frame tick rides the same event channel under the reserved
+        # FRAME_TOKEN, sent once per frame by the host's ``withFrameNanos`` loop
+        # while an animation is active. It is payload-free and the hottest channel,
+        # so it short-circuits before the JSON parse straight to the app's
+        # device-driven clock tick (which advances every active controller one
+        # frame and re-renders). Like BACK_TOKEN it needs no extra JNI entry point.
+        if token == FRAME_TOKEN:
+            loop.call_soon_threadsafe(device.app._tick_from_device)  # pyright: ignore[reportPrivateUsage]
+            return
         # A native callback must never raise back into JNI: a malformed payload
         # is dropped (logged) instead of crashing the host on the UI thread.
         try:

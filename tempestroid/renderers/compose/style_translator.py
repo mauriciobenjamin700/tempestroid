@@ -42,6 +42,9 @@ _CURVE: dict[Curve, str] = {
     Curve.EASE_IN: "easeIn",
     Curve.EASE_OUT: "easeOut",
     Curve.EASE_IN_OUT: "easeInOut",
+    Curve.EASE: "ease",
+    Curve.BOUNCE: "bounce",
+    Curve.ELASTIC: "elastic",
 }
 
 _JUSTIFY: dict[JustifyContent, str] = {

@@ -258,3 +258,57 @@ def test_event_schemas_register_overlay_widgets():
         assert widget_type in EVENT_SCHEMAS
     assert EVENT_SCHEMAS["Dialog"]["on_dismiss"].__name__ == "DismissEvent"
     assert EVENT_SCHEMAS["Menu"]["on_select"].__name__ == "MenuSelectEvent"
+
+
+# --- E3: the animation frame flag crossing the wire --------------------------
+#
+# ``has_animations`` rides every mount/patch so the Compose host can start/stop
+# its ``withFrameNanos`` loop without a synchronous round-trip. These pin that it
+# is serialized and tracks the live set of active controllers.
+
+
+async def test_mount_reports_has_animations_false_without_animation():
+    """A mount with no active controller carries ``has_animations == False``."""
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
+    await device.start()
+    assert bridge.sent[0]["has_animations"] is False
+
+
+async def test_patch_reports_has_animations_true_while_active():
+    """A controller registered on the app flips ``has_animations`` on the patch.
+
+    Registering a controller starts the app's frame clock (``_animations``
+    non-empty), so the next coalesced patch batch must report
+    ``has_animations == True`` — the signal the Kotlin host reads to spin up its
+    ``withFrameNanos`` loop and start emitting the reserved frame token.
+    """
+    from tempestroid.animation import AnimationController
+
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
+    await device.start()
+    assert bridge.sent[0]["has_animations"] is False
+
+    ctrl = AnimationController(duration_s=1.0)
+    device.app.register_animation(ctrl)
+    ctrl.forward()
+    assert device.app.has_animations is True
+
+    # Force a rebuild so a patch batch is emitted while the controller is active.
+    device.app.set_state(lambda s: setattr(s, "value", s.value + 1))
+    await _drain()
+
+    patch_msgs = [m for m in bridge.sent if m["kind"] == "patch"]
+    assert patch_msgs, "expected at least one patch batch"
+    assert patch_msgs[-1]["has_animations"] is True
+
+
+def test_mount_message_default_has_animations_false():
+    """The wire model defaults ``has_animations`` to ``False`` (no animation)."""
+    from tempestroid.bridge.protocol import MountMessage, PatchMessage
+
+    assert MountMessage(root={}).has_animations is False
+    assert PatchMessage(patches=[]).has_animations is False
+    dumped = MountMessage(root={}, has_animations=True).model_dump()
+    assert dumped["has_animations"] is True

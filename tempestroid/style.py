@@ -94,13 +94,18 @@ class Curve(StrEnum):
     """Easing curve for an animated transition (CSS ``transition-timing-function``).
 
     Mirrors the common CSS/Flutter easing presets; the leaf renderer maps each
-    onto its native curve (Compose ``Easing``; Qt ``QEasingCurve``).
+    onto its native curve (Compose ``Easing``; Qt ``QEasingCurve``). The core's
+    own :func:`~tempestroid.animation._apply_curve` also approximates each so the
+    simulator/test clock can interpolate without a renderer.
     """
 
     LINEAR = "linear"
     EASE_IN = "ease-in"
     EASE_OUT = "ease-out"
     EASE_IN_OUT = "ease-in-out"
+    EASE = "ease"
+    BOUNCE = "bounce"
+    ELASTIC = "elastic"
 
 
 class FontStyle(StrEnum):
