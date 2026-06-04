@@ -104,21 +104,20 @@ bump: ## Bump version in pyproject (PART=patch|minor|major, default patch)
 	@PART="$${PART:-patch}" python toolchain/bump_version.py
 
 .PHONY: release
-release: gate docs-sync ## Publish host APK asset + tag vX.Y.Z → triggers PyPI publish CI (bundles host offline)
+release: gate docs-sync ## Attach host APK to a vX.Y.Z GitHub release + tag → triggers PyPI publish CI
 	@echo "Releasing v$(VERSION)"
 	@git diff --quiet || { echo "ERROR: working tree dirty — commit first"; exit 1; }
 	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
 		&& { echo "ERROR: tag v$(VERSION) already exists"; exit 1; } || true
-	@# The published wheel must bundle the host APK so `tempest install`/`build`
-	@# work offline. The publish CI has no Android toolchain, so it downloads the
-	@# host APK from THIS release; the asset must exist before the tag is pushed.
-	@# We therefore create the release (with the asset) and let it create + push
-	@# the tag — that single push triggers the publish workflow.
-	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' (needs the Android toolchain) before releasing so the wheel can bundle the host offline"; exit 1; }
+	@# The host APK (~100 MB: it embeds CPython) is too big for the PyPI wheel, so
+	@# it ships as a GitHub release asset that `tempest install`/`deploy` download
+	@# (cached). Create the release WITH the asset, which creates + pushes the tag;
+	@# that single push triggers the publish workflow (lean wheel → PyPI).
+	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' (needs the Android toolchain) before releasing"; exit 1; }
 	cp "$(HOST_APK)" "$(dir $(HOST_APK))$(HOST_ASSET)"
 	gh release create "v$(VERSION)" "$(dir $(HOST_APK))$(HOST_ASSET)" \
 		--title "v$(VERSION)" --notes "tempestroid v$(VERSION)"
-	@echo "released v$(VERSION) with $(HOST_ASSET) — publish CI will bundle it into the wheel"
+	@echo "released v$(VERSION) with $(HOST_ASSET) — `tempest install` downloads it"
 
 # ---- android (Trilho B — needs SDK/NDK + device) ----------------------------
 .PHONY: doctor
