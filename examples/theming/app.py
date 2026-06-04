@@ -40,7 +40,6 @@ from tempestroid import (
     Widget,
     t,
 )
-from tempestroid.renderers.qt import run_qt
 
 #: Minimal translation table keyed by language tag.
 _TRANSLATIONS: dict[str, dict[str, str]] = {
@@ -183,6 +182,8 @@ def main() -> int:
     Returns:
         The process exit code.
     """
+    from tempestroid.renderers.qt import run_qt
+
     return run_qt(make_state(), view, title="tempestroid — theming", size=(420, 240))
 
 
