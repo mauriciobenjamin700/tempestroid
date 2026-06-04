@@ -101,6 +101,7 @@ __all__ = [
     "CONNECTIVITY_TOKEN_PREFIX",
     "THEME_TOKEN",
     "LOCALE_TOKEN",
+    "BACKGROUND_TOKEN_PREFIX",
     "handler_token",
     "event_type_for",
     "EVENT_SCHEMAS",
@@ -165,6 +166,15 @@ THEME_TOKEN: str = "__theme__"
 #: routed to ``App.set_locale``. Rides the existing event channel — no new JNI
 #: entry point.
 LOCALE_TOKEN: str = "__locale__"
+
+#: Reserved event-token prefix the host sends when a scheduled background task
+#: fires (WorkManager). The token is ``"__background__:<name>"``; the bridge
+#: strips the prefix and routes the name to
+#: :func:`tempestroid.native.background.dispatch_background_task`, which runs the
+#: handler registered via ``on_background_task``. Rides the existing event channel
+#: — no new JNI entry point. (When the worker wakes a dead process, the host boots
+#: a fresh interpreter and calls ``run_device_background`` directly instead.)
+BACKGROUND_TOKEN_PREFIX: str = "__background__"
 
 #: ``{widget_type: {handler_prop: event_type}}`` derived from each widget's
 #: ``event_schemas`` classvar — the contract used to validate event payloads.

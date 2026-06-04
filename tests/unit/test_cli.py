@@ -93,16 +93,39 @@ def test_new_rejects_existing_dir(tmp_path: Path):
 def test_build_reports_missing_toolchain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    # No android-host reachable + no override → graceful failure, exit 1.
+    # `tempest build` produces a from-source APK: with no android-host tree
+    # reachable + no override, it fails gracefully (exit 1) at preflight.
     app = tmp_path / "app.py"
     app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
     monkeypatch.delenv("TEMPESTROID_ANDROID_HOST", raising=False)
     monkeypatch.chdir(tmp_path)
     assert main(["build", str(app)]) == 1
     out = capsys.readouterr().out
-    # Preflight surfaces the missing host tree inline before any Gradle work.
     assert "android-host" in out
     assert "could not find the android-host project" in out
+
+
+def test_deploy_reports_missing_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    # `tempest deploy` is the offline path: no Android toolchain required, but it
+    # needs a connected device. With adb present and no device it fails gracefully
+    # (exit 1) at the device check — never attempting a real deploy.
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    monkeypatch.chdir(tmp_path)
+
+    def _which(_name: str) -> str:
+        return "/usr/bin/adb"
+
+    def _no_devices() -> list[str]:
+        return []
+
+    monkeypatch.setattr("shutil.which", _which)
+    monkeypatch.setattr("tempestroid.cli.packaging.connected_devices", _no_devices)
+    assert main(["deploy", str(app)]) == 1
+    out = capsys.readouterr().out
+    assert "no ready device" in out
 
 
 def test_spec_prints_json(capsys: pytest.CaptureFixture[str]):

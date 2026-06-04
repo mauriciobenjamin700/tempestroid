@@ -14,6 +14,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// FCM (E8): apply the google-services plugin ONLY when a google-services.json is
+// present, so the host builds without a Firebase project (the PushModule then
+// replies `not_configured`). Drop a google-services.json into android-host/app/
+// to enable real FCM tokens — the plugin processes it and initialises FirebaseApp.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+    logger.lifecycle("google-services.json present — FCM enabled (google-services applied)")
+}
+
 val pythonVersion = (project.findProperty("tempest.pythonVersion") ?: "3.14").toString()
 val abi = (project.findProperty("tempest.abi") ?: "arm64-v8a").toString()
 // Toolchain paths are relative to the android-host root (rootProject), not the
@@ -274,12 +283,11 @@ dependencies {
     // tasks (enqueueUniquePeriodicWork / cancelUniqueWork).
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Firebase Cloud Messaging — the PushModule reads the FCM registration token.
-    // OPTIONAL / device-gated: this compiles, but at runtime FirebaseApp must be
-    // initialised, which needs a `google-services.json` + the google-services
-    // Gradle plugin (NOT applied here, to keep the host buildable without a
-    // Firebase project). PushModule therefore catches the init failure and replies
-    // `error="not_configured"` — see NativeModules.handlePush. Documented as a
-    // device-configuration pendency in the phase notes.
+    // The google-services Gradle plugin is applied CONDITIONALLY at the top of
+    // this file when a `google-services.json` is present, so the host builds
+    // without a Firebase project; drop the JSON into android-host/app/ to enable
+    // real FCM tokens. Without it FirebaseApp never initialises and PushModule
+    // replies `error="not_configured"` — see NativeModules.handlePush.
     implementation("com.google.firebase:firebase-messaging:24.0.1")
     // MapView is a documented PLACEHOLDER on both leaves: Google Maps Compose would
     // require google-services.json + a Maps API key (APK won't build without it),

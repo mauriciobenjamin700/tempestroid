@@ -27,7 +27,7 @@ from typing import Any, cast
 from tempestroid.core.state import App
 from tempestroid.widgets import Widget
 
-__all__ = ["AppSpec", "load_app_spec", "spec_from_source"]
+__all__ = ["AppSpec", "load_app_spec", "spec_from_project", "spec_from_source"]
 
 
 @dataclass(frozen=True)
@@ -57,13 +57,56 @@ def load_app_spec(path: str | Path) -> AppSpec:
         AttributeError: If the module lacks ``view`` or ``make_state``.
         TypeError: If ``view`` or ``make_state`` is not callable.
     """
+    from tempestroid.cli.bundle import resolve_project
+
     file = Path(path).resolve()
     if not file.is_file():
         raise FileNotFoundError(f"app file not found: {file}")
-    source = file.read_text(encoding="utf-8")
-    return spec_from_source(
-        source, filename=str(file), name=f"_tempest_app_{file.stem}"
+    # Resolve the project root (nearest pyproject) and put it on sys.path, so a
+    # multi-file app's sibling imports (`from my_pkg import x`) work in the Qt
+    # simulator / dev loop exactly as they do on device. A lone file with no
+    # pyproject resolves root = its own dir (harmless), preserving single-file.
+    layout = resolve_project(file)
+    return spec_from_project(
+        layout.root, layout.entry, name=f"_tempest_app_{file.stem}"
     )
+
+
+def spec_from_project(
+    root: str | Path,
+    entry: str,
+    *,
+    name: str = "_tempest_app",
+) -> AppSpec:
+    """Load an app spec from a multi-file project root + entry module.
+
+    Puts ``root`` on ``sys.path`` (so ``entry``'s absolute imports of sibling
+    modules/packages resolve) and execs the entry module's source. This is the
+    multi-file counterpart of :func:`load_app_spec`: the device side (baked APK
+    or code-push) extracts a project bundle to ``root`` and calls this.
+
+    Args:
+        root: The project root directory to place on ``sys.path``.
+        entry: The entry module path, relative to ``root`` (e.g. ``"main.py"``).
+        name: The throwaway module name registered in ``sys.modules``.
+
+    Returns:
+        The loaded :class:`AppSpec`.
+
+    Raises:
+        FileNotFoundError: If the entry module does not exist under ``root``.
+        AttributeError: If the entry lacks ``view`` or ``make_state``.
+        TypeError: If ``view`` or ``make_state`` is not callable.
+    """
+    root_path = Path(root).resolve()
+    entry_file = (root_path / entry).resolve()
+    if not entry_file.is_file():
+        raise FileNotFoundError(f"app entry not found: {entry_file}")
+    root_str = str(root_path)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+    source = entry_file.read_text(encoding="utf-8")
+    return spec_from_source(source, filename=str(entry_file), name=name)
 
 
 def spec_from_source(

@@ -1,14 +1,18 @@
 """LAN code-push dev server (phase B5, dev-machine side).
 
-Serves the app's source to the device over HTTP and relays the device's logs
+Serves the app's project to the device over HTTP and relays the device's logs
 back to the terminal — the Expo-style inner loop for on-device development:
 
-* ``GET /version`` → ``{"hash": <sha256 of current source>}`` (cheap poll).
-* ``GET /app``     → ``{"hash": ..., "source": <app source>}``.
+* ``GET /version`` → ``{"hash": <tree signature>}`` (cheap poll, no archive).
+* ``GET /bundle``  → the project ``.zip`` bytes (whole multi-file tree).
+* ``GET /app``     → ``{"hash": ..., "source": <entry source>}`` (legacy
+  single-file fallback for older hosts).
 * ``POST /log``    → body is printed to the terminal, prefixed ``[device]``.
 
-The source is re-read from disk on every request, so saving the file is enough
-for the device's poll loop to pick up the change and hot-restart.
+The tree is re-stat'd on every ``/version`` poll, so saving any file in the
+project is enough for the device's poll loop to pick up the change and
+hot-reload. The full archive is rebuilt lazily — only when the signature
+changes — so polling stays cheap on large projects.
 """
 
 from __future__ import annotations
@@ -20,6 +24,12 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
+from tempestroid.cli.bundle import (
+    build_bundle,
+    resolve_project,
+    tree_signature,
+)
 
 __all__ = ["DevServer", "source_hash"]
 
@@ -46,6 +56,7 @@ class DevServer:
         host: str = "0.0.0.0",
         port: int = 8765,
         log: Callable[[str], None] = print,
+        on_fetch: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the dev server.
 
@@ -54,13 +65,45 @@ class DevServer:
             host: The bind address (``0.0.0.0`` so the device on the LAN reaches it).
             port: The TCP port.
             log: Sink for relayed device logs and server notices.
+            on_fetch: Optional callback invoked each time the device fetches the
+                project (``GET /bundle`` or legacy ``GET /app``). The one-shot
+                ``tempest deploy`` uses it to know the device has the app and
+                tear the short-lived server down; ``tempest serve`` leaves it
+                unset.
         """
         self._app_path: Path = Path(app_path).resolve()
         self._host: str = host
         self._port: int = port
         self._log: Callable[[str], None] = log
+        self._on_fetch: Callable[[], None] | None = on_fetch
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        # Lazily-rebuilt project bundle, cached by tree signature so /version
+        # polls only stat the tree and the archive is built only on change.
+        self._cached_signature: str | None = None
+        self._cached_bundle: bytes = b""
+
+    def signature(self) -> str:
+        """Return the current project's cheap change signature.
+
+        Returns:
+            The tree signature (see :func:`tree_signature`).
+        """
+        return tree_signature(resolve_project(self._app_path))
+
+    def bundle(self) -> tuple[str, bytes]:
+        """Return the current project bundle, rebuilding only on change.
+
+        Returns:
+            A ``(signature, zip_bytes)`` pair; the archive is rebuilt only when
+            the tree signature differs from the cached one.
+        """
+        layout = resolve_project(self._app_path)
+        signature = tree_signature(layout)
+        if signature != self._cached_signature:
+            self._cached_bundle = build_bundle(layout)
+            self._cached_signature = signature
+        return signature, self._cached_bundle
 
     @property
     def port(self) -> int:
@@ -98,15 +141,34 @@ class DevServer:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                # Flush so the bytes reach the socket before any on_fetch handler
+                # tears the (short-lived ``tempest build``) server down — without
+                # it the buffered body can be lost on shutdown and the device sees
+                # a truncated response.
+                self.wfile.flush()
 
             def do_GET(self) -> None:  # noqa: N802 - http.server API
-                """Serve ``/version`` and ``/app``."""
-                source = server.read_source()
-                digest = source_hash(source)
+                """Serve ``/version``, ``/bundle``, and the legacy ``/app``."""
                 if self.path == "/version":
-                    self._send_json({"hash": digest})
+                    self._send_json({"hash": server.signature()})
+                elif self.path == "/bundle":
+                    signature, data = server.bundle()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/zip")
+                    self.send_header("X-Tempest-Hash", signature)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    self.wfile.flush()
+                    if server._on_fetch is not None:
+                        server._on_fetch()
                 elif self.path == "/app":
-                    self._send_json({"hash": digest, "source": source})
+                    # Legacy single-file fallback for older hosts: the entry
+                    # source only. Multi-file projects require the /bundle path.
+                    source = server.read_source()
+                    self._send_json({"hash": server.signature(), "source": source})
+                    if server._on_fetch is not None:
+                        server._on_fetch()
                 else:
                     self.send_error(404)
 

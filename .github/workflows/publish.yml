@@ -18,6 +18,27 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+      # The prebuilt host APK is gitignored (~50 MB) and CI has no Android
+      # toolchain to build it, so fetch it from the release this tag belongs to
+      # and stage it into the package. With it present, `uv build` bundles it
+      # (pyproject `[tool.hatch.build] artifacts`) so `tempest install` /
+      # `tempest build` work fully offline. Upload it first with
+      # `make publish-host` (attaches `tempest-host-<version>.apk` to the
+      # release) before pushing the tag. Best-effort: a release without the
+      # asset still publishes — `tempest install` then falls back to a download.
+      - name: Fetch host APK for offline bundling
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tempestroid/_assets
+          if gh release download "${GITHUB_REF_NAME}" \
+               --repo "${GITHUB_REPOSITORY}" \
+               --pattern 'tempest-host-*.apk' \
+               --output tempestroid/_assets/host.apk --clobber; then
+            echo "bundled host APK: $(du -h tempestroid/_assets/host.apk | cut -f1)"
+          else
+            echo "::warning::no tempest-host-*.apk on release ${GITHUB_REF_NAME}; the wheel will NOT bundle the host (tempest install will need a download)."
+          fi
       - name: Build sdist + wheel
         run: uv build
       - name: Upload artifacts

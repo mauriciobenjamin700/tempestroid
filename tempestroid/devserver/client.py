@@ -14,17 +14,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import sys
+import tempfile
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
+    BACKGROUND_TOKEN_PREFIX,
     CONNECTIVITY_TOKEN_PREFIX,
     LIFECYCLE_TOKEN,
     SENSOR_TOKEN_PREFIX,
 )
-from tempestroid.cli.app_loader import spec_from_source
+from tempestroid.cli.app_loader import spec_from_project
+from tempestroid.cli.bundle import extract_bundle
+from tempestroid.native.background import dispatch_background_task
 from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
@@ -33,30 +40,57 @@ from tempestroid.native.sensors import dispatch_sensor_event
 __all__ = ["run_dev_client", "serve_device"]
 
 
+def _load_bundle_spec(data: bytes, previous_root: Path | None) -> tuple[Any, Path]:
+    """Extract a pushed bundle, swap it onto ``sys.path``, and load its spec.
+
+    Removes the previous push's root from ``sys.path`` (and disk) so a re-push
+    cannot leak stale modules, extracts the new bundle to a fresh temp dir, and
+    loads the entry via :func:`spec_from_project` (which adds the new root).
+
+    Args:
+        data: The bundle ``.zip`` bytes fetched from ``/bundle``.
+        previous_root: The prior push's extraction root, or ``None`` on first
+            push.
+
+    Returns:
+        A ``(spec, root)`` pair — the loaded :class:`AppSpec` and its new root.
+    """
+    if previous_root is not None:
+        root_str = str(previous_root)
+        while root_str in sys.path:
+            sys.path.remove(root_str)
+        shutil.rmtree(previous_root, ignore_errors=True)
+    dest = Path(tempfile.mkdtemp(prefix="tempest-app-"))
+    layout = extract_bundle(data, dest)
+    spec = spec_from_project(layout.root, layout.entry)
+    return spec, layout.root
+
+
 async def run_dev_client(
     url: str,
     *,
     make_bridge: Callable[[], Bridge],
     register_sink: Callable[[Callable[[str, str], None]], None],
-    fetch: Callable[[str], Awaitable[str]],
+    fetch: Callable[[str], Awaitable[bytes]],
     poll_interval: float = 1.0,
     log: Callable[[str], None] = print,
     max_polls: int | None = None,
 ) -> None:
-    """Poll the dev server and hot-restart the app on every source change.
+    """Poll the dev server and hot-restart the app on every project change.
 
     Args:
         url: The dev server base URL (e.g. ``http://localhost:8765``).
         make_bridge: Factory for a fresh :class:`Bridge` per (re)load.
         register_sink: Registers the incoming-event callback with the transport
             (``_tempest_host.set_event_sink`` on device).
-        fetch: Async ``url -> body`` HTTP GET.
+        fetch: Async ``url -> body`` HTTP GET returning raw bytes (``/version``
+            is JSON, ``/bundle`` is the project zip).
         poll_interval: Seconds between version polls.
         log: Sink for status lines.
         max_polls: Stop after this many polls (tests); ``None`` runs forever.
     """
     loop = asyncio.get_running_loop()
-    current: dict[str, Any] = {"device": None, "hash": None}
+    current: dict[str, Any] = {"device": None, "hash": None, "root": None}
 
     def on_event(token: str, payload_json: str) -> None:
         """Route a device event to the currently-loaded app.
@@ -98,6 +132,12 @@ async def run_dev_client(
         if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
             loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
             return
+        background_prefix = f"{BACKGROUND_TOKEN_PREFIX}:"
+        if token.startswith(background_prefix):
+            loop.call_soon_threadsafe(
+                dispatch_background_task, token[len(background_prefix) :]
+            )
+            return
         device: DeviceApp[Any] | None = current["device"]
         if device is None:
             return
@@ -112,10 +152,13 @@ async def run_dev_client(
     while max_polls is None or polls < max_polls:
         polls += 1
         try:
-            version = json.loads(await fetch(f"{url}/version")).get("hash")
+            version = json.loads((await fetch(f"{url}/version")).decode("utf-8")).get(
+                "hash"
+            )
             if version != current["hash"]:
-                payload = json.loads(await fetch(f"{url}/app"))
-                spec = spec_from_source(payload["source"], filename="<dev-push>")
+                data = await fetch(f"{url}/bundle")
+                spec, root = _load_bundle_spec(data, current["root"])
+                current["root"] = root
                 device: DeviceApp[Any] | None = current["device"]
                 short = str(version)[:8]
                 if device is None:
@@ -139,7 +182,7 @@ async def run_dev_client(
                             f"[tempest] hot-restarted {short} "
                             f"(state reset: {reload_exc})"
                         )
-                current["hash"] = payload["hash"]
+                current["hash"] = version
         except Exception as exc:  # noqa: BLE001 - keep the loop alive on any error
             log(f"[tempest] dev client error: {exc}")
         await asyncio.sleep(poll_interval)
@@ -162,12 +205,12 @@ def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
 
     host = native_host()
 
-    async def _fetch(target: str) -> str:
-        """Fetch a URL body off the event loop thread."""
+    async def _fetch(target: str) -> bytes:
+        """Fetch a URL body (raw bytes) off the event loop thread."""
 
-        def _get() -> str:
-            with urllib.request.urlopen(target, timeout=5) as response:  # noqa: S310
-                return response.read().decode("utf-8")
+        def _get() -> bytes:
+            with urllib.request.urlopen(target, timeout=10) as response:  # noqa: S310
+                return response.read()
 
         return await asyncio.to_thread(_get)
 

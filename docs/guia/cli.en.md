@@ -7,9 +7,10 @@ simulator, push to the device, package, and inspect the contract.
 uv run tempest new MyApp                        # scaffold a new app project
 uv run python examples/counter/app.py           # run an app directly in the Qt simulator
 uv run tempest dev examples/counter/app.py       # dev loop: edit + save → hot reload
+uv run tempest deploy examples/multifile/main.py # offline push to a device (no SDK/NDK)
 uv run tempest serve examples/device_counter/app.py  # LAN code-push, no APK rebuild
-uv run tempest build MyApp/app.py               # bundle the app into an APK
-uv run tempest run MyApp/app.py                 # build + install on a device + logs
+uv run tempest build MyApp/main.py              # standalone shippable APK (needs SDK/NDK)
+uv run tempest run MyApp/main.py                # build + install on a device + logs
 uv run tempest spec                             # print the typed contract (widgets/events) as JSON
 uv run tempest --help
 ```
@@ -20,10 +21,18 @@ uv run tempest --help
 |---|---|---|
 | `tempest new <name>` | ✅ | Scaffolds a runnable app project. |
 | `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs the `qt` extra). |
-| `tempest serve <app>` | ✅ | LAN code-push to a device + log relay (phase B5). |
+| `tempest deploy <app>` | ✅ | **Offline** push of the whole project to a device (no SDK/NDK): install the bundled host + push + launch. |
+| `tempest serve <app>` | ✅ | LAN code-push + hot reload of the whole project (phase B5). |
+| `tempest install [src]` | ✅ | adb-installs the prebuilt host (no SDK/NDK). |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON. |
-| `tempest build <app>` | ✅ | Bundles an app into an APK (needs Android SDK/NDK). |
+| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` installs the Android SDK + NDK. |
+| `tempest build <app>` | ✅ | **Standalone shippable APK** with the project baked in (needs Android SDK/NDK). |
 | `tempest run <app>` | ✅ | Build + install on a device + stream logs. |
+
+Apps are **multi-file**: the project tree ships with them (on `sys.path`) in both
+the simulator and the device. See [Build, deploy and ship](build.md) for the
+difference between the offline push (`deploy`/`serve`) and the distributable APK
+(`build`).
 
 ## The `tempest dev` cockpit
 
@@ -42,8 +51,10 @@ save is caught and printed — the loop survives.
 
 !!! note "build / run need the Android toolchain"
     `tempest build`/`run` drive the `android-host` Gradle project + `adb`, so they
-    require an Android SDK/NDK and a checkout of the host tree. See
-    [installation](../instalacao.md) and the [runtime research](../research/android-runtime.md).
+    require an Android SDK/NDK and a checkout of the host tree. To run on a device
+    **without** a toolchain, use `tempest deploy`/`serve`. See
+    [Build, deploy and ship](build.md), [installation](../instalacao.md) and the
+    [runtime research](../research/android-runtime.md).
 
 ## The app-file contract
 

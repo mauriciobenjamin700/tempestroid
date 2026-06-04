@@ -22,7 +22,13 @@ from tempestroid.native.audio import (
     record_audio,
     stop_sound,
 )
-from tempestroid.native.background import cancel_task, schedule_task
+from tempestroid.native.background import (
+    cancel_task,
+    dispatch_background_task,
+    on_background_task,
+    run_device_background,
+    schedule_task,
+)
 from tempestroid.native.biometrics import BiometricResult, authenticate
 from tempestroid.native.bluetooth import BluetoothDevice, scan
 from tempestroid.native.camera import (
@@ -208,4 +214,7 @@ __all__ = [
     # background tasks (phase E8)
     "schedule_task",
     "cancel_task",
+    "on_background_task",
+    "dispatch_background_task",
+    "run_device_background",
 ]

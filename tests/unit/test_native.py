@@ -49,6 +49,7 @@ from tempestroid.native import (
     native_command,
     native_request,
     on_app_state_change,
+    on_background_task,
     open_url,
     play_sound,
     read_file,
@@ -791,3 +792,20 @@ def test_background_task_envelopes(
     }
     assert host.sent[1]["action"] == "cancel"
     assert host.sent[1]["args"] == {"name": "sync"}
+
+
+def test_on_background_task_registry_runs_handler() -> None:
+    """A fired background task runs the handler registered for its name."""
+    from tempestroid.native.background import dispatch_background_task
+
+    fired: list[str] = []
+    unregister = on_background_task("sync", lambda: fired.append("sync"))
+    dispatch_background_task("sync")
+    assert fired == ["sync"]
+    # An unrelated name fires nothing.
+    dispatch_background_task("other")
+    assert fired == ["sync"]
+    # Unregistering stops further dispatch.
+    unregister()
+    dispatch_background_task("sync")
+    assert fired == ["sync"]
