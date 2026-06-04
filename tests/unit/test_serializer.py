@@ -176,3 +176,28 @@ def test_serialize_canvas_commands_are_json_safe():
     json.dumps(node)
     fill: dict[str, Any] = next(c for c in commands if c["kind"] == "fill")
     assert fill["color"] == [1.0, 0.0, 0.0, 1.0]
+
+
+def test_serialize_lowers_semantics_to_dict():
+    """`Semantics` lowers to a {label, role, hint} dict so it crosses the bridge.
+
+    Regression: a bare Semantics model used to hit the drop-through and never
+    reach the device, so accessibility labels (Compose `Modifier.semantics`)
+    were absent in the a11y tree.
+    """
+    from tempestroid import Semantics
+
+    node = serialize_node(
+        build(Text(content="hi", semantics=Semantics(label="greeting", role="heading")))
+    )
+    assert node["props"]["semantics"] == {"label": "greeting", "role": "heading"}
+    # Stays JSON-safe.
+    json.dumps(node)
+
+
+def test_serialize_semantics_omits_none_fields():
+    """Only the set Semantics fields cross (exclude_none)."""
+    from tempestroid import Semantics
+
+    node = serialize_node(build(Text(content="x", semantics=Semantics(label="only"))))
+    assert node["props"]["semantics"] == {"label": "only"}

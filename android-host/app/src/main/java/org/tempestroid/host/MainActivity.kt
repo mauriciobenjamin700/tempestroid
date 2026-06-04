@@ -7,10 +7,10 @@ import android.os.Build
 import android.os.Bundle
 import android.system.Os
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,7 +38,11 @@ import org.json.JSONObject
  * Modelled on the CPython `Platforms/Android/testbed` MainActivity, with the
  * interpreter off the UI thread and a Compose renderer wired to the bridge.
  */
-class MainActivity : ComponentActivity() {
+// FragmentActivity (not bare ComponentActivity) so androidx BiometricPrompt can
+// host its dialog — it requires a FragmentActivity. FragmentActivity IS a
+// ComponentActivity, so setContent/edge-to-edge/onBackPressedDispatcher are
+// unaffected.
+class MainActivity : FragmentActivity() {
 
     private val tree = TempestTree()
 

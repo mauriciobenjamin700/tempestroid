@@ -158,6 +158,13 @@ def _serialize_props(
                 for item in value
             ]
             continue
+        if name == "semantics":
+            # Lower the Semantics value model to its {label, role, hint} dict so
+            # the device renderer (Compose `Modifier.semantics`) can read it; the
+            # bare model would otherwise hit the drop-through below and never
+            # cross, so accessibility labels would not reach the device a11y tree.
+            out[name] = value.model_dump(exclude_none=True)
+            continue
         if name == "style" and isinstance(value, Style):
             out[name] = to_compose(value)
         elif callable(value):
