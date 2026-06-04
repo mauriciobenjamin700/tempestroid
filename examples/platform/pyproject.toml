@@ -1,0 +1,3 @@
+# Anchors this example as its own project so deploy/build bundles only it.
+[tool.tempest]
+app = "app.py"
