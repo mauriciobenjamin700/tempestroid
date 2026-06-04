@@ -293,3 +293,80 @@ def test_validation_event_requires_field_and_value():
     locs = {e["loc"] for e in exc.value.errors}
     assert ("field",) in locs
     assert ("value",) in locs
+
+
+# --- phase E8: platform/system events ----------------------------------------
+
+
+def test_lifecycle_event_round_trip():
+    from tempestroid import AppState, LifecycleEvent
+
+    event = LifecycleEvent(state=AppState.FOREGROUND)
+    restored = parse_event(LifecycleEvent, event.model_dump())
+    assert restored.state == AppState.FOREGROUND
+
+
+def test_lifecycle_event_requires_state():
+    from tempestroid import LifecycleEvent
+
+    with pytest.raises(EventValidationError):
+        parse_event(LifecycleEvent, {})
+
+
+def test_lifecycle_event_rejects_unknown_state():
+    from tempestroid import LifecycleEvent
+
+    with pytest.raises(EventValidationError):
+        parse_event(LifecycleEvent, {"state": "exploded"})
+
+
+def test_sensor_event_round_trip():
+    from tempestroid import SensorEvent, SensorType
+
+    event = SensorEvent(
+        sensor=SensorType.ACCELEROMETER, values=[0.1, 9.8, 0.0], timestamp_ms=123
+    )
+    restored = parse_event(SensorEvent, event.model_dump())
+    assert restored.sensor == SensorType.ACCELEROMETER
+    assert restored.values == [0.1, 9.8, 0.0]
+    assert restored.timestamp_ms == 123
+
+
+def test_sensor_event_defaults_empty_values():
+    from tempestroid import SensorEvent, SensorType
+
+    event = parse_event(SensorEvent, {"sensor": "light"})
+    assert event.sensor == SensorType.LIGHT
+    assert event.values == []
+    assert event.timestamp_ms == 0
+
+
+def test_connectivity_event_round_trip():
+    from tempestroid import ConnectivityEvent, ConnectivityState
+
+    event = ConnectivityEvent(state=ConnectivityState.WIFI)
+    restored = parse_event(ConnectivityEvent, event.model_dump())
+    assert restored.state == ConnectivityState.WIFI
+
+
+def test_connectivity_event_requires_state():
+    from tempestroid import ConnectivityEvent
+
+    with pytest.raises(EventValidationError):
+        parse_event(ConnectivityEvent, {})
+
+
+def test_deep_link_event_round_trip():
+    from tempestroid import DeepLinkEvent
+
+    event = DeepLinkEvent(url="myapp://x?a=1", params={"a": "1"})
+    restored = parse_event(DeepLinkEvent, event.model_dump())
+    assert restored.url == "myapp://x?a=1"
+    assert restored.params == {"a": "1"}
+
+
+def test_deep_link_event_requires_url():
+    from tempestroid import DeepLinkEvent
+
+    with pytest.raises(EventValidationError):
+        parse_event(DeepLinkEvent, {"params": {}})

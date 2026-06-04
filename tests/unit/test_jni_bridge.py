@@ -309,3 +309,94 @@ def test_run_device_resolves_route_into_initial_stack() -> None:
     mount = json.loads(host.sent[-1])  # type: ignore[attr-defined]
     assert mount["kind"] == "mount"
     assert mount["can_pop"] is True
+
+
+# === phase E8: reserved stream tokens route to the native dispatch hooks =====
+#
+# Sensor samples, lifecycle transitions and connectivity changes ride the same
+# single event transport under reserved tokens (like FRAME_TOKEN / BACK_TOKEN /
+# the native result prefix). The sink must route them to the matching native
+# callback registry, NEVER to a widget handler.
+
+
+async def test_sensor_token_routes_to_sensor_registry(monkeypatch: Any) -> None:
+    """``__sensor__:<type>`` reaches the sensor dispatch hook, not handle_event."""
+    from tempestroid.bridge import jni as jni_mod
+    from tempestroid.bridge.protocol import SENSOR_TOKEN_PREFIX
+
+    device, _ = _device_with_stack("/")
+    seen: list[dict[str, Any]] = []
+    samples: list[tuple[str, dict[str, Any]]] = []
+    original_handle = device.handle_event
+
+    async def _spy_handle(message: dict[str, Any]) -> None:
+        seen.append(message)
+        await original_handle(message)
+
+    def _spy_sensor(sensor_type: str, payload: dict[str, Any]) -> None:
+        samples.append((sensor_type, payload))
+
+    device.handle_event = _spy_handle  # type: ignore[method-assign]
+    monkeypatch.setattr(jni_mod, "dispatch_sensor_event", _spy_sensor)
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(f"{SENSOR_TOKEN_PREFIX}:accelerometer", '{"values": [1.0, 2.0]}')
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert samples == [("accelerometer", {"values": [1.0, 2.0]})]
+    assert seen == []
+
+
+async def test_lifecycle_token_routes_to_lifecycle_registry() -> None:
+    """``__lifecycle__`` reaches the lifecycle callback, not handle_event."""
+    from tempestroid.bridge.protocol import LIFECYCLE_TOKEN
+    from tempestroid.native.lifecycle import on_app_state_change
+    from tempestroid.widgets.events import AppState, LifecycleEvent
+
+    device, _ = _device_with_stack("/")
+    states: list[AppState] = []
+
+    def _record(event: LifecycleEvent) -> None:
+        states.append(event.state)
+
+    unregister = on_app_state_change(_record)
+    await device.start()
+    try:
+        loop = asyncio.get_running_loop()
+        sink = make_event_sink(loop, device)
+        sink(LIFECYCLE_TOKEN, '{"state": "background"}')
+        for _ in range(4):
+            await asyncio.sleep(0)
+    finally:
+        unregister()
+
+    assert states == [AppState.BACKGROUND]
+    assert isinstance(LifecycleEvent(state=AppState.BACKGROUND), LifecycleEvent)
+
+
+async def test_connectivity_token_routes_to_connectivity_registry(
+    monkeypatch: Any,
+) -> None:
+    """``__connectivity__:<state>`` reaches the connectivity dispatch hook."""
+    from tempestroid.bridge import jni as jni_mod
+    from tempestroid.bridge.protocol import CONNECTIVITY_TOKEN_PREFIX
+
+    device, _ = _device_with_stack("/")
+    seen: list[dict[str, Any]] = []
+
+    def _spy_connectivity(payload: dict[str, Any]) -> None:
+        seen.append(payload)
+
+    monkeypatch.setattr(jni_mod, "dispatch_connectivity_event", _spy_connectivity)
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(f"{CONNECTIVITY_TOKEN_PREFIX}:wifi", '{"state": "wifi"}')
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert seen == [{"state": "wifi"}]

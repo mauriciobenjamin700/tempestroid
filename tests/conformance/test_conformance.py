@@ -2406,3 +2406,556 @@ def test_e7_canvas_non_divergence_both_renderers_share_same_spec() -> None:
         "they use the same serialized IR on both renderers. "
         "Only VideoPlayer/WebView/CameraPreview/QrScanner/MapView are divergent."
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase E8 — Platform and native system                                       #
+#                                                                             #
+# E8 adds native platform capabilities (haptics, sensors, lifecycle,          #
+# connectivity, permissions, biometrics, secure_storage, prefs, database,     #
+# push, background) plus the ``KeyboardAvoidingView`` widget and four new     #
+# stream events (LifecycleEvent, SensorEvent, ConnectivityEvent, DeepLinkEvent).
+#                                                                             #
+# None of these add a new ``Style`` field — Kotlin layout props like          #
+# ``Modifier.imePadding()`` are *widget*-level, not Style fields — so the     #
+# golden/parity machinery and all ``_SAMPLES``/``_COVERAGE`` tables above are  #
+# untouched.                                                                  #
+#                                                                             #
+# E8 introduces three new reserved tokens (``SENSOR_TOKEN_PREFIX``,           #
+# ``LIFECYCLE_TOKEN``, ``CONNECTIVITY_TOKEN_PREFIX``) that stream continuous  #
+# data over the existing single event transport — no new JNI/C entry point.  #
+# Both ``bridge/jni.py`` and ``devserver/client.py`` must route these tokens  #
+# before falling through to the widget-handler path (lesson E0d).            #
+# --------------------------------------------------------------------------- #
+
+#: Intentional Qt × Compose divergences for E8's new widget + native platform.
+_E8_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "KeyboardAvoidingView",
+        "topic": "ime_inset_surface",
+        "qt_strategy": (
+            "Listens to QApplication.inputMethod().keyboardRectangleChanged and "
+            "adjusts contentsMargins to recede content above the virtual keyboard. "
+            "On the desktop (no virtual keyboard) the signal never fires and the "
+            "widget behaves as a plain Column container."
+        ),
+        "compose_strategy": (
+            "Modifier.imePadding() via WindowInsets.ime (Compose Foundation); "
+            "the inset is automatically applied at the bottom of the layout when "
+            "the IME is visible, receding the content without extra logic."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "KeyboardAvoidingView",
+        "topic": "keyboard_visibility_source",
+        "qt_strategy": (
+            "QInputMethod.keyboardRectangleChanged is the desktop-side signal; "
+            "height derived from keyboardRectangle().height(). No-op when the "
+            "virtual keyboard is not shown (typical desktop session)."
+        ),
+        "compose_strategy": (
+            "WindowInsets.ime.getBottom(LocalDensity.current) read at each "
+            "recomposition; Compose automatically recomposes when the IME "
+            "inset changes, so no explicit listener is needed."
+        ),
+        "intentional": True,
+    },
+]
+
+#: Native capability divergences: modules that are device-only stubs on Qt.
+#: These are NOT widget-level divergences (no Style translator involved), but
+#: they are documented here so the contract is visible and findable.
+_E8_NATIVE_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "module": "haptics",
+        "topic": "vibration_stub",
+        "qt_strategy": (
+            "vibrate() / impact() raise RuntimeError('_tempest_host is unavailable') "
+            "on the desktop — a Qt simulator has no haptics hardware."
+        ),
+        "compose_strategy": (
+            "HapticsModule drives Vibrator.vibrate(VibrationEffect.createOneShot) "
+            "(API 26+) with a pre-API-26 fallback, producing real device feedback."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "sensors",
+        "topic": "sensor_stream_stub",
+        "qt_strategy": (
+            "start_sensor() raises RuntimeError off-device. No sensor hardware "
+            "on the desktop; the dispatch_sensor_event hook is still callable "
+            "in tests to simulate incoming samples."
+        ),
+        "compose_strategy": (
+            "SensorModule registers a SensorManager.registerListener callback; "
+            "each SensorEventListener.onSensorChanged dispatches a sample over "
+            "the reserved '__sensor__:<type>' token to the Python callback registry."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "biometrics",
+        "topic": "biometric_auth_stub",
+        "qt_strategy": (
+            "authenticate() raises NativeError('device_only') on the desktop — "
+            "no biometric hardware available. The desktop is considered fully "
+            "trusted (no auth prompt)."
+        ),
+        "compose_strategy": (
+            "BiometricsModule drives BiometricPrompt (androidx.biometric) with "
+            "BiometricPrompt.PromptInfo; result is sent back via "
+            "__native_result__:<id> over the event channel."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "secure_storage",
+        "topic": "encrypted_storage_stub",
+        "qt_strategy": (
+            "get_secret/set_secret/delete_secret raise NativeError('device_only') "
+            "on the desktop — no EncryptedSharedPreferences equivalent in stdlib."
+        ),
+        "compose_strategy": (
+            "SecureStorageModule uses EncryptedSharedPreferences "
+            "(androidx.security:security-crypto) backed by AES256-GCM keys in the "
+            "Android KeyStore."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "push",
+        "topic": "fcm_push_stub",
+        "qt_strategy": (
+            "register_push() raises NativeError('device_only') on the desktop — "
+            "FCM token acquisition requires the Android Firebase SDK + "
+            "google-services.json (documented as a hardware-gated pendency)."
+        ),
+        "compose_strategy": (
+            "PushModule calls FirebaseMessaging.getInstance().token; the result "
+            "is sent back as a PushToken over __native_result__:<id>. Requires "
+            "google-services.json to be configured in the Gradle project."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "background",
+        "topic": "workmanager_stub",
+        "qt_strategy": (
+            "schedule_task / cancel_task raise RuntimeError off-device — "
+            "WorkManager is an Android-only API with no desktop equivalent."
+        ),
+        "compose_strategy": (
+            "BackgroundModule enqueues / cancels PeriodicWorkRequest via "
+            "WorkManager.enqueueUniquePeriodicWork / cancelUniqueWork."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "prefs",
+        "topic": "storage_backend",
+        "qt_strategy": (
+            "Reads/writes a JSON file at ~/.tempestroid/prefs.json (stdlib json). "
+            "Tests override the path via set_prefs_path(tmp_path) for isolation. "
+            "Fully functional on the desktop without device hardware."
+        ),
+        "compose_strategy": (
+            "PrefsModule uses SharedPreferences (android.content.SharedPreferences) "
+            "— the Android native key-value store, persisted to the app's "
+            "data directory."
+        ),
+        "intentional": True,
+    },
+    {
+        "module": "database",
+        "topic": "sql_backend",
+        "qt_strategy": (
+            "Uses sqlite3 from the Python stdlib backed by a file at "
+            "~/.tempestroid/app.db. Tests override the path via set_database_path. "
+            "Fully functional on the desktop without device hardware."
+        ),
+        "compose_strategy": (
+            "DatabaseModule uses android.database.sqlite.SQLiteDatabase via "
+            "SQLiteOpenHelper — the Android native SQLite API, persisted to the "
+            "app's data directory."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_E8_WIDGET_DIVERGENCES``.
+_E8_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"]))
+    for row in _E8_WIDGET_DIVERGENCES
+}
+
+#: The (module, topic) pairs that must appear in ``_E8_NATIVE_DIVERGENCES``.
+_E8_NATIVE_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["module"]), str(row["topic"]))
+    for row in _E8_NATIVE_DIVERGENCES
+}
+
+#: The four new E8 events that must appear in ``introspect()['events']``.
+_E8_NEW_EVENTS: tuple[str, ...] = (
+    "LifecycleEvent",
+    "SensorEvent",
+    "ConnectivityEvent",
+    "DeepLinkEvent",
+)
+
+#: The new E8 widget that must appear in ``WIDGET_TYPES`` and ``introspect()``.
+_E8_NEW_WIDGET: str = "KeyboardAvoidingView"
+
+#: The three new reserved tokens added in E8 for stream channels.
+_E8_RESERVED_TOKENS: dict[str, str] = {
+    "SENSOR_TOKEN_PREFIX": "__sensor__",
+    "LIFECYCLE_TOKEN": "__lifecycle__",
+    "CONNECTIVITY_TOKEN_PREFIX": "__connectivity__",
+}
+
+
+def test_e8_no_style_field_added() -> None:
+    """Phase E8 adds no new ``Style`` field.
+
+    The native platform capabilities (haptics, sensors, lifecycle, etc.) and
+    the ``KeyboardAvoidingView`` widget carry their own props; none introduces
+    a new ``Style`` field. ``Modifier.imePadding()`` on the Compose side and
+    ``QInputMethod.keyboardRectangleChanged`` on the Qt side are widget-level
+    renderer choices, not translator-level fields. The parity table
+    (``_SAMPLES``/``_COVERAGE``) and the golden snapshots are untouched.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); E8 must not add a Style field — "
+        "KeyboardAvoidingView's IME-padding behaviour is renderer-level, "
+        "not a Style translator field"
+    )
+
+
+def test_e8_widget_divergences_complete() -> None:
+    """Every E8 widget divergence row is intentional and uniquely keyed.
+
+    The tripwire: a renderer specialist who resolves a KeyboardAvoidingView
+    divergence (e.g. Qt gains a native IME-inset API matching Compose) must
+    update the table; one who adds a new E8 widget or topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E8_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E8 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (known gap)"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E8_DIVERGENCE_KEYS
+
+
+def test_e8_native_divergences_complete() -> None:
+    """Every E8 native-module divergence is intentional and uniquely keyed.
+
+    Pins the documented Qt-stub vs device-real split for haptics, sensors,
+    biometrics, secure_storage, push, background, prefs, and database. If a
+    new module is added with a desktop stub, a row must be added here. If an
+    existing stub is promoted to a real Qt implementation, the row must be
+    updated (set ``intentional=False``) until the resolved entry is removed.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _E8_NATIVE_DIVERGENCES:
+        key = (str(row["module"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate E8 native divergence row for {key!r}"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"native divergence {key!r} is intentional=False; "
+            "remove it (resolved) or keep intentional=True"
+        )
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"native divergence {key!r} is missing a strategy description"
+        )
+    assert seen == _E8_NATIVE_DIVERGENCE_KEYS
+
+
+def test_e8_reserved_tokens_exported_from_protocol() -> None:
+    """The three E8 stream tokens are exported from ``bridge.protocol``.
+
+    These reserved tokens are the bridge between the native host's continuous
+    data streams and the Python callback registries. If a token is missing or
+    has the wrong value, the bridge routing in ``jni.py._on_event`` and
+    ``devserver/client.py:on_event`` will silently drop stream events.
+
+    The exact string values are part of the Python↔Kotlin wire contract — they
+    must match what ``NativeModules.kt`` dispatches on the event channel.
+    """
+    from tempestroid.bridge.protocol import (
+        CONNECTIVITY_TOKEN_PREFIX,
+        LIFECYCLE_TOKEN,
+        SENSOR_TOKEN_PREFIX,
+    )
+
+    assert SENSOR_TOKEN_PREFIX == _E8_RESERVED_TOKENS["SENSOR_TOKEN_PREFIX"], (
+        f"SENSOR_TOKEN_PREFIX has unexpected value {SENSOR_TOKEN_PREFIX!r}; "
+        "the Kotlin SensorModule dispatches '__sensor__:<type>' — must match"
+    )
+    assert LIFECYCLE_TOKEN == _E8_RESERVED_TOKENS["LIFECYCLE_TOKEN"], (
+        f"LIFECYCLE_TOKEN has unexpected value {LIFECYCLE_TOKEN!r}; "
+        "the Kotlin LifecycleModule dispatches '__lifecycle__' — must match"
+    )
+    assert CONNECTIVITY_TOKEN_PREFIX == _E8_RESERVED_TOKENS[
+        "CONNECTIVITY_TOKEN_PREFIX"
+    ], (
+        f"CONNECTIVITY_TOKEN_PREFIX unexpected value {CONNECTIVITY_TOKEN_PREFIX!r}; "
+        "the Kotlin ConnectivityModule dispatches '__connectivity__:<state>'"
+    )
+
+
+def test_e8_reserved_tokens_reexported_at_root() -> None:
+    """The three E8 tokens are importable from the top-level ``tempestroid`` package.
+
+    User code and the bridge routing code both import from the top-level package.
+    If the tokens are absent from ``tempestroid.__all__``, the import will succeed
+    (Python finds them via the transitive module graph) but ``from tempestroid
+    import SENSOR_TOKEN_PREFIX`` will raise ``ImportError``.
+    """
+    import tempestroid
+
+    for name in ("SENSOR_TOKEN_PREFIX", "LIFECYCLE_TOKEN", "CONNECTIVITY_TOKEN_PREFIX"):
+        assert name in tempestroid.__all__, (
+            f"{name} missing from tempestroid.__all__; "
+            f"add it to tempestroid/__init__.py"
+        )
+        assert hasattr(tempestroid, name), (
+            f"{name} not importable from tempestroid"
+        )
+
+
+def test_e8_keyboard_avoiding_view_in_event_schemas() -> None:
+    """``KeyboardAvoidingView`` appears in ``bridge.protocol.EVENT_SCHEMAS``.
+
+    Even though the widget has no event handlers (``event_schemas = {}``), it
+    must be present in ``EVENT_SCHEMAS`` so that ``introspect()`` can list it
+    and future event additions don't silently fall through the bridge.
+    """
+    from tempestroid.bridge.protocol import EVENT_SCHEMAS
+
+    assert _E8_NEW_WIDGET in EVENT_SCHEMAS, (
+        f"E8 widget {_E8_NEW_WIDGET!r} missing from EVENT_SCHEMAS; "
+        "add it to bridge/protocol.py"
+    )
+    assert EVENT_SCHEMAS[_E8_NEW_WIDGET] == {}, (
+        f"E8 widget {_E8_NEW_WIDGET!r} has non-empty EVENT_SCHEMAS "
+        f"({EVENT_SCHEMAS[_E8_NEW_WIDGET]}); update this test if events were added"
+    )
+
+
+def test_e8_keyboard_avoiding_view_in_introspect() -> None:
+    """``KeyboardAvoidingView`` appears in ``introspect()['widgets']``.
+
+    ``introspect()`` is the framework's self-describing typed contract — the
+    device bridge and tooling use it to discover every widget. A missing entry
+    means the widget is undiscoverable and cannot be validated at dispatch time.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    assert _E8_NEW_WIDGET in catalog["widgets"], (
+        f"E8 widget {_E8_NEW_WIDGET!r} absent from introspect()['widgets']; "
+        "add it to WIDGET_TYPES in tempestroid/core/introspection.py"
+    )
+
+
+def test_e8_new_events_in_introspect() -> None:
+    """The four new E8 events appear in ``introspect()['events']``.
+
+    Pins the ``EVENT_TYPES`` list in ``core/introspection.py`` against a
+    regression that drops any of the new events from the catalog. If an event
+    is absent, ``event_type_for`` cannot validate stream payloads at the bridge
+    boundary.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    for event in _E8_NEW_EVENTS:
+        assert event in catalog["events"], (
+            f"E8 event {event!r} absent from introspect()['events']; "
+            "add it to EVENT_TYPES in tempestroid/core/introspection.py"
+        )
+
+
+def test_e8_lifecycle_event_schema_carries_state_field() -> None:
+    """``LifecycleEvent`` schema exposes the ``state`` field (AppState enum).
+
+    The bridge routes ``__lifecycle__`` payloads to ``dispatch_lifecycle_event``
+    which validates against ``LifecycleEvent``. A missing ``state`` field means
+    any lifecycle payload would fail validation at the boundary.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    schema = catalog["events"].get("LifecycleEvent", {})
+    props = schema.get("properties", {})
+    assert "state" in props, (
+        "LifecycleEvent schema must expose the 'state' field; "
+        "the bridge validates the __lifecycle__ payload against it"
+    )
+
+
+def test_e8_sensor_event_schema_carries_required_fields() -> None:
+    """``SensorEvent`` schema exposes ``sensor``, ``values``, and ``timestamp_ms``.
+
+    The bridge routes ``__sensor__:<type>`` payloads to ``dispatch_sensor_event``
+    which validates against ``SensorEvent``. All three fields must be present in
+    the schema for the Kotlin-side contract to be verifiable.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    schema = catalog["events"].get("SensorEvent", {})
+    props = schema.get("properties", {})
+    for field in ("sensor", "values", "timestamp_ms"):
+        assert field in props, (
+            f"SensorEvent schema must expose the '{field}' field; "
+            "the Kotlin SensorModule includes it in the dispatch payload"
+        )
+
+
+def test_e8_connectivity_event_schema_carries_state_field() -> None:
+    """``ConnectivityEvent`` schema exposes the ``state`` field.
+
+    The bridge routes ``__connectivity__:<state>`` payloads to
+    ``dispatch_connectivity_event`` which validates against ``ConnectivityEvent``.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    schema = catalog["events"].get("ConnectivityEvent", {})
+    props = schema.get("properties", {})
+    assert "state" in props, (
+        "ConnectivityEvent schema must expose the 'state' field; "
+        "the bridge validates __connectivity__ payloads against it"
+    )
+
+
+def test_e8_deep_link_event_schema_carries_url_and_params() -> None:
+    """``DeepLinkEvent`` schema exposes ``url`` and ``params``.
+
+    DeepLinkEvent is dispatched when the host opens the app via an intent URL.
+    Both fields must appear in the schema so the Kotlin side can verify the
+    payload shape.
+    """
+    from tempestroid import introspect
+
+    catalog = introspect()
+    schema = catalog["events"].get("DeepLinkEvent", {})
+    props = schema.get("properties", {})
+    assert "url" in props, "DeepLinkEvent schema must expose 'url'"
+    assert "params" in props, "DeepLinkEvent schema must expose 'params'"
+
+
+def test_e8_sensor_token_prefix_separator_contract() -> None:
+    """``SENSOR_TOKEN_PREFIX`` must NOT contain a colon — the colon is the separator.
+
+    The bridge routing guard is ``token.startswith(SENSOR_TOKEN_PREFIX + ":")``.
+    If the prefix itself contained a colon, the split logic would silently produce
+    wrong sensor_type strings and callbacks would never fire.
+
+    Same invariant holds for ``CONNECTIVITY_TOKEN_PREFIX``.
+    """
+    from tempestroid.bridge.protocol import (
+        CONNECTIVITY_TOKEN_PREFIX,
+        SENSOR_TOKEN_PREFIX,
+    )
+
+    assert ":" not in SENSOR_TOKEN_PREFIX, (
+        f"SENSOR_TOKEN_PREFIX {SENSOR_TOKEN_PREFIX!r} contains a colon; "
+        "the routing guard uses 'prefix + \":\"' as the full separator — "
+        "a colon inside the prefix would break sensor_type extraction"
+    )
+    assert ":" not in CONNECTIVITY_TOKEN_PREFIX, (
+        f"CONNECTIVITY_TOKEN_PREFIX {CONNECTIVITY_TOKEN_PREFIX!r} contains a colon; "
+        "same separator contract as SENSOR_TOKEN_PREFIX"
+    )
+
+
+def test_e8_lifecycle_token_no_separator() -> None:
+    """``LIFECYCLE_TOKEN`` carries no colon — it is a bare sentinel.
+
+    Unlike ``SENSOR_TOKEN_PREFIX`` and ``CONNECTIVITY_TOKEN_PREFIX``, the
+    lifecycle token is a bare sentinel (one fixed value, no sub-type suffix).
+    The bridge routing guard is ``token == LIFECYCLE_TOKEN`` (exact match),
+    so a colon in the token would never collide with the sensor/connectivity
+    prefixes but would be confusing and could collide with handler tokens
+    (``"<path>:<prop>"`` format).
+    """
+    from tempestroid.bridge.protocol import LIFECYCLE_TOKEN
+
+    assert ":" not in LIFECYCLE_TOKEN, (
+        f"LIFECYCLE_TOKEN {LIFECYCLE_TOKEN!r} contains a colon; "
+        "the routing guard uses exact equality — a colon could collide "
+        "with handler-token format '<path>:<prop>'"
+    )
+
+
+def test_e8_tokens_distinct_from_all_existing_reserved_tokens() -> None:
+    """The three E8 tokens are distinct from all previously defined reserved tokens.
+
+    This guards against accidental shadowing: if ``LIFECYCLE_TOKEN`` equalled
+    ``BACK_TOKEN`` or ``FRAME_TOKEN``, routing would silently divert lifecycle
+    events to the navigation-pop or animation-tick path, a very hard-to-debug
+    failure.
+    """
+    from tempestroid.bridge.protocol import (
+        BACK_TOKEN,
+        CONNECTIVITY_TOKEN_PREFIX,
+        FRAME_TOKEN,
+        LIFECYCLE_TOKEN,
+        SENSOR_TOKEN_PREFIX,
+    )
+    from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX
+
+    all_tokens = {BACK_TOKEN, FRAME_TOKEN}
+    # The E8 bare token must not clash with any existing bare token.
+    assert LIFECYCLE_TOKEN not in all_tokens, (
+        f"LIFECYCLE_TOKEN {LIFECYCLE_TOKEN!r} clashes with an existing reserved token"
+    )
+    # The E8 prefixes must not be prefixes of existing tokens, or vice versa.
+    for existing in (BACK_TOKEN, FRAME_TOKEN, NATIVE_RESULT_PREFIX):
+        assert not SENSOR_TOKEN_PREFIX.startswith(existing) and not existing.startswith(
+            SENSOR_TOKEN_PREFIX
+        ), (
+            f"SENSOR_TOKEN_PREFIX {SENSOR_TOKEN_PREFIX!r} and existing token "
+            f"{existing!r} overlap — routing ambiguity"
+        )
+        assert not CONNECTIVITY_TOKEN_PREFIX.startswith(
+            existing
+        ) and not existing.startswith(CONNECTIVITY_TOKEN_PREFIX), (
+            f"CONNECTIVITY_TOKEN_PREFIX {CONNECTIVITY_TOKEN_PREFIX!r} and existing "
+            f"token {existing!r} overlap — routing ambiguity"
+        )
+
+
+def test_e8_translators_not_affected_by_platform_widgets() -> None:
+    """E8 platform-widget imports do not mutate the ``Style`` translators.
+
+    ``KeyboardAvoidingView`` has no ``Style`` field; importing it must not
+    side-effect either translator table. Calling ``to_compose``/``to_qss`` with
+    ``Style()`` must yield the same empty output as before E8 was imported.
+    """
+    empty_snap = snapshot(Style())
+    assert empty_snap["compose"] == {}, (
+        "to_compose(Style()) changed after E8 import — "
+        "KeyboardAvoidingView must not side-effect the Compose translator"
+    )
+    assert empty_snap["qt"]["qss_leaf"] == "", (
+        "to_qss(Style()) changed after E8 import — "
+        "KeyboardAvoidingView must not side-effect the Qt translator"
+    )

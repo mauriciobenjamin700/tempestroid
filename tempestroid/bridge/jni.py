@@ -23,11 +23,17 @@ from typing import Any, Protocol, TypeVar, cast
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
+    CONNECTIVITY_TOKEN_PREFIX,
     DISMISS_TOKEN_PREFIX,
     FRAME_TOKEN,
+    LIFECYCLE_TOKEN,
+    SENSOR_TOKEN_PREFIX,
 )
 from tempestroid.core.state import App
+from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
+from tempestroid.native.lifecycle import dispatch_lifecycle_event
+from tempestroid.native.sensors import dispatch_sensor_event
 from tempestroid.navigation import NavStack, routes_from_path
 from tempestroid.widgets import Widget
 
@@ -167,6 +173,27 @@ def make_event_sink(
         if token.startswith(NATIVE_RESULT_PREFIX):
             request_id = token[len(NATIVE_RESULT_PREFIX) :]
             loop.call_soon_threadsafe(resolve_native_result, request_id, payload)
+            return
+        # Continuous sensor samples ride the same event channel under the
+        # reserved "__sensor__:<type>" token (one event per sample while the
+        # stream is open) — route them to the sensor callback registry. Like the
+        # native result they need no new JNI entry point.
+        sensor_prefix = f"{SENSOR_TOKEN_PREFIX}:"
+        if token.startswith(sensor_prefix):
+            sensor_type = token[len(sensor_prefix) :]
+            loop.call_soon_threadsafe(dispatch_sensor_event, sensor_type, payload)
+            return
+        # An app-lifecycle transition (foreground/background) rides the same
+        # event channel under the reserved LIFECYCLE_TOKEN — route it to the
+        # lifecycle callback registry.
+        if token == LIFECYCLE_TOKEN:
+            loop.call_soon_threadsafe(dispatch_lifecycle_event, payload)
+            return
+        # A network-connectivity change rides the same event channel under the
+        # reserved "__connectivity__:<state>" token — route it to the
+        # connectivity callback registry.
+        if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
+            loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
             return
         message: dict[str, Any] = {
             "kind": "event",

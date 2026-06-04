@@ -257,6 +257,30 @@ dependencies {
     // androidx.lifecycle.compose.LocalLifecycleOwner — needed to bind CameraX to
     // the composition's lifecycle (CameraPreview/QrScanner).
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+
+    // E8 platform + system native --------------------------------------------
+    // ProcessLifecycleOwner — app-wide foreground/background lifecycle for the
+    // LifecycleModule (dispatches __lifecycle__ stream tokens to Python).
+    implementation("androidx.lifecycle:lifecycle-process:2.8.6")
+    // BiometricPrompt (fingerprint/face) for the BiometricsModule. Includes the
+    // pre-30 compat shims; targets API 23+ (host mins API 24, so always available).
+    implementation("androidx.biometric:biometric:1.1.0")
+    // EncryptedSharedPreferences (AES-256) for the SecureStorageModule. Requires
+    // API 23+ (host mins 24). 1.1.0-alpha06 is the last stable-ish release that
+    // builds cleanly under AGP 8.7 (the 1.1.x line is the only one with
+    // EncryptedSharedPreferences; the 1.0.0 line lacks the Tink upgrade).
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // WorkManager — PeriodicWorkRequest backs the BackgroundModule's scheduled
+    // tasks (enqueueUniquePeriodicWork / cancelUniqueWork).
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Firebase Cloud Messaging — the PushModule reads the FCM registration token.
+    // OPTIONAL / device-gated: this compiles, but at runtime FirebaseApp must be
+    // initialised, which needs a `google-services.json` + the google-services
+    // Gradle plugin (NOT applied here, to keep the host buildable without a
+    // Firebase project). PushModule therefore catches the init failure and replies
+    // `error="not_configured"` — see NativeModules.handlePush. Documented as a
+    // device-configuration pendency in the phase notes.
+    implementation("com.google.firebase:firebase-messaging:24.0.1")
     // MapView is a documented PLACEHOLDER on both leaves: Google Maps Compose would
     // require google-services.json + a Maps API key (APK won't build without it),
     // which is out of scope for the host skeleton. Wiring it is a post-phase task:

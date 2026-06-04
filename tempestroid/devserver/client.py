@@ -18,9 +18,17 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from tempestroid.bridge.device import Bridge, DeviceApp
-from tempestroid.bridge.protocol import BACK_TOKEN
+from tempestroid.bridge.protocol import (
+    BACK_TOKEN,
+    CONNECTIVITY_TOKEN_PREFIX,
+    LIFECYCLE_TOKEN,
+    SENSOR_TOKEN_PREFIX,
+)
 from tempestroid.cli.app_loader import spec_from_source
+from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
+from tempestroid.native.lifecycle import dispatch_lifecycle_event
+from tempestroid.native.sensors import dispatch_sensor_event
 
 __all__ = ["run_dev_client", "serve_device"]
 
@@ -73,6 +81,22 @@ async def run_dev_client(
         if token.startswith(NATIVE_RESULT_PREFIX):
             request_id = token[len(NATIVE_RESULT_PREFIX) :]
             loop.call_soon_threadsafe(resolve_native_result, request_id, payload)
+            return
+        # Reserved stream tokens (sensor samples, lifecycle transitions,
+        # connectivity changes) ride the same event channel and must be routed
+        # here too — without this the ``tempest serve`` code-push path would
+        # silently drop them (the lesson from E0d, where the dev client forgot
+        # the reserved tokens). Mirrors tempestroid.bridge.jni.make_event_sink.
+        sensor_prefix = f"{SENSOR_TOKEN_PREFIX}:"
+        if token.startswith(sensor_prefix):
+            sensor_type = token[len(sensor_prefix) :]
+            loop.call_soon_threadsafe(dispatch_sensor_event, sensor_type, payload)
+            return
+        if token == LIFECYCLE_TOKEN:
+            loop.call_soon_threadsafe(dispatch_lifecycle_event, payload)
+            return
+        if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
+            loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
             return
         device: DeviceApp[Any] | None = current["device"]
         if device is None:

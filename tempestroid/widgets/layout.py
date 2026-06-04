@@ -21,6 +21,7 @@ __all__ = [
     "Wrap",
     "PageView",
     "AspectRatio",
+    "KeyboardAvoidingView",
 ]
 
 
@@ -287,3 +288,32 @@ class AspectRatio(Widget):
             A one-element list with the child, or an empty list.
         """
         return [self.child] if self.child is not None else []
+
+
+class KeyboardAvoidingView(Widget):
+    """A vertical container that recedes its content when the keyboard appears.
+
+    Wraps its children and, while the on-screen keyboard is open, insets them so
+    the focused input stays visible above it. On the device the Compose renderer
+    lowers it to a ``Column`` with ``Modifier.imePadding()`` (driven by
+    ``WindowInsets.ime``); the Qt simulator listens on
+    ``QApplication.inputMethod().keyboardRectangleChanged`` and adjusts its
+    content margins, behaving like a plain ``Column`` on desktop (no virtual
+    keyboard). It declares no event contract — the keyboard inset is handled by
+    the renderer, not surfaced to application handlers.
+
+    Attributes:
+        children: The ordered child widgets the view insets.
+    """
+
+    event_schemas: ClassVar[dict[str, type[Event]]] = {}
+    child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
+    children: list[Widget] = Field(default_factory=_empty_children)
+
+    def child_nodes(self) -> list[Widget]:
+        """Return the view's children.
+
+        Returns:
+            The ordered child widgets.
+        """
+        return self.children

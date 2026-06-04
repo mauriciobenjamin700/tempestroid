@@ -46,6 +46,7 @@ from PySide6.QtGui import (
     QDropEvent,
     QFont,
     QFontMetricsF,
+    QGuiApplication,
     QIcon,
     QKeyEvent,
     QLinearGradient,
@@ -1215,6 +1216,64 @@ class _AspectRatioWidget(QWidget):
         """
         self._relayout()
         super().resizeEvent(event)
+
+
+class _KeyboardAvoidingWidget(QWidget):
+    """A vertical container that recedes its content when the keyboard appears.
+
+    Mirrors the :class:`~tempestroid.widgets.KeyboardAvoidingView` IR primitive.
+    The widget lays its children along a ``QVBoxLayout`` (behaving exactly like a
+    ``Column``) and listens to ``QGuiApplication.inputMethod().keyboardRectangle
+    Changed``. When the virtual keyboard overlaps the widget, its bottom contents
+    margin is inflated by the overlap so the content slides up clear of the
+    keyboard; when the keyboard hides (or there is none — the desktop case) the
+    bottom margin returns to its style-derived base, so the widget is a plain
+    ``Column``. The device renderer uses ``Modifier.imePadding()`` via
+    ``WindowInsets.ime`` — identical to the user, a documented divergence in how
+    the inset is sourced.
+    """
+
+    def __init__(self) -> None:
+        """Create the keyboard-avoiding container and wire the IME signal."""
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        # Margens base (vindas do ``padding`` do estilo); o teclado soma por cima.
+        self._base_margins: tuple[int, int, int, int] = (0, 0, 0, 0)
+        self._keyboard_inset: int = 0
+        QGuiApplication.inputMethod().keyboardRectangleChanged.connect(
+            self._on_keyboard_rectangle_changed
+        )
+
+    def set_base_margins(self, margins: tuple[int, int, int, int]) -> None:
+        """Set the style-derived contents margins (before any keyboard inset).
+
+        Args:
+            margins: The ``(left, top, right, bottom)`` base contents margins.
+        """
+        self._base_margins = margins
+        self._apply_margins()
+
+    def _on_keyboard_rectangle_changed(self) -> None:
+        """Recompute the keyboard overlap and re-apply the contents margins."""
+        keyboard = QGuiApplication.inputMethod().keyboardRectangle()
+        if keyboard.height() <= 0:
+            self._keyboard_inset = 0
+            self._apply_margins()
+            return
+        # Quanto do teclado sobrepõe a base do widget (em coordenadas globais).
+        widget_bottom = self.mapToGlobal(QPoint(0, self.height())).y()
+        overlap = widget_bottom - int(keyboard.top())
+        self._keyboard_inset = max(0, overlap)
+        self._apply_margins()
+
+    def _apply_margins(self) -> None:
+        """Apply the base margins plus the current keyboard inset on the bottom."""
+        layout = self.layout()
+        if layout is None:
+            return
+        left, top, right, bottom = self._base_margins
+        layout.setContentsMargins(left, top, right, bottom + self._keyboard_inset)
 
 
 class _GestureWidget(QWidget):
@@ -4484,6 +4543,11 @@ class QtRenderer:
             )
         if node.type in _E7_PLACEHOLDER_TYPES:
             return _Rendered(node.type, node.key, QLabel(), None)
+        if node.type == "KeyboardAvoidingView":
+            avoiding = _KeyboardAvoidingWidget()
+            return _Rendered(
+                node.type, node.key, avoiding, cast("QBoxLayout", avoiding.layout())
+            )
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (
@@ -4585,6 +4649,18 @@ class QtRenderer:
                     node.layout,
                     style,
                     cast("list[Any] | None", node.props.get("edges")),
+                )
+            elif node.type == "KeyboardAvoidingView":
+                # ``_apply_container_layout`` set the padding margins; hand them to
+                # the widget as the *base* so the keyboard inset adds on top.
+                margins = node.layout.contentsMargins()
+                cast("_KeyboardAvoidingWidget", node.widget).set_base_margins(
+                    (
+                        margins.left(),
+                        margins.top(),
+                        margins.right(),
+                        margins.bottom(),
+                    )
                 )
         if node.type == "Text":
             label = cast("_TextLabel", node.widget)

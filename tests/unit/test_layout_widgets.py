@@ -469,3 +469,56 @@ def test_data_table_empty_builds_cleanly() -> None:
     """An empty ``DataTable`` (no columns, no rows) lowers without error."""
     node = build(DataTable())
     assert node.type == "Column"
+
+
+# --- KeyboardAvoidingView (phase E8) ----------------------------------------
+
+
+def test_keyboard_avoiding_view_builds_and_exposes_children() -> None:
+    """``KeyboardAvoidingView`` builds to a node whose children are walkable."""
+    from tempestroid import Input, KeyboardAvoidingView
+
+    view = KeyboardAvoidingView(children=[Text(content="a"), Input()])
+    assert [c.widget_type for c in view.child_nodes()] == ["Text", "Input"]
+    node = build(view)
+    assert node.type == "KeyboardAvoidingView"
+    assert len(node.children) == 2
+
+
+def test_keyboard_avoiding_view_in_introspect() -> None:
+    """``KeyboardAvoidingView`` appears in the introspected widget catalog."""
+    from tempestroid import KeyboardAvoidingView
+
+    assert KeyboardAvoidingView.__name__ in introspect()["widgets"]
+
+
+def test_keyboard_avoiding_view_child_update_diff() -> None:
+    """Updating a child inside a ``KeyboardAvoidingView`` emits one ``Update``."""
+    from tempestroid import KeyboardAvoidingView
+    from tempestroid.core.ir import Update
+
+    v1 = KeyboardAvoidingView(children=[Text(content="a")])
+    v2 = KeyboardAvoidingView(children=[Text(content="b")])
+    patches = diff(build(v1), build(v2))
+    update_patches = [p for p in patches if isinstance(p, Update)]
+    assert update_patches, "expected an Update patch for the changed child"
+
+
+def test_keyboard_avoiding_view_child_insert_diff() -> None:
+    """Adding a child to a ``KeyboardAvoidingView`` emits an ``Insert``."""
+    from tempestroid import KeyboardAvoidingView
+    from tempestroid.core.ir import Insert
+
+    v1 = KeyboardAvoidingView(children=[Text(content="a")])
+    v2 = KeyboardAvoidingView(children=[Text(content="a"), Text(content="b")])
+    patches = diff(build(v1), build(v2))
+    assert any(isinstance(p, Insert) for p in patches)
+
+
+def test_keyboard_avoiding_view_serializes() -> None:
+    """``KeyboardAvoidingView`` serializes to a JSON-able mount payload."""
+    from tempestroid import Input, KeyboardAvoidingView
+
+    payload = serialize_node(build(KeyboardAvoidingView(children=[Input()])))
+    assert payload["type"] == "KeyboardAvoidingView"
+    assert payload["children"][0]["type"] == "Input"

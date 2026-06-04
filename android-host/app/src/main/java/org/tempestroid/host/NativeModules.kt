@@ -12,25 +12,55 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.MediaStore
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.Worker
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+import com.google.firebase.messaging.FirebaseMessaging
+import java.util.concurrent.TimeUnit
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
@@ -104,6 +134,18 @@ class NativeModules(private val activity: ComponentActivity) {
             "camera" -> handleCamera(command, requestId)
             "audio" -> handleAudio(command, action, args, requestId)
             "bluetooth" -> handleBluetooth(args, requestId)
+            "haptics" -> handleHaptics(action, args)
+            "sensors" -> handleSensors(action, args)
+            "system" -> handleSystem(action, args, requestId)
+            "lifecycle" -> handleLifecycle(action, args)
+            "permissions" -> handlePermissionsModule(action, args, requestId)
+            "biometrics" -> handleBiometrics(action, args, requestId)
+            "secure_storage" -> handleSecureStorage(action, args, requestId)
+            "prefs" -> handlePrefs(action, args, requestId)
+            "database" -> handleDatabase(action, args, requestId)
+            "connectivity" -> handleConnectivity(action, args, requestId)
+            "push" -> handlePush(action, args, requestId)
+            "background" -> handleBackground(action, args)
             else -> {
                 Log.w(TAG, "unknown native module: $module")
                 reply(requestId, false, error = "unavailable", message = "no module $module")
@@ -629,12 +671,657 @@ class NativeModules(private val activity: ComponentActivity) {
         }, timeoutMs)
     }
 
+    // === E8: platform + system native =======================================
+
+    // --- haptics (fire-and-forget) ------------------------------------------
+
+    /**
+     * Vibrate via the [Vibrator]. `vibrate` carries an explicit `duration_ms`;
+     * `impact` maps a Haptics impact style to a short canned duration. API 26+
+     * uses [VibrationEffect.createOneShot]; older devices fall back to the
+     * deprecated `vibrate(ms)`.
+     */
+    private fun handleHaptics(action: String, args: JSONObject) {
+        val durationMs = when (action) {
+            "vibrate" -> args.optInt("duration_ms", 50).toLong()
+            "impact" -> when (args.optString("style")) {
+                "light" -> 20L
+                "heavy" -> 80L
+                else -> 40L // medium
+            }
+            else -> {
+                Log.w(TAG, "unknown haptics action: $action")
+                return
+            }
+        }
+        val vibrator = vibrator() ?: return
+        if (!vibrator.hasVibrator()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(durationMs)
+        }
+    }
+
+    private fun vibrator(): Vibrator? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            activity.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            activity.getSystemService(Vibrator::class.java)
+        }
+
+    // --- system (statusbar / brightness / wakelock / orientation) -----------
+
+    /**
+     * System surface controls. Setters are fire-and-forget; `get_brightness` is
+     * request/response. Status-bar visibility uses the window insets controller;
+     * brightness reads `Settings.System.SCREEN_BRIGHTNESS` (normalised to
+     * `[0,1]`); keep-awake toggles `FLAG_KEEP_SCREEN_ON`; orientation sets
+     * `requestedOrientation`.
+     */
+    private fun handleSystem(action: String, args: JSONObject, requestId: String?) {
+        when (action) {
+            "set_status_bar" -> setStatusBar(args)
+            "get_brightness" -> reply(
+                requestId, true,
+                data = JSONObject().put("value", currentBrightness().toDouble()),
+            )
+            "set_brightness" -> activity.runOnUiThread {
+                val value = args.optDouble("value", 1.0).toFloat().coerceIn(0f, 1f)
+                val params = activity.window.attributes
+                params.screenBrightness = value
+                activity.window.attributes = params
+            }
+            "keep_awake" -> activity.runOnUiThread {
+                if (args.optBoolean("enabled", false)) {
+                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+            "set_orientation" -> activity.runOnUiThread {
+                activity.requestedOrientation = when (args.optString("orientation")) {
+                    "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            }
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    private fun setStatusBar(args: JSONObject) = activity.runOnUiThread {
+        val window = activity.window
+        if (!args.isNull("hidden")) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val controller = window.insetsController
+                if (args.optBoolean("hidden")) {
+                    controller?.hide(android.view.WindowInsets.Type.statusBars())
+                } else {
+                    controller?.show(android.view.WindowInsets.Type.statusBars())
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                if (args.optBoolean("hidden")) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                }
+            }
+        }
+        if (!args.isNull("color")) {
+            runCatching {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = AndroidColor.parseColor(args.optString("color"))
+            }
+        }
+    }
+
+    private fun currentBrightness(): Float {
+        // Prefer the window-level override; fall back to the system setting.
+        val windowValue = activity.window.attributes.screenBrightness
+        if (windowValue in 0f..1f) return windowValue
+        val raw = Settings.System.getInt(
+            activity.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128
+        )
+        return (raw / 255f).coerceIn(0f, 1f)
+    }
+
+    // --- sensors (stream via reserved __sensor__:<type> token) --------------
+
+    /**
+     * Start/stop a sensor stream. `start` registers a [SensorEventListener] for
+     * the named sensor; each `onSensorChanged` forwards a `{sensor, values,
+     * timestamp_ms}` payload to Python over the reserved
+     * `"__sensor__:<type>"` event token (no new JNI/C entry). `stop` unregisters.
+     */
+    private fun handleSensors(action: String, args: JSONObject) {
+        val sensorName = args.optString("sensor")
+        val manager = activity.getSystemService(SensorManager::class.java) ?: return
+        val type = sensorTypeOf(sensorName)
+        if (type == null) {
+            Log.w(TAG, "unknown sensor type: $sensorName")
+            return
+        }
+        when (action) {
+            "start" -> {
+                if (sensorListeners.containsKey(sensorName)) return
+                val sensor = manager.getDefaultSensor(type) ?: run {
+                    Log.w(TAG, "no sensor for $sensorName")
+                    return
+                }
+                val rateMs = args.optInt("rate_ms", 100)
+                val listener = object : SensorEventListener {
+                    override fun onSensorChanged(event: SensorEvent) {
+                        val values = JSONArray()
+                        event.values.forEach { values.put(it.toDouble()) }
+                        val payload = JSONObject()
+                            .put("sensor", sensorName)
+                            .put("values", values)
+                            .put("timestamp_ms", event.timestamp / 1_000_000L)
+                        PythonRuntime.dispatchEvent(
+                            "$SENSOR_TOKEN_PREFIX:$sensorName", payload.toString()
+                        )
+                    }
+
+                    override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+                }
+                sensorListeners[sensorName] = listener
+                manager.registerListener(listener, sensor, rateMs * 1000)
+            }
+            "stop" -> {
+                sensorListeners.remove(sensorName)?.let { manager.unregisterListener(it) }
+            }
+            else -> Log.w(TAG, "unknown sensors action: $action")
+        }
+    }
+
+    private fun sensorTypeOf(name: String): Int? = when (name) {
+        "accelerometer" -> Sensor.TYPE_ACCELEROMETER
+        "gyroscope" -> Sensor.TYPE_GYROSCOPE
+        "magnetometer" -> Sensor.TYPE_MAGNETIC_FIELD
+        "pressure" -> Sensor.TYPE_PRESSURE
+        "light" -> Sensor.TYPE_LIGHT
+        "proximity" -> Sensor.TYPE_PROXIMITY
+        "step_counter" -> Sensor.TYPE_STEP_COUNTER
+        else -> null
+    }
+
+    // --- lifecycle (stream via reserved __lifecycle__ token) ----------------
+
+    /**
+     * Start/stop the app-wide lifecycle stream. `start` attaches a
+     * [DefaultLifecycleObserver] to [ProcessLifecycleOwner]; `onResume` →
+     * `"foreground"`, `onPause` → `"background"`. Each transition forwards a
+     * `{state}` payload to Python over the reserved [LIFECYCLE_TOKEN].
+     */
+    private fun handleLifecycle(action: String, @Suppress("UNUSED_PARAMETER") args: JSONObject) {
+        when (action) {
+            "start" -> activity.runOnUiThread {
+                if (lifecycleObserver != null) return@runOnUiThread
+                val observer = object : DefaultLifecycleObserver {
+                    override fun onResume(owner: LifecycleOwner) = emitLifecycle("foreground")
+                    override fun onPause(owner: LifecycleOwner) = emitLifecycle("background")
+                }
+                lifecycleObserver = observer
+                ProcessLifecycleOwner.get().lifecycle.addObserver(observer)
+            }
+            "stop" -> activity.runOnUiThread {
+                lifecycleObserver?.let {
+                    ProcessLifecycleOwner.get().lifecycle.removeObserver(it)
+                }
+                lifecycleObserver = null
+            }
+            else -> Log.w(TAG, "unknown lifecycle action: $action")
+        }
+    }
+
+    private fun emitLifecycle(state: String) {
+        PythonRuntime.dispatchEvent(
+            LIFECYCLE_TOKEN, JSONObject().put("state", state).toString()
+        )
+    }
+
+    // --- permissions (request/response) -------------------------------------
+
+    /**
+     * Request or check a single runtime permission. `check` replies the current
+     * grant; `request` either replies immediately (already granted) or launches
+     * the system prompt via the shared [withPermissions] flow and replies once
+     * the user responds.
+     */
+    private fun handlePermissionsModule(
+        action: String,
+        args: JSONObject,
+        requestId: String?,
+    ) {
+        val permission = args.optString("permission")
+        when (action) {
+            "check" -> reply(
+                requestId, true,
+                data = JSONObject().put("status", statusOf(permission)),
+            )
+            "request" -> {
+                if (hasPermission(permission)) {
+                    reply(requestId, true, data = JSONObject().put("status", "granted"))
+                    return
+                }
+                val command = JSONObject()
+                    .put("kind", "native").put("module", "permissions")
+                    .put("action", "check").put("args", args)
+                if (requestId != null) command.put("request_id", requestId)
+                withPermissions(arrayOf(permission), requestId, command) {
+                    reply(requestId, true, data = JSONObject().put("status", "granted"))
+                }
+            }
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    private fun statusOf(permission: String): String =
+        if (hasPermission(permission)) "granted" else "denied"
+
+    // --- biometrics (request/response) --------------------------------------
+
+    /**
+     * Prompt for biometric authentication ([BiometricPrompt]). Replies
+     * `{authenticated: true}` on success, `{authenticated: false, error: ...}`
+     * on a non-fatal failure/cancel, or `error="unavailable"` when no biometric
+     * hardware/enrolment exists.
+     */
+    private fun handleBiometrics(action: String, args: JSONObject, requestId: String?) {
+        if (action != "authenticate") {
+            reply(requestId, false, error = "unavailable", message = "no $action")
+            return
+        }
+        // BiometricPrompt requires a FragmentActivity host. The tempestroid host
+        // activity is a ComponentActivity; if it is not (also) a FragmentActivity,
+        // report unavailable rather than crash. Hosting the prompt is a documented
+        // device pendency (would need MainActivity to extend FragmentActivity).
+        val fragmentActivity = activity as? androidx.fragment.app.FragmentActivity
+        if (fragmentActivity == null) {
+            reply(
+                requestId, true,
+                data = JSONObject().put("authenticated", false).put("error", "unavailable"),
+            )
+            return
+        }
+        activity.runOnUiThread {
+            val manager = BiometricManager.from(activity)
+            val authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK
+            if (manager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
+                reply(
+                    requestId, true,
+                    data = JSONObject().put("authenticated", false).put("error", "unavailable"),
+                )
+                return@runOnUiThread
+            }
+            val prompt = BiometricPrompt(
+                fragmentActivity,
+                activity.mainExecutor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        result: BiometricPrompt.AuthenticationResult,
+                    ) {
+                        reply(requestId, true, data = JSONObject().put("authenticated", true))
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        reply(
+                            requestId, true,
+                            data = JSONObject()
+                                .put("authenticated", false)
+                                .put("error", errString.toString()),
+                        )
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        // A single non-matching attempt; the prompt stays open, so
+                        // do not reply here (wait for success or error/cancel).
+                    }
+                },
+            )
+            val reason = args.optString("reason").ifEmpty { "Authenticate" }
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(reason)
+                .setNegativeButtonText("Cancel")
+                .setAllowedAuthenticators(authenticators)
+                .build()
+            prompt.authenticate(info)
+        }
+    }
+
+    // --- secure storage (EncryptedSharedPreferences) ------------------------
+
+    /** `get` is request/response; `set`/`delete` are fire-and-forget. */
+    private fun handleSecureStorage(action: String, args: JSONObject, requestId: String?) {
+        val prefs = try {
+            securePrefs()
+        } catch (e: Exception) {
+            reply(requestId, false, error = "unavailable", message = e.message ?: "")
+            return
+        }
+        when (action) {
+            "get" -> {
+                val value = prefs.getString(args.optString("key"), null)
+                val data = JSONObject()
+                if (value != null) data.put("value", value)
+                reply(requestId, true, data = data)
+            }
+            "set" -> prefs.edit().putString(args.optString("key"), args.optString("value")).apply()
+            "delete" -> prefs.edit().remove(args.optString("key")).apply()
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    private fun securePrefs(): android.content.SharedPreferences {
+        val masterKey = MasterKey.Builder(activity)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            activity,
+            "tempestroid_secure",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    // --- prefs (plain SharedPreferences) ------------------------------------
+
+    /**
+     * Key-value preferences. Values cross the bridge as JSON, so a `set` stashes
+     * the raw JSON text and `get`/`get_all` parse it back — preserving non-string
+     * types (numbers, bools, lists) round-trip.
+     */
+    private fun handlePrefs(action: String, args: JSONObject, requestId: String?) {
+        val prefs = activity.getSharedPreferences("tempestroid_prefs", Context.MODE_PRIVATE)
+        when (action) {
+            "get" -> {
+                val key = args.optString("key")
+                val data = JSONObject()
+                if (prefs.contains(key)) {
+                    data.put("value", decodePref(prefs.getString(key, null)))
+                }
+                reply(requestId, true, data = data)
+            }
+            "get_all" -> {
+                val values = JSONObject()
+                prefs.all.forEach { (key, raw) ->
+                    values.put(key, decodePref(raw as? String))
+                }
+                reply(requestId, true, data = JSONObject().put("values", values))
+            }
+            "set" -> {
+                // The value rides as JSON under `value`; store its JSON text so the
+                // type survives the round-trip.
+                val encoded = JSONObject().put("v", args.opt("value")).toString()
+                prefs.edit().putString(args.optString("key"), encoded).apply()
+            }
+            "delete" -> prefs.edit().remove(args.optString("key")).apply()
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    /** Reverse [handlePrefs]'s JSON-text encoding back to the stored value. */
+    private fun decodePref(raw: String?): Any? {
+        if (raw == null) return JSONObject.NULL
+        return runCatching { JSONObject(raw).opt("v") }.getOrNull() ?: JSONObject.NULL
+    }
+
+    // --- database (SQLite) --------------------------------------------------
+
+    /**
+     * Run SQL against the app-private SQLite database. `execute` runs one
+     * statement and replies `{columns, rows}` (rows as a list of value lists);
+     * `execute_many` batches a statement over a list of parameter tuples in a
+     * transaction. Parameters arrive as JSON arrays and bind positionally.
+     */
+    private fun handleDatabase(action: String, args: JSONObject, requestId: String?) {
+        val db = try {
+            openDatabase()
+        } catch (e: Exception) {
+            reply(requestId, false, error = "io_error", message = e.message ?: "")
+            return
+        }
+        try {
+            when (action) {
+                "execute" -> reply(
+                    requestId, true,
+                    data = runQuery(db, args.optString("sql"), args.optJSONArray("params")),
+                )
+                "execute_many" -> {
+                    val sql = args.optString("sql")
+                    val batch = args.optJSONArray("params_list") ?: JSONArray()
+                    db.beginTransaction()
+                    try {
+                        for (i in 0 until batch.length()) {
+                            db.execSQL(sql, bindArgs(batch.optJSONArray(i)))
+                        }
+                        db.setTransactionSuccessful()
+                    } finally {
+                        db.endTransaction()
+                    }
+                    reply(requestId, true, data = JSONObject())
+                }
+                else -> reply(requestId, false, error = "unavailable", message = "no $action")
+            }
+        } catch (e: Exception) {
+            reply(requestId, false, error = "sql_error", message = e.message ?: "")
+        } finally {
+            db.close()
+        }
+    }
+
+    private fun openDatabase(): SQLiteDatabase {
+        val file = File(activity.filesDir, "app.db")
+        return SQLiteDatabase.openOrCreateDatabase(file, null)
+    }
+
+    /** Run one SQL statement, returning a `{columns, rows}` result object. */
+    private fun runQuery(db: SQLiteDatabase, sql: String, params: JSONArray?): JSONObject {
+        val trimmed = sql.trimStart().lowercase()
+        val isSelect = trimmed.startsWith("select") || trimmed.startsWith("pragma") ||
+            trimmed.startsWith("with")
+        if (!isSelect) {
+            db.execSQL(sql, bindArgs(params))
+            return JSONObject().put("columns", JSONArray()).put("rows", JSONArray())
+        }
+        val selectionArgs = (params ?: JSONArray()).let { arr ->
+            Array(arr.length()) { arr.opt(it)?.toString() ?: "" }
+        }
+        val cursor = db.rawQuery(sql, selectionArgs)
+        val columns = JSONArray()
+        cursor.columnNames.forEach { columns.put(it) }
+        val rows = JSONArray()
+        cursor.use {
+            while (it.moveToNext()) {
+                val row = JSONArray()
+                for (c in 0 until it.columnCount) {
+                    when (it.getType(c)) {
+                        android.database.Cursor.FIELD_TYPE_NULL -> row.put(JSONObject.NULL)
+                        android.database.Cursor.FIELD_TYPE_INTEGER -> row.put(it.getLong(c))
+                        android.database.Cursor.FIELD_TYPE_FLOAT -> row.put(it.getDouble(c))
+                        else -> row.put(it.getString(c))
+                    }
+                }
+                rows.put(row)
+            }
+        }
+        return JSONObject().put("columns", columns).put("rows", rows)
+    }
+
+    /** Bind a JSON params array to the positional-arg `Array<Any?>` execSQL wants. */
+    private fun bindArgs(params: JSONArray?): Array<Any?> {
+        if (params == null) return emptyArray()
+        return Array(params.length()) { params.opt(it).takeIf { v -> v != JSONObject.NULL } }
+    }
+
+    // --- connectivity (request/response + stream) ---------------------------
+
+    /**
+     * `get` replies the current network state once; `start`/`stop` open/close a
+     * default-network callback that forwards each change to Python over the
+     * reserved `"__connectivity__:<state>"` event token.
+     */
+    private fun handleConnectivity(action: String, args: JSONObject, requestId: String?) {
+        val manager = activity.getSystemService(ConnectivityManager::class.java)
+        if (manager == null) {
+            reply(requestId, false, error = "unavailable")
+            return
+        }
+        when (action) {
+            "get" -> reply(
+                requestId, true,
+                data = JSONObject().put("state", connectivityState(manager)),
+            )
+            "start" -> {
+                if (networkCallback != null) return
+                val callback = object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) = emitConnectivity(manager)
+                    override fun onLost(network: Network) {
+                        PythonRuntime.dispatchEvent(
+                            "$CONNECTIVITY_TOKEN_PREFIX:disconnected",
+                            JSONObject().put("state", "disconnected").toString(),
+                        )
+                    }
+
+                    override fun onCapabilitiesChanged(
+                        network: Network,
+                        caps: NetworkCapabilities,
+                    ) = emitConnectivity(manager)
+                }
+                networkCallback = callback
+                manager.registerDefaultNetworkCallback(callback)
+            }
+            "stop" -> {
+                networkCallback?.let { manager.unregisterNetworkCallback(it) }
+                networkCallback = null
+            }
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    private fun emitConnectivity(manager: ConnectivityManager) {
+        val state = connectivityState(manager)
+        PythonRuntime.dispatchEvent(
+            "$CONNECTIVITY_TOKEN_PREFIX:$state",
+            JSONObject().put("state", state).toString(),
+        )
+    }
+
+    /** Resolve the active default network to a tempestroid connectivity state. */
+    private fun connectivityState(manager: ConnectivityManager): String {
+        val network = manager.activeNetwork ?: return "disconnected"
+        val caps = manager.getNetworkCapabilities(network) ?: return "disconnected"
+        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+            return "disconnected"
+        }
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile"
+            else -> "connected"
+        }
+    }
+
+    // --- push (FCM register + scheduled notification) -----------------------
+
+    /**
+     * `register` reads the FCM registration token (request/response);
+     * `schedule_notification` posts a local notification after a delay
+     * (fire-and-forget, via the existing [NotificationModule]).
+     *
+     * FCM is device-configuration-gated: without a `google-services.json` +
+     * FirebaseApp init the token read throws, and we reply
+     * `error="not_configured"` (documented pendency).
+     */
+    private fun handlePush(action: String, args: JSONObject, requestId: String?) {
+        when (action) {
+            "register" -> {
+                try {
+                    FirebaseMessaging.getInstance().token
+                        .addOnSuccessListener { token ->
+                            reply(requestId, true, data = JSONObject().put("token", token))
+                        }
+                        .addOnFailureListener { e ->
+                            reply(
+                                requestId, false,
+                                error = "not_configured", message = e.message ?: "",
+                            )
+                        }
+                } catch (e: Exception) {
+                    // FirebaseApp not initialised (no google-services.json).
+                    reply(requestId, false, error = "not_configured", message = e.message ?: "")
+                }
+            }
+            "schedule_notification" -> {
+                // v1: post immediately (no exact-alarm scheduling); the title/body
+                // route through the existing notification channel.
+                val notifyArgs = JSONObject()
+                    .put("title", args.optString("title"))
+                    .put("body", args.optString("body"))
+                NotificationModule.handle(activity, "notify", notifyArgs)
+            }
+            else -> reply(requestId, false, error = "unavailable", message = "no $action")
+        }
+    }
+
+    // --- background (WorkManager) -------------------------------------------
+
+    /**
+     * Schedule/cancel a unique periodic background task via [WorkManager].
+     * Fire-and-forget. The work is a stub [PeriodicWorkRequestBuilder] over a
+     * no-op worker — wiring a real worker that re-enters Python is a documented
+     * device pendency. Periodic work clamps to a 15-minute minimum interval.
+     */
+    private fun handleBackground(action: String, args: JSONObject) {
+        val workManager = WorkManager.getInstance(activity)
+        val name = args.optString("name")
+        when (action) {
+            "schedule" -> {
+                val intervalS = if (args.isNull("interval_s")) 15.0 * 60
+                else args.optDouble("interval_s", 15.0 * 60)
+                val intervalMin = (intervalS / 60).toLong().coerceAtLeast(15)
+                val request = PeriodicWorkRequestBuilder<TempestBackgroundWorker>(
+                    intervalMin, TimeUnit.MINUTES
+                ).build()
+                workManager.enqueueUniquePeriodicWork(
+                    name,
+                    androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+                    request,
+                )
+            }
+            "cancel" -> workManager.cancelUniqueWork(name)
+            else -> Log.w(TAG, "unknown background action: $action")
+        }
+    }
+
+    // --- E8 stream state ----------------------------------------------------
+
+    /** Open sensor listeners, keyed by sensor name (for `stop`/teardown). */
+    private val sensorListeners = mutableMapOf<String, SensorEventListener>()
+
+    /** The active process-lifecycle observer, or null when the stream is off. */
+    private var lifecycleObserver: DefaultLifecycleObserver? = null
+
+    /** The active default-network callback, or null when the stream is off. */
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     companion object {
         private const val TAG = "tempestroid"
 
         /** Must match `tempestroid.native.dispatch.NATIVE_RESULT_PREFIX`. */
         private const val NATIVE_RESULT_PREFIX = "__native_result__:"
         private const val WHATSAPP_PKG = "com.whatsapp"
+
+        /** Reserved stream tokens — must match `tempestroid.bridge.protocol`. */
+        private const val SENSOR_TOKEN_PREFIX = "__sensor__"
+        private const val LIFECYCLE_TOKEN = "__lifecycle__"
+        private const val CONNECTIVITY_TOKEN_PREFIX = "__connectivity__"
 
         private var pendingCaptureCounter = 1
     }
@@ -669,5 +1356,37 @@ private object NotificationModule {
             .build()
         manager.notify(nextId++, notification)
         Log.i("tempestroid", "posted notification: $title")
+    }
+}
+
+/**
+ * No-op periodic worker for the E8 BackgroundModule. Scheduling a unique periodic
+ * task wires WorkManager and proves the schedule/cancel path; a real worker that
+ * re-enters Python (boots a short-lived interpreter, runs the task handler) is a
+ * documented device pendency — WorkManager wakes a process with no live activity,
+ * so it would need its own interpreter bootstrap.
+ */
+class TempestBackgroundWorker(context: Context, params: WorkerParameters) :
+    Worker(context, params) {
+    override fun doWork(): Result {
+        Log.i("tempestroid", "background work tick: ${inputData.keyValueMap}")
+        return Result.success()
+    }
+}
+
+/**
+ * FCM receiver service (E8 PushModule). Declared in the manifest so the app can
+ * receive pushes once Firebase is configured. Device-gated: without a
+ * `google-services.json` FirebaseApp never initialises and this service is never
+ * instantiated. A delivered message is logged; routing it into Python (over the
+ * event channel) is a documented pendency tied to the same Firebase config.
+ */
+class TempestMessagingService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        Log.i("tempestroid", "FCM new token: $token")
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        Log.i("tempestroid", "FCM message: ${message.data}")
     }
 }

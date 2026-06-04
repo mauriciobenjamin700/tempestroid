@@ -125,6 +125,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`forms`](examples/forms/app.py) | A validating `Form` of `FormField`s (typed validators block an invalid submit, per-field error inline) + `Dropdown` + `PinInput` OTP. |
 | [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
 | [`layout`](examples/layout/app.py) | Refined layout — `Wrap` chips that wrap, a paginated `PageView` (`PageChangeEvent` + dot indicator) and a `CollapsingAppBar` that shrinks on scroll. |
+| [`platform`](examples/platform/app.py) | Platform/system (E8) — haptics, real preferences, the lifecycle stream and a `KeyboardAvoidingView`. |
 
 The framework and the Qt simulator support the full widget set. The device
 (Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /
@@ -280,6 +281,11 @@ The declarative IR — bare-noun widgets.
   it; Compose `HorizontalPager`, Qt `QStackedWidget` + prev/next) and
   **`AspectRatio`** (a single-child box fixing the `ratio` = width / height;
   Compose `Modifier.aspectRatio`, Qt derives the missing dimension).
+- Platform layout (phase E8) — **`KeyboardAvoidingView`** (a vertical container
+  that insets its `children` when the on-screen keyboard appears; Compose
+  `Modifier.imePadding()` via `WindowInsets.ime`, Qt listens on
+  `QApplication.inputMethod().keyboardRectangleChanged` and behaves like a
+  `Column` on the desktop). Declares no event contract.
 - **`GestureDetector`** — wraps a `child` and reports pointer gestures via
   **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
   (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
@@ -472,6 +478,12 @@ renderer changes and are fully device-ready. Every component takes an optional
   **`PageChangeHandler`**).
 - Media event (phase E7): **`QrScanEvent`** (`data` + `format`) — emitted by a
   `QrScanner` for each decoded QR/barcode (handler prop `on_scan`).
+- Platform/system events (phase E8) — streamed from the host over reserved event
+  tokens (no widget handler): **`LifecycleEvent`** (`state`, the **`AppState`**
+  enum foreground/background/inactive), **`SensorEvent`** (`sensor` — the
+  **`SensorType`** enum — + `values` + `timestamp_ms`), **`ConnectivityEvent`**
+  (`state`, the **`ConnectivityState`** enum connected/disconnected/wifi/mobile)
+  and **`DeepLinkEvent`** (`url` + parsed `params`).
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -598,6 +610,14 @@ transport (B3) and the Kotlin Compose renderer (B4) are implemented in
   the host sends when an overlay is dismissed by a host-owned gesture (scrim tap,
   swipe-down): `"__dismiss__:<overlay_id>"`. The bridge strips the prefix and
   routes the id to `App.dismiss` (no widget handler, no new JNI entry).
+- **`SENSOR_TOKEN_PREFIX`** (`"__sensor__"`) / **`LIFECYCLE_TOKEN`**
+  (`"__lifecycle__"`) / **`CONNECTIVITY_TOKEN_PREFIX`** (`"__connectivity__"`)
+  (phase E8) — reserved tokens carrying *continuous* host streams over the same
+  event channel: `"__sensor__:<type>"` → `dispatch_sensor_event`,
+  `"__lifecycle__"` → `dispatch_lifecycle_event`,
+  `"__connectivity__:<state>"` → `dispatch_connectivity_event`. Each rides the
+  existing transport (no new JNI/C entry) and is routed in **both**
+  `bridge/jni.py` and `devserver/client.py` (so code-push gets them too).
 - **`DeviceApp`** + **`Bridge`** / **`LoopbackBridge`** — wire an `App` to a
   device transport; the device-side analogue of `run_qt`. Events come back by
   handler token, are validated by `parse_event`, and trigger coalesced patches.
@@ -674,6 +694,62 @@ The `native_command` / `native_request` envelope + the host module router is the
 extension point for further capabilities (sensors, contacts, …). The Python side
 (envelopes, pending-future resolution, typed results) is fully unit-tested
 off-device; the Kotlin capability modules need an Android device to validate.
+**`on_device()`** reports whether the native host is present, so a module can
+emulate (prefs/SQLite) or stub (`device_only`) on the desktop.
+
+#### Platform + system (phase E8)
+
+A wider platform surface, same two shapes (plus the sensor/lifecycle/connectivity
+*streams* over the reserved tokens above). Capabilities with no desktop hardware
+stub on the Qt simulator with an explicit `device_only` `NativeError`; the ones
+that can be emulated run for real off-device.
+
+- **Haptics** (fire-and-forget): **`vibrate(duration_ms=50)`**,
+  **`impact(style=ImpactStyle.MEDIUM)`** (the **`ImpactStyle`** enum
+  light/medium/heavy).
+- **System** (set = fire-and-forget, get = `async`):
+  **`set_status_bar(*, hidden=None, color=None, style=None)`** (**`StatusBarStyle`**
+  enum), **`await get_brightness() -> float`**, **`set_brightness(value)`**,
+  **`keep_awake(enabled)`**, **`set_orientation(orientation)`** (the
+  **`Orientation`** enum portrait/landscape/auto).
+- **Sensors** (stream): **`start_sensor(sensor, callback, rate_ms=100) ->
+  Callable[[], None]`** registers a `SensorEvent` callback (the **`SensorCallback`**
+  alias; returns a `stop` handle) and **`stop_sensor(sensor)`**.
+- **Lifecycle** (stream): **`on_app_state_change(callback) -> Callable[[], None]`**
+  registers a `LifecycleEvent` callback (the **`LifecycleCallback`** alias; returns
+  an `unregister`); driven for real on the Qt simulator by
+  `QApplication.applicationStateChanged`.
+- **Connectivity**: **`await get_connectivity() -> ConnectivityState`** and the
+  stream **`on_connectivity_change(callback) -> Callable[[], None]`** (the
+  **`ConnectivityCallback`** alias).
+- **Permissions** (`async`): **`await request_permission(permission)`** /
+  **`await check_permission(permission)`** → **`PermissionResult`**
+  (`permission` + **`PermissionStatus`** granted/denied/permanently_denied; the Qt
+  simulator returns granted — the desktop has every capability).
+- **Biometrics** (`async`): **`await authenticate(reason="") -> BiometricResult`**
+  (`authenticated` + optional `error`); Qt raises `device_only`.
+- **Secure storage**: **`await get_secret(key)`** / **`set_secret(key, value)`** /
+  **`delete_secret(key)`** (Android Keystore-backed; Qt raises `device_only` — no
+  silent plaintext fallback).
+- **Preferences** (real on the desktop — a JSON file under
+  `~/.tempestroid/prefs.json`): **`await get_pref(key, default=None)`** /
+  **`set_pref(key, value)`** / **`delete_pref(key)`** /
+  **`await get_all_prefs() -> dict[str, Any]`**.
+- **Database** (real on the desktop — `sqlite3` under `~/.tempestroid/app.db`):
+  **`await execute(sql, params=()) -> QueryResult`** (`columns` + `rows`) /
+  **`await execute_many(sql, params_list)`**.
+- **Push** (FCM): **`await register_push() -> PushToken`** (Qt raises
+  `device_only`; the device path needs `google-services.json`) and
+  **`schedule_notification(title, body, delay_s)`**.
+- **Background tasks** (WorkManager): **`schedule_task(name, *, interval_s=None)`**
+  / **`cancel_task(name)`**.
+
+Example: [`examples/platform/app.py`](examples/platform/app.py) exercises haptics
+(with the Qt fallback), preferences (real JSON store on the desktop), the
+lifecycle stream and a `KeyboardAvoidingView`-wrapped input. The Python half is
+fully unit-tested off-device (envelopes, typed results, stream-callback
+registries, the real prefs/SQLite emulation via `tmp_path`); biometrics, FCM,
+WorkManager and real sensors are hardware-gated and validated on a device.
 
 ---
 
@@ -722,6 +798,7 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | E5 | Inputs + forms (`Dropdown`/`TimePicker`/`RangeSlider`/`Autocomplete`/`PinInput`/`MaskedInput`, `Form`/`FormField`/`Validator`/`FormState`) | ✅ |
 | E6 | Refined layout (`flex_wrap`/`Wrap`/`PageView`/`AspectRatio`/`CollapsingAppBar`/`Table`/`DataTable`, `PageChangeEvent`) | ✅ |
 | E7 | Media + graphics (`Canvas`/`Svg`/`VideoPlayer`/`WebView`/`Blur`/`ClipPath`/`CameraPreview`/`QrScanner`/`MapView`) | ✅ |
+| E8 | Platform + system (haptics/sensors/system/lifecycle/permissions/biometrics/secure_storage/prefs/database/connectivity/push/background, `KeyboardAvoidingView`, `LifecycleEvent`/`SensorEvent`/`ConnectivityEvent`/`DeepLinkEvent`) | ✅ |
 
 ---
 
