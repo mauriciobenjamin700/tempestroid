@@ -122,6 +122,17 @@ aparelho compatível e o app abre direto, sem servidor.
 
 ## Configuração de ambiente
 
+!!! tip "Deixe o `tempest setup` configurar para você"
+    ```bash
+    tempest setup            # diagnostica JDK/SDK/NDK/build-tools/toolchain + plano
+    tempest setup --install  # instala o Android SDK + NDK (precisa de um JDK)
+    ```
+    `tempest setup` (sem flag) reporta o que falta e como resolver. Com
+    `--install` ele baixa as command-line tools, aceita as licenças e instala
+    `platform-tools` + `platforms;android-35` + `build-tools;35.0.0` +
+    `ndk;27.3.13750724` num diretório gerenciado (`--sdk-dir` para escolher).
+    O **JDK** e o `make toolchain` ficam guiados (não são instalados sozinhos).
+
 Para os caminhos com toolchain (`build`/`run`), o host de build precisa de:
 
 - **Android SDK + NDK.** Exporte `ANDROID_SDK_ROOT` apontando para o SDK (neste

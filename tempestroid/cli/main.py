@@ -291,6 +291,38 @@ def doctor_cmd(
     raise typer.Exit(_run_doctor(verbose))
 
 
+@app.command("setup")
+def setup_cmd(
+    install: Annotated[
+        bool,
+        typer.Option(
+            "--install",
+            help="Auto-install the Android SDK + NDK into --sdk-dir (needs a JDK).",
+        ),
+    ] = False,
+    sdk_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--sdk-dir",
+            help="SDK directory to inspect/install into "
+            "(default: $ANDROID_SDK_ROOT or ~/.tempestroid/android-sdk).",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Echo raw commands + full output."),
+    ] = False,
+) -> None:
+    """Configure the Android build environment for `tempest build`.
+
+    Without `--install` it diagnoses what's missing (JDK, SDK, NDK, build-tools,
+    staged toolchain) and prints a remediation plan. With `--install` it installs
+    the Android SDK + NDK into a managed directory (the JDK and `make toolchain`
+    stay guided). Not needed for the offline `tempest deploy` / `serve` paths.
+    """
+    raise typer.Exit(_run_setup(install, sdk_dir, verbose))
+
+
 def _resolve_app_or_exit(app_path: str | None) -> str:
     """Resolve the app path from the argument or project config, or exit.
 
@@ -610,6 +642,42 @@ def _run_doctor(verbose: bool) -> int:
         return 0
     console.fail("some prerequisites are missing (see above).")
     return 1
+
+
+def _run_setup(install: bool, sdk_dir: str | None, verbose: bool) -> int:
+    """Diagnose (and optionally install) the Android build environment.
+
+    Args:
+        install: Auto-install the Android SDK + NDK when ``True``.
+        sdk_dir: SDK directory to inspect/install into, or ``None`` for the
+            default.
+        verbose: Echo raw commands and stream full subprocess output.
+
+    Returns:
+        The process exit code (``0`` when build-ready).
+    """
+    import subprocess
+    from pathlib import Path
+
+    from tempestroid.cli.console import Console, StepError
+    from tempestroid.cli.packaging import ToolchainError
+    from tempestroid.cli.setup_env import setup_build_env
+
+    console = Console(verbose=verbose)
+    try:
+        return setup_build_env(
+            sdk_dir=Path(sdk_dir) if sdk_dir else None,
+            install=install,
+            console=console,
+        )
+    except StepError:
+        return 1
+    except ToolchainError as exc:
+        console.fail(f"setup failed: {exc}")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        console.fail(f"setup command failed (exit {exc.returncode}).")
+        return exc.returncode or 1
 
 
 def main(argv: list[str] | None = None) -> int:

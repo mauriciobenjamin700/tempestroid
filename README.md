@@ -245,6 +245,7 @@ surfaced and the happy path stays quiet.
 | `tempest install [src]` | ✅ | Fetch + adb-install the prebuilt host APK (no SDK/NDK); resolves `src`/env/bundled/GitHub-release (cached); `src` = local `.apk`/URL |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
+| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
 | `tempest build [app]` | ✅ | Build a standalone, shippable APK with the whole project baked in (needs Android SDK/NDK + host checkout); `--release`, `-v` |
 | `tempest run [app]` | ✅ | `build` + install on a device + stream logs (needs Android SDK/NDK + host checkout); `--release`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |

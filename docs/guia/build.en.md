@@ -120,6 +120,17 @@ the app opens directly, no server.
 
 ## Environment setup
 
+!!! tip "Let `tempest setup` configure it for you"
+    ```bash
+    tempest setup            # diagnose JDK/SDK/NDK/build-tools/toolchain + plan
+    tempest setup --install  # install the Android SDK + NDK (needs a JDK)
+    ```
+    `tempest setup` (no flag) reports what's missing and how to fix it. With
+    `--install` it downloads the command-line tools, accepts the licenses, and
+    installs `platform-tools` + `platforms;android-35` + `build-tools;35.0.0` +
+    `ndk;27.3.13750724` into a managed directory (`--sdk-dir` to choose). The
+    **JDK** and `make toolchain` stay guided (not auto-installed).
+
 For the toolchain paths (`build`/`run`), the build host needs:
 
 - **Android SDK + NDK.** Export `ANDROID_SDK_ROOT` pointing at the SDK (on this

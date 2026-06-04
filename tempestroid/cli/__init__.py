@@ -43,6 +43,11 @@ from tempestroid.cli.scaffold import (
     ScaffoldResult,
     scaffold,
 )
+from tempestroid.cli.setup_env import (
+    install_android_sdk,
+    probe_build_env,
+    setup_build_env,
+)
 
 if TYPE_CHECKING:
     from tempestroid.cli.main import app, main
@@ -66,6 +71,9 @@ __all__ = [
     "DEFAULT_APP_TEMPLATE",
     "AppResolutionError",
     "resolve_app",
+    "install_android_sdk",
+    "probe_build_env",
+    "setup_build_env",
     "Console",
     "StepError",
     "ToolchainError",

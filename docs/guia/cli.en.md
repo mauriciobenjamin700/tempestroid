@@ -25,6 +25,7 @@ uv run tempest --help
 | `tempest serve <app>` | ✅ | LAN code-push + hot reload of the whole project (phase B5). |
 | `tempest install [src]` | ✅ | adb-installs the prebuilt host (no SDK/NDK). |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON. |
+| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` installs the Android SDK + NDK. |
 | `tempest build <app>` | ✅ | **Standalone shippable APK** with the project baked in (needs Android SDK/NDK). |
 | `tempest run <app>` | ✅ | Build + install on a device + stream logs. |
 
