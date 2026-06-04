@@ -64,6 +64,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalDrawerSheet
@@ -90,6 +97,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -105,6 +113,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
@@ -317,6 +336,22 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
         "DatePicker" -> RenderDatePicker(node, style, onEvent)
 
         "FilePicker" -> RenderFilePicker(node, style, onEvent)
+
+        "Dropdown", "Select" -> RenderDropdown(node, style, onEvent)
+
+        "TimePicker" -> RenderTimePicker(node, style, onEvent)
+
+        "RangeSlider" -> RenderRangeSlider(node, style, onEvent)
+
+        "Autocomplete" -> RenderAutocomplete(node, style, onEvent)
+
+        "PinInput" -> RenderPinInput(node, style, onEvent)
+
+        "MaskedInput" -> RenderMaskedInput(node, style, onEvent)
+
+        "FormField" -> RenderFormField(node, style, onEvent)
+
+        "Form" -> RenderForm(node, style, onEvent)
 
         "Navigator" -> RenderNavigator(node, style, onEvent)
 
@@ -1139,6 +1174,430 @@ private fun displayName(context: Context, uri: Uri): String? {
         }
     }
     return null
+}
+
+/**
+ * A dropdown / select (E5). Material3 [ExposedDropdownMenuBox] anchoring a
+ * read-only [TextField] whose trailing chevron toggles the menu. Each
+ * [DropdownMenuItem] tap fires `on_select` with a [SelectEvent]-shaped payload
+ * `{"value": opt, "index": i}`.
+ *
+ * Documented divergence: Qt uses a native `QComboBox`; both emit the same
+ * `SelectEvent`. The displayed value lives in Python (`node.props["value"]`).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderDropdown(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    @Suppress("UNCHECKED_CAST")
+    val options = (node.props["options"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+    val value = node.props["value"] as? String ?: ""
+    val placeholder = node.props["placeholder"] as? String ?: ""
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = baseModifier(style),
+    ) {
+        TextField(
+            value = value.ifEmpty { placeholder },
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEachIndexed { i, opt ->
+                DropdownMenuItem(
+                    text = { Text(text = opt) },
+                    onClick = {
+                        expanded = false
+                        handlerToken(node, "on_select")?.let {
+                            val payload = JSONObject().put("value", opt).put("index", i)
+                            onEvent(it, payload.toString())
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A time picker (E5). A read-only [OutlinedTextField] opens a modal
+ * [AlertDialog] hosting the Material3 [TimePicker]; Confirm fires `on_change`
+ * with a [TimeChangeEvent]-shaped payload `{"value": "HH:MM"}` (zero-padded
+ * 24-hour). The displayed value lives in Python (`node.props["value"]`).
+ *
+ * Documented divergence: Qt uses an inline `QTimeEdit` spinner; Compose uses a
+ * modal `TimePicker` dialog. Both emit the same `TimeChangeEvent`.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RenderTimePicker(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val value = node.props["value"] as? String ?: ""
+    val label = node.props["label"] as? String ?: ""
+    var showDialog by remember { mutableStateOf(false) }
+    // Seed the picker from the current "HH:MM" value when present.
+    val parts = value.split(":")
+    val initialHour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 0
+    val initialMinute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
+    OutlinedTextField(
+        value = value,
+        onValueChange = {},
+        readOnly = true,
+        enabled = false,
+        label = if (label.isNotEmpty()) ({ Text(text = label) }) else null,
+        placeholder = { Text(text = "HH:MM") },
+        modifier = baseModifier(style).clickable { showDialog = true },
+    )
+    if (showDialog) {
+        val state = rememberTimePickerState(
+            initialHour = initialHour,
+            initialMinute = initialMinute,
+            is24Hour = true,
+        )
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDialog = false
+                    val hh = state.hour.toString().padStart(2, '0')
+                    val mm = state.minute.toString().padStart(2, '0')
+                    handlerToken(node, "on_change")?.let {
+                        onEvent(it, JSONObject().put("value", "$hh:$mm").toString())
+                    }
+                }) { Text(text = "OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) { Text(text = "Cancel") }
+            },
+            text = { TimePicker(state = state) },
+        )
+    }
+}
+
+/**
+ * A dual-handle range slider (E5). Material3 [RangeSlider] over
+ * `[min_value, max_value]`; on release `on_change` fires a
+ * [RangeChangeEvent]-shaped payload `{"low": <float>, "high": <float>}`.
+ *
+ * Documented divergence: Qt uses a custom dual-handle widget; Compose uses the
+ * native M3 `RangeSlider`. Both emit `RangeChangeEvent(low, high)` as plain
+ * floats (never a tuple).
+ */
+@Composable
+private fun RenderRangeSlider(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val min = (node.props["min_value"] as? Number)?.toFloat() ?: 0f
+    val max = (node.props["max_value"] as? Number)?.toFloat() ?: 100f
+    val low = (node.props["low"] as? Number)?.toFloat() ?: min
+    val high = (node.props["high"] as? Number)?.toFloat() ?: max
+    val step = (node.props["step"] as? Number)?.toFloat() ?: 0f
+    val steps =
+        if (step > 0f && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0)
+        else 0
+    var range by remember(low, high) {
+        mutableStateOf(low.coerceIn(min, max)..high.coerceIn(min, max))
+    }
+    RangeSlider(
+        value = range,
+        onValueChange = { range = it },
+        valueRange = min..max,
+        steps = steps,
+        onValueChangeFinished = {
+            handlerToken(node, "on_change")?.let {
+                val payload = JSONObject()
+                    .put("low", range.start.toDouble())
+                    .put("high", range.endInclusive.toDouble())
+                onEvent(it, payload.toString())
+            }
+        },
+        modifier = baseModifier(style),
+    )
+}
+
+/**
+ * An autocomplete text field (E5): an [OutlinedTextField] backed by a filterable
+ * [DropdownMenu]. Typing fires `on_change` with a [TextChangeEvent] payload; a
+ * suggestion tap fires `on_select` with a [SelectEvent] payload `{value, index}`
+ * (the index is into the *full* options list, matching the Qt `QCompleter`).
+ *
+ * Documented divergence: Qt uses a native `QCompleter` popup; Compose builds a
+ * filterable `DropdownMenu`. Both emit `TextChangeEvent` + `SelectEvent`.
+ */
+@Composable
+private fun RenderAutocomplete(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    @Suppress("UNCHECKED_CAST")
+    val options = (node.props["options"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+    val value = node.props["value"] as? String ?: ""
+    val placeholder = node.props["placeholder"] as? String ?: ""
+    var text by remember(value) { mutableStateOf(value) }
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = baseModifier(style)) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { typed ->
+                text = typed
+                expanded = typed.isNotEmpty()
+                handlerToken(node, "on_change")?.let {
+                    onEvent(it, JSONObject().put("value", typed).toString())
+                }
+            },
+            placeholder = { Text(text = placeholder) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        val matches = options.filter { it.contains(text, ignoreCase = true) }
+        DropdownMenu(
+            expanded = expanded && matches.isNotEmpty(),
+            onDismissRequest = { expanded = false },
+            properties = PopupProperties(focusable = false),
+        ) {
+            matches.forEach { opt ->
+                val index = options.indexOf(opt)
+                DropdownMenuItem(
+                    text = { Text(text = opt) },
+                    onClick = {
+                        text = opt
+                        expanded = false
+                        handlerToken(node, "on_select")?.let {
+                            val payload = JSONObject().put("value", opt).put("index", index)
+                            onEvent(it, payload.toString())
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A segmented PIN / OTP input (E5): a [Row] of `length` single-character
+ * [BasicTextField]s with auto-advance via [FocusRequester]. Each keystroke fires
+ * `on_change` with a [TextChangeEvent] payload `{"value": <combined>}`; once all
+ * cells are filled, `on_complete` fires a [SubmitEvent] payload `{}`.
+ *
+ * Documented divergence: Qt uses chained `QLineEdit`s with auto tab-advance;
+ * Compose uses `BasicTextField` + `FocusRequester`. Both emit `TextChangeEvent`
+ * per edit plus `SubmitEvent` when full. The combined value lives in Python
+ * (`node.props["value"]`).
+ */
+@Composable
+private fun RenderPinInput(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val length = (node.props["length"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 6
+    val secure = node.props["secure"] as? Boolean ?: false
+    val value = node.props["value"] as? String ?: ""
+    val digits = remember(value, length) {
+        mutableStateListOf<String>().apply {
+            for (i in 0 until length) add(value.getOrNull(i)?.toString() ?: "")
+        }
+    }
+    val focusRequesters = remember(length) { List(length) { FocusRequester() } }
+    Row(
+        modifier = baseModifier(style),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (i in 0 until length) {
+            BasicTextField(
+                value = digits[i],
+                onValueChange = { raw ->
+                    // Keep only the last typed char; advance/retreat focus.
+                    val ch = raw.takeLast(1).filter { it.isLetterOrDigit() }
+                    digits[i] = ch
+                    if (ch.isNotEmpty() && i < length - 1) {
+                        focusRequesters[i + 1].requestFocus()
+                    }
+                    val combined = digits.joinToString("")
+                    handlerToken(node, "on_change")?.let {
+                        onEvent(it, JSONObject().put("value", combined).toString())
+                    }
+                    if (combined.length == length && digits.none { it.isEmpty() }) {
+                        handlerToken(node, "on_complete")?.let {
+                            onEvent(it, JSONObject().put("values", JSONObject()).toString())
+                        }
+                    }
+                },
+                singleLine = true,
+                maxLines = 1,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation =
+                    if (secure) PasswordVisualTransformation() else VisualTransformation.None,
+                modifier = Modifier
+                    .width(40.dp)
+                    .background(Color(0xFFEEEEEE), RoundedCornerShape(6.dp))
+                    .padding(12.dp)
+                    .focusRequester(focusRequesters[i]),
+            )
+        }
+    }
+}
+
+/**
+ * A masked text input (E5): an [OutlinedTextField] whose displayed text is run
+ * through a [MaskTransformation] (e.g. `999.999.999-99` for a CPF). `on_change`
+ * fires a [TextChangeEvent] carrying ONLY the raw editable characters (no mask
+ * separators), so Python's stored value stays separator-free.
+ *
+ * Mask grammar (matches the Python `MaskedInput`): `9` = digit, `A` = letter,
+ * anything else = a fixed literal separator. The cursor `OffsetMapping` is
+ * computed by walking the mask so the caret lands correctly past separators.
+ */
+@Composable
+private fun RenderMaskedInput(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val mask = node.props["mask"] as? String ?: ""
+    val value = node.props["value"] as? String ?: ""
+    val placeholder = node.props["placeholder"] as? String ?: ""
+    val keyboard = when (node.props["keyboard"] as? String) {
+        "number" -> KeyboardType.Number
+        "phone" -> KeyboardType.Phone
+        "email" -> KeyboardType.Email
+        else -> KeyboardType.Text
+    }
+    OutlinedTextField(
+        value = value,
+        onValueChange = { typed ->
+            // Strip anything that is not an allowed editable char and cap at the
+            // number of mask slots so the raw value never exceeds the mask.
+            val slots = mask.count { it == '9' || it == 'A' }
+            val raw = typed.filter { it.isLetterOrDigit() }.let {
+                if (slots > 0) it.take(slots) else it
+            }
+            handlerToken(node, "on_change")?.let {
+                onEvent(it, JSONObject().put("value", raw).toString())
+            }
+        },
+        placeholder = { Text(text = placeholder) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+        visualTransformation = if (mask.isNotEmpty()) MaskTransformation(mask) else VisualTransformation.None,
+        modifier = baseModifier(style),
+    )
+}
+
+/**
+ * Inserts fixed mask separators (`mask` literals) into the displayed text while
+ * keeping the underlying value separator-free, with a bidirectional
+ * [OffsetMapping] so the caret stays correct. Mask grammar: `9`/`A` are editable
+ * slots, every other char is a literal separator.
+ */
+private class MaskTransformation(private val mask: String) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val raw = text.text
+        val out = StringBuilder()
+        // originalToTransformed[i] = transformed offset just before raw char i.
+        val originalToTransformed = IntArray(raw.length + 1)
+        var rawIndex = 0
+        var maskIndex = 0
+        while (maskIndex < mask.length && rawIndex < raw.length) {
+            val m = mask[maskIndex]
+            if (m == '9' || m == 'A') {
+                originalToTransformed[rawIndex] = out.length
+                out.append(raw[rawIndex])
+                rawIndex++
+            } else {
+                out.append(m)
+            }
+            maskIndex++
+        }
+        originalToTransformed[rawIndex] = out.length
+        // Any raw overflow (shouldn't happen — capped upstream) appends verbatim.
+        while (rawIndex < raw.length) {
+            originalToTransformed[rawIndex] = out.length
+            out.append(raw[rawIndex])
+            rawIndex++
+        }
+        originalToTransformed[raw.length] = out.length
+        val transformed = out.toString()
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int =
+                originalToTransformed[offset.coerceIn(0, raw.length)]
+
+            override fun transformedToOriginal(offset: Int): Int {
+                // Count editable chars at or before the transformed offset.
+                var count = 0
+                for (i in 0 until raw.length) {
+                    if (originalToTransformed[i] < offset) count++ else break
+                }
+                return count.coerceIn(0, raw.length)
+            }
+        }
+        return TransformedText(AnnotatedString(transformed), mapping)
+    }
+}
+
+/**
+ * A form field (E5): a [Column] stacking an optional label [Text], the field's
+ * single child input (rendered recursively), and an error [Text] in red when
+ * `error` is non-empty. The error string is computed in Python by the `Form`'s
+ * validators and arrives as the `error` prop — there is zero validation logic
+ * here.
+ */
+@Composable
+private fun RenderFormField(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val label = node.props["label"] as? String ?: ""
+    val error = node.props["error"] as? String ?: ""
+    val child = node.children.firstOrNull()
+    Column(modifier = baseModifier(style)) {
+        if (label.isNotEmpty()) {
+            Text(text = label, fontWeight = FontWeight.Medium)
+        }
+        if (child != null) RenderNode(child, onEvent)
+        if (error.isNotEmpty()) {
+            Text(text = error, color = Color.Red, fontSize = 12f.sp)
+        }
+    }
+}
+
+/**
+ * A form container (E5): a [Column] of its field children. The submit button is
+ * just a child whose `on_submit` token rides the existing event channel; all
+ * validation / blocking already ran in Python (`Form.validate`) before any patch
+ * reached the device, so the renderer is a faithful leaf.
+ */
+@Composable
+private fun RenderForm(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    Column(
+        modifier = baseModifier(style),
+        verticalArrangement = verticalArrangement(style),
+        horizontalAlignment = horizontalAlignment(style),
+    ) {
+        node.children.forEach { RenderNode(it, onEvent) }
+    }
 }
 
 /** A multi-line text field; each edit sends a `TextChangeEvent` to Python. */

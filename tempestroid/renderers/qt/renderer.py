@@ -31,6 +31,7 @@ from PySide6.QtCore import (
     QRectF,
     QSize,
     Qt,
+    QTime,
     QTimer,
     SignalInstance,
 )
@@ -60,6 +61,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QBoxLayout,
     QCheckBox,
+    QComboBox,
+    QCompleter,
     QDateEdit,
     QDialog,
     QFileDialog,
@@ -86,6 +89,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
     QStyleOption,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -126,15 +130,19 @@ from tempestroid.widgets import (
     MenuItem,
     MenuSelectEvent,
     PanEvent,
+    RangeChangeEvent,
     ReorderEvent,
     RouteChangeEvent,
     ScaleEvent,
     ScrollEvent,
+    SelectEvent,
     SlideEvent,
+    SubmitEvent,
     SwipeDirection,
     SwipeEvent,
     TapEvent,
     TextChangeEvent,
+    TimeChangeEvent,
     ToggleEvent,
     handler_accepts_event,
 )
@@ -215,6 +223,10 @@ _SAFE_AREA_INSETS: dict[str, float] = {
 _SAFE_AREA_EDGES_ALL: frozenset[str] = frozenset({"top", "right", "bottom", "left"})
 _TOGGLE_TYPES = frozenset({"Checkbox", "Switch"})
 _DATE_FORMAT = "yyyy-MM-dd"
+#: 24-hour display/parse format for ``TimePicker`` (matches ``"HH:MM"`` strings).
+_TIME_FORMAT = "HH:mm"
+#: Per-cell pixel width of a ``PinInput`` segment in the simulator.
+_PIN_CELL_WIDTH = 40
 #: Qt's "no maximum" sentinel for widget sizes (``QWIDGETSIZE_MAX``); resetting a
 #: fixed dimension restores min 0 / max this so the widget flexes again.
 _QT_SIZE_MAX = 16_777_215
@@ -381,6 +393,35 @@ def _matches_pattern(pattern: str, value: str) -> bool:
         return re.fullmatch(pattern, value) is not None
     except re.error:
         return False
+
+
+def _to_qt_input_mask(mask: str) -> str:
+    r"""Translate the framework mask notation to Qt's ``setInputMask`` notation.
+
+    The framework uses ``9`` for a required digit and ``A`` for a required
+    letter; any other character is a fixed literal. Qt's ``QLineEdit`` input mask
+    uses ``0`` for a required digit and ``A`` for a required letter, and treats
+    its own metacharacters (``9 A a N X 0 D # H h B b > < ! \\``) specially — so a
+    framework literal that happens to be one of those must be backslash-escaped.
+
+    Args:
+        mask: The framework mask (``9`` digit, ``A`` letter, else literal).
+
+    Returns:
+        The equivalent Qt input mask string.
+    """
+    qt_meta = set("0123456789AaNXDdHhBb#><!\\")
+    out: list[str] = []
+    for char in mask:
+        if char == "9":
+            out.append("0")  # Qt required digit
+        elif char == "A":
+            out.append("A")  # Qt required letter (same glyph)
+        elif char in qt_meta:
+            out.append("\\" + char)  # escape a literal that is a Qt metachar
+        else:
+            out.append(char)  # plain literal separator
+    return "".join(out)
 
 
 def _eye_icon(revealed: bool) -> QIcon:
@@ -2394,6 +2435,300 @@ class _AnimatedListWidget(QWidget):
         anim.start()
 
 
+class _RangeSliderWidget(QWidget):
+    """A dual-handle range slider built from two side-by-side ``QSlider``s.
+
+    PySide6 ships no native range slider, so the simulator stands in with a low
+    and a high integer ``QSlider`` that constrain each other (``low <= high``).
+    Whenever either handle settles, :meth:`set_on_change` is invoked with the
+    current ``(low, high)`` pair so the renderer can emit a ``RangeChangeEvent``.
+    The device renderer uses Compose's native Material 3 ``RangeSlider`` (a
+    documented Qt-vs-Compose divergence; the emitted event is identical).
+    """
+
+    def __init__(self) -> None:
+        """Create the two stacked sliders and wire their mutual clamping."""
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        self._low_slider: QSlider = QSlider(Qt.Orientation.Horizontal)
+        self._high_slider: QSlider = QSlider(Qt.Orientation.Horizontal)
+        layout.addWidget(self._low_slider)
+        layout.addWidget(self._high_slider)
+        self._on_change: Callable[[int, int], None] | None = None
+        self._low_slider.valueChanged.connect(self._clamp_low)
+        self._high_slider.valueChanged.connect(self._clamp_high)
+
+    def configure_range(self, minimum: int, maximum: int, step: int) -> None:
+        """Set the shared bounds and step of both handles.
+
+        Args:
+            minimum: The lowest selectable value.
+            maximum: The highest selectable value.
+            step: The single-step increment (clamped to at least ``1``).
+        """
+        for slider in (self._low_slider, self._high_slider):
+            slider.setMinimum(minimum)
+            slider.setMaximum(maximum)
+            slider.setSingleStep(max(step, 1))
+
+    def set_values(self, low: int, high: int) -> None:
+        """Set both handles without emitting a change.
+
+        Args:
+            low: The lower-bound value.
+            high: The upper-bound value.
+        """
+        self._low_slider.blockSignals(True)
+        self._high_slider.blockSignals(True)
+        self._low_slider.setValue(low)
+        self._high_slider.setValue(max(high, low))
+        self._low_slider.blockSignals(False)
+        self._high_slider.blockSignals(False)
+
+    def set_on_change(self, callback: Callable[[int, int], None] | None) -> None:
+        """Install (or clear) the range-change callback.
+
+        Args:
+            callback: A callable receiving ``(low, high)``, or ``None``.
+        """
+        self._on_change = callback
+
+    def values(self) -> tuple[int, int]:
+        """Return the current ``(low, high)`` pair.
+
+        Returns:
+            The current lower and upper bounds.
+        """
+        return self._low_slider.value(), self._high_slider.value()
+
+    def _clamp_low(self, value: int) -> None:
+        """Keep the low handle at or below the high handle, then notify.
+
+        Args:
+            value: The low slider's new value.
+        """
+        if value > self._high_slider.value():
+            self._high_slider.blockSignals(True)
+            self._high_slider.setValue(value)
+            self._high_slider.blockSignals(False)
+        self._notify()
+
+    def _clamp_high(self, value: int) -> None:
+        """Keep the high handle at or above the low handle, then notify.
+
+        Args:
+            value: The high slider's new value.
+        """
+        if value < self._low_slider.value():
+            self._low_slider.blockSignals(True)
+            self._low_slider.setValue(value)
+            self._low_slider.blockSignals(False)
+        self._notify()
+
+    def _notify(self) -> None:
+        """Forward the current pair to the installed callback (if any)."""
+        if self._on_change is not None:
+            self._on_change(self._low_slider.value(), self._high_slider.value())
+
+
+class _PinInputWidget(QWidget):
+    """A segmented PIN/OTP entry of single-character ``QLineEdit`` cells.
+
+    Each cell holds one character and auto-advances focus to the next as it is
+    filled (and steps back on backspace into an empty cell). On every edit the
+    installed change callback receives the concatenated value; once every cell is
+    filled the complete callback fires. The device renderer uses chained Compose
+    ``BasicTextField``s with a ``FocusRequester`` (a documented divergence; the
+    emitted events match).
+    """
+
+    def __init__(self) -> None:
+        """Create an empty PIN widget (cells are built by :meth:`configure`)."""
+        super().__init__()
+        self._layout: QHBoxLayout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(6)
+        self._cells: list[QLineEdit] = []
+        self._on_change: Callable[[str], None] | None = None
+        self._on_complete: Callable[[str], None] | None = None
+        self._secure: bool = False
+
+    def configure(self, length: int, secure: bool) -> None:
+        """(Re)build the cells for ``length`` and the masking mode.
+
+        Rebuilds only when the count changes; otherwise just refreshes masking so
+        the typed value is preserved across idempotent updates.
+
+        Args:
+            length: The number of single-character cells.
+            secure: Whether each cell masks its character.
+        """
+        self._secure = secure
+        if len(self._cells) != max(length, 1):
+            self._rebuild(max(length, 1))
+        echo = QLineEdit.EchoMode.Password if secure else QLineEdit.EchoMode.Normal
+        for cell in self._cells:
+            cell.setEchoMode(echo)
+
+    def set_value(self, value: str) -> None:
+        """Distribute ``value`` across the cells without emitting a change.
+
+        Args:
+            value: The concatenated value to spread one character per cell.
+        """
+        for index, cell in enumerate(self._cells):
+            char = value[index] if index < len(value) else ""
+            if cell.text() != char:
+                cell.blockSignals(True)
+                cell.setText(char)
+                cell.blockSignals(False)
+
+    def set_callbacks(
+        self,
+        on_change: Callable[[str], None] | None,
+        on_complete: Callable[[str], None] | None,
+    ) -> None:
+        """Install (or clear) the change and complete callbacks.
+
+        Args:
+            on_change: Invoked with the concatenated value on every edit.
+            on_complete: Invoked with the value once all cells are filled.
+        """
+        self._on_change = on_change
+        self._on_complete = on_complete
+
+    def value(self) -> str:
+        """Return the concatenated value across all cells.
+
+        Returns:
+            The current PIN/OTP string.
+        """
+        return "".join(cell.text() for cell in self._cells)
+
+    def _rebuild(self, length: int) -> None:
+        """Tear down and recreate ``length`` single-character cells.
+
+        Args:
+            length: The number of cells to create.
+        """
+        for cell in self._cells:
+            cell.setParent(None)
+            cell.deleteLater()
+        self._cells = []
+        for index in range(length):
+            cell = QLineEdit()
+            cell.setMaxLength(1)
+            cell.setFixedWidth(_PIN_CELL_WIDTH)
+            cell.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell.textChanged.connect(self._make_cell_slot(index))
+            self._layout.addWidget(cell)
+            self._cells.append(cell)
+
+    def _make_cell_slot(self, index: int) -> Callable[[str], None]:
+        """Build the ``textChanged`` slot for the cell at ``index``.
+
+        A factory (rather than an inline lambda) so the slot's ``text`` parameter
+        is typed for the strict checker.
+
+        Args:
+            index: The cell's position.
+
+        Returns:
+            A one-argument slot forwarding edits to :meth:`_on_cell_changed`.
+        """
+
+        def slot(text: str) -> None:
+            self._on_cell_changed(index, text)
+
+        return slot
+
+    def _on_cell_changed(self, index: int, text: str) -> None:
+        """Auto-advance focus and forward the value after a cell edit.
+
+        Args:
+            index: The edited cell's position.
+            text: The cell's new text.
+        """
+        if text and index + 1 < len(self._cells):
+            self._cells[index + 1].setFocus()
+        elif not text and index > 0:
+            self._cells[index - 1].setFocus()
+        value = self.value()
+        if self._on_change is not None:
+            self._on_change(value)
+        if self._on_complete is not None and len(value) == len(self._cells):
+            self._on_complete(value)
+
+
+class _FormFieldWidget(QWidget):
+    """A labelled wrapper around one input with an inline error line.
+
+    Lays out a label above the wrapped input and a red error label below it. The
+    wrapped input is the form field's single IR child, so it is mounted into
+    :attr:`content_layout` through the renderer's generic child path. The error
+    label is hidden while the field is valid (its message is the empty string).
+    Mirrors Compose's ``Column(label / child / red error Text)``.
+    """
+
+    def __init__(self) -> None:
+        """Create the label, child slot and (hidden) error line."""
+        super().__init__()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(2)
+        self._label: QLabel = QLabel()
+        self._label.setVisible(False)
+        outer.addWidget(self._label)
+        #: The slot the wrapped input is mounted into (the field's IR child).
+        self.content_layout: QVBoxLayout = QVBoxLayout()
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self.content_layout)
+        self._error: QLabel = QLabel()
+        self._error.setStyleSheet("color: #d32f2f;")
+        self._error.setVisible(False)
+        outer.addWidget(self._error)
+
+    def set_label(self, text: str) -> None:
+        """Set the field label, hiding it when empty.
+
+        Args:
+            text: The label text (``""`` hides the label line).
+        """
+        self._label.setText(text)
+        self._label.setVisible(bool(text))
+
+    def set_error(self, text: str) -> None:
+        """Set the error message, hiding the line when valid.
+
+        Args:
+            text: The validation message (``""`` hides the error line).
+        """
+        self._error.setText(text)
+        self._error.setVisible(bool(text))
+
+    def error_text(self) -> str:
+        """Return the currently shown error message (for tests/introspection).
+
+        Returns:
+            The error label's text (``""`` when the field is valid).
+        """
+        return self._error.text()
+
+    def error_visible(self) -> bool:
+        """Whether the error line is currently shown (independent of the window).
+
+        Uses the widget's local visibility flag (``isVisibleTo`` its parent)
+        rather than effective visibility, so it reports correctly under the
+        offscreen platform where the host window is never shown.
+
+        Returns:
+            ``True`` when an error message is visible.
+        """
+        return self._error.isVisibleTo(self)
+
+
 class _Rendered:
     """A live Qt node mirroring one IR :class:`Node`.
 
@@ -2467,6 +2802,15 @@ class QtRenderer:
         # Live password-reveal toggle actions, keyed by line-edit id, so a secure
         # Input keeps a single eye action across idempotent re-applies.
         self._eye_actions: dict[int, QAction] = {}
+        # A second value connection per widget, for the few controls that wire two
+        # distinct signals (``Autocomplete``: ``textChanged`` via ``_value_conns``
+        # plus the completer's ``activated`` here). Keyed by the line-edit id.
+        self._select_conns: dict[
+            int, tuple[SignalInstance, QMetaObject.Connection]
+        ] = {}
+        # Live ``QCompleter`` options per autocomplete line-edit, so an ``options``
+        # change rebuilds the completer cleanly without re-reading the Qt model.
+        self._completer_options: dict[int, list[str]] = {}
 
     def set_dismiss_overlay(self, dismiss: Callable[[str], None]) -> None:
         """Wire the callback that removes an overlay from the app layer.
@@ -2537,6 +2881,8 @@ class QtRenderer:
         self._click_conns.clear()
         self._value_conns.clear()
         self._eye_actions.clear()
+        self._select_conns.clear()
+        self._completer_options.clear()
         for overlay in self._overlays:
             self._teardown_overlay(overlay)
         self._overlays = []
@@ -3374,6 +3720,30 @@ class QtRenderer:
             return _Rendered(node.type, node.key, edit, None)
         if node.type == "FilePicker":
             return _Rendered(node.type, node.key, QPushButton(), None)
+        if node.type == "Dropdown":
+            return _Rendered(node.type, node.key, QComboBox(), None)
+        if node.type == "TimePicker":
+            edit = QTimeEdit()
+            edit.setDisplayFormat(_TIME_FORMAT)
+            return _Rendered(node.type, node.key, edit, None)
+        if node.type == "RangeSlider":
+            return _Rendered(node.type, node.key, _RangeSliderWidget(), None)
+        if node.type == "Autocomplete":
+            return _Rendered(node.type, node.key, QLineEdit(), None)
+        if node.type == "PinInput":
+            return _Rendered(node.type, node.key, _PinInputWidget(), None)
+        if node.type == "MaskedInput":
+            return _Rendered(node.type, node.key, QLineEdit(), None)
+        if node.type == "FormField":
+            field = _FormFieldWidget()
+            # The wrapped input (the field's IR child) flows into the content slot
+            # through the generic child path, so expose it as the node's layout.
+            return _Rendered(node.type, node.key, field, field.content_layout)
+        if node.type == "Form":
+            form = QWidget()
+            form_layout: QBoxLayout = QVBoxLayout(form)
+            form_layout.setContentsMargins(0, 0, 0, 0)
+            return _Rendered(node.type, node.key, form, form_layout)
         if node.type == "ScrollView":
             return self._new_scrollview(node)
         if node.type in _LAZY_LIST_TYPES:
@@ -3557,6 +3927,22 @@ class QtRenderer:
             self._apply_datepicker(cast("QDateEdit", node.widget), node.props)
         elif node.type == "FilePicker":
             self._apply_filepicker(cast("QPushButton", node.widget), node.props)
+        elif node.type == "Dropdown":
+            self._apply_dropdown(cast("QComboBox", node.widget), node.props)
+        elif node.type == "TimePicker":
+            self._apply_timepicker(cast("QTimeEdit", node.widget), node.props)
+        elif node.type == "RangeSlider":
+            self._apply_range_slider(
+                cast("_RangeSliderWidget", node.widget), node.props
+            )
+        elif node.type == "Autocomplete":
+            self._apply_autocomplete(cast("QLineEdit", node.widget), node.props)
+        elif node.type == "PinInput":
+            self._apply_pin_input(cast("_PinInputWidget", node.widget), node.props)
+        elif node.type == "MaskedInput":
+            self._apply_masked_input(cast("QLineEdit", node.widget), node.props)
+        elif node.type == "FormField":
+            self._apply_form_field(cast("_FormFieldWidget", node.widget), node.props)
         elif node.type == "Button":
             button = cast("QPushButton", node.widget)
             button.setText(cast("str", node.props.get("label", "")))
@@ -4300,6 +4686,225 @@ class QtRenderer:
             return
         name = path.rsplit("/", 1)[-1]
         self._invoke(handler, FileSelectEvent(uri=path, name=name))
+
+    # --- selection / form controls -----------------------------------------
+
+    def _apply_dropdown(self, widget: QComboBox, props: dict[str, Any]) -> None:
+        """Apply props to a dropdown and wire its selection handler.
+
+        Re-populates the option list only when it changed, then sets the current
+        index to match ``value`` without re-emitting. The selection handler
+        receives a :class:`SelectEvent` carrying the chosen option and its index.
+
+        Args:
+            widget: The Qt combo box.
+            props: The node's current props.
+        """
+        options = [str(opt) for opt in cast("list[Any]", props.get("options", []))]
+        current = [widget.itemText(i) for i in range(widget.count())]
+        if current != options:
+            widget.blockSignals(True)
+            widget.clear()
+            widget.addItems(options)
+            widget.blockSignals(False)
+        value = props.get("value")
+        desired = options.index(str(value)) if value in options else -1
+        if widget.currentIndex() != desired:
+            widget.blockSignals(True)
+            widget.setCurrentIndex(desired)
+            widget.blockSignals(False)
+        self._bind_value(
+            widget,
+            widget.currentIndexChanged,
+            props.get("on_select"),
+            lambda index: SelectEvent(
+                value=widget.itemText(cast("int", index)),
+                index=int(cast("int", index)),
+            ),
+        )
+
+    def _apply_timepicker(self, widget: QTimeEdit, props: dict[str, Any]) -> None:
+        """Apply props to a time picker and wire its change handler.
+
+        Args:
+            widget: The Qt time edit.
+            props: The node's current props.
+        """
+        value = cast("str", props.get("value", ""))
+        parsed = QTime.fromString(value, _TIME_FORMAT) if value else QTime()
+        if parsed.isValid() and widget.time() != parsed:
+            widget.blockSignals(True)
+            widget.setTime(parsed)
+            widget.blockSignals(False)
+        self._bind_value(
+            widget,
+            widget.timeChanged,
+            props.get("on_change"),
+            lambda qtime: TimeChangeEvent(
+                value=cast("QTime", qtime).toString(_TIME_FORMAT)
+            ),
+        )
+
+    def _apply_range_slider(
+        self, widget: _RangeSliderWidget, props: dict[str, Any]
+    ) -> None:
+        """Apply props to a dual-handle range slider and wire its change handler.
+
+        The simulator's sliders are integer-based, so fractional bounds/values are
+        rounded here (the device keeps full float precision); both bounds are kept
+        ordered (``low <= high``). Emits a :class:`RangeChangeEvent` with both
+        bounds as floats whenever either handle moves.
+
+        Args:
+            widget: The custom range-slider widget.
+            props: The node's current props.
+        """
+        widget.configure_range(
+            int(cast("float", props.get("min_value", 0.0))),
+            int(cast("float", props.get("max_value", 100.0))),
+            int(cast("float", props.get("step", 1.0))),
+        )
+        widget.set_values(
+            int(cast("float", props.get("low", 0.0))),
+            int(cast("float", props.get("high", 100.0))),
+        )
+        handler = props.get("on_change")
+        if handler is None:
+            widget.set_on_change(None)
+            return
+        callback = cast("Callable[..., Any]", handler)
+        widget.set_on_change(
+            lambda low, high: self._invoke(
+                callback, RangeChangeEvent(low=float(low), high=float(high))
+            )
+        )
+
+    def _apply_autocomplete(self, widget: QLineEdit, props: dict[str, Any]) -> None:
+        """Apply props to an autocomplete field and wire both its handlers.
+
+        Sets the text without re-emitting, (re)builds the :class:`QCompleter` from
+        ``options`` only when they changed, and wires two distinct signals: the
+        line edit's ``textChanged`` → :class:`TextChangeEvent` (``on_change``) and
+        the completer's ``activated`` → :class:`SelectEvent` (``on_select``).
+
+        Args:
+            widget: The Qt line edit.
+            props: The node's current props.
+        """
+        widget.setPlaceholderText(cast("str", props.get("placeholder", "")))
+        desired = cast("str", props.get("value", ""))
+        if widget.text() != desired:
+            widget.blockSignals(True)
+            widget.setText(desired)
+            widget.blockSignals(False)
+        options = [str(opt) for opt in cast("list[Any]", props.get("options", []))]
+        if self._completer_options.get(id(widget)) != options:
+            completer = QCompleter(options)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            widget.setCompleter(completer)
+            self._completer_options[id(widget)] = options
+            previous_select = self._select_conns.pop(id(widget), None)
+            if previous_select is not None:
+                previous_select[0].disconnect(previous_select[1])
+            on_select = props.get("on_select")
+            if on_select is not None:
+                select_cb = cast("Callable[..., Any]", on_select)
+
+                def _on_activated(text: object = "") -> None:
+                    chosen = text if isinstance(text, str) else str(text)
+                    index = options.index(chosen) if chosen in options else -1
+                    self._invoke(select_cb, SelectEvent(value=chosen, index=index))
+
+                # ``QCompleter.activated`` is overloaded (QModelIndex | str); pick
+                # the str overload at runtime by indexing the signal (the PySide6
+                # stub types it as a plain ``SignalInstance`` with no ``__getitem__``).
+                str_signal = cast(
+                    "SignalInstance", cast("Any", completer.activated)[str]
+                )
+                conn = str_signal.connect(_on_activated)
+                self._select_conns[id(widget)] = (str_signal, conn)
+        self._bind_value(
+            widget,
+            widget.textChanged,
+            props.get("on_change"),
+            lambda value: TextChangeEvent(value=cast("str", value)),
+        )
+
+    def _apply_pin_input(
+        self, widget: _PinInputWidget, props: dict[str, Any]
+    ) -> None:
+        """Apply props to a PIN/OTP entry and wire its change/complete handlers.
+
+        Args:
+            widget: The custom PIN widget.
+            props: The node's current props.
+        """
+        widget.configure(
+            int(cast("int", props.get("length", 6))),
+            bool(props.get("secure", False)),
+        )
+        widget.set_value(cast("str", props.get("value", "")))
+        on_change = props.get("on_change")
+        on_complete = props.get("on_complete")
+        change_cb = cast("Callable[..., Any] | None", on_change)
+        complete_cb = cast("Callable[..., Any] | None", on_complete)
+        widget.set_callbacks(
+            (lambda value: self._invoke(change_cb, TextChangeEvent(value=value)))
+            if change_cb is not None
+            else None,
+            (lambda value: self._invoke(complete_cb, SubmitEvent(values={})))
+            if complete_cb is not None
+            else None,
+        )
+
+    def _apply_masked_input(self, widget: QLineEdit, props: dict[str, Any]) -> None:
+        """Apply props to a masked input and wire its change handler.
+
+        Translates the framework mask (``9`` digit, ``A`` letter, else literal) to
+        Qt's input-mask notation and installs it, then wires ``textChanged`` to a
+        :class:`TextChangeEvent`.
+
+        Args:
+            widget: The Qt line edit.
+            props: The node's current props.
+        """
+        widget.setPlaceholderText(cast("str", props.get("placeholder", "")))
+        mask = cast("str", props.get("mask", ""))
+        qt_mask = _to_qt_input_mask(mask)
+        if widget.inputMask() != qt_mask:
+            widget.setInputMask(qt_mask)
+        widget.setInputMethodHints(
+            _KEYBOARD_HINTS.get(
+                cast("str", props.get("keyboard", "text")),
+                Qt.InputMethodHint.ImhNone,
+            )
+        )
+        desired = cast("str", props.get("value", ""))
+        if widget.text() != desired:
+            widget.blockSignals(True)
+            widget.setText(desired)
+            widget.blockSignals(False)
+        self._bind_value(
+            widget,
+            widget.textChanged,
+            props.get("on_change"),
+            lambda value: TextChangeEvent(value=cast("str", value)),
+        )
+
+    @staticmethod
+    def _apply_form_field(widget: _FormFieldWidget, props: dict[str, Any]) -> None:
+        """Apply props to a form field: its label and (red) error line.
+
+        The wrapped input is mounted as the field's IR child through the generic
+        child path; this only sets the label and the inline error message (the
+        error line is hidden while the field is valid).
+
+        Args:
+            widget: The custom form-field widget.
+            props: The node's current props.
+        """
+        widget.set_label(cast("str", props.get("label", "")))
+        widget.set_error(cast("str", props.get("error", "")))
 
     # --- virtualized lists -------------------------------------------------
 

@@ -1,21 +1,27 @@
 # Virtualized-list tests reach into the renderer's private scroll-area classes
 # to assert their window/sticky behaviour — internal by design.
 # pyright: reportPrivateUsage=false
+from typing import Any, cast
+
 import pytest
+from PySide6.QtCore import QTime
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDateEdit,
     QLabel,
     QLineEdit,
     QMenu,
     QProgressBar,
     QPushButton,
+    QTimeEdit,
     QWidget,
 )
 
 from tempestroid import (
     ActionSheet,
+    Autocomplete,
     BottomSheet,
     Button,
     Checkbox,
@@ -23,14 +29,18 @@ from tempestroid import (
     Container,
     DatePicker,
     Dialog,
+    Dropdown,
     EndReachedEvent,
     FilePicker,
     Input,
     LazyColumn,
     LazyGrid,
+    MaskedInput,
     Menu,
     MenuItem,
+    PinInput,
     Popover,
+    RangeSlider,
     RefreshControl,
     Row,
     Scene,
@@ -38,6 +48,7 @@ from tempestroid import (
     SectionHeader,
     SectionList,
     Text,
+    TimePicker,
     Toast,
     Tooltip,
     build,
@@ -48,11 +59,14 @@ from tempestroid import (
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.renderer import (
     _DismissDialog,
+    _FormFieldWidget,
     _LazyGridArea,
     _LazyScrollArea,
+    _PinInputWidget,
+    _RangeSliderWidget,
     _ScrimWidget,
 )
-from tempestroid.widgets import Widget
+from tempestroid.widgets import Form, FormField, Widget
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -239,9 +253,7 @@ def test_checkbox_toggle_invokes_handler():
     renderer = QtRenderer()
     renderer.mount(
         build(
-            Checkbox(
-                label="x", on_change=lambda event: toggles.append(event.checked)
-            )
+            Checkbox(label="x", on_change=lambda event: toggles.append(event.checked))
         )
     )
     widget = renderer.root_widget
@@ -264,6 +276,265 @@ def test_filepicker_renders_label_as_button():
     widget = renderer.root_widget
     assert isinstance(widget, QPushButton)
     assert widget.text() == "Upload"
+
+
+# --- E5 inputs and forms ---------------------------------------------------
+
+
+def test_dropdown_renders_options_and_current_value():
+    renderer = QtRenderer()
+    renderer.mount(build(Dropdown(options=["A", "B", "C"], value="B")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QComboBox)
+    assert [widget.itemText(i) for i in range(widget.count())] == ["A", "B", "C"]
+    assert widget.currentIndex() == 1
+
+
+def test_dropdown_change_invokes_handler_with_value_and_index():
+    selections: list[tuple[str, int]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Dropdown(
+                options=["A", "B", "C"],
+                value="A",
+                on_select=lambda event: selections.append((event.value, event.index)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QComboBox)
+    widget.setCurrentIndex(2)
+    assert selections == [("C", 2)]
+
+
+def test_dropdown_options_update_repopulates():
+    renderer = QtRenderer()
+    old = Dropdown(options=["A", "B"], value="A")
+    renderer.mount(build(old))
+    new = Dropdown(options=["X", "Y", "Z"], value="Y")
+    renderer.apply(diff(build(old), build(new)))
+    widget = renderer.root_widget
+    assert isinstance(widget, QComboBox)
+    assert [widget.itemText(i) for i in range(widget.count())] == ["X", "Y", "Z"]
+    assert widget.currentIndex() == 1
+
+
+def test_timepicker_renders_value():
+    renderer = QtRenderer()
+    renderer.mount(build(TimePicker(value="08:30")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QTimeEdit)
+    assert widget.time().toString("HH:mm") == "08:30"
+
+
+def test_timepicker_change_invokes_handler():
+    times: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            TimePicker(value="08:30", on_change=lambda event: times.append(event.value))
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QTimeEdit)
+    widget.setTime(QTime(9, 45))
+    assert times == ["09:45"]
+
+
+def test_range_slider_renders_bounds_and_values():
+    renderer = QtRenderer()
+    renderer.mount(build(RangeSlider(low=10, high=80, min_value=0, max_value=100)))
+    widget = renderer.root_widget
+    assert isinstance(widget, _RangeSliderWidget)
+    assert widget.values() == (10, 80)
+
+
+def test_range_slider_change_invokes_handler():
+    ranges: list[tuple[float, float]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            RangeSlider(
+                low=10,
+                high=80,
+                min_value=0,
+                max_value=100,
+                on_change=lambda event: ranges.append((event.low, event.high)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _RangeSliderWidget)
+    widget._low_slider.setValue(25)
+    assert ranges and ranges[-1] == (25.0, 80.0)
+
+
+def test_range_slider_keeps_low_below_high():
+    ranges: list[tuple[float, float]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            RangeSlider(
+                low=10,
+                high=80,
+                min_value=0,
+                max_value=100,
+                on_change=lambda event: ranges.append((event.low, event.high)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _RangeSliderWidget)
+    # Drag the low handle past the high handle: the high follows so low <= high.
+    widget._low_slider.setValue(95)
+    low, high = widget.values()
+    assert low <= high
+
+
+def test_masked_input_applies_converted_mask():
+    renderer = QtRenderer()
+    renderer.mount(build(MaskedInput(mask="999.999.999-99")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    # Framework '9' (digit) -> Qt '0'; literals are preserved.
+    assert widget.inputMask().startswith("000.000.000-00")
+
+
+def test_masked_input_change_invokes_handler():
+    changes: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            MaskedInput(
+                mask="99/99", on_change=lambda event: changes.append(event.value)
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    widget.setText("1234")
+    assert changes and "12/34" in changes[-1]
+
+
+def test_autocomplete_renders_completer_and_value():
+    renderer = QtRenderer()
+    renderer.mount(build(Autocomplete(options=["apple", "apricot"], value="ap")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    assert widget.text() == "ap"
+    assert widget.completer() is not None
+
+
+def test_autocomplete_text_change_invokes_handler():
+    texts: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Autocomplete(
+                options=["apple", "apricot"],
+                on_change=lambda event: texts.append(event.value),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    widget.setText("ap")
+    assert texts == ["ap"]
+
+
+def test_autocomplete_select_invokes_handler_with_value_and_index():
+    # The completer's `activated` signal routes a SelectEvent carrying the chosen
+    # option and its index in the options list (on_select path, done-when #3).
+    selections: list[tuple[str, int]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Autocomplete(
+                options=["apple", "apricot", "banana"],
+                on_select=lambda event: selections.append((event.value, event.index)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    completer = widget.completer()
+    assert completer is not None
+    cast("Any", completer.activated)[str].emit("banana")
+    assert selections == [("banana", 2)]
+
+
+def test_pin_input_renders_cells_and_completes():
+    changes: list[str] = []
+    completions: list[int] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            PinInput(
+                length=3,
+                on_change=lambda event: changes.append(event.value),
+                on_complete=lambda: completions.append(1),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _PinInputWidget)
+    assert len(widget.findChildren(QLineEdit)) == 3
+    widget._cells[0].setText("1")
+    widget._cells[1].setText("2")
+    widget._cells[2].setText("3")
+    assert changes[-1] == "123"
+    assert completions == [1]
+
+
+def test_form_field_shows_error_text():
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            FormField(
+                name="email", label="Email", error="Invalid", child=Input(value="x")
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _FormFieldWidget)
+    assert widget.error_visible()
+    assert widget.error_text() == "Invalid"
+    # The wrapped input is rendered inside the field.
+    assert widget.findChildren(QLineEdit)
+
+
+def test_form_field_hides_error_when_empty():
+    renderer = QtRenderer()
+    renderer.mount(build(FormField(name="email", error="", child=Input(value="y"))))
+    widget = renderer.root_widget
+    assert isinstance(widget, _FormFieldWidget)
+    assert not widget.error_visible()
+
+
+def test_form_field_error_toggles_on_update():
+    renderer = QtRenderer()
+    old = FormField(name="e", error="", child=Input(value="z"))
+    renderer.mount(build(old))
+    new = FormField(name="e", error="Required", child=Input(value="z"))
+    renderer.apply(diff(build(old), build(new)))
+    widget = renderer.root_widget
+    assert isinstance(widget, _FormFieldWidget)
+    assert widget.error_visible()
+    assert widget.error_text() == "Required"
+
+
+def test_form_renders_field_children():
+    renderer = QtRenderer()
+    form = Form(
+        fields=[
+            FormField(name="a", child=Input(value="1")),
+            FormField(name="b", child=Input(value="2")),
+        ]
+    )
+    renderer.mount(build(form))
+    widget = renderer.root_widget
+    assert len(widget.findChildren(QLineEdit)) == 2
 
 
 def test_input_value_update_applies():
