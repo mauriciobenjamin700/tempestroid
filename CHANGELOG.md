@@ -6,6 +6,87 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-04
+
+**Trilho E — Flutter/React Native parity (E0–E9).** Ten phases land the
+cross-platform surface that closes the gap with Flutter + React Native. Every
+phase ships the three matched layers (renderer-agnostic IR/diff + Qt translator
++ Compose translator) with both renderers green; the device half (Compose on a
+physical arm64 device) is verified where hardware allows. ~160 new public
+exports — see the README for the full API.
+
+### Added
+
+- **Navigation & routes (E0).** `Navigator` / `NavStack` / `Route` push-pop
+  stack, `TabView` / `TabBar` tabs, `RouteDrawer` slide-over drawer, Android
+  back button (`BACK_TOKEN` → `App.pop`) and deep-link parsing
+  (`routes_from_path`, `DeepLinkEvent`). Typed `RouteChangeEvent`; per-route
+  slide/fade transitions in both renderers.
+- **Virtualized lists & scroll (E1).** `LazyColumn` / `LazyRow` / `LazyGrid`
+  materialize only the visible window into keyed children; `SectionList` /
+  `SectionHeader` with sticky headers; `RefreshControl` pull-to-refresh
+  (`RefreshEvent`); infinite scroll via `ScrollEvent` + `EndReachedEvent`
+  (`App.slide_window`). 10k-item lists scroll fluidly on both renderers.
+- **Overlays & feedback (E2).** `Dialog`, `BottomSheet`, `Toast`, `Tooltip`,
+  `Menu` / `Popover` / `ActionSheet` (with `MenuItem` / `MenuSelectEvent`),
+  driven by a z-ordered overlay layer (`Scene` / `OverlayEntry` /
+  `build_scene` / `diff_scene`); barrier scrim, anchored menus, auto-expiring
+  toasts, `DISMISS_TOKEN_PREFIX` for host-initiated dismissal.
+- **Animation framework (E3).** `AnimationController` / `Tween` / `Spring` with
+  a deterministic clock that crosses the bridge via `FRAME_TOKEN`
+  (`App._tick_from_device`); `Animated`, `AnimatedList`, `Hero` shared-element
+  transitions, `Shimmer` / `Skeleton`. `has_animations` on the mount/patch
+  envelope gates `withFrameNanos` on the host.
+- **Advanced gestures (E4).** `Draggable` / `DragTarget` (`DragEvent`),
+  `InteractiveViewer` pinch-zoom (`ScaleEvent` / `PanEvent`), double-tap,
+  `Dismissible` swipe-to-delete (`DismissEvent`), `ReorderableList`
+  (`ReorderEvent`). Each gesture emits a typed event and drives state.
+- **Inputs & forms (E5).** `Dropdown` (`SelectEvent`), `TimePicker`
+  (`TimeChangeEvent`), `RangeSlider` (`RangeChangeEvent`), `Autocomplete`,
+  `PinInput` (`SubmitEvent`), `MaskedInput`; `Form` / `FormField` / `FormState`
+  with `Validator` / `ValidationEvent` — validation runs in Python and blocks
+  invalid submit with per-field errors on both renderers.
+- **Refined layout (E6).** `Wrap` / `FlexWrap` flow wrapping, `PageView`
+  pager/carousel (`PageChangeEvent`), `CollapsingAppBar` (sliver-style collapse
+  on scroll), `Table` / `TableRow` / `TableCell` / `DataTable`, `AspectRatio`.
+- **Media & graphics (E7).** `Canvas` with a JSON draw-command list
+  (`DrawCommand` / `MoveTo` / `LineTo` / `ArcTo` / `DrawRect` / `DrawOval` /
+  `DrawText` / `FillCmd` / `StrokeCmd`), `Svg`, `VideoPlayer`, `WebView`,
+  `Blur` / `BackdropFilter`, `ClipShape` / `ClipPath`, `CameraPreview`,
+  `QrScanner` (`QrScanEvent`), `MapView`.
+- **Platform & system (E8).** Haptics (`vibrate` / `impact` / `ImpactStyle`),
+  sensors (`start_sensor` / `stop_sensor` / `SensorEvent` / `SensorType` /
+  `SensorCallback`, `SENSOR_TOKEN_PREFIX`), app lifecycle (`on_app_state_change`
+  / `AppState` / `LifecycleEvent`, `LIFECYCLE_TOKEN`), permissions
+  (`request_permission` / `check_permission` / `PermissionStatus` /
+  `PermissionResult`), biometrics (`authenticate` / `BiometricResult`), secure
+  storage (`set_secret` / `get_secret` / `delete_secret`), preferences
+  (`set_pref` / `get_pref` / `delete_pref` / `get_all_prefs`), SQLite (`execute`
+  / `execute_many` / `QueryResult`), connectivity (`get_connectivity` /
+  `on_connectivity_change` / `ConnectivityState` / `ConnectivityEvent`,
+  `CONNECTIVITY_TOKEN_PREFIX`), push (`register_push` / `PushToken` /
+  `schedule_notification`), background tasks (`schedule_task` / `cancel_task`),
+  system controls (`set_status_bar` / `StatusBarStyle` / `get_brightness` /
+  `set_brightness` / `keep_awake` / `set_orientation` / `Orientation`),
+  `KeyboardAvoidingView`, and `NativeError`. Verified on device: haptics,
+  lifecycle, preferences, `KeyboardAvoidingView`.
+- **Cross-cutting (E9).** Theming (`Theme` / `ThemeMode` / `App.set_theme`,
+  `ThemeChangeEvent` over `THEME_TOKEN`) with light/dark; `MediaQueryData` /
+  `Orientation`; i18n/RTL (`Locale` / `translate` / `t` / `App.set_locale`,
+  `LocaleChangeEvent` over `LOCALE_TOKEN`) — RTL mirrors start/end edges and
+  text-align in both translators; accessibility (`Semantics` + `focusable` /
+  `focus_order` on the `Widget` base); custom fonts + scale (`Style.text_scale`
+  / `font_asset`). Verified on device: dark mode, RTL + Arabic i18n.
+
+### Fixed
+
+- Apply `SafeArea` (system-bars insets) to the Compose root by default.
+- Compose `Button` honors `Style.background` / `color` via
+  `ButtonDefaults.buttonColors` instead of letting the Material default (purple)
+  paint over it; single-glyph operator keys no longer collapse.
+- Defer the `run_qt` import in `examples/theming/app.py` into `main()` so the
+  device code-push path (no PySide6) can re-exec the app.
+
 ## [0.4.0] — 2026-05-31
 
 ### Added
