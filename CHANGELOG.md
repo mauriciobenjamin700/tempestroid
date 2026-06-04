@@ -6,6 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-04
+
+**Build, deploy & ship — multi-file projects on a device.** Apps are now
+multi-file: the whole importable project tree (root = nearest `pyproject.toml`)
+is bundled onto `sys.path` in the simulator and on the device, so
+`from my_pkg import x` resolves identically everywhere.
+
+### Added
+
+- **`tempest build`** now produces a **standalone, shippable APK** with the
+  project baked in (runs with no dev server); **`tempest deploy`** is the new
+  offline, no-toolchain device push (install bundled host + push project +
+  launch); **`tempest setup`** configures the Android build environment
+  (diagnose JDK/SDK/NDK/build-tools; `--install` installs the SDK + NDK).
+- **Multi-file project bundle** (`tempestroid.cli.bundle`): `resolve_project`,
+  `build_bundle`, `extract_bundle`, `tree_signature`; `spec_from_project` loader;
+  `run_device_bundle` device entry; Kotlin host extracts the bundle onto
+  `sys.path`.
+- **Background tasks re-enter Python** (`on_background_task`): the WorkManager
+  worker dispatches a fired task into the live interpreter, or boots a fresh
+  short-lived one when the process was woken from dead. One-shot
+  (`interval_s=None`) or periodic scheduling.
+- **Accessibility** labels now cross the bridge — `Semantics` is lowered to the
+  device a11y tree (TalkBack-readable).
+- **Optional FCM**: the google-services Gradle plugin is applied only when an
+  `android-host/app/google-services.json` is present, so the host still builds
+  without a Firebase project.
+
+### Fixed
+
+- **Biometrics** reach the system service: the host `MainActivity` is now a
+  `FragmentActivity` (required by `BiometricPrompt`).
+- The published wheel bundles the prebuilt host APK (publish CI fetches it from
+  the release), so `tempest install` / `deploy` work fully offline.
+
+### Verified on device (Xiaomi 23053RN02A)
+
+- Shippable multi-file APK (cold launch, interactive); E9 dark mode / i18n / RTL;
+  E8 haptics, lifecycle, prefs, sensors, WorkManager re-entering Python (→
+  notification), biometrics path, local + FCM-token push paths, semantics.
+
 ## [0.5.0] — 2026-06-04
 
 **Trilho E — Flutter/React Native parity (E0–E9).** Ten phases land the
