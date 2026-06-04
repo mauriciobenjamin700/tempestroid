@@ -705,7 +705,8 @@ def deploy_offline(
         devices = connected_devices()
         if not devices:
             raise StepError("no ready device (connect one and run `adb devices`)")
-        con.info(f"device: {', '.join(devices)}")
+        joined = ", ".join(devices)
+        con.info(f"device: {joined}")
 
     if force_install or not host_installed(adb):
         apk = resolve_host_apk(None, version=version, console=con)

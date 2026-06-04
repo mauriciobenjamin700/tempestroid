@@ -355,7 +355,8 @@ def install_android_sdk(
         f"build-tools;{BUILD_TOOLS}",
         f"ndk;{NDK_VERSION}",
     ]
-    with con.step(f"Installing SDK packages ({', '.join(packages)})"):
+    joined = ", ".join(packages)
+    with con.step(f"Installing SDK packages ({joined})"):
         con.run_command([str(sdkmanager), root_arg, *packages])
 
     return sdk_dir
