@@ -117,6 +117,7 @@ nav:
       - Eventos: guia/eventos.md
       - CLI (tempest): guia/cli.md
       - Galeria de exemplos: guia/exemplos.md
+      - Build, deploy e publicação: guia/build.md
       - Rodar no dispositivo (WSL): guia/dispositivo-wsl.md
   - Referência:
       - API pública: referencia/api.md

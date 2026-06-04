@@ -17,8 +17,10 @@ from tempestroid.cli.packaging import (
     PreflightCheck,
     ToolchainError,
     connected_devices,
+    deploy_offline,
     find_android_host,
     host_apk_url,
+    host_installed,
     install_host,
     preflight,
     report_preflight,
@@ -263,6 +265,170 @@ def test_install_host_installs_and_launches(
     assert install_host(str(apk), version="0.0.0", console=console) == 0
     assert any("install" in c for c in calls)
     assert any("am" in c for c in calls)
+
+
+def test_host_installed_true_when_pm_lists_package(monkeypatch: pytest.MonkeyPatch):
+    def fake_run(
+        cmd: Sequence[str], **_kw: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert "pm" in cmd and "list" in cmd
+        out = "package:org.tempestroid.host\n"
+        return subprocess.CompletedProcess(list(cmd), 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert host_installed("/usr/bin/adb") is True
+
+
+def test_host_installed_false_when_absent(monkeypatch: pytest.MonkeyPatch):
+    def fake_run(
+        *_a: object, **_k: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert host_installed("/usr/bin/adb") is False
+
+
+def test_host_installed_false_without_adb(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("shutil.which", _which_none)
+    assert host_installed() is False
+
+
+def _no_devices() -> list[str]:
+    """Stub: no device connected."""
+    return []
+
+
+def _one_device() -> list[str]:
+    """Stub: a single ready device."""
+    return ["DEV1"]
+
+
+def _host_present(_adb: str | None = None) -> bool:
+    """Stub: the host package is already installed."""
+    return True
+
+
+def _host_absent(_adb: str | None = None) -> bool:
+    """Stub: the host package is not installed."""
+    return False
+
+
+def _noop_port(_port: int) -> None:
+    """Stub for adb_reverse/launch_host_dev (records nothing)."""
+
+
+class _FakeDevServer:
+    """Stand-in for ``DevServer`` that fires ``on_fetch`` as soon as it starts.
+
+    Lets :func:`deploy_offline` be tested off-device: the one-shot push waits on
+    the fetch event, which this fake signals synchronously, so no HTTP, adb, or
+    device is involved.
+    """
+
+    def __init__(
+        self,
+        _app_path: object,
+        *,
+        host: str,
+        port: int,
+        log: object,
+        on_fetch: object,
+    ) -> None:
+        self._on_fetch = on_fetch
+        self.port = 7654
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+        if callable(self._on_fetch):
+            self._on_fetch()
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+def test_deploy_offline_requires_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    app = tmp_path / "app.py"
+    app.write_text("view = make_state = None\n", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr(
+        "tempestroid.cli.packaging.connected_devices", _no_devices
+    )
+    with pytest.raises(StepError):
+        deploy_offline(
+            str(app), version="0.0.0", console=Console(stream=io.StringIO())
+        )
+
+
+def test_deploy_offline_missing_app_raises(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("shutil.which", _which_adb)
+    with pytest.raises(FileNotFoundError):
+        deploy_offline("/no/such/app.py", version="0.0.0")
+
+
+def test_deploy_offline_pushes_when_host_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    app = tmp_path / "app.py"
+    app.write_text("view = make_state = None\n", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr("tempestroid.cli.packaging.connected_devices", _one_device)
+    # Host already installed → the ~50 MB adb install is skipped.
+    monkeypatch.setattr("tempestroid.cli.packaging.host_installed", _host_present)
+    monkeypatch.setattr("tempestroid.devserver.DevServer", _FakeDevServer)
+    reversed_ports: list[int] = []
+    launched_ports: list[int] = []
+    monkeypatch.setattr(
+        "tempestroid.cli.packaging.adb_reverse", reversed_ports.append
+    )
+    monkeypatch.setattr(
+        "tempestroid.cli.packaging.launch_host_dev", launched_ports.append
+    )
+
+    rc = deploy_offline(
+        str(app), version="0.0.0", console=Console(stream=io.StringIO())
+    )
+
+    assert rc == 0
+    assert reversed_ports == [7654]
+    assert launched_ports == [7654]
+
+
+def test_deploy_offline_installs_host_when_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    app = tmp_path / "app.py"
+    app.write_text("view = make_state = None\n", encoding="utf-8")
+    apk = tmp_path / "host.apk"
+    apk.write_bytes(b"PK\x03\x04")
+    monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr("tempestroid.cli.packaging.connected_devices", _one_device)
+    monkeypatch.setattr("tempestroid.cli.packaging.host_installed", _host_absent)
+
+    def _resolve(*_a: object, **_k: object) -> Path:
+        return apk
+
+    monkeypatch.setattr("tempestroid.cli.packaging.resolve_host_apk", _resolve)
+    monkeypatch.setattr("tempestroid.devserver.DevServer", _FakeDevServer)
+    monkeypatch.setattr("tempestroid.cli.packaging.adb_reverse", _noop_port)
+    monkeypatch.setattr("tempestroid.cli.packaging.launch_host_dev", _noop_port)
+    installed: list[list[str]] = []
+
+    def fake_run(_self: Console, cmd: Sequence[str], **_kw: object) -> None:
+        installed.append(list(cmd))
+
+    monkeypatch.setattr(Console, "run_command", fake_run)
+
+    rc = deploy_offline(
+        str(app), version="0.0.0", console=Console(stream=io.StringIO())
+    )
+
+    assert rc == 0
+    assert any("install" in c for c in installed)
 
 
 def test_console_run_command_surfaces_failure_tail():

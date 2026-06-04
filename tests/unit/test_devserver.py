@@ -5,12 +5,29 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 from tempestroid.bridge.device import Bridge, LoopbackBridge
-from tempestroid.devserver import DevServer, run_dev_client, source_hash
+from tempestroid.devserver import DevServer, run_dev_client
+
+
+def _bundle_bytes(source: str, entry: str = "main.py") -> bytes:
+    """Build a single-file project bundle (manifest + entry) for tests.
+
+    Mirrors what ``DevServer.bundle`` / ``tempest build`` produce: a zip with a
+    ``tempest_bundle.json`` manifest naming the entry plus the entry source.
+    """
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("tempest_bundle.json", json.dumps({"entry": entry}))
+        archive.writestr(entry, source)
+    return buffer.getvalue()
 
 _APP_SRC = """
 from dataclasses import dataclass
@@ -61,28 +78,64 @@ def view(app):
 
 
 def _get(url: str) -> str:
-    """Fetch a URL body (blocking)."""
+    """Fetch a URL body as text (blocking)."""
     with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310
         return response.read().decode("utf-8")
 
 
-def test_devserver_serves_and_reflects_edits(tmp_path: Path) -> None:
-    """``/version`` and ``/app`` reflect the file, including edits after start."""
+def _get_bytes(url: str) -> bytes:
+    """Fetch a URL body as raw bytes (blocking)."""
+    with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310
+        return response.read()
+
+
+def test_devserver_serves_bundle_and_reflects_edits(tmp_path: Path) -> None:
+    """``/version`` tracks the tree and ``/bundle`` carries the whole project.
+
+    Editing any file changes the ``/version`` signature without a restart, and
+    ``/bundle`` returns a zip containing the manifest + every project file.
+    """
+    import io
+    import zipfile
+
     app = tmp_path / "app.py"
     app.write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "helper.py").write_text("y = 2\n", encoding="utf-8")
     server = DevServer(app, host="127.0.0.1", port=0)
     server.start()
     try:
         base = f"http://127.0.0.1:{server.port}"
-        version = json.loads(_get(f"{base}/version"))
-        assert version["hash"] == source_hash("x = 1\n")
+        first = json.loads(_get(f"{base}/version"))["hash"]
+        assert first
 
-        payload = json.loads(_get(f"{base}/app"))
-        assert payload["source"] == "x = 1\n"
+        with zipfile.ZipFile(io.BytesIO(_get_bytes(f"{base}/bundle"))) as archive:
+            names = set(archive.namelist())
+        assert {"tempest_bundle.json", "app.py", "helper.py"} <= names
 
-        # Editing the file changes what the server reports — no restart needed.
-        app.write_text("x = 2\n", encoding="utf-8")
-        assert json.loads(_get(f"{base}/version"))["hash"] == source_hash("x = 2\n")
+        # Editing any file changes the signature — no restart needed.
+        (tmp_path / "helper.py").write_text("y = 30000\n", encoding="utf-8")
+        assert json.loads(_get(f"{base}/version"))["hash"] != first
+    finally:
+        server.stop()
+
+
+def test_devserver_on_fetch_fires_on_app_get(tmp_path: Path) -> None:
+    """``on_fetch`` fires on ``GET /app`` (not ``/version``) — the one-shot hook.
+
+    ``tempest build`` uses this to tear its short-lived server down once the
+    device has fetched the app source.
+    """
+    app = tmp_path / "app.py"
+    app.write_text("x = 1\n", encoding="utf-8")
+    fetched = threading.Event()
+    server = DevServer(app, host="127.0.0.1", port=0, on_fetch=fetched.set)
+    server.start()
+    try:
+        base = f"http://127.0.0.1:{server.port}"
+        _get(f"{base}/version")
+        assert not fetched.is_set()  # a cheap poll must not trip the hook
+        _get(f"{base}/app")
+        assert fetched.wait(timeout=2.0)
     finally:
         server.stop()
 
@@ -101,12 +154,12 @@ async def test_code_push_round_trip() -> None:
     def register_sink(cb: Any) -> None:
         sink["cb"] = cb
 
-    responses = {
-        "/version": json.dumps({"hash": "h1"}),
-        "/app": json.dumps({"hash": "h1", "source": _APP_SRC}),
+    responses: dict[str, bytes] = {
+        "/version": json.dumps({"hash": "h1"}).encode(),
+        "/bundle": _bundle_bytes(_APP_SRC),
     }
 
-    async def fetch(url: str) -> str:
+    async def fetch(url: str) -> bytes:
         for path, body in responses.items():
             if url.endswith(path):
                 return body
@@ -168,12 +221,12 @@ async def test_dev_client_routes_native_result_to_resolver(
     def register_sink(cb: Any) -> None:
         sink["cb"] = cb
 
-    responses = {
-        "/version": json.dumps({"hash": "h1"}),
-        "/app": json.dumps({"hash": "h1", "source": _APP_SRC}),
+    responses: dict[str, bytes] = {
+        "/version": json.dumps({"hash": "h1"}).encode(),
+        "/bundle": _bundle_bytes(_APP_SRC),
     }
 
-    async def fetch(url: str) -> str:
+    async def fetch(url: str) -> bytes:
         for path, body in responses.items():
             if url.endswith(path):
                 return body
@@ -224,12 +277,12 @@ async def test_dev_client_routes_back_token_to_pop() -> None:
     def register_sink(cb: Any) -> None:
         sink["cb"] = cb
 
-    responses = {
-        "/version": json.dumps({"hash": "h1"}),
-        "/app": json.dumps({"hash": "h1", "source": _NAV_SRC}),
+    responses: dict[str, bytes] = {
+        "/version": json.dumps({"hash": "h1"}).encode(),
+        "/bundle": _bundle_bytes(_NAV_SRC),
     }
 
-    async def fetch(url: str) -> str:
+    async def fetch(url: str) -> bytes:
         for path, body in responses.items():
             if url.endswith(path):
                 return body
@@ -319,12 +372,12 @@ async def test_dev_client_routes_reserved_stream_tokens(monkeypatch: Any) -> Non
     def register_sink(cb: Any) -> None:
         sink["cb"] = cb
 
-    responses = {
-        "/version": json.dumps({"hash": "h1"}),
-        "/app": json.dumps({"hash": "h1", "source": _APP_SRC}),
+    responses: dict[str, bytes] = {
+        "/version": json.dumps({"hash": "h1"}).encode(),
+        "/bundle": _bundle_bytes(_APP_SRC),
     }
 
-    async def fetch(url: str) -> str:
+    async def fetch(url: str) -> bytes:
         for path, body in responses.items():
             if url.endswith(path):
                 return body

@@ -45,7 +45,13 @@ from tempestroid.widgets.events import (
     parse_event,
 )
 
-__all__ = ["JniBridge", "make_event_sink", "run_device", "run_device_file"]
+__all__ = [
+    "JniBridge",
+    "make_event_sink",
+    "run_device",
+    "run_device_file",
+    "run_device_bundle",
+]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -288,4 +294,31 @@ def run_device_file(path: str, route: str | None = None) -> None:
 
     source = Path(path).read_text(encoding="utf-8")
     spec = spec_from_source(source, filename=path)
+    run_device(spec.make_state(), spec.view, route=route)
+
+
+def run_device_bundle(zip_path: str, route: str | None = None) -> None:
+    """Extract a project bundle and run its app standalone on the device.
+
+    The device entry point for a multi-file APK built by ``tempest build``: the
+    user's whole project tree is packaged as a ``tempest_app_bundle.zip`` asset,
+    copied to ``zip_path`` on first launch, and run here. The bundle is extracted
+    next to the zip, its root placed on ``sys.path`` (so ``from my_pkg import x``
+    resolves), and the manifest's entry module loaded — then the app runs exactly
+    like :func:`run_device_file`, but for a project rather than a single file.
+
+    Args:
+        zip_path: Absolute path to the extracted bundle ``.zip`` on the device.
+        route: Optional deep-link path forwarded to :func:`run_device` (the
+            Android ``tempest_route`` intent extra) to open on the linked screen.
+    """
+    from pathlib import Path
+
+    from tempestroid.cli.app_loader import spec_from_project
+    from tempestroid.cli.bundle import extract_bundle
+
+    archive = Path(zip_path)
+    data = archive.read_bytes()
+    layout = extract_bundle(data, archive.parent / "tempest_app")
+    spec = spec_from_project(layout.root, layout.entry)
     run_device(spec.make_state(), spec.view, route=route)

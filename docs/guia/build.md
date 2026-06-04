@@ -1,0 +1,173 @@
+# Build, deploy e publicação
+
+Esta página mostra como sair do simulador e **rodar seu app num aparelho
+Android** — desde o teste rápido no seu próprio celular até gerar um **APK
+autocontido** que você manda para outra pessoa testar. Tudo a partir do seu
+projeto em Python.
+
+!!! tip "Comece pelo simulador"
+    Para o ciclo de desenvolvimento (editar → ver), use `tempest dev` (o
+    [simulador Qt](cli.md)). Esta página é sobre levar o mesmo app para o
+    **dispositivo** e para um **APK distribuível**.
+
+## Projetos multi-arquivo
+
+Seu app raramente é um arquivo só: o `main.py` importa módulos e pacotes vizinhos
+do seu projeto. O tempestroid trata isso de forma transparente.
+
+A **raiz do projeto** é o diretório ancestral mais próximo do app que contém um
+`pyproject.toml`. Toda a árvore importável a partir dela é empacotada e colocada
+no `sys.path` — no simulador **e** no dispositivo — então:
+
+```python
+# main.py
+from meu_pacote.widgets import cartao   # ✅ resolve igual no desktop e no device
+```
+
+resolve identicamente nos dois lados. O bundle **exclui** o que não é código de
+app: `.venv`, `__pycache__`, `.git`, `dist`, `build`, caches de editor/lint.
+
+!!! example "Layout típico de projeto"
+    ```text
+    meu-app/
+    ├── pyproject.toml      # contém [tool.tempest] app = "main.py"
+    ├── main.py             # define view(app) + make_state()
+    └── meu_pacote/
+        ├── __init__.py
+        └── widgets.py      # importado por main.py
+    ```
+
+    O `pyproject.toml` ancora a raiz. Sem ele, a raiz vira o diretório do
+    próprio `main.py` (modo arquivo-único).
+
+```toml
+# pyproject.toml
+[tool.tempest]
+app = "main.py"
+```
+
+Com `[tool.tempest] app` definido, `dev` / `deploy` / `serve` / `build` / `run`
+dispensam o argumento de caminho dentro do projeto.
+
+## Qual comando usar?
+
+| Quero… | Comando | Precisa de SDK/NDK? | Entrega |
+|---|---|---|---|
+| Rodar rápido no **meu** aparelho | `tempest deploy` | **Não** | App rodando no device (efêmero) |
+| Editar e ver ao vivo (hot reload) | `tempest serve` | **Não** | Loop de code-push por LAN |
+| **Mandar um APK** para alguém testar | `tempest build` | **Sim** | `.apk` autocontido e distribuível |
+| Build + instalar + logs | `tempest run` | **Sim** | Instala o APK e segue os logs |
+
+!!! info "Duas filosofias"
+    - **Sem toolchain** (`deploy`/`serve`): um **host genérico** (CPython +
+      framework) é instalado uma vez; seu código Python é empurrado por cima.
+      Rápido, offline, sem Android SDK/NDK. Mas o app vive **dentro do host** —
+      não é um artefato que você manda para outra pessoa.
+    - **Com toolchain** (`build`/`run`): o Gradle assa seu projeto **dentro** de
+      um APK autocontido. É o único caminho que gera um `.apk` distribuível.
+
+## Rodar no meu aparelho (sem toolchain)
+
+Você **não** precisa de Android SDK/NDK nem do código-fonte `android-host` para
+testar no seu próprio celular. Conecte o aparelho (`adb devices` deve listá-lo) e:
+
+```bash
+tempest deploy            # instala o host empacotado (1x) + empurra o projeto + abre
+```
+
+O `tempest deploy`:
+
+1. Instala o **host pré-compilado** (vem embutido no wheel — sem download) se
+   ainda não estiver no aparelho. Execuções seguintes pulam esse passo (~50 MB).
+2. Empacota seu projeto e empurra **uma vez** por um servidor efêmero.
+3. Abre o app e **encerra**. O app continua rodando no aparelho.
+
+!!! warning "`deploy` não gera artefato"
+    O app empurrado por `deploy` vive na sessão do host. Em um boot frio, ou no
+    celular de outra pessoa, o host roda o demo embutido — **não** o seu app.
+    Para algo distribuível, use [`tempest build`](#publicar-um-apk).
+
+Para um **loop de hot reload** (editar + salvar → recarrega no device):
+
+```bash
+tempest install           # só adb-instala o host (offline/embutido)
+tempest serve             # code-push por LAN: salvar qualquer arquivo recarrega
+```
+
+O `tempest install` resolve o APK do host nesta ordem: caminho/URL `.apk`
+explícito → `TEMPESTROID_HOST_APK` → asset embutido no wheel → download do
+release do GitHub (`TEMPESTROID_HOST_APK_URL` para sobrescrever), cacheado em
+`~/.cache/tempestroid`.
+
+## Publicar um APK
+
+Para gerar um `.apk` **autocontido** (roda sem dev server, dá para mandar para
+qualquer pessoa):
+
+```bash
+tempest build             # assa o projeto inteiro num APK via Gradle
+tempest build --release   # variante release
+```
+
+O resultado fica em `android-host/app/build/outputs/apk/<debug|release>/`. Esse
+APK tem seu projeto **assado dentro** — instale com `adb install` em qualquer
+aparelho compatível e o app abre direto, sem servidor.
+
+!!! danger "`build` precisa do toolchain"
+    `tempest build` e `tempest run` dirigem o Gradle, então exigem **Android
+    SDK/NDK** e um **checkout do `android-host`** (um clone do repositório, não um
+    wheel instalado). A partir de um wheel instalado eles falham cedo, apontando
+    para `tempest deploy` / `tempest serve`. Veja a
+    [configuração de ambiente](#configuracao-de-ambiente) abaixo.
+
+## Configuração de ambiente
+
+Para os caminhos com toolchain (`build`/`run`), o host de build precisa de:
+
+- **Android SDK + NDK.** Exporte `ANDROID_SDK_ROOT` apontando para o SDK (neste
+  host de referência: `/usr/lib/android-sdk`, **não** o `ANDROID_HOME` obsoleto):
+
+    ```bash
+    export ANDROID_SDK_ROOT=/usr/lib/android-sdk
+    ```
+
+- **JDK 21** (`java -version`).
+- **Gradle wrapper 8.11.1** (`android-host/gradlew`) — o Gradle global 9.x é
+  incompatível com o AGP 8.7; **sempre** use o wrapper (os comandos do `tempest`
+  já o fazem).
+- A **toolchain Python estagiada**: CPython 3.14 + wheels nativos
+  (`pydantic-core`) em `toolchain/dist/`. Gere com:
+
+    ```bash
+    make toolchain
+    ```
+
+No **aparelho**: ligue **Depuração USB**; em MIUI/HyperOS (Xiaomi/Redmi/POCO)
+ligue também **"Instalar via USB"**, senão `adb install` falha com
+`INSTALL_FAILED_USER_RESTRICTED`.
+
+!!! tip "Diagnóstico em um comando"
+    `tempest doctor` roda o *preflight* (árvore do host, SDK, `adb`, aparelho) e
+    aponta o que falta antes de um build. Rodando em WSL? Veja o guia dedicado de
+    [USB no dispositivo (WSL)](dispositivo-wsl.md).
+
+## Mandar o APK para alguém testar
+
+1. Gere: `tempest build` (ou `--release`).
+2. Pegue o `.apk` em `android-host/app/build/outputs/apk/debug/app-debug.apk`.
+3. Envie o arquivo (mensageiro, link, etc.).
+4. A pessoa instala (`adb install app-debug.apk`, ou abrindo o `.apk` no aparelho
+   com "fontes desconhecidas" liberado).
+
+O app roda standalone — sem o seu computador, sem dev server.
+
+## Recapitulando
+
+- Apps são **multi-arquivo**: a árvore do projeto vai junto, no `sys.path`, no
+  simulador e no dispositivo.
+- `tempest deploy` / `serve` rodam no **seu** aparelho **sem toolchain** — ótimos
+  para testar, mas não geram artefato.
+- `tempest build` gera um **APK autocontido distribuível** — precisa de SDK/NDK +
+  checkout do `android-host`.
+- `tempest doctor` valida o ambiente; o [guia WSL](dispositivo-wsl.md) cobre a
+  passagem de USB.

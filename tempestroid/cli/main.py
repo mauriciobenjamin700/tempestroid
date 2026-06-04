@@ -205,9 +205,52 @@ def build_cmd(
         ),
     ] = False,
 ) -> None:
-    """Build an APK bundling an app."""
+    """Build a standalone, shippable APK with the whole project baked in.
+
+    Bundles the app's entire project tree (multi-file imports included) into the
+    host and drives Gradle to produce a self-contained `.apk` you can hand to
+    anyone — it runs the app with no dev server. Needs the Android SDK/NDK + an
+    `android-host` checkout. For a fast no-toolchain run on your own connected
+    device, use `tempest deploy`; for a hot-reload loop, `tempest serve`.
+    """
     resolved = _resolve_app_or_exit(app_path)
     raise typer.Exit(_run_build(resolved, release, verbose))
+
+
+@app.command("deploy")
+def deploy_cmd(
+    app_path: Annotated[
+        str | None,
+        typer.Argument(
+            metavar="[APP]",
+            help="Path to the app file. Omitted → read [tool.tempest] app.",
+        ),
+    ] = None,
+    force_install: Annotated[
+        bool,
+        typer.Option(
+            "--force-install",
+            help="Re-install the host APK even if it is already on the device.",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Echo raw commands and stream the full adb output.",
+        ),
+    ] = False,
+) -> None:
+    """Deploy an app to a connected device — offline, no Android SDK/NDK.
+
+    Installs the prebuilt host (bundled in the wheel) if needed, pushes the whole
+    project once, launches it, and exits. Great for testing on your own device.
+    Use `tempest serve` for live hot reload, or `tempest build` to produce a
+    shippable APK (needs the toolchain).
+    """
+    resolved = _resolve_app_or_exit(app_path)
+    raise typer.Exit(_run_deploy(resolved, force_install, verbose))
 
 
 @app.command("run")
@@ -446,10 +489,14 @@ def _run_new(name: str, into: str) -> int:
 
 
 def _run_build(app: str, release: bool, verbose: bool) -> int:
-    """Build an APK bundling the given app, reporting the outcome.
+    """Build a standalone shippable APK bundling the project, reporting outcome.
+
+    Bundles the whole project tree and drives Gradle to produce a self-contained
+    `.apk` (needs the Android SDK/NDK + an ``android-host`` checkout). See
+    :func:`build_apk` / :func:`stage_app_bundle`.
 
     Args:
-        app: Path to the app file to bundle.
+        app: Path to the app's entry file to bundle.
         release: Whether to build the release variant.
         verbose: Echo raw commands and stream full subprocess output.
 
@@ -473,6 +520,45 @@ def _run_build(app: str, release: bool, verbose: bool) -> int:
         console.fail(f"gradle build failed (exit {exc.returncode}).")
         return exc.returncode or 1
     return 0
+
+
+def _run_deploy(app: str, force_install: bool, verbose: bool) -> int:
+    """Deploy the app to a connected device offline, reporting the outcome.
+
+    The offline ``tempest deploy`` path: ensure the bundled host is installed,
+    push the whole project once, launch, and exit — no Android SDK/NDK, Gradle,
+    or ``android-host`` source tree. See :func:`deploy_offline`.
+
+    Args:
+        app: Path to the app file to deploy.
+        force_install: Re-install the host APK even when already present.
+        verbose: Echo raw commands and stream full subprocess output.
+
+    Returns:
+        The process exit code.
+    """
+    import subprocess
+
+    from tempestroid import __version__
+    from tempestroid.cli.console import Console, StepError
+    from tempestroid.cli.packaging import ToolchainError, deploy_offline
+
+    console = Console(verbose=verbose)
+    try:
+        return deploy_offline(
+            app,
+            version=__version__,
+            console=console,
+            force_install=force_install,
+        )
+    except StepError:
+        return 1
+    except (ToolchainError, FileNotFoundError) as exc:
+        console.fail(f"deploy failed: {exc}")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        console.fail(f"command failed (exit {exc.returncode}).")
+        return exc.returncode or 1
 
 
 def _run_run(app: str, release: bool, verbose: bool) -> int:

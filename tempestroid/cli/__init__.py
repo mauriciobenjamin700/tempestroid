@@ -2,7 +2,21 @@
 
 from typing import TYPE_CHECKING, Any
 
-from tempestroid.cli.app_loader import AppSpec, load_app_spec, spec_from_source
+from tempestroid.cli.app_loader import (
+    AppSpec,
+    load_app_spec,
+    spec_from_project,
+    spec_from_source,
+)
+from tempestroid.cli.bundle import (
+    MANIFEST_NAME,
+    ProjectLayout,
+    build_bundle,
+    bundle_hash,
+    extract_bundle,
+    resolve_project,
+    tree_signature,
+)
 from tempestroid.cli.console import Console, StepError
 from tempestroid.cli.packaging import (
     PreflightCheck,
@@ -11,8 +25,10 @@ from tempestroid.cli.packaging import (
     build_apk,
     bundled_host_apk,
     connected_devices,
+    deploy_offline,
     find_android_host,
     host_apk_url,
+    host_installed,
     install_host,
     launch_host_dev,
     preflight,
@@ -36,7 +52,15 @@ __all__ = [
     "main",
     "AppSpec",
     "load_app_spec",
+    "spec_from_project",
     "spec_from_source",
+    "MANIFEST_NAME",
+    "ProjectLayout",
+    "build_bundle",
+    "bundle_hash",
+    "tree_signature",
+    "extract_bundle",
+    "resolve_project",
     "scaffold",
     "ScaffoldResult",
     "DEFAULT_APP_TEMPLATE",
@@ -50,8 +74,10 @@ __all__ = [
     "build_apk",
     "bundled_host_apk",
     "connected_devices",
+    "deploy_offline",
     "find_android_host",
     "host_apk_url",
+    "host_installed",
     "install_host",
     "launch_host_dev",
     "preflight",

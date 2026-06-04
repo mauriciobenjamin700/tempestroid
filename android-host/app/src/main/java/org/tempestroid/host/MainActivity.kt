@@ -249,9 +249,10 @@ class MainActivity : ComponentActivity() {
         //        adb shell am start -n org.tempestroid.host/.MainActivity \
         //          --es tempest_dev_url http://127.0.0.1:8765
         //      (use 127.0.0.1, NOT localhost — MIUI does not resolve "localhost").
-        //   2. packaged app (C): a `tempest_app.py` asset embedded by
-        //      `tempest build` → load + run it.
-        //   3. otherwise: the bundled demo.
+        //   2. packaged project (C): a `tempest_app_bundle.zip` asset embedded
+        //      by `tempest build` (the whole multi-file tree) → extract + run.
+        //   3. packaged app (legacy): a single `tempest_app.py` asset → run it.
+        //   4. otherwise: the bundled demo.
         val devUrl = intent?.getStringExtra("tempest_dev_url")
         // Deep link (E0d): a `tempest_route` extra resolves to the initial
         // navigation stack via `routes_from_path`, so the app opens on the
@@ -266,8 +267,16 @@ class MainActivity : ComponentActivity() {
             devUrl != null ->
                 "from tempestroid.devserver.client import serve_device; " +
                     "serve_device('$devUrl')"
-            // A `tempest build` APK bundles the user's app as this asset; extract
-            // it and run it via the file loader (make_state + view contract).
+            // A `tempest build` APK bundles the user's whole project as this
+            // zip asset; copy it out and run it via the bundle loader, which
+            // extracts the tree onto sys.path (multi-file imports resolve).
+            hasAsset(BUNDLED_APP_BUNDLE) -> {
+                val bundleFile = File(filesDir, BUNDLED_APP_BUNDLE)
+                extractAssets(BUNDLED_APP_BUNDLE, bundleFile)
+                "from tempestroid.bridge.jni import run_device_bundle; " +
+                    "run_device_bundle('${bundleFile.absolutePath}'$routeArg)"
+            }
+            // Legacy single-file `tempest build` APK: run the one `.py` asset.
             hasAsset(BUNDLED_APP_ASSET) -> {
                 val appFile = File(filesDir, BUNDLED_APP_ASSET)
                 extractAssets(BUNDLED_APP_ASSET, appFile)
@@ -361,8 +370,16 @@ class MainActivity : ComponentActivity() {
          */
         const val LOCALE_TOKEN = "__locale__"
 
-        /** Asset slot a `tempest build` APK stages the user's app source into. */
+        /** Asset slot a legacy single-file `tempest build` APK stages into. */
         private const val BUNDLED_APP_ASSET = "tempest_app.py"
+
+        /**
+         * Asset slot a `tempest build` APK stages the user's whole project tree
+         * into (a zip). The host copies it out and `run_device_bundle` extracts
+         * it onto `sys.path`, so multi-file imports resolve. Takes priority over
+         * the legacy single-file asset above.
+         */
+        private const val BUNDLED_APP_BUNDLE = "tempest_app_bundle.zip"
 
         /**
          * Device demo: a styled counter (B4) plus a "notify" button exercising

@@ -104,13 +104,21 @@ bump: ## Bump version in pyproject (PART=patch|minor|major, default patch)
 	@PART="$${PART:-patch}" python toolchain/bump_version.py
 
 .PHONY: release
-release: gate docs-sync ## Tag vX.Y.Z (from pyproject) + push → triggers PyPI publish CI
+release: gate docs-sync ## Publish host APK asset + tag vX.Y.Z → triggers PyPI publish CI (bundles host offline)
 	@echo "Releasing v$(VERSION)"
 	@git diff --quiet || { echo "ERROR: working tree dirty — commit first"; exit 1; }
 	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
 		&& { echo "ERROR: tag v$(VERSION) already exists"; exit 1; } || true
-	git tag -a "v$(VERSION)" -m "release: v$(VERSION)"
-	git push origin "v$(VERSION)"
+	@# The published wheel must bundle the host APK so `tempest install`/`build`
+	@# work offline. The publish CI has no Android toolchain, so it downloads the
+	@# host APK from THIS release; the asset must exist before the tag is pushed.
+	@# We therefore create the release (with the asset) and let it create + push
+	@# the tag — that single push triggers the publish workflow.
+	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' (needs the Android toolchain) before releasing so the wheel can bundle the host offline"; exit 1; }
+	cp "$(HOST_APK)" "$(dir $(HOST_APK))$(HOST_ASSET)"
+	gh release create "v$(VERSION)" "$(dir $(HOST_APK))$(HOST_ASSET)" \
+		--title "v$(VERSION)" --notes "tempestroid v$(VERSION)"
+	@echo "released v$(VERSION) with $(HOST_ASSET) — publish CI will bundle it into the wheel"
 
 # ---- android (Trilho B — needs SDK/NDK + device) ----------------------------
 .PHONY: doctor
