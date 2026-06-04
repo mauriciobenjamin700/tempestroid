@@ -30,6 +30,14 @@ def test_widget_catalog_lists_all_widgets():
         "Spinner",
         "Stack",
         "GestureDetector",
+        "PanHandler",
+        "ScaleHandler",
+        "DoubleTapHandler",
+        "Draggable",
+        "DragTarget",
+        "Dismissible",
+        "ReorderableList",
+        "InteractiveViewer",
         "Navigator",
         "TabView",
         "TabBar",
@@ -83,6 +91,10 @@ def test_event_catalog_lists_events():
         "EndReachedEvent",
         "DismissEvent",
         "MenuSelectEvent",
+        "PanEvent",
+        "ScaleEvent",
+        "DragEvent",
+        "ReorderEvent",
     }
     assert "value" in catalog["TextChangeEvent"]["properties"]
 

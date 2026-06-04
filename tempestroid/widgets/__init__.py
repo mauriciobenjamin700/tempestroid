@@ -16,12 +16,14 @@ from tempestroid.widgets.base import (
     Component,
     DateChangeHandler,
     DismissHandler,
+    DragHandler,
     EndReachedHandler,
     EventHandler,
     FileSelectHandler,
     LongPressHandler,
     MenuSelectHandler,
     RefreshHandler,
+    ReorderHandler,
     RouteChangeHandler,
     ScrollHandler,
     SlideHandler,
@@ -36,14 +38,18 @@ from tempestroid.widgets.button import Button
 from tempestroid.widgets.events import (
     DateChangeEvent,
     DismissEvent,
+    DragEvent,
     EndReachedEvent,
     Event,
     EventValidationError,
     FileSelectEvent,
     LongPressEvent,
     MenuSelectEvent,
+    PanEvent,
     RefreshEvent,
+    ReorderEvent,
     RouteChangeEvent,
+    ScaleEvent,
     ScrollEvent,
     SlideEvent,
     SwipeDirection,
@@ -53,7 +59,21 @@ from tempestroid.widgets.events import (
     ToggleEvent,
     parse_event,
 )
-from tempestroid.widgets.gestures import GestureDetector
+from tempestroid.widgets.gestures import (
+    Dismissible,
+    DoubleTapHandler,
+    Draggable,
+    DragTarget,
+    GestureDetector,
+    InteractiveViewer,
+    ReorderableList,
+)
+from tempestroid.widgets.gestures import (
+    PanHandler as PanHandlerWidget,
+)
+from tempestroid.widgets.gestures import (
+    ScaleHandler as ScaleHandlerWidget,
+)
 from tempestroid.widgets.indicators import ProgressBar, Spinner
 from tempestroid.widgets.inputs import (
     Checkbox,
@@ -102,6 +122,13 @@ from tempestroid.widgets.overlays import (
 )
 from tempestroid.widgets.text import Text
 
+#: The advanced-gesture ``PanHandler`` / ``ScaleHandler`` *widgets* are the public
+#: symbols under those names (they shadow the same-named handler TypeAliases in
+#: ``base``, which stay private to ``base``). Drag/Reorder handler aliases have no
+#: such clash and are re-exported directly.
+PanHandler = PanHandlerWidget
+ScaleHandler = ScaleHandlerWidget
+
 __all__ = [
     "EventHandler",
     "TextChangeHandler",
@@ -118,6 +145,8 @@ __all__ = [
     "EndReachedHandler",
     "DismissHandler",
     "MenuSelectHandler",
+    "DragHandler",
+    "ReorderHandler",
     "handler_accepts_event",
     "Widget",
     "Component",
@@ -136,6 +165,14 @@ __all__ = [
     "Shimmer",
     "Skeleton",
     "GestureDetector",
+    "PanHandler",
+    "ScaleHandler",
+    "DoubleTapHandler",
+    "Draggable",
+    "DragTarget",
+    "Dismissible",
+    "ReorderableList",
+    "InteractiveViewer",
     "Navigator",
     "TabView",
     "TabBar",
@@ -184,6 +221,10 @@ __all__ = [
     "EndReachedEvent",
     "DismissEvent",
     "MenuSelectEvent",
+    "PanEvent",
+    "ScaleEvent",
+    "DragEvent",
+    "ReorderEvent",
     "EventValidationError",
     "parse_event",
 ]

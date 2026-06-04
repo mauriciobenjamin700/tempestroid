@@ -271,6 +271,19 @@ The declarative IR — bare-noun widgets.
 - **`GestureDetector`** — wraps a `child` and reports pointer gestures via
   **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
   (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
+- Advanced gestures (phase E4) — specialized single-purpose wrappers, each
+  lowering to the same renderer-agnostic contract (Qt via mouse/`QGraphicsView`/
+  `QDrag`, Compose via `pointerInput`/`SwipeToDismissBox`/`graphicsLayer`):
+  **`PanHandler`** (`on_pan` → **`PanEvent`**: delta + fling velocity),
+  **`ScaleHandler`** (`on_scale` → **`ScaleEvent`**: pinch scale/focus/rotation,
+  plus `on_double_tap`), **`DoubleTapHandler`** (`on_double_tap` → `TapEvent`),
+  **`Draggable`** (`drag_data` + `on_drag` → **`DragEvent`**) paired with
+  **`DragTarget`** (`on_drop` → `DragEvent`) — both via the **`DragHandler`**
+  alias, **`Dismissible`** (swipe-to-delete: `direction` + `on_dismiss` →
+  `DismissEvent`), **`ReorderableList`** (drag to reorder: `children` +
+  `on_reorder` (**`ReorderHandler`**) → **`ReorderEvent`**; the handler mutates a
+  keyed list so the A2 diff emits a `Reorder`) and **`InteractiveViewer`** (pan +
+  zoom: `min_scale`/`max_scale` + `on_interaction` → `ScaleEvent`).
 - Animation widgets (phase E3) — the interpolation runs in the **core**
   (`AnimationController` advances a 0..1 value on the app's frame clock, `Tween`
   interpolates a `float`/`Color`/`Edge`, the `view` folds the result into a
@@ -379,6 +392,11 @@ renderer changes and are fully device-ready. Every component takes an optional
 - Gesture events (from `GestureDetector`): **`LongPressEvent`** (optional
   `x`/`y`), **`SwipeEvent`** (`direction` + `dx`/`dy`) with the
   **`SwipeDirection`** enum (left/right/up/down).
+- Advanced-gesture events (phase E4): **`PanEvent`** (`dx`/`dy` delta +
+  `vx`/`vy` fling velocity), **`ScaleEvent`** (`scale` + `focus_x`/`focus_y`
+  focal point + `rotation`), **`DragEvent`** (`data` opaque label + optional
+  `x`/`y` drop position) and **`ReorderEvent`** (`from_index` → `to_index`).
+  `Dismissible` reuses **`DismissEvent`**.
 - **`RouteChangeEvent`** (`name` + typed `params`) — emitted when navigation
   settles on a new route.
 - Virtualized-list events: **`ScrollEvent`** (`offset` + `direction`),

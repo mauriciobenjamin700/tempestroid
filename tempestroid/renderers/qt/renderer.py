@@ -20,7 +20,10 @@ from PySide6.QtCore import (
     QAbstractAnimation,
     QDate,
     QEasingCurve,
+    QElapsedTimer,
+    QEvent,
     QMetaObject,
+    QMimeData,
     QPoint,
     QPointF,
     QPropertyAnimation,
@@ -35,6 +38,10 @@ from PySide6.QtGui import (
     QAction,
     QBrush,
     QColor,
+    QDrag,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
     QFont,
     QFontMetricsF,
     QIcon,
@@ -48,6 +55,7 @@ from PySide6.QtGui import (
     QTextLayout,
     QTextLine,
     QTextOption,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QBoxLayout,
@@ -55,14 +63,20 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QDialog,
     QFileDialog,
+    QGesture,
+    QGestureEvent,
     QGraphicsDropShadowEffect,
     QGraphicsEffect,
     QGraphicsOpacityEffect,
+    QGraphicsProxyWidget,
+    QGraphicsScene,
+    QGraphicsView,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
+    QPinchGesture,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -111,7 +125,10 @@ from tempestroid.widgets import (
     LongPressEvent,
     MenuItem,
     MenuSelectEvent,
+    PanEvent,
+    ReorderEvent,
     RouteChangeEvent,
+    ScaleEvent,
     ScrollEvent,
     SlideEvent,
     SwipeDirection,
@@ -140,6 +157,21 @@ _OVERLAY_TYPES = frozenset(
 _TOAST_FADE_MS = 350
 
 _CONTAINER_TYPES = frozenset({"Column", "Row", "Container", "ScrollView", "SafeArea"})
+
+#: Advanced-gesture node types whose handlers bind through
+#: :meth:`QtRenderer._bind_advanced_gestures` (the phase-E4 widgets).
+_ADVANCED_GESTURE_TYPES = frozenset(
+    {
+        "PanHandler",
+        "ScaleHandler",
+        "DoubleTapHandler",
+        "Draggable",
+        "DragTarget",
+        "Dismissible",
+        "ReorderableList",
+        "InteractiveViewer",
+    }
+)
 
 #: Animation widget types whose backing widget is a box-layout container the
 #: generic child path can drive. ``Animated``/``Hero`` wrap one child (the
@@ -749,6 +781,640 @@ def _swipe_direction(dx: float, dy: float) -> SwipeDirection:
     if abs(dx) >= abs(dy):
         return SwipeDirection.RIGHT if dx > 0 else SwipeDirection.LEFT
     return SwipeDirection.DOWN if dy > 0 else SwipeDirection.UP
+
+
+def _single_child_layout() -> QVBoxLayout:
+    """Build a zero-margin vertical layout for a single-child gesture wrapper.
+
+    Returns:
+        A fresh ``QVBoxLayout`` with no contents margins (the child fills it).
+    """
+    layout = QVBoxLayout()
+    layout.setContentsMargins(0, 0, 0, 0)
+    return layout
+
+
+class _PanWidget(QWidget):
+    """A single-child container that reports a continuous pan + fling velocity.
+
+    A press records the start position and a high-resolution timer; movement
+    accumulates the delta; release computes the average velocity (px/s) over the
+    elapsed time and emits a :class:`PanEvent` carrying the total delta and the
+    release velocity. The Qt simulator reports a single pan per press/release
+    cycle (the device renderer streams per-frame deltas) — a documented
+    divergence.
+    """
+
+    def __init__(self) -> None:
+        """Create the pan widget and its single-child layout."""
+        super().__init__()
+        self._layout: QVBoxLayout = _single_child_layout()
+        self.setLayout(self._layout)
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+        self._press_pos: QPoint | None = None
+        self._elapsed: QElapsedTimer = QElapsedTimer()
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+    ) -> None:
+        """Install the current handlers and the dispatch callback.
+
+        Args:
+            handlers: Map of prop name (``on_pan``) to its handler (or ``None``).
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+
+    def _emit(self, prop: str, event: Event) -> None:
+        """Dispatch ``event`` to the handler bound at ``prop`` if present.
+
+        Args:
+            prop: The handler prop name.
+            event: The typed event.
+        """
+        handler = self._handlers.get(prop)
+        if handler is not None:
+            self._dispatch(handler, event)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Record the press start position and start the elapsed timer.
+
+        Args:
+            event: The Qt mouse press event.
+        """
+        self._press_pos = event.position().toPoint()
+        self._elapsed.restart()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Emit the pan with its total delta and release velocity.
+
+        Args:
+            event: The Qt mouse release event.
+        """
+        if self._press_pos is not None:
+            end = event.position().toPoint()
+            dx = float(end.x() - self._press_pos.x())
+            dy = float(end.y() - self._press_pos.y())
+            elapsed_ms = max(self._elapsed.elapsed(), 1)
+            seconds = elapsed_ms / 1000.0
+            self._emit(
+                "on_pan",
+                PanEvent(dx=dx, dy=dy, vx=dx / seconds, vy=dy / seconds),
+            )
+            self._press_pos = None
+        super().mouseReleaseEvent(event)
+
+
+class _ScaleWidget(QWidget):
+    """A single-child container that reports pinch scale/rotation and a double tap.
+
+    Qt's :class:`QPinchGesture` requires touch hardware, which the desktop / WSL
+    simulator lacks. To stay exercisable, the widget falls back to a synthetic
+    pinch: ``Ctrl`` + the mouse wheel zooms (each notch scales by a fixed step,
+    clamped to a sane range) — a documented divergence from the device's true
+    multitouch pinch. A native double-click drives ``on_double_tap``.
+    """
+
+    #: Multiplicative zoom per wheel notch under the Ctrl fallback.
+    _WHEEL_STEP = 1.15
+    #: Clamp bounds for the synthetic cumulative scale.
+    _MIN_SCALE = 0.2
+    _MAX_SCALE = 8.0
+
+    def __init__(self) -> None:
+        """Create the scale widget, its layout, and grab the pinch gesture."""
+        super().__init__()
+        self._layout: QVBoxLayout = _single_child_layout()
+        self.setLayout(self._layout)
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+        self._scale: float = 1.0
+        self.grabGesture(Qt.GestureType.PinchGesture)
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+    ) -> None:
+        """Install the current handlers and the dispatch callback.
+
+        Args:
+            handlers: Map of prop name (``on_scale``/``on_double_tap``) to its
+                handler (or ``None``).
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+
+    def _emit(self, prop: str, event: Event) -> None:
+        """Dispatch ``event`` to the handler bound at ``prop`` if present.
+
+        Args:
+            prop: The handler prop name.
+            event: The typed event.
+        """
+        handler = self._handlers.get(prop)
+        if handler is not None:
+            self._dispatch(handler, event)
+
+    def event(self, event: QEvent) -> bool:
+        """Intercept native gesture events to emit a pinch scale.
+
+        Args:
+            event: The Qt event (a ``QGestureEvent`` is handled here).
+
+        Returns:
+            ``True`` when the gesture was consumed, else the base result.
+        """
+        if event.type() == QEvent.Type.Gesture:
+            return self._gesture_event(cast("QGestureEvent", event))
+        return super().event(event)
+
+    def _gesture_event(self, event: QGestureEvent) -> bool:
+        """Translate a pinch gesture into a :class:`ScaleEvent`.
+
+        Args:
+            event: The Qt gesture event.
+
+        Returns:
+            ``True`` when a pinch was found and consumed, else ``False``.
+        """
+        gesture: QGesture = event.gesture(Qt.GestureType.PinchGesture)
+        if not isinstance(gesture, QPinchGesture):
+            return False
+        pinch = gesture
+        center = pinch.centerPoint()
+        self._emit(
+            "on_scale",
+            ScaleEvent(
+                scale=float(pinch.totalScaleFactor()),
+                focus_x=float(center.x()),
+                focus_y=float(center.y()),
+                rotation=float(pinch.totalRotationAngle()),
+            ),
+        )
+        event.accept()
+        return True
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Zoom via ``Ctrl`` + wheel as the touch-free pinch fallback.
+
+        Args:
+            event: The Qt wheel event.
+        """
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            factor = (
+                self._WHEEL_STEP
+                if event.angleDelta().y() > 0
+                else 1.0 / self._WHEEL_STEP
+            )
+            self._scale = max(
+                self._MIN_SCALE, min(self._MAX_SCALE, self._scale * factor)
+            )
+            pos = event.position()
+            self._emit(
+                "on_scale",
+                ScaleEvent(
+                    scale=self._scale,
+                    focus_x=float(pos.x()),
+                    focus_y=float(pos.y()),
+                    rotation=0.0,
+                ),
+            )
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Emit a double tap from Qt's native double-click.
+
+        Args:
+            event: The Qt double-click event.
+        """
+        point = event.position().toPoint()
+        self._emit("on_double_tap", TapEvent(x=float(point.x()), y=float(point.y())))
+        super().mouseDoubleClickEvent(event)
+
+
+class _DoubleTapWidget(QWidget):
+    """A single-child container that reports only a double tap.
+
+    A thin wrapper around Qt's native double-click for ``DoubleTapHandler``,
+    with none of the press/swipe/long-press machinery of ``_GestureWidget``.
+    """
+
+    def __init__(self) -> None:
+        """Create the double-tap widget and its single-child layout."""
+        super().__init__()
+        self._layout: QVBoxLayout = _single_child_layout()
+        self.setLayout(self._layout)
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+    ) -> None:
+        """Install the current handlers and the dispatch callback.
+
+        Args:
+            handlers: Map of prop name (``on_double_tap``) to its handler.
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Emit a double tap from Qt's native double-click.
+
+        Args:
+            event: The Qt double-click event.
+        """
+        handler = self._handlers.get("on_double_tap")
+        if handler is not None:
+            point = event.position().toPoint()
+            self._dispatch(handler, TapEvent(x=float(point.x()), y=float(point.y())))
+        super().mouseDoubleClickEvent(event)
+
+
+class _DismissibleWidget(QWidget):
+    """A single-child container that emits a dismiss on a swipe past threshold.
+
+    Travel is measured along the configured :class:`SwipeDirection`; once the
+    release exceeds :data:`_SWIPE_THRESHOLD` in that direction, a
+    :class:`DismissEvent` is emitted and the child slides out (opacity fade +
+    offset) via a :class:`QPropertyAnimation`. The app's handler typically
+    removes the item from state, so the slide is purely cosmetic feedback.
+    """
+
+    def __init__(self) -> None:
+        """Create the dismissible widget and its single-child layout."""
+        super().__init__()
+        self._layout: QVBoxLayout = _single_child_layout()
+        self.setLayout(self._layout)
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+        self._direction: SwipeDirection = SwipeDirection.LEFT
+        self._press_pos: QPoint | None = None
+        self._anim: QPropertyAnimation | None = None
+        self._effect: QGraphicsOpacityEffect | None = None
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+        direction: SwipeDirection,
+    ) -> None:
+        """Install the dismiss handler, dispatch callback and trigger direction.
+
+        Args:
+            handlers: Map of prop name (``on_dismiss``) to its handler.
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+            direction: The swipe direction that triggers the dismiss.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+        self._direction = direction
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Record the press start position.
+
+        Args:
+            event: The Qt mouse press event.
+        """
+        self._press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Emit a dismiss when the release passes the threshold in-direction.
+
+        Args:
+            event: The Qt mouse release event.
+        """
+        if self._press_pos is not None:
+            end = event.position().toPoint()
+            dx = float(end.x() - self._press_pos.x())
+            dy = float(end.y() - self._press_pos.y())
+            if self._past_threshold(dx, dy):
+                handler = self._handlers.get("on_dismiss")
+                if handler is not None:
+                    self._dispatch(handler, DismissEvent(overlay_id=None))
+                self._animate_out(dx, dy)
+            self._press_pos = None
+        super().mouseReleaseEvent(event)
+
+    def _past_threshold(self, dx: float, dy: float) -> bool:
+        """Report whether the travel clears the threshold in the trigger axis.
+
+        Args:
+            dx: Horizontal travel (positive → rightward).
+            dy: Vertical travel (positive → downward).
+
+        Returns:
+            ``True`` when the directional travel exceeds the swipe threshold.
+        """
+        if self._direction is SwipeDirection.LEFT:
+            return dx <= -_SWIPE_THRESHOLD
+        if self._direction is SwipeDirection.RIGHT:
+            return dx >= _SWIPE_THRESHOLD
+        if self._direction is SwipeDirection.UP:
+            return dy <= -_SWIPE_THRESHOLD
+        return dy >= _SWIPE_THRESHOLD
+
+    def _animate_out(self, dx: float, dy: float) -> None:
+        """Fade the child out as cosmetic dismiss feedback.
+
+        Args:
+            dx: Horizontal travel (sign hints the slide direction).
+            dy: Vertical travel (sign hints the slide direction).
+        """
+        effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(effect)
+        self._effect = effect
+        anim = QPropertyAnimation(effect, b"opacity", self)
+        anim.setDuration(_NAV_ANIM_MS)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        self._anim = anim
+        anim.start()
+
+
+class _ReorderableWidget(QWidget):
+    """A vertical (or horizontal) list whose items drag-and-drop to reorder.
+
+    Press records the item index under the pointer; dragging past the slop
+    starts a native :class:`QDrag` carrying the source index in its mime data.
+    The drop computes the destination index from the drop position and emits a
+    :class:`ReorderEvent` (``from_index`` → ``to_index``). The app's handler
+    typically moves the item in state; the keyed A2 diff then emits a single
+    ``Reorder`` patch.
+    """
+
+    #: Mime type used to carry the dragged source index across the drag session.
+    _MIME = "application/x-tempest-reorder-index"
+
+    def __init__(self, *, horizontal: bool = False) -> None:
+        """Create the reorderable list and accept drops.
+
+        Args:
+            horizontal: Whether items lay out left-to-right (else top-to-bottom).
+        """
+        super().__init__()
+        self._horizontal: bool = horizontal
+        self._layout: QBoxLayout = (
+            QHBoxLayout(self) if horizontal else QVBoxLayout(self)
+        )
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+        self._drag_index: int | None = None
+        self.setAcceptDrops(True)
+
+    def box_layout(self) -> QBoxLayout:
+        """Return the item layout (the diffable child slot).
+
+        Returns:
+            The box layout the children are inserted into.
+        """
+        return self._layout
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+    ) -> None:
+        """Install the reorder handler and the dispatch callback.
+
+        Args:
+            handlers: Map of prop name (``on_reorder``) to its handler.
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+
+    def _index_at(self, pos: QPoint) -> int:
+        """Resolve the item index nearest a position along the list axis.
+
+        Args:
+            pos: A local position.
+
+        Returns:
+            The index of the closest item (clamped to the item range).
+        """
+        count = self._layout.count()
+        if count == 0:
+            return 0
+        coord = pos.x() if self._horizontal else pos.y()
+        for index in range(count):
+            item = self._layout.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if widget is None:
+                continue
+            geom = widget.geometry()
+            mid = (geom.left() + geom.right()) / 2 if self._horizontal else (
+                geom.top() + geom.bottom()
+            ) / 2
+            if coord < mid:
+                return index
+        return count - 1
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Record the item index under the press for a pending drag.
+
+        Args:
+            event: The Qt mouse press event.
+        """
+        self._drag_index = self._index_at(event.position().toPoint())
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Start a native drag carrying the source index once moving.
+
+        Args:
+            event: The Qt mouse move event.
+        """
+        if self._drag_index is None or not (
+            event.buttons() & Qt.MouseButton.LeftButton
+        ):
+            super().mouseMoveEvent(event)
+            return
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(self._MIME, str(self._drag_index).encode("ascii"))
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+        super().mouseMoveEvent(event)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        """Accept a drag that carries this list's reorder mime type.
+
+        Args:
+            event: The Qt drag-enter event.
+        """
+        if event.mimeData().hasFormat(self._MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        """Keep accepting the drag as it moves over the list.
+
+        Args:
+            event: The Qt drag-move event.
+        """
+        if event.mimeData().hasFormat(self._MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        """Compute the destination index and emit a :class:`ReorderEvent`.
+
+        Args:
+            event: The Qt drop event.
+        """
+        mime = event.mimeData()
+        if not mime.hasFormat(self._MIME):
+            super().dropEvent(event)
+            return
+        from_index = int(bytes(mime.data(self._MIME).data()).decode("ascii"))
+        to_index = self._index_at(event.position().toPoint())
+        if from_index != to_index:
+            handler = self._handlers.get("on_reorder")
+            if handler is not None:
+                self._dispatch(
+                    handler, ReorderEvent(from_index=from_index, to_index=to_index)
+                )
+        event.acceptProposedAction()
+
+    def report_reorder(self, from_index: int, to_index: int) -> None:
+        """Emit a :class:`ReorderEvent` directly (test/headless entry point).
+
+        The native drag/drop loop is hard to drive headlessly, so this offers a
+        deterministic way to exercise the reorder dispatch.
+
+        Args:
+            from_index: The source item index.
+            to_index: The destination item index.
+        """
+        handler = self._handlers.get("on_reorder")
+        if handler is not None:
+            self._dispatch(
+                handler, ReorderEvent(from_index=from_index, to_index=to_index)
+            )
+
+
+class _InteractiveViewerWidget(QGraphicsView):
+    """A pannable, zoomable view of a single child via a :class:`QGraphicsScene`.
+
+    The child is embedded through a :class:`QGraphicsProxyWidget`; the wheel
+    zooms (clamped to ``min_scale``/``max_scale``) and a left-drag pans. Each
+    interaction emits a :class:`ScaleEvent` with the current cumulative scale and
+    the pointer-anchored focal point. Qt uses ``QGraphicsView`` + a transform;
+    the device renderer uses ``Modifier.graphicsLayer`` — a documented
+    divergence.
+    """
+
+    #: Multiplicative zoom per wheel notch.
+    _WHEEL_STEP = 1.15
+
+    def __init__(self) -> None:
+        """Create the graphics view, its scene and the embedding proxy."""
+        super().__init__()
+        self._scene: QGraphicsScene = QGraphicsScene(self)
+        self.setScene(self._scene)
+        self._proxy: QGraphicsProxyWidget | None = None
+        self._handlers: dict[str, object] = {}
+        self._dispatch: Callable[[Any, Event], None] = lambda handler, event: None
+        self._scale: float = 1.0
+        self._min_scale: float = 0.5
+        self._max_scale: float = 4.0
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+
+    def set_child(self, child: QWidget) -> None:
+        """Embed ``child`` as the single scene item.
+
+        Args:
+            child: The widget to pan and zoom.
+        """
+        if self._proxy is not None:
+            self._scene.removeItem(self._proxy)
+        self._proxy = self._scene.addWidget(child)
+
+    def take_child(self) -> QWidget | None:
+        """Detach and return the embedded child widget, if any.
+
+        Returns:
+            The embedded child, or ``None`` when nothing is mounted.
+        """
+        if self._proxy is None:
+            return None
+        widget = self._proxy.widget()
+        self._scene.removeItem(self._proxy)
+        self._proxy = None
+        return widget
+
+    def set_handlers(
+        self,
+        handlers: dict[str, object],
+        dispatch: Callable[[Any, Event], None],
+        min_scale: float,
+        max_scale: float,
+    ) -> None:
+        """Install the interaction handler, dispatch callback and scale bounds.
+
+        Args:
+            handlers: Map of prop name (``on_interaction``) to its handler.
+            dispatch: Callback invoked as ``dispatch(handler, event)``.
+            min_scale: The minimum allowed zoom factor.
+            max_scale: The maximum allowed zoom factor.
+        """
+        self._handlers = handlers
+        self._dispatch = dispatch
+        self._min_scale = min_scale
+        self._max_scale = max_scale
+
+    def _emit_interaction(self, focus: QPointF) -> None:
+        """Dispatch the current scale and focal point as a :class:`ScaleEvent`.
+
+        Args:
+            focus: The pointer-anchored focal point in view coordinates.
+        """
+        handler = self._handlers.get("on_interaction")
+        if handler is not None:
+            self._dispatch(
+                handler,
+                ScaleEvent(
+                    scale=self._scale,
+                    focus_x=float(focus.x()),
+                    focus_y=float(focus.y()),
+                    rotation=0.0,
+                ),
+            )
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Zoom on the wheel, clamped to the configured scale bounds.
+
+        Args:
+            event: The Qt wheel event.
+        """
+        factor = (
+            self._WHEEL_STEP if event.angleDelta().y() > 0 else 1.0 / self._WHEEL_STEP
+        )
+        target = max(self._min_scale, min(self._max_scale, self._scale * factor))
+        applied = target / self._scale if self._scale != 0 else 1.0
+        self._scale = target
+        if applied != 1.0:
+            self.scale(applied, applied)
+        self._emit_interaction(event.position())
+        event.accept()
 
 
 #: Duration (ms) of a navigation/drawer transition animation.
@@ -2636,7 +3302,13 @@ class QtRenderer:
         for child_node in node.children:
             child = self._create(child_node)
             rendered.children.append(child)
-            if rendered.type in ("Stack", "RouteDrawer", "LazyGrid"):
+            if rendered.type == "InteractiveViewer":
+                # The child is embedded in a QGraphicsScene via a proxy, not a
+                # box layout — pan/zoom act on the scene transform.
+                cast("_InteractiveViewerWidget", rendered.widget).set_child(
+                    child.widget
+                )
+            elif rendered.type in ("Stack", "RouteDrawer", "LazyGrid"):
                 # Direct children (no box layout): geometry is renderer-driven.
                 child.widget.setParent(rendered.widget)
             elif rendered.type in ("Toast", "Tooltip", "Menu", "ActionSheet"):
@@ -2727,6 +3399,46 @@ class QtRenderer:
             return _Rendered(
                 node.type, node.key, gesture, cast("QBoxLayout", gesture.layout())
             )
+        if node.type == "PanHandler":
+            pan = _PanWidget()
+            return _Rendered(
+                node.type, node.key, pan, cast("QBoxLayout", pan.layout())
+            )
+        if node.type == "ScaleHandler":
+            scaler = _ScaleWidget()
+            return _Rendered(
+                node.type, node.key, scaler, cast("QBoxLayout", scaler.layout())
+            )
+        if node.type == "DoubleTapHandler":
+            dbl = _DoubleTapWidget()
+            return _Rendered(
+                node.type, node.key, dbl, cast("QBoxLayout", dbl.layout())
+            )
+        if node.type == "Dismissible":
+            dismissible = _DismissibleWidget()
+            return _Rendered(
+                node.type,
+                node.key,
+                dismissible,
+                cast("QBoxLayout", dismissible.layout()),
+            )
+        if node.type in ("Draggable", "DragTarget"):
+            # Plain single-child wrappers: the Qt simulator carries the child
+            # untouched and binds the drag/drop handlers, but native
+            # cross-widget QDrag wiring between a free-floating Draggable and a
+            # DragTarget is a documented v1 gap (the device renderer realizes
+            # the full drag-and-drop).
+            wrap = QWidget()
+            wrap_layout: QBoxLayout = QVBoxLayout(wrap)
+            wrap_layout.setContentsMargins(0, 0, 0, 0)
+            return _Rendered(node.type, node.key, wrap, wrap_layout)
+        if node.type == "ReorderableList":
+            reorderable = _ReorderableWidget()
+            return _Rendered(
+                node.type, node.key, reorderable, reorderable.box_layout()
+            )
+        if node.type == "InteractiveViewer":
+            return _Rendered(node.type, node.key, _InteractiveViewerWidget(), None)
         if node.type in ("Dialog", "BottomSheet", "Popover"):
             dialog = _DismissDialog()
             layout = QVBoxLayout(dialog)
@@ -2851,6 +3563,8 @@ class QtRenderer:
             self._bind_click(button, node.props.get("on_click"))
         elif node.type == "GestureDetector":
             self._bind_gestures(cast("_GestureWidget", node.widget), node.props)
+        elif node.type in _ADVANCED_GESTURE_TYPES:
+            self._bind_advanced_gestures(node)
         elif node.type == "TabBar":
             self._apply_tab_bar(cast("_TabBarWidget", node.widget), node.props)
         elif node.type == "TabView":
@@ -3185,6 +3899,59 @@ class QtRenderer:
             for name in ("on_tap", "on_double_tap", "on_long_press", "on_swipe")
         }
         widget.set_handlers(handlers, self._invoke)
+
+    def _bind_advanced_gestures(self, node: _Rendered) -> None:
+        """(Re)install handlers on an advanced-gesture widget (phase E4).
+
+        Routes each phase-E4 widget's typed-event handlers (and any non-handler
+        config props) into its backing Qt widget. ``Draggable``/``DragTarget``
+        are single-child wrappers in the Qt simulator: their handlers are kept on
+        the node but native cross-widget drag-and-drop is a documented v1 gap.
+
+        Args:
+            node: The advanced-gesture rendered node.
+        """
+        props = node.props
+        if node.type == "PanHandler":
+            pan = cast("_PanWidget", node.widget)
+            pan.set_handlers({"on_pan": props.get("on_pan")}, self._invoke)
+        elif node.type == "ScaleHandler":
+            scaler = cast("_ScaleWidget", node.widget)
+            scaler.set_handlers(
+                {
+                    "on_scale": props.get("on_scale"),
+                    "on_double_tap": props.get("on_double_tap"),
+                },
+                self._invoke,
+            )
+        elif node.type == "DoubleTapHandler":
+            dbl = cast("_DoubleTapWidget", node.widget)
+            dbl.set_handlers(
+                {"on_double_tap": props.get("on_double_tap")}, self._invoke
+            )
+        elif node.type == "Dismissible":
+            dismissible = cast("_DismissibleWidget", node.widget)
+            raw = props.get("direction", SwipeDirection.LEFT)
+            direction = (
+                raw if isinstance(raw, SwipeDirection) else SwipeDirection(str(raw))
+            )
+            dismissible.set_handlers(
+                {"on_dismiss": props.get("on_dismiss")}, self._invoke, direction
+            )
+        elif node.type == "ReorderableList":
+            reorderable = cast("_ReorderableWidget", node.widget)
+            reorderable.set_handlers(
+                {"on_reorder": props.get("on_reorder")}, self._invoke
+            )
+        elif node.type == "InteractiveViewer":
+            viewer = cast("_InteractiveViewerWidget", node.widget)
+            viewer.set_handlers(
+                {"on_interaction": props.get("on_interaction")},
+                self._invoke,
+                float(cast("float", props.get("min_scale", 0.5))),
+                float(cast("float", props.get("max_scale", 4.0))),
+            )
+        # Draggable / DragTarget keep their handlers on the node; no Qt-sim wiring.
 
     def _apply_tab_bar(self, widget: _TabBarWidget, props: dict[str, Any]) -> None:
         """Rebuild a tab strip from its props and wire the change handler.
