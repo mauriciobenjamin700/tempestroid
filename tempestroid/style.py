@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "FlexDirection",
+    "FlexWrap",
     "JustifyContent",
     "AlignItems",
     "TextAlign",
@@ -47,6 +48,23 @@ class FlexDirection(StrEnum):
 
     ROW = "row"
     COLUMN = "column"
+
+
+class FlexWrap(StrEnum):
+    """Whether a flex container wraps its children onto new lines (``flex-wrap``).
+
+    ``NOWRAP`` keeps every child on a single line (the flex default), while
+    ``WRAP`` lets children flow onto subsequent lines once the current one fills
+    and ``WRAP_REVERSE`` does the same with the cross-axis order reversed. Only
+    flow-capable containers (a :class:`~tempestroid.widgets.Wrap`) react to it;
+    the Compose translator lowers it into the spec, while the Qt translator
+    realizes wrapping imperatively in its flow-layout widget (see the conformance
+    suite).
+    """
+
+    NOWRAP = "nowrap"
+    WRAP = "wrap"
+    WRAP_REVERSE = "wrap-reverse"
 
 
 class JustifyContent(StrEnum):
@@ -452,6 +470,7 @@ class Style(BaseModel):
     align_self: AlignItems | None = None
     grow: float | None = None
     gap: float | None = None
+    flex_wrap: FlexWrap | None = None
 
     # Box model.
     padding: Edge | None = None

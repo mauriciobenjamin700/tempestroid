@@ -7,7 +7,8 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from tempestroid.widgets.base import Widget
+from tempestroid.widgets.base import PageChangeHandler, Widget
+from tempestroid.widgets.events import Event, PageChangeEvent
 
 __all__ = [
     "Column",
@@ -17,6 +18,9 @@ __all__ = [
     "SafeArea",
     "SafeAreaEdge",
     "Stack",
+    "Wrap",
+    "PageView",
+    "AspectRatio",
 ]
 
 
@@ -191,3 +195,95 @@ class Stack(Widget):
             The ordered child widgets.
         """
         return self.children
+
+
+class Wrap(Widget):
+    """A flow-layout container: children wrap to the next line when a row fills.
+
+    Unlike ``Row`` (which keeps every child on a single line), a ``Wrap`` flows
+    its children left-to-right and breaks onto a new line once the current line
+    is full — the natural primitive for chips, tags or any free-flowing set of
+    pills. Wrapping is controlled by
+    :attr:`~tempestroid.style.Style.flex_wrap`; a ``Wrap`` wraps by default even
+    when the caller leaves the field unset, since wrapping is the widget's whole
+    purpose. The Compose renderer lowers it to ``FlowRow``/``FlowColumn`` and the
+    Qt renderer realizes the flow imperatively (see the conformance suite).
+
+    Attributes:
+        children: The ordered child widgets, flowed and wrapped in order.
+    """
+
+    child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
+    children: list[Widget] = Field(default_factory=_empty_children)
+
+    def child_nodes(self) -> list[Widget]:
+        """Return the wrap's children in flow order.
+
+        Returns:
+            The ordered child widgets.
+        """
+        return self.children
+
+
+class PageView(Widget):
+    """A paginated horizontal carousel: one full-width page visible at a time.
+
+    Each child is a page; the user swipes (device) or uses prev/next controls
+    (simulator) to move between them. The active page index lives in the
+    application's own state — the app passes the current :attr:`page` and updates
+    it from the :attr:`on_page_change` handler. To avoid a feedback loop, a
+    handler should ignore a :class:`PageChangeEvent` whose ``page`` already
+    matches the state. The Compose renderer lowers it to a ``HorizontalPager``;
+    the Qt renderer uses a ``QStackedWidget`` with prev/next navigation.
+
+    Attributes:
+        children: The ordered page widgets.
+        page: The active page index (0-based), driven by the application state.
+        on_page_change: Handler invoked with a :class:`PageChangeEvent` when the
+            active page changes.
+    """
+
+    event_schemas: ClassVar[dict[str, type[Event]]] = {
+        "on_page_change": PageChangeEvent
+    }
+    child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
+    children: list[Widget] = Field(default_factory=_empty_children)
+    page: int = 0
+    on_page_change: PageChangeHandler | None = None
+
+    def child_nodes(self) -> list[Widget]:
+        """Return the carousel's pages in order.
+
+        Returns:
+            The ordered child widgets.
+        """
+        return self.children
+
+
+class AspectRatio(Widget):
+    """A single-child box that constrains its child to a fixed width/height ratio.
+
+    The ``ratio`` is ``width / height``: a value of ``1.0`` is square, ``16/9``
+    is widescreen. The renderer derives the missing dimension from whichever one
+    is bounded by the parent. This is the explicit-widget counterpart to
+    :attr:`~tempestroid.style.Style.aspect_ratio` — use the widget when fixing
+    the ratio is the box's only purpose; the two coexist. The Compose renderer
+    lowers it to ``Modifier.aspectRatio`` and the Qt renderer derives the fixed
+    dimension imperatively.
+
+    Attributes:
+        ratio: The ``width / height`` ratio to enforce (must be positive).
+        child: The optional wrapped widget.
+    """
+
+    child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
+    ratio: float = Field(gt=0.0)
+    child: Widget | None = None
+
+    def child_nodes(self) -> list[Widget]:
+        """Return the wrapped child, if any.
+
+        Returns:
+            A one-element list with the child, or an empty list.
+        """
+        return [self.child] if self.child is not None else []

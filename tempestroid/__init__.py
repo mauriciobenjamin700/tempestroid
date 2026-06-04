@@ -40,6 +40,8 @@ from tempestroid.components import (
     Card,
     Chip,
     Clock,
+    CollapsingAppBar,
+    DataTable,
     Divider,
     Drawer,
     EmptyState,
@@ -55,6 +57,9 @@ from tempestroid.components import (
     SegmentedControl,
     Sidebar,
     Stepper,
+    Table,
+    TableCell,
+    TableRow,
     merge_style,
 )
 from tempestroid.core import (
@@ -98,6 +103,7 @@ from tempestroid.style import (
     Curve,
     Edge,
     FlexDirection,
+    FlexWrap,
     FontStyle,
     FontWeight,
     Gradient,
@@ -119,6 +125,7 @@ from tempestroid.widgets import (
     ActionSheet,
     Animated,
     AnimatedList,
+    AspectRatio,
     Autocomplete,
     BottomSheet,
     Button,
@@ -167,6 +174,9 @@ from tempestroid.widgets import (
     MenuSelectEvent,
     MenuSelectHandler,
     Navigator,
+    PageChangeEvent,
+    PageChangeHandler,
+    PageView,
     PanEvent,
     PanHandler,
     PinInput,
@@ -225,6 +235,7 @@ from tempestroid.widgets import (
     ValidationHandler,
     Validator,
     Widget,
+    Wrap,
     parse_event,
 )
 
@@ -262,6 +273,7 @@ __all__ = [
     "Curve",
     "Position",
     "StackAlign",
+    "FlexWrap",
     # Widgets
     "Widget",
     "Component",
@@ -274,6 +286,9 @@ __all__ = [
     "SafeArea",
     "SafeAreaEdge",
     "Stack",
+    "Wrap",
+    "PageView",
+    "AspectRatio",
     "Animated",
     "AnimatedList",
     "Hero",
@@ -359,6 +374,11 @@ __all__ = [
     "Banner",
     "EmptyState",
     "Badge",
+    "CollapsingAppBar",
+    "Table",
+    "DataTable",
+    "TableCell",
+    "TableRow",
     "merge_style",
     # Gesture handlers (overlay + gestures)
     "TapHandler",
@@ -377,6 +397,7 @@ __all__ = [
     "RangeChangeHandler",
     "SubmitHandler",
     "ValidationHandler",
+    "PageChangeHandler",
     # Events (typed boundary contract)
     "Event",
     "TapEvent",
@@ -403,6 +424,7 @@ __all__ = [
     "RangeChangeEvent",
     "SubmitEvent",
     "ValidationEvent",
+    "PageChangeEvent",
     "EventValidationError",
     "parse_event",
     # Navigation (routes + stack)

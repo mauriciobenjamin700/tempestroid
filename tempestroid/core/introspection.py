@@ -15,6 +15,7 @@ from tempestroid.widgets import (
     ActionSheet,
     Animated,
     AnimatedList,
+    AspectRatio,
     Autocomplete,
     BottomSheet,
     Button,
@@ -51,6 +52,8 @@ from tempestroid.widgets import (
     Menu,
     MenuSelectEvent,
     Navigator,
+    PageChangeEvent,
+    PageView,
     PanEvent,
     PanHandler,
     PinInput,
@@ -93,6 +96,7 @@ from tempestroid.widgets import (
     Tooltip,
     ValidationEvent,
     Widget,
+    Wrap,
 )
 
 __all__ = [
@@ -112,6 +116,9 @@ WIDGET_TYPES: tuple[type[Widget], ...] = (
     Container,
     ScrollView,
     Stack,
+    Wrap,
+    PageView,
+    AspectRatio,
     Animated,
     AnimatedList,
     Hero,
@@ -188,6 +195,7 @@ EVENT_TYPES: tuple[type[Event], ...] = (
     RangeChangeEvent,
     SubmitEvent,
     ValidationEvent,
+    PageChangeEvent,
 )
 
 

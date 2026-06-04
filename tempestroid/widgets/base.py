@@ -25,6 +25,7 @@ from tempestroid.widgets.events import (
     FileSelectEvent,
     LongPressEvent,
     MenuSelectEvent,
+    PageChangeEvent,
     PanEvent,
     RangeChangeEvent,
     RefreshEvent,
@@ -68,6 +69,7 @@ __all__ = [
     "RangeChangeHandler",
     "SubmitHandler",
     "ValidationHandler",
+    "PageChangeHandler",
     "Widget",
     "Component",
     "handler_accepts_event",
@@ -264,6 +266,12 @@ SubmitHandler: TypeAlias = Annotated[
 ValidationHandler: TypeAlias = Annotated[
     Callable[[ValidationEvent], Any]
     | Callable[[ValidationEvent], Awaitable[Any]]
+    | _RawHandler,
+    WithJsonSchema(_HANDLER_SCHEMA),
+]
+PageChangeHandler: TypeAlias = Annotated[
+    Callable[[PageChangeEvent], Any]
+    | Callable[[PageChangeEvent], Awaitable[Any]]
     | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]

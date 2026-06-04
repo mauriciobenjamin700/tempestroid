@@ -42,6 +42,7 @@ __all__ = [
     "RangeChangeEvent",
     "SubmitEvent",
     "ValidationEvent",
+    "PageChangeEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -374,6 +375,23 @@ class ValidationEvent(Event):
     field: str
     value: str
     error: str | None = None
+
+
+class PageChangeEvent(Event):
+    """The active page of a ``PageView`` carousel changed.
+
+    Emitted when the user swipes to a new page (or a renderer's prev/next control
+    settles on one). The application keeps the active page in its own state and
+    reacts by storing the new index; a handler should guard against re-emitting
+    the same index to avoid a feedback loop.
+
+    Attributes:
+        page: The new active page index (0-based).
+        previous: The page index that was active before the change.
+    """
+
+    page: int
+    previous: int = 0
 
 
 E = TypeVar("E", bound=Event)

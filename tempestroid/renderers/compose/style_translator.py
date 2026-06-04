@@ -22,6 +22,7 @@ from tempestroid.style import (
     Color,
     Corners,
     Curve,
+    FlexWrap,
     FontStyle,
     Gradient,
     GradientDirection,
@@ -45,6 +46,12 @@ _CURVE: dict[Curve, str] = {
     Curve.EASE: "ease",
     Curve.BOUNCE: "bounce",
     Curve.ELASTIC: "elastic",
+}
+
+_FLEX_WRAP: dict[FlexWrap, str] = {
+    FlexWrap.NOWRAP: "nowrap",
+    FlexWrap.WRAP: "wrap",
+    FlexWrap.WRAP_REVERSE: "wrapReverse",
 }
 
 _JUSTIFY: dict[JustifyContent, str] = {
@@ -151,6 +158,8 @@ def to_compose(style: Style | None) -> dict[str, Any]:
         spec["weight"] = style.grow
     if style.gap is not None:
         spec["gap"] = style.gap
+    if style.flex_wrap is not None:
+        spec["flexWrap"] = _FLEX_WRAP[style.flex_wrap]
     if style.padding is not None:
         edge = style.padding
         spec["padding"] = {
