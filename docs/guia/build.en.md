@@ -76,8 +76,8 @@ tempest deploy            # install the bundled host (once) + push the project +
 
 `tempest deploy`:
 
-1. Installs the **prebuilt host** (bundled in the wheel — no download) if it is
-   not on the device yet. Repeat runs skip that ~50 MB step.
+1. Installs the **prebuilt host** (downloaded from the GitHub release on first
+   use, then cached) if it is not on the device yet. Repeat runs skip the step.
 2. Bundles your project and pushes it **once** over a short-lived server.
 3. Launches the app and **exits**. The app keeps running on the device.
 
@@ -94,9 +94,11 @@ tempest serve             # LAN code-push: saving any file reloads on device
 ```
 
 `tempest install` resolves the host APK in order: explicit `.apk` path/URL →
-`TEMPESTROID_HOST_APK` → the asset bundled in the wheel → a download from the
-GitHub release (`TEMPESTROID_HOST_APK_URL` to override), cached under
-`~/.cache/tempestroid`.
+`TEMPESTROID_HOST_APK` → a bundled asset (only in a source checkout staged with
+`make stage-host`) → a download from the GitHub release
+(`TEMPESTROID_HOST_APK_URL` to override), cached under `~/.cache/tempestroid`. The
+PyPI wheel does **not** embed the ~100 MB APK, so the download is the normal path
+from a PyPI install (offline thereafter).
 
 ## Ship an APK
 

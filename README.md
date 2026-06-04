@@ -180,8 +180,9 @@ need an Android SDK/NDK or the `android-host` source to test on hardware:
 uv run tempest deploy    # install the bundled host (once) + push the whole project + launch
 ```
 
-`tempest deploy <app>` ensures the prebuilt host APK (bundled in the wheel — no
-download) is installed on the connected device, pushes the project bundle once
+`tempest deploy <app>` ensures the prebuilt host APK (downloaded from the GitHub
+release on first use, then cached under `~/.cache/tempestroid`) is installed on
+the connected device, pushes the project bundle once
 over a short-lived dev server, launches it, and exits. No SDK/NDK, Gradle, or
 `android-host` checkout. Repeat runs skip the ~50 MB install (the host is already
 there) and just push the new bundle; pass `--force-install` to reinstall the
@@ -191,14 +192,17 @@ for that). For a **persistent hot-reload loop** instead, `tempest serve` keeps
 the dev server up: editing + saving any file in the tree hot-reloads on device.
 
 ```bash
-uv run tempest install   # just adb-install the prebuilt host APK (offline/bundled)
+uv run tempest install   # download (cached) + adb-install the prebuilt host APK
 uv run tempest serve     # persistent LAN code-push: edit + save → hot reload on device
 ```
 
 `tempest install` resolves the host APK in order: an explicit `.apk` path/URL →
-`TEMPESTROID_HOST_APK` → the bundled asset (shipped in the wheel) → a download
-from the matching GitHub release (`TEMPESTROID_HOST_APK_URL` to override), cached
-under `~/.cache/tempestroid` so it's fetched only once. With a device connected,
+`TEMPESTROID_HOST_APK` → a bundled asset (only in a source checkout staged with
+`make stage-host`) → a download from the matching GitHub release
+(`TEMPESTROID_HOST_APK_URL` to override), cached under `~/.cache/tempestroid` so
+it's fetched only once. The published wheel does **not** embed the ~100 MB APK
+(it would exceed PyPI's per-file limit), so from a PyPI install the download is
+the normal path — offline thereafter. With a device connected,
 `tempest serve` wires `adb reverse` and launches the host in dev mode pointing at
 the dev server. Use `--no-launch` to serve only.
 
@@ -211,21 +215,13 @@ wheel). `tempest run` is the same build plus install + launch + log streaming.
 From an installed wheel both fail fast with a hint pointing at `tempest deploy` /
 `tempest serve`.
 
-> **Maintainers:** `make release` attaches the host APK to the GitHub release
-> (`tempest-host-<version>.apk`) before pushing the tag; the publish CI downloads
-> that asset into `tempestroid/_assets/host.apk` so the published wheel **bundles
-> the host** and `tempest install` / `tempest deploy` work fully offline. Build it
-> first with `make apk` (needs the toolchain). `make stage-host` does the local
-> copy for a checkout; `make publish-host` (re)uploads the asset to an existing
-> release as the download fallback.
-
-> **Maintainers:** `make release` attaches the host APK to the GitHub release
-> (`tempest-host-<version>.apk`) before pushing the tag; the publish CI downloads
-> that asset into `tempestroid/_assets/host.apk` so the published wheel **bundles
-> the host** and `tempest install` / `tempest build` work fully offline. Build it
-> first with `make apk` (needs the toolchain). `make stage-host` does the local
-> copy for a checkout; `make publish-host` (re)uploads the asset to an existing
-> release as the download fallback.
+> **Maintainers:** the host APK (~100 MB — it embeds CPython) is **not** shipped
+> inside the PyPI wheel (it would exceed PyPI's per-file limit). `make release`
+> builds it (`make apk`) and **attaches it to the GitHub release** as
+> `tempest-host-<version>.apk`; `tempest install` / `deploy` download it from
+> there (cached). `make publish-host` (re)uploads the asset to an existing
+> release; `make stage-host` copies it into a local checkout
+> (`tempestroid/_assets/host.apk`, gitignored) so that checkout installs offline.
 
 **Transparent output.** `build`/`run`/`deploy`/`install` announce each step
 (`→ … ✓/✗` with elapsed time). `build`/`run` (the from-source APK paths) run a

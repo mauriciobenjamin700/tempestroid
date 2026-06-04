@@ -77,8 +77,8 @@ tempest deploy            # instala o host empacotado (1x) + empurra o projeto +
 
 O `tempest deploy`:
 
-1. Instala o **host pré-compilado** (vem embutido no wheel — sem download) se
-   ainda não estiver no aparelho. Execuções seguintes pulam esse passo (~50 MB).
+1. Instala o **host pré-compilado** (baixado do release do GitHub no primeiro
+   uso e cacheado) se ainda não estiver no aparelho. Execuções seguintes pulam.
 2. Empacota seu projeto e empurra **uma vez** por um servidor efêmero.
 3. Abre o app e **encerra**. O app continua rodando no aparelho.
 
@@ -95,9 +95,11 @@ tempest serve             # code-push por LAN: salvar qualquer arquivo recarrega
 ```
 
 O `tempest install` resolve o APK do host nesta ordem: caminho/URL `.apk`
-explícito → `TEMPESTROID_HOST_APK` → asset embutido no wheel → download do
-release do GitHub (`TEMPESTROID_HOST_APK_URL` para sobrescrever), cacheado em
-`~/.cache/tempestroid`.
+explícito → `TEMPESTROID_HOST_APK` → asset empacotado (só num checkout do código
+estagiado com `make stage-host`) → download do release do GitHub
+(`TEMPESTROID_HOST_APK_URL` para sobrescrever), cacheado em `~/.cache/tempestroid`.
+O wheel do PyPI **não** embute o APK (~100 MB), então num install via PyPI o
+download é o caminho normal (offline depois disso).
 
 ## Publicar um APK
 
