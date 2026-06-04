@@ -71,3 +71,41 @@ def test_layout_alignment_unmapped_returns_none():
         )
         is None
     )
+
+
+# --- E9: RTL mirroring + text_scale -----------------------------------------
+
+
+def test_rtl_mirrors_leaf_padding():
+    style = Style(padding=Edge(left=8, right=16))
+    assert "padding: 0.0px 16.0px 0.0px 8.0px" in to_qss(style, with_padding=True)
+    assert "padding: 0.0px 8.0px 0.0px 16.0px" in to_qss(
+        style, with_padding=True, rtl=True
+    )
+
+
+def test_rtl_mirrors_side_border():
+    from tempestroid import SideBorder
+
+    style = Style(border=SideBorder(left=Border(width=2, color=Color(r=0, g=0, b=0))))
+    assert "border-left:" in to_qss(style, with_padding=False)
+    assert "border-right:" in to_qss(style, with_padding=False, rtl=True)
+
+
+def test_rtl_default_is_ltr():
+    style = Style(padding=Edge(left=8, right=16))
+    assert to_qss(style, with_padding=True) == to_qss(
+        style, with_padding=True, rtl=False
+    )
+
+
+def test_text_scale_multiplies_font_size():
+    assert "font-size: 18.0px" in to_qss(
+        Style(font_size=12, text_scale=1.5), with_padding=True
+    )
+
+
+def test_font_asset_emits_custom_family():
+    assert 'font-family: "CustomAsset"' in to_qss(
+        Style(font_asset="fonts/x.ttf"), with_padding=True
+    )

@@ -16,6 +16,8 @@ from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from tempestroid.theme import ThemeMode
+
 __all__ = [
     "Event",
     "TapEvent",
@@ -51,6 +53,8 @@ __all__ = [
     "ConnectivityState",
     "ConnectivityEvent",
     "DeepLinkEvent",
+    "ThemeChangeEvent",
+    "LocaleChangeEvent",
     "EventValidationError",
     "parse_event",
 ]
@@ -526,6 +530,38 @@ class DeepLinkEvent(Event):
 
     url: str
     params: dict[str, str] = Field(default_factory=_empty_str_map)
+
+
+class ThemeChangeEvent(Event):
+    """The active theme mode changed (e.g. the user toggled dark/light).
+
+    Not emitted by a widget handler: the host fires it when the OS color scheme
+    changes (or app code requests a switch), and the bridge routes it over the
+    reserved theme token (``"__theme__"``) to ``App.set_theme``.
+
+    Attributes:
+        mode: The new theme mode.
+    """
+
+    mode: ThemeMode
+
+
+class LocaleChangeEvent(Event):
+    """The active locale / layout direction changed.
+
+    Not emitted by a widget handler: the host fires it when the device locale
+    changes (or app code requests a switch), and the bridge routes it over the
+    reserved locale token (``"__locale__"``) to ``App.set_locale``.
+
+    Attributes:
+        language: The new BCP-47 language tag.
+        region: The optional region/country subtag.
+        rtl: Whether the new locale lays out right-to-left.
+    """
+
+    language: str
+    region: str | None = None
+    rtl: bool = False
 
 
 E = TypeVar("E", bound=Event)

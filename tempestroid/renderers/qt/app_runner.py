@@ -19,6 +19,7 @@ from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
+from tempestroid.core.ir import Patch
 from tempestroid.core.state import App
 from tempestroid.devices import DEFAULT_DEVICE
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
@@ -112,6 +113,35 @@ class BackKeyFilter(QObject):
         return super().eventFilter(watched, event)
 
 
+def _apply_with_context(renderer: QtRenderer) -> Callable[[list[Patch]], None]:
+    """Build the app's ``apply_patches`` callback: apply, then sync context.
+
+    Wraps :meth:`QtRenderer.apply` so that after every coalesced patch batch the
+    renderer re-reads the app's theme/locale context. ``set_theme`` /
+    ``set_locale`` only mutate the app and request a rebuild; the resulting empty
+    or non-empty patch batch flows here, and ``sync_context`` swaps the palette /
+    layout direction to match — keeping the visual theme in lockstep with the
+    declarative ``app.theme`` / ``app.locale`` without a dedicated callback.
+
+    Args:
+        renderer: The renderer whose patches to apply and context to sync.
+
+    Returns:
+        The ``apply_patches`` callback to hand to :class:`App`.
+    """
+
+    def _apply(patches: list[Patch]) -> None:
+        """Apply ``patches`` then re-sync the renderer's theme/locale context.
+
+        Args:
+            patches: The coalesced patch batch from the reconciler.
+        """
+        renderer.apply(patches)
+        renderer.sync_context()
+
+    return _apply
+
+
 def cast_key(event: QEvent) -> QKeyEvent | None:
     """Return ``event`` as a :class:`QKeyEvent` when it is one, else ``None``.
 
@@ -152,13 +182,24 @@ def run_qt(
     renderer = QtRenderer()
     # Drive the animation frame clock off the fused qasync loop's monotonic clock
     # so ``App._tick`` computes each frame's ``dt`` from the same time base the
-    # ``loop.call_later(1/60)`` scheduling uses.
-    app = App(state, view, apply_patches=renderer.apply, time_source=loop.time)
+    # ``loop.call_later(1/60)`` scheduling uses. After each rebuild the renderer
+    # re-reads the app's theme/locale context (``sync_context``) so a
+    # ``set_theme``/``set_locale`` — which only schedules a rebuild — takes visual
+    # effect (palette swap + layout direction).
+    app: App[S] = App(
+        state,
+        view,
+        apply_patches=_apply_with_context(renderer),
+        time_source=loop.time,
+    )
     # The app builds a `Scene` (root tree + floating overlay layer). The Qt
     # renderer mounts both; a host-owned overlay dismissal (dialog close, menu
     # select, scrim tap) is routed back to `App.dismiss` — the desktop analogue
     # of the device bridge's `__dismiss__:<id>` token.
     renderer.set_dismiss_overlay(app.dismiss)
+    # Wire the live app so the renderer reads theme (palette), locale (RTL) and
+    # forwards resize events to ``App._update_media`` (E9 transversal context).
+    renderer.set_app(app)
     host = renderer.mount(app.start())
     # Esc → back (app.pop), mirroring the device back button. The filter is kept
     # alive on the host so Qt does not GC it (it does not take ownership).

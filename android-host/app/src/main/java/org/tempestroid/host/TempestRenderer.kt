@@ -134,9 +134,19 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.horizontalScroll
@@ -226,13 +236,95 @@ import org.json.JSONObject
  */
 @Composable
 fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
+    // E9 RTL: a node may carry a `locale_rtl` flag (the root does, when the Python
+    // serializer emits it). When present, flip LocalLayoutDirection for this subtree
+    // so Compose orders children and resolves start/end-aware modifiers right-to-left
+    // — complementing the box-model values Python already mirrors in to_compose(rtl).
+    // Absent (the common case) → render with the inherited direction, no extra wrap.
+    val rtl = node.props["locale_rtl"] as? Boolean
+    if (rtl != null) {
+        val direction = if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+        CompositionLocalProvider(LocalLayoutDirection provides direction) {
+            RenderAccessible(node, onEvent)
+        }
+    } else {
+        RenderAccessible(node, onEvent)
+    }
+}
+
+/**
+ * E9 accessibility wrapper: if the node declares `semantics` / `focusable` /
+ * `focus_order`, wrap its rendered body in a [Box] carrying the corresponding
+ * [Modifier.semantics] (contentDescription + role) and [Modifier.focusable]. The
+ * wrapper is added only when at least one of the three is present, so the common
+ * (untagged) node renders with zero extra layout. This is the Compose counterpart
+ * of the Qt `QAccessible.setAccessibleName` / `setFocusPolicy` path.
+ *
+ * `semantics` arrives as the serialized `{label, role, hint}` map (when the Python
+ * serializer lowers the `Semantics` model — see gaps if it currently drops it).
+ * `focus_order` is honoured insofar as a focusable node participates in the
+ * traversal; explicit next/previous wiring via FocusRequester is left to the
+ * (rare) ordered-focus case and documented as a divergence.
+ */
+@Composable
+private fun RenderAccessible(node: TempestNode, onEvent: (String, String) -> Unit) {
+    @Suppress("UNCHECKED_CAST")
+    val semantics = node.props["semantics"] as? Map<String, Any?>
+    val focusable = node.props["focusable"] as? Boolean
+    if (semantics == null && focusable == null) {
+        RenderNodeBody(node, onEvent)
+        return
+    }
+    val label = semantics?.get("label") as? String
+    val role = roleFor(semantics?.get("role") as? String)
+    val isHeading = (semantics?.get("role") as? String) == "heading"
+    var m: Modifier = Modifier
+    if (semantics != null) {
+        m = m.semantics {
+            if (label != null) contentDescription = label
+            if (role != null) this.role = role
+            if (isHeading) heading()
+        }
+    }
+    if (focusable == true) {
+        m = m.focusable(true)
+    } else if (focusable == false) {
+        m = m.focusable(false)
+    }
+    Box(modifier = m) { RenderNodeBody(node, onEvent) }
+}
+
+/** Map a serialized semantics `role` string to a Compose [Role], or `null` when
+ *  the role has no direct Compose equivalent (e.g. "heading" → handled separately). */
+private fun roleFor(role: String?): Role? = when (role) {
+    "button" -> Role.Button
+    "checkbox" -> Role.Checkbox
+    "switch" -> Role.Switch
+    "radio" -> Role.RadioButton
+    "tab" -> Role.Tab
+    "image" -> Role.Image
+    "dropdown" -> Role.DropdownList
+    else -> null
+}
+
+/** The body of [RenderNode]: dispatches by node type. Split out so [RenderNode]
+ *  can wrap it in an RTL [CompositionLocalProvider] without duplicating the when. */
+@Composable
+private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit) {
     val style = styleOf(node)
     when (node.type) {
         "Text" -> Text(
             text = node.props["content"] as? String ?: "",
             color = colorOf(style, "color") ?: Color.Unspecified,
-            fontSize = (style["fontSize"] as? Number)?.toFloat()?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+            // E9 text scale: Style.text_scale (serialized "textScale") multiplies the
+            // declared font size, mirroring the Qt translator (which folds it into
+            // font-size). Compose's own LocalDensity.fontScale (the OS accessibility
+            // setting) still applies on top of this, since the result is an `sp`.
+            fontSize = scaledFontSize(style),
             fontWeight = (style["fontWeight"] as? Number)?.let { FontWeight(it.toInt()) },
+            // E9 custom font: Style.font_asset (serialized "fontAsset") loads a bundled
+            // typeface from the app assets; null falls back to the platform default.
+            fontFamily = fontFamilyOf(style),
             textAlign = textAlignOf(style),
             modifier = baseModifier(style),
         )
@@ -262,9 +354,9 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
             ) {
                 Text(
                     text = node.props["label"] as? String ?: "",
-                    fontSize = (style["fontSize"] as? Number)?.toFloat()?.sp
-                        ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+                    fontSize = scaledFontSize(style),
                     fontWeight = (style["fontWeight"] as? Number)?.let { FontWeight(it.toInt()) },
+                    fontFamily = fontFamilyOf(style),
                 )
             }
         }
@@ -3114,6 +3206,34 @@ private fun parseHexColor(hex: String): Color? {
         6 -> Color(("ff$s").toLong(16))
         8 -> Color(s.toLong(16))
         else -> null
+    }
+}
+
+/**
+ * E9 font size with `text_scale` applied. Reads `fontSize` (px → sp) and multiplies
+ * it by the serialized `textScale` factor (default 1.0), mirroring the Qt translator
+ * which folds the same factor into `font-size`. Returns `Unspecified` when no font
+ * size is declared (so the Material default size, itself subject to text scale, wins).
+ */
+private fun scaledFontSize(style: Map<String, Any?>): androidx.compose.ui.unit.TextUnit {
+    val size = (style["fontSize"] as? Number)?.toFloat() ?: return androidx.compose.ui.unit.TextUnit.Unspecified
+    val scale = (style["textScale"] as? Number)?.toFloat() ?: 1f
+    return (size * scale).sp
+}
+
+/**
+ * E9 custom font family. When the serialized style carries a `fontAsset` (a path
+ * relative to the app's `assets/`, e.g. `"fonts/Custom.ttf"`), build a
+ * [FontFamily] from that bundled font via the [Font] asset overload. `null` (the
+ * common case) falls back to the platform default family. Mirrors the Qt path,
+ * which registers the same file via `QFontDatabase.addApplicationFont`.
+ */
+@Composable
+private fun fontFamilyOf(style: Map<String, Any?>): FontFamily? {
+    val asset = style["fontAsset"] as? String ?: return null
+    val context = LocalContext.current
+    return remember(asset) {
+        runCatching { FontFamily(Font(path = asset, assetManager = context.assets)) }.getOrNull()
     }
 }
 

@@ -495,6 +495,14 @@ class Style(BaseModel):
     line_height: float | None = None
     max_lines: int | None = Field(default=None, gt=0)
     text_overflow: TextOverflow | None = None
+    #: Multiplier applied to ``font_size`` (``1.0`` is neutral). The Qt
+    #: translator scales the emitted ``font-size``; the Compose translator emits
+    #: it as ``textScale`` for the device's ``LocalDensity`` to apply.
+    text_scale: float | None = Field(default=None, gt=0.0)
+    #: Path to a custom font asset relative to the app bundle (e.g.
+    #: ``"fonts/Roboto.ttf"``). Both renderers load it (Qt ``QFontDatabase``,
+    #: Compose ``FontFamily``) and apply it as the node's font family.
+    font_asset: str | None = None
 
     # Dimensions (logical pixels).
     width: float | None = None

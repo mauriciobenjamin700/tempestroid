@@ -99,6 +99,8 @@ __all__ = [
     "SENSOR_TOKEN_PREFIX",
     "LIFECYCLE_TOKEN",
     "CONNECTIVITY_TOKEN_PREFIX",
+    "THEME_TOKEN",
+    "LOCALE_TOKEN",
     "handler_token",
     "event_type_for",
     "EVENT_SCHEMAS",
@@ -150,6 +152,19 @@ LIFECYCLE_TOKEN: str = "__lifecycle__"
 #: change to :func:`tempestroid.native.connectivity._on_connectivity`. Rides the
 #: existing event channel — no new JNI entry point.
 CONNECTIVITY_TOKEN_PREFIX: str = "__connectivity__"
+
+#: Reserved event token the host sends when the active theme mode changes (the OS
+#: toggled dark mode, or app code requested a switch). It carries the new mode as
+#: its payload (``{"mode": "dark"}``) and is routed to ``App.set_theme``. Rides
+#: the existing event channel — no new JNI entry point.
+THEME_TOKEN: str = "__theme__"
+
+#: Reserved event token the host sends when the active locale / layout direction
+#: changes (the device locale changed, or app code requested a switch). It carries
+#: the new locale as its payload (``{"language": "ar", "rtl": true}``) and is
+#: routed to ``App.set_locale``. Rides the existing event channel — no new JNI
+#: entry point.
+LOCALE_TOKEN: str = "__locale__"
 
 #: ``{widget_type: {handler_prop: event_type}}`` derived from each widget's
 #: ``event_schemas`` classvar — the contract used to validate event payloads.

@@ -45,6 +45,7 @@ from tempestroid.widgets.events import (
 )
 
 __all__ = [
+    "Semantics",
     "EventHandler",
     "TextChangeHandler",
     "ToggleHandler",
@@ -277,6 +278,29 @@ PageChangeHandler: TypeAlias = Annotated[
 ]
 
 
+class Semantics(BaseModel):
+    """Accessibility metadata propagated to both renderers.
+
+    Attached to any :class:`Widget` via :attr:`Widget.semantics`; the leaf
+    renderers map it to the platform's accessibility surface (Qt ``QAccessible``
+    name/description; Compose ``Modifier.semantics { contentDescription; role }``)
+    so screen readers (TalkBack, Qt AT) can describe the node. Frozen so the
+    reconciler diffs it by value.
+
+    Attributes:
+        label: The accessible label (``contentDescription`` / accessible name).
+        role: The accessible role hint (e.g. ``"button"``, ``"image"``,
+            ``"heading"``); the renderer maps it to its native role enum.
+        hint: An accessibility hint / tooltip describing what the node does.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str | None = None
+    role: str | None = None
+    hint: str | None = None
+
+
 class Widget(BaseModel):
     """Base class for every node in the declarative UI tree.
 
@@ -284,6 +308,12 @@ class Widget(BaseModel):
         key: Optional stable identity used by the reconciler to match nodes
             across rebuilds (analogous to a React ``key``).
         style: Optional inline style for this node.
+        semantics: Optional accessibility metadata for this node, propagated to
+            both renderers and to :func:`~tempestroid.introspect`.
+        focusable: Whether this node accepts focus. ``None`` keeps the widget's
+            natural focusability (e.g. a button is focusable, a label is not).
+        focus_order: The node's explicit focus/tab order; ``None`` uses the
+            natural traversal order.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -300,6 +330,9 @@ class Widget(BaseModel):
 
     key: str | None = None
     style: Style | None = None
+    semantics: Semantics | None = None
+    focusable: bool | None = None
+    focus_order: int | None = None
 
     @property
     def widget_type(self) -> str:

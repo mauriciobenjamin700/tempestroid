@@ -400,3 +400,62 @@ async def test_connectivity_token_routes_to_connectivity_registry(
         await asyncio.sleep(0)
 
     assert seen == [{"state": "wifi"}]
+
+
+# ---------------------------------------------------------------------------
+# E9: theme / locale tokens ride the single event transport (no new JNI entry)
+# ---------------------------------------------------------------------------
+
+
+async def test_theme_token_routes_to_set_theme() -> None:
+    """``__theme__`` validates its payload and swaps the app's theme mode."""
+    from tempestroid.bridge.protocol import THEME_TOKEN
+    from tempestroid.theme import ThemeMode
+
+    device, _ = _device_with_stack("/")
+    seen: list[dict[str, Any]] = []
+    original = device.handle_event
+
+    async def _spy(message: dict[str, Any]) -> None:
+        seen.append(message)
+        await original(message)
+
+    device.handle_event = _spy  # type: ignore[method-assign]
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(THEME_TOKEN, '{"mode": "dark"}')
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert device.app.theme.mode is ThemeMode.DARK
+    # the reserved token must not be dispatched to the widget handler registry
+    assert seen == []
+
+
+async def test_locale_token_routes_to_set_locale() -> None:
+    """``__locale__`` validates its payload and swaps the app's locale."""
+    from tempestroid.bridge.protocol import LOCALE_TOKEN
+
+    device, _ = _device_with_stack("/")
+    await device.start()
+
+    loop = asyncio.get_running_loop()
+    sink = make_event_sink(loop, device)
+    sink(LOCALE_TOKEN, '{"language": "ar", "region": "EG", "rtl": true}')
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert device.app.locale.language == "ar"
+    assert device.app.locale.region == "EG"
+    assert device.app.locale.rtl is True
+
+
+def test_theme_locale_tokens_are_bare_sentinels() -> None:
+    """``THEME_TOKEN`` / ``LOCALE_TOKEN`` carry no colon (exact-match routing)."""
+    from tempestroid.bridge.protocol import LOCALE_TOKEN, THEME_TOKEN
+
+    assert ":" not in THEME_TOKEN
+    assert ":" not in LOCALE_TOKEN
+    assert THEME_TOKEN != LOCALE_TOKEN

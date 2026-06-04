@@ -56,6 +56,7 @@ from tempestroid.widgets import (
     LazyGrid,
     LazyRow,
     LifecycleEvent,
+    LocaleChangeEvent,
     LongPressEvent,
     MapView,
     MaskedInput,
@@ -103,6 +104,7 @@ from tempestroid.widgets import (
     Text,
     TextArea,
     TextChangeEvent,
+    ThemeChangeEvent,
     TimeChangeEvent,
     TimePicker,
     Toast,
@@ -228,6 +230,8 @@ EVENT_TYPES: tuple[type[Event], ...] = (
     SensorEvent,
     ConnectivityEvent,
     DeepLinkEvent,
+    ThemeChangeEvent,
+    LocaleChangeEvent,
 )
 
 
