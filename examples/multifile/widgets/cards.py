@@ -41,7 +41,7 @@ def counter_card(count: int, on_increment: Callable[[], None]) -> Widget:
         children=[
             Text(
                 content=f"multi-file count = {count}",
-                style=Style(text_color=Color(r=240, g=240, b=255), font_size=26),
+                style=Style(color=Color(r=240, g=240, b=255), font_size=26),
             ),
             Button(
                 label="increment",
@@ -49,7 +49,7 @@ def counter_card(count: int, on_increment: Callable[[], None]) -> Widget:
                 style=Style(
                     padding=Edge.symmetric(vertical=12, horizontal=20),
                     background=Color(r=40, g=90, b=240),
-                    text_color=Color(r=255, g=255, b=255),
+                    color=Color(r=255, g=255, b=255),
                     corner_radius=14,
                 ),
             ),
