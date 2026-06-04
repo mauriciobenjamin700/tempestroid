@@ -84,6 +84,15 @@ object PythonRuntime {
      */
     external fun dispatchEvent(token: String, payloadJson: String)
 
+    /**
+     * True when a Python interpreter is already initialized in this process.
+     *
+     * The background worker (WorkManager) uses this to choose between dispatching
+     * a fired task into the live interpreter (app alive) and booting a fresh
+     * short-lived interpreter (the process was woken from dead just to run work).
+     */
+    external fun isPythonInitialized(): Boolean
+
     private const val TAG = "tempestroid"
 
     /**

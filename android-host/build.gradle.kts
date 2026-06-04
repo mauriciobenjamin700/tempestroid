@@ -6,4 +6,8 @@ plugins {
     // Kotlin 2.0+ ships the Compose compiler as a standalone plugin (versioned
     // in lockstep with Kotlin), replacing kotlinCompilerExtensionVersion.
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+    // FCM (E8 PushModule): applied by :app ONLY when a google-services.json is
+    // present, so the host still builds without a Firebase project. Declared here
+    // (apply false) so the version resolves when :app conditionally applies it.
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }

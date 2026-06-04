@@ -390,7 +390,10 @@ def test_deploy_offline_pushes_when_host_present(
     )
 
     rc = deploy_offline(
-        str(app), version="0.0.0", console=Console(stream=io.StringIO())
+        str(app),
+        version="0.0.0",
+        console=Console(stream=io.StringIO()),
+        settle_seconds=0.0,
     )
 
     assert rc == 0
@@ -424,7 +427,10 @@ def test_deploy_offline_installs_host_when_absent(
     monkeypatch.setattr(Console, "run_command", fake_run)
 
     rc = deploy_offline(
-        str(app), version="0.0.0", console=Console(stream=io.StringIO())
+        str(app),
+        version="0.0.0",
+        console=Console(stream=io.StringIO()),
+        settle_seconds=0.0,
     )
 
     assert rc == 0

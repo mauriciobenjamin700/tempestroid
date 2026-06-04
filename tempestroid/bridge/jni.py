@@ -23,6 +23,7 @@ from typing import Any, Protocol, TypeVar, cast
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
+    BACKGROUND_TOKEN_PREFIX,
     CONNECTIVITY_TOKEN_PREFIX,
     DISMISS_TOKEN_PREFIX,
     FRAME_TOKEN,
@@ -33,6 +34,7 @@ from tempestroid.bridge.protocol import (
 )
 from tempestroid.core.state import App
 from tempestroid.i18n import Locale
+from tempestroid.native.background import dispatch_background_task
 from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
@@ -208,6 +210,16 @@ def make_event_sink(
         # connectivity callback registry.
         if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
             loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
+            return
+        # A fired background task (WorkManager) rides the same event channel under
+        # the reserved "__background__:<name>" token — route the name to the
+        # background handler registry (this is the live-interpreter path; a
+        # dead-process wake boots a fresh interpreter and calls
+        # run_device_background directly instead).
+        background_prefix = f"{BACKGROUND_TOKEN_PREFIX}:"
+        if token.startswith(background_prefix):
+            task_name = token[len(background_prefix) :]
+            loop.call_soon_threadsafe(dispatch_background_task, task_name)
             return
         # A theme-mode change (OS dark-mode toggle, or app-requested switch) rides
         # the same event channel under the reserved THEME_TOKEN. Validate the

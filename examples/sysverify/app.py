@@ -34,10 +34,20 @@ from tempestroid import (
     Text,
     Widget,
     authenticate,
+    on_background_task,
     register_push,
     schedule_notification,
     schedule_task,
     start_sensor,
+)
+
+# Register the background-task handler at import time, so it is in place whether
+# the worker dispatches into the live interpreter (app alive) or a fresh one
+# boots to run it. When the "sysverify-task" fires, post a notification — visible
+# proof the worker re-entered Python and ran the handler.
+on_background_task(
+    "sysverify-task",
+    lambda: schedule_notification("Tempest E8", "background task fired", 0.0),
 )
 
 
@@ -99,8 +109,10 @@ def view(app: App[VerifyState]) -> Widget:
             set_status(f"biometrics error: {exc}")
 
     def do_background() -> None:
-        schedule_task("sysverify-task", interval_s=900)
-        set_status("background: scheduled WorkManager task 'sysverify-task'")
+        # One-shot (interval_s=None) → runs ~immediately, so the worker fires and
+        # the registered handler posts a notification within seconds.
+        schedule_task("sysverify-task")
+        set_status("background: enqueued one-shot 'sysverify-task' (watch for a notif)")
 
     def do_notify() -> None:
         schedule_notification("Tempest E8", "local notification fired", 0.0)

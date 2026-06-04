@@ -24,12 +24,14 @@ from typing import Any
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
+    BACKGROUND_TOKEN_PREFIX,
     CONNECTIVITY_TOKEN_PREFIX,
     LIFECYCLE_TOKEN,
     SENSOR_TOKEN_PREFIX,
 )
 from tempestroid.cli.app_loader import spec_from_project
 from tempestroid.cli.bundle import extract_bundle
+from tempestroid.native.background import dispatch_background_task
 from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
@@ -129,6 +131,12 @@ async def run_dev_client(
             return
         if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
             loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
+            return
+        background_prefix = f"{BACKGROUND_TOKEN_PREFIX}:"
+        if token.startswith(background_prefix):
+            loop.call_soon_threadsafe(
+                dispatch_background_task, token[len(background_prefix) :]
+            )
             return
         device: DeviceApp[Any] | None = current["device"]
         if device is None:

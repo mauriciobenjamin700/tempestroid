@@ -53,10 +53,12 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.Worker
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.google.firebase.messaging.FirebaseMessaging
@@ -1283,17 +1285,33 @@ class NativeModules(private val activity: ComponentActivity) {
         val name = args.optString("name")
         when (action) {
             "schedule" -> {
-                val intervalS = if (args.isNull("interval_s")) 15.0 * 60
-                else args.optDouble("interval_s", 15.0 * 60)
-                val intervalMin = (intervalS / 60).toLong().coerceAtLeast(15)
-                val request = PeriodicWorkRequestBuilder<TempestBackgroundWorker>(
-                    intervalMin, TimeUnit.MINUTES
-                ).build()
-                workManager.enqueueUniquePeriodicWork(
-                    name,
-                    androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
-                    request,
-                )
+                // The task name rides as input data so the worker knows which
+                // handler to dispatch when it fires.
+                val data = workDataOf("name" to name)
+                if (args.isNull("interval_s")) {
+                    // One-shot: runs as soon as constraints allow (≈ immediately).
+                    val request = OneTimeWorkRequestBuilder<TempestBackgroundWorker>()
+                        .setInputData(data)
+                        .build()
+                    workManager.enqueueUniqueWork(
+                        name,
+                        androidx.work.ExistingWorkPolicy.REPLACE,
+                        request,
+                    )
+                } else {
+                    // Periodic: WorkManager clamps the interval to a 15-min minimum.
+                    val intervalMin =
+                        (args.optDouble("interval_s", 15.0 * 60) / 60).toLong()
+                            .coerceAtLeast(15)
+                    val request = PeriodicWorkRequestBuilder<TempestBackgroundWorker>(
+                        intervalMin, TimeUnit.MINUTES
+                    ).setInputData(data).build()
+                    workManager.enqueueUniquePeriodicWork(
+                        name,
+                        androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+                        request,
+                    )
+                }
             }
             "cancel" -> workManager.cancelUniqueWork(name)
             else -> Log.w(TAG, "unknown background action: $action")
@@ -1360,16 +1378,43 @@ private object NotificationModule {
 }
 
 /**
- * No-op periodic worker for the E8 BackgroundModule. Scheduling a unique periodic
- * task wires WorkManager and proves the schedule/cancel path; a real worker that
- * re-enters Python (boots a short-lived interpreter, runs the task handler) is a
- * documented device pendency — WorkManager wakes a process with no live activity,
- * so it would need its own interpreter bootstrap.
+ * Worker for the E8 BackgroundModule that re-enters Python when a scheduled task
+ * fires. Two paths, chosen by interpreter liveness:
+ *
+ * * **App alive** (`PythonRuntime.isPythonInitialized()`): dispatch the reserved
+ *   `__background__:<name>` token into the live interpreter, which runs the
+ *   handler registered with `on_background_task` on its asyncio loop.
+ * * **Process woken from dead**: boot a fresh short-lived interpreter and call
+ *   `run_device_background(<bundle>, <name>)`, which extracts the already-staged
+ *   project bundle, registers the app's handlers, runs the named task to
+ *   completion, then finalizes. Uses `filesDir/python` + the bundle that the
+ *   first app launch already extracted (scheduling requires a prior launch).
  */
 class TempestBackgroundWorker(context: Context, params: WorkerParameters) :
     Worker(context, params) {
     override fun doWork(): Result {
-        Log.i("tempestroid", "background work tick: ${inputData.keyValueMap}")
+        val name = inputData.getString("name").orEmpty()
+        if (name.isEmpty()) {
+            return Result.success()
+        }
+        if (PythonRuntime.isPythonInitialized()) {
+            // App alive: hand the fired task to the running interpreter.
+            PythonRuntime.dispatchEvent("__background__:$name", "{}")
+            return Result.success()
+        }
+        // Dead process: boot a fresh interpreter to run the task. Both the
+        // CPython home and the app bundle were extracted by the launch that
+        // scheduled the task, so they persist in filesDir.
+        val home = File(applicationContext.filesDir, "python")
+        val bundle = File(applicationContext.filesDir, "tempest_app_bundle.zip")
+        if (!home.isDirectory || !bundle.isFile) {
+            Log.w("tempestroid", "background '$name': runtime/bundle not extracted yet")
+            return Result.success()
+        }
+        val code = "from tempestroid.native.background import run_device_background; " +
+            "run_device_background('${bundle.absolutePath}', '$name')"
+        val rc = PythonRuntime.startPython(home.absolutePath, arrayOf("-c", code))
+        Log.i("tempestroid", "background '$name' fresh-boot exited rc=$rc")
         return Result.success()
     }
 }

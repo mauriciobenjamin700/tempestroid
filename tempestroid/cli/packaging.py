@@ -729,9 +729,13 @@ def deploy_offline(
             # `am start` against an already-running activity only triggers
             # onNewIntent, leaving the in-process code-push loop polling the
             # previous (now-unreversed) port — the app would never be fetched.
-            subprocess.run(  # noqa: S603
-                [adb, "shell", "am", "force-stop", _HOST_PACKAGE], check=False
-            )
+            # Best-effort: a missing/failing adb here must not abort the deploy.
+            try:
+                subprocess.run(  # noqa: S603
+                    [adb, "shell", "am", "force-stop", _HOST_PACKAGE], check=False
+                )
+            except OSError:
+                pass
             adb_reverse(server.port)
             launch_host_dev(server.port)
             if not fetched.wait(timeout=fetch_timeout):

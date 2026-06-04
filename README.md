@@ -818,10 +818,14 @@ that can be emulated run for real off-device.
   **`await execute(sql, params=()) -> QueryResult`** (`columns` + `rows`) /
   **`await execute_many(sql, params_list)`**.
 - **Push** (FCM): **`await register_push() -> PushToken`** (Qt raises
-  `device_only`; the device path needs `google-services.json`) and
-  **`schedule_notification(title, body, delay_s)`**.
+  `device_only`; the device path needs `google-services.json` — drop it into
+  `android-host/app/` and the build enables FCM) and
+  **`schedule_notification(title, body, delay_s)`** (local notification).
 - **Background tasks** (WorkManager): **`schedule_task(name, *, interval_s=None)`**
-  / **`cancel_task(name)`**.
+  (one-shot when `interval_s` is `None`, else periodic ≥15 min) /
+  **`cancel_task(name)`**, with **`on_background_task(name, callback)`** to run a
+  handler when the task fires — the worker re-enters Python (the live interpreter
+  if the app is up, else a fresh short-lived one).
 
 Example: [`examples/platform/app.py`](examples/platform/app.py) exercises haptics
 (with the Qt fallback), preferences (real JSON store on the desktop), the

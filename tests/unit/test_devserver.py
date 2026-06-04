@@ -346,6 +346,7 @@ async def test_dev_client_routes_reserved_stream_tokens(monkeypatch: Any) -> Non
     import asyncio
 
     from tempestroid.bridge.protocol import (
+        BACKGROUND_TOKEN_PREFIX,
         CONNECTIVITY_TOKEN_PREFIX,
         LIFECYCLE_TOKEN,
         SENSOR_TOKEN_PREFIX,
@@ -363,9 +364,13 @@ async def test_dev_client_routes_reserved_stream_tokens(monkeypatch: Any) -> Non
     def _spy_connectivity(payload: dict[str, Any]) -> None:
         calls.append(("connectivity", payload))
 
+    def _spy_background(name: str) -> None:
+        calls.append(("background", name))
+
     monkeypatch.setattr(client_mod, "dispatch_sensor_event", _spy_sensor)
     monkeypatch.setattr(client_mod, "dispatch_lifecycle_event", _spy_lifecycle)
     monkeypatch.setattr(client_mod, "dispatch_connectivity_event", _spy_connectivity)
+    monkeypatch.setattr(client_mod, "dispatch_background_task", _spy_background)
 
     sink: dict[str, Any] = {}
 
@@ -396,8 +401,10 @@ async def test_dev_client_routes_reserved_stream_tokens(monkeypatch: Any) -> Non
     sink["cb"](f"{SENSOR_TOKEN_PREFIX}:gyroscope", json.dumps({"values": [1.0]}))
     sink["cb"](LIFECYCLE_TOKEN, json.dumps({"state": "foreground"}))
     sink["cb"](f"{CONNECTIVITY_TOKEN_PREFIX}:mobile", json.dumps({"state": "mobile"}))
+    sink["cb"](f"{BACKGROUND_TOKEN_PREFIX}:sync", "{}")
     await asyncio.sleep(0.05)
 
     assert ("sensor", ("gyroscope", {"values": [1.0]})) in calls
     assert ("lifecycle", {"state": "foreground"}) in calls
     assert ("connectivity", {"state": "mobile"}) in calls
+    assert ("background", "sync") in calls

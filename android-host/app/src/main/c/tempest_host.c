@@ -124,6 +124,19 @@ Java_org_tempestroid_host_PythonRuntime_dispatchEvent(
     (*env)->ReleaseStringUTFChars(env, jPayload, payload);
 }
 
+// --- interpreter liveness ---------------------------------------------------
+
+// True when a Python interpreter is already initialized in this process. The
+// background worker uses it to decide between dispatching into the live
+// interpreter (app alive) and booting a fresh one (process woken from dead).
+JNIEXPORT jboolean JNICALL
+Java_org_tempestroid_host_PythonRuntime_isPythonInitialized(
+        JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    return Py_IsInitialized() ? JNI_TRUE : JNI_FALSE;
+}
+
 // --- interpreter bootstrap ---------------------------------------------------
 
 JNIEXPORT jint JNICALL
