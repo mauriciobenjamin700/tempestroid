@@ -33,6 +33,7 @@ __all__ = [
     "preflight",
     "report_preflight",
     "build_apk",
+    "package_app_apk",
     "run_on_device",
     "host_apk_url",
     "bundled_host_apk",
@@ -394,6 +395,52 @@ def build_apk(
         raise ToolchainError(f"build succeeded but no APK found in {apk_dir}")
     con.info(f"APK: {apks[0]}")
     return apks[0]
+
+
+def package_app_apk(
+    app: str | Path,
+    *,
+    version: str,
+    console: Console | None = None,
+    output: Path | None = None,
+) -> Path:
+    """Build a shippable APK for ``app`` by repackaging the prebuilt host.
+
+    Bundles the whole project, resolves the prebuilt host APK (bundled asset →
+    download/cache, see :func:`resolve_host_apk`), then injects the bundle and
+    re-signs via the SDK's ``zipalign`` + ``apksigner`` (see
+    :func:`tempestroid.cli.apk_repack.repackage_host_apk`). Needs only the Android
+    SDK build-tools — **no Gradle, NDK, or android-host checkout** — so it works
+    from a plain PyPI install. The output APK runs the app standalone and is
+    shippable to anyone (debug-signed).
+
+    Args:
+        app: Path to the app's entry Python file.
+        version: The tempestroid version (host-APK release fallback).
+        console: Step reporter.
+        output: Output APK path; defaults to ``dist/<project>.apk`` under the cwd.
+
+    Returns:
+        The signed APK path.
+
+    Raises:
+        FileNotFoundError: If ``app`` does not exist.
+        ApkToolError: If the SDK build-tools / keystore are missing.
+        subprocess.CalledProcessError: If align/sign fails.
+    """
+    con = console or Console()
+    from tempestroid.cli.apk_repack import repackage_host_apk
+    from tempestroid.cli.bundle import build_bundle, resolve_project
+
+    layout = resolve_project(app)
+    with con.step(f"Bundling project ({layout.entry})"):
+        bundle = build_bundle(layout)
+        con.detail(f"{len(bundle)} bytes from {layout.root}")
+    host = resolve_host_apk(None, version=version, console=con)
+    out = output or (Path.cwd() / "dist" / f"{layout.root.name}.apk")
+    repackage_host_apk(host, bundle, out, console=con)
+    con.info(f"shippable APK: {out}")
+    return out
 
 
 def run_on_device(

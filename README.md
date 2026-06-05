@@ -208,12 +208,13 @@ the dev server. Use `--no-launch` to serve only.
 
 **Shipping a standalone APK — `tempest build`.** To produce a self-contained
 `.apk` you can give to anyone (it runs the app with **no** dev server), use
-`tempest build`: it bakes the whole project bundle into the host and drives
-Gradle. This is the only path that yields a shippable artifact, and it needs the
-Android SDK/NDK **and** an `android-host` checkout (a repo clone, not an installed
-wheel). `tempest run` is the same build plus install + launch + log streaming.
-From an installed wheel both fail fast with a hint pointing at `tempest deploy` /
-`tempest serve`.
+`tempest build`: it bundles the whole project and **repackages the prebuilt host
+APK** with it — injecting the bundle and re-aligning + re-signing via the Android
+SDK's `zipalign`/`apksigner`. **No Gradle, NDK, or `android-host` checkout** — it
+works from a plain PyPI install with just the SDK build-tools (run `tempest
+setup` to get them; `tempest setup --install` installs the SDK + build-tools).
+The output lands at `dist/<project>.apk` (debug-signed — installs like any debug
+build). `tempest run` is the same build plus install + launch + log streaming.
 
 > **Maintainers:** the host APK (~100 MB — it embeds CPython) is **not** shipped
 > inside the PyPI wheel (it would exceed PyPI's per-file limit). `make release`
@@ -242,8 +243,8 @@ surfaced and the happy path stays quiet.
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [app]` | ✅ | Build a standalone, shippable APK with the whole project baked in (needs Android SDK/NDK + host checkout); `--release`, `-v` |
-| `tempest run [app]` | ✅ | `build` + install on a device + stream logs (needs Android SDK/NDK + host checkout); `--release`, `-v` |
+| `tempest build [app]` | ✅ | Build a standalone, shippable APK by repackaging the prebuilt host (no Gradle/NDK/checkout — just SDK build-tools); `-o`, `-v` |
+| `tempest run [app]` | ✅ | `build` + install on a device + stream logs (needs SDK build-tools + adb); `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 
 ### Running on a device from WSL

@@ -51,20 +51,22 @@ dispensam o argumento de caminho dentro do projeto.
 
 ## Qual comando usar?
 
-| Quero… | Comando | Precisa de SDK/NDK? | Entrega |
+| Quero… | Comando | Precisa de quê? | Entrega |
 |---|---|---|---|
-| Rodar rápido no **meu** aparelho | `tempest deploy` | **Não** | App rodando no device (efêmero) |
-| Editar e ver ao vivo (hot reload) | `tempest serve` | **Não** | Loop de code-push por LAN |
-| **Mandar um APK** para alguém testar | `tempest build` | **Sim** | `.apk` autocontido e distribuível |
-| Build + instalar + logs | `tempest run` | **Sim** | Instala o APK e segue os logs |
+| Rodar rápido no **meu** aparelho | `tempest deploy` | nada (só adb) | App rodando no device (efêmero) |
+| Editar e ver ao vivo (hot reload) | `tempest serve` | nada (só adb) | Loop de code-push por LAN |
+| **Mandar um APK** para alguém testar | `tempest build` | SDK build-tools | `.apk` autocontido e distribuível |
+| Build + instalar + logs | `tempest run` | SDK build-tools + adb | Instala o APK e segue os logs |
 
 !!! info "Duas filosofias"
-    - **Sem toolchain** (`deploy`/`serve`): um **host genérico** (CPython +
+    - **Push (efêmero)** (`deploy`/`serve`): um **host genérico** (CPython +
       framework) é instalado uma vez; seu código Python é empurrado por cima.
-      Rápido, offline, sem Android SDK/NDK. Mas o app vive **dentro do host** —
-      não é um artefato que você manda para outra pessoa.
-    - **Com toolchain** (`build`/`run`): o Gradle assa seu projeto **dentro** de
-      um APK autocontido. É o único caminho que gera um `.apk` distribuível.
+      Rápido, offline. Mas o app vive **dentro do host** — não é um artefato que
+      você manda para outra pessoa.
+    - **APK shippable** (`build`/`run`): **repackam o host pré-compilado** com seu
+      projeto injetado (re-assinado via `zipalign`/`apksigner` do SDK). **Sem
+      Gradle, NDK ou checkout `android-host`** — só o SDK build-tools. É o caminho
+      que gera um `.apk` distribuível.
 
 ## Rodar no meu aparelho (sem toolchain)
 
@@ -107,20 +109,22 @@ Para gerar um `.apk` **autocontido** (roda sem dev server, dá para mandar para
 qualquer pessoa):
 
 ```bash
-tempest build             # assa o projeto inteiro num APK via Gradle
-tempest build --release   # variante release
+tempest build                 # repackage do host pré-compilado com seu projeto
+tempest build -o /tmp/app.apk # escolhe o caminho de saída
 ```
 
-O resultado fica em `android-host/app/build/outputs/apk/<debug|release>/`. Esse
-APK tem seu projeto **assado dentro** — instale com `adb install` em qualquer
-aparelho compatível e o app abre direto, sem servidor.
+O resultado fica em `dist/<projeto>.apk` (ou em `-o`). O `tempest build` bundla
+seu projeto, baixa/usa o **host pré-compilado** e injeta o bundle nele,
+re-alinhando (`zipalign`) e re-assinando (`apksigner`, chave debug). O APK tem
+seu projeto **assado dentro** — `adb install` em qualquer aparelho compatível e
+o app abre direto, sem servidor. Assinado com a chave debug → instala como
+qualquer build debug.
 
-!!! danger "`build` precisa do toolchain"
-    `tempest build` e `tempest run` dirigem o Gradle, então exigem **Android
-    SDK/NDK** e um **checkout do `android-host`** (um clone do repositório, não um
-    wheel instalado). A partir de um wheel instalado eles falham cedo, apontando
-    para `tempest deploy` / `tempest serve`. Veja a
-    [configuração de ambiente](#configuracao-de-ambiente) abaixo.
+!!! note "`build` precisa só do SDK build-tools"
+    `tempest build`/`run` usam apenas `zipalign` + `apksigner` do **Android SDK
+    build-tools** — **sem Gradle, NDK ou checkout `android-host`**, então
+    funcionam de um install via PyPI. Rode `tempest setup` para conferir o
+    ambiente (`tempest setup --install` instala o SDK + build-tools).
 
 ## Configuração de ambiente
 

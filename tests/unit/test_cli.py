@@ -90,19 +90,24 @@ def test_new_rejects_existing_dir(tmp_path: Path):
     assert main(["new", "demo", "--into", str(tmp_path)]) == 1
 
 
-def test_build_reports_missing_toolchain(
+def test_build_reports_unresolvable_host(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    # `tempest build` produces a from-source APK: with no android-host tree
-    # reachable + no override, it fails gracefully (exit 1) at preflight.
+    # `tempest build` repackages the prebuilt host APK (no Gradle/android-host).
+    # When the host APK can't be resolved (no bundle, no network), it fails
+    # gracefully with exit 1 rather than crashing.
+    from tempestroid.cli import packaging
+
     app = tmp_path / "app.py"
     app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
-    monkeypatch.delenv("TEMPESTROID_ANDROID_HOST", raising=False)
     monkeypatch.chdir(tmp_path)
+
+    def _no_host(*_a: object, **_k: object) -> object:
+        raise packaging.ToolchainError("host APK unavailable (test)")
+
+    monkeypatch.setattr(packaging, "resolve_host_apk", _no_host)
     assert main(["build", str(app)]) == 1
-    out = capsys.readouterr().out
-    assert "android-host" in out
-    assert "could not find the android-host project" in out
+    assert "build failed" in capsys.readouterr().out
 
 
 def test_deploy_reports_missing_device(

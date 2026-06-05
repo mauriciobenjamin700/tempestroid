@@ -2,6 +2,13 @@
 
 from typing import TYPE_CHECKING, Any
 
+from tempestroid.cli.apk_repack import (
+    ApkToolError,
+    ensure_debug_keystore,
+    find_build_tool,
+    inject_bundle,
+    repackage_host_apk,
+)
 from tempestroid.cli.app_loader import (
     AppSpec,
     load_app_spec,
@@ -31,6 +38,7 @@ from tempestroid.cli.packaging import (
     host_installed,
     install_host,
     launch_host_dev,
+    package_app_apk,
     preflight,
     report_preflight,
     resolve_host_apk,
@@ -78,6 +86,12 @@ __all__ = [
     "StepError",
     "ToolchainError",
     "PreflightCheck",
+    "ApkToolError",
+    "ensure_debug_keystore",
+    "find_build_tool",
+    "inject_bundle",
+    "repackage_host_apk",
+    "package_app_apk",
     "adb_reverse",
     "build_apk",
     "bundled_host_apk",

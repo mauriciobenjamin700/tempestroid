@@ -192,29 +192,32 @@ def build_cmd(
             help="Path to the app file. Omitted → read [tool.tempest] app.",
         ),
     ] = None,
-    release: Annotated[
-        bool,
-        typer.Option("--release", help="Build the release variant."),
-    ] = False,
+    output: Annotated[
+        str | None,
+        typer.Option(
+            "--output", "-o", help="Output APK path (default: dist/<project>.apk)."
+        ),
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option(
             "--verbose",
             "-v",
-            help="Echo raw commands and stream the full Gradle/adb output.",
+            help="Echo raw commands and stream the full tool output.",
         ),
     ] = False,
 ) -> None:
     """Build a standalone, shippable APK with the whole project baked in.
 
-    Bundles the app's entire project tree (multi-file imports included) into the
-    host and drives Gradle to produce a self-contained `.apk` you can hand to
-    anyone — it runs the app with no dev server. Needs the Android SDK/NDK + an
-    `android-host` checkout. For a fast no-toolchain run on your own connected
-    device, use `tempest deploy`; for a hot-reload loop, `tempest serve`.
+    Bundles the app's entire project tree (multi-file imports included) and
+    repackages the prebuilt host APK with it — re-aligned + re-signed via the
+    Android SDK's `zipalign`/`apksigner`. **No Gradle, NDK, or `android-host`
+    checkout** — just the SDK build-tools (run `tempest setup` to get them). The
+    result runs the app with no dev server and can be handed to anyone. For a fast
+    run on your own connected device, use `tempest deploy`.
     """
     resolved = _resolve_app_or_exit(app_path)
-    raise typer.Exit(_run_build(resolved, release, verbose))
+    raise typer.Exit(_run_build(resolved, output, verbose))
 
 
 @app.command("deploy")
@@ -262,22 +265,18 @@ def run_cmd(
             help="Path to the app file. Omitted → read [tool.tempest] app.",
         ),
     ] = None,
-    release: Annotated[
-        bool,
-        typer.Option("--release", help="Build the release variant."),
-    ] = False,
     verbose: Annotated[
         bool,
         typer.Option(
             "--verbose",
             "-v",
-            help="Echo raw commands and stream the full Gradle/adb output.",
+            help="Echo raw commands and stream the full adb output.",
         ),
     ] = False,
 ) -> None:
-    """Build, install on a device, and stream logs."""
+    """Build a shippable APK, install it on a device, and stream logs."""
     resolved = _resolve_app_or_exit(app_path)
-    raise typer.Exit(_run_run(resolved, release, verbose))
+    raise typer.Exit(_run_run(resolved, verbose))
 
 
 @app.command("doctor")
@@ -520,36 +519,44 @@ def _run_new(name: str, into: str) -> int:
     return 0
 
 
-def _run_build(app: str, release: bool, verbose: bool) -> int:
-    """Build a standalone shippable APK bundling the project, reporting outcome.
+def _run_build(app: str, output: str | None, verbose: bool) -> int:
+    """Build a shippable APK by repackaging the prebuilt host, reporting outcome.
 
-    Bundles the whole project tree and drives Gradle to produce a self-contained
-    `.apk` (needs the Android SDK/NDK + an ``android-host`` checkout). See
-    :func:`build_apk` / :func:`stage_app_bundle`.
+    Bundles the whole project and injects it into the prebuilt host APK, re-signed
+    via the SDK build-tools — no Gradle/NDK/android-host. See
+    :func:`package_app_apk` / :func:`tempestroid.cli.apk_repack.repackage_host_apk`.
 
     Args:
         app: Path to the app's entry file to bundle.
-        release: Whether to build the release variant.
+        output: Output APK path, or ``None`` for ``dist/<project>.apk``.
         verbose: Echo raw commands and stream full subprocess output.
 
     Returns:
         The process exit code.
     """
     import subprocess
+    from pathlib import Path
 
+    from tempestroid import __version__
+    from tempestroid.cli.apk_repack import ApkToolError
     from tempestroid.cli.console import Console, StepError
-    from tempestroid.cli.packaging import ToolchainError, build_apk
+    from tempestroid.cli.packaging import ToolchainError, package_app_apk
 
     console = Console(verbose=verbose)
     try:
-        build_apk(app, release=release, console=console)
+        package_app_apk(
+            app,
+            version=__version__,
+            console=console,
+            output=Path(output) if output else None,
+        )
     except StepError:
         return 1
-    except (ToolchainError, FileNotFoundError) as exc:
+    except (ApkToolError, ToolchainError, FileNotFoundError) as exc:
         console.fail(f"build failed: {exc}")
         return 1
     except subprocess.CalledProcessError as exc:
-        console.fail(f"gradle build failed (exit {exc.returncode}).")
+        console.fail(f"apk packaging failed (exit {exc.returncode}).")
         return exc.returncode or 1
     return 0
 
@@ -593,28 +600,55 @@ def _run_deploy(app: str, force_install: bool, verbose: bool) -> int:
         return exc.returncode or 1
 
 
-def _run_run(app: str, release: bool, verbose: bool) -> int:
-    """Build, install on a device, and stream logs, reporting the outcome.
+def _run_run(app: str, verbose: bool) -> int:
+    """Build a shippable APK, install + launch it on a device, stream logs.
+
+    The same repackage build as ``tempest build`` (no Gradle/NDK), then
+    ``adb install`` + launch + ``logcat``.
 
     Args:
         app: Path to the app file to bundle.
-        release: Whether to build the release variant.
         verbose: Echo raw commands and stream full subprocess output.
 
     Returns:
         The process exit code.
     """
+    import shutil
     import subprocess
 
+    from tempestroid import __version__
+    from tempestroid.cli.apk_repack import ApkToolError
     from tempestroid.cli.console import Console, StepError
-    from tempestroid.cli.packaging import ToolchainError, run_on_device
+    from tempestroid.cli.packaging import (
+        ToolchainError,
+        connected_devices,
+        package_app_apk,
+    )
 
+    # The prebuilt host's launch activity (stable application id).
+    host_activity = "org.tempestroid.host/.MainActivity"
     console = Console(verbose=verbose)
     try:
-        return run_on_device(app, release=release, console=console)
+        adb = shutil.which("adb")
+        with console.step("Checking for a connected device"):
+            if adb is None:
+                raise StepError("adb not on PATH (install Android platform-tools)")
+            devices = connected_devices()
+            if not devices:
+                raise StepError("no ready device (connect one and run `adb devices`)")
+            joined = ", ".join(devices)
+            console.info(f"device: {joined}")
+        apk = package_app_apk(app, version=__version__, console=console)
+        with console.step(f"Installing {apk.name}"):
+            console.run_command([adb, "install", "-r", str(apk)])
+        with console.step(f"Launching {host_activity}"):
+            console.run_command([adb, "shell", "am", "start", "-n", host_activity])
+        console.info("running on device. Streaming logs (Ctrl-C to stop).")
+        subprocess.run([adb, "logcat", "-v", "tag"], check=False)  # noqa: S603
+        return 0
     except StepError:
         return 1
-    except (ToolchainError, FileNotFoundError) as exc:
+    except (ApkToolError, ToolchainError, FileNotFoundError) as exc:
         console.fail(f"run failed: {exc}")
         return 1
     except subprocess.CalledProcessError as exc:
