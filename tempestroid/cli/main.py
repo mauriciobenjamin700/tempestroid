@@ -628,7 +628,8 @@ def _run_release(
         # Derive a placeholder id from the project name; a real store upload
         # needs the publisher's own id, so warn loudly.
         name = resolve_project(app).root.name.replace("-", "").replace("_", "")
-        resolved_id = f"com.example.{name or 'app'}"
+        slug = name or "app"
+        resolved_id = f"com.example.{slug}"
         console.info(
             f"no --app-id given; using placeholder {resolved_id!r}. Set --app-id "
             "to your own (e.g. com.yourcompany.app) before publishing."
