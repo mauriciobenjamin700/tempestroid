@@ -7,7 +7,13 @@ site_description: >-
   declarativa e tipada, simulador Qt + renderizador Compose no dispositivo.
 site_author: Mauricio Benjamin
 docs_dir: docs
-# site_url: https://mauriciobenjamin700.github.io/tempestroid/  # ajuste ao publicar no GitHub Pages
+site_url: https://mauriciobenjamin700.github.io/tempestroid/
+
+# Hooks de build (core MkDocs, sem dependência extra). O llms_txt gera
+# llms.txt + llms-full.txt na raiz do site (convenção llmstxt.org) para IAs
+# lerem o projeto inteiro a partir de duas URLs estáveis.
+hooks:
+  - docs/hooks/llms_txt.py
 
 theme:
   name: material
