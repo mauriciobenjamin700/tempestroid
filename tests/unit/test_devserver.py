@@ -408,3 +408,112 @@ async def test_dev_client_routes_reserved_stream_tokens(monkeypatch: Any) -> Non
     assert ("lifecycle", {"state": "foreground"}) in calls
     assert ("connectivity", {"state": "mobile"}) in calls
     assert ("background", "sync") in calls
+
+
+_BROKEN_APP_SRC = """
+# Top-level import the device cannot satisfy — the same shape as an app file
+# importing the Qt renderer (absent on the device). A guaranteed-missing module
+# is used so the load fails in any environment (the test host *has* PySide6).
+import tempest_missing_module_xyz  # noqa: F401
+
+def make_state():
+    return None
+
+def view(app):
+    raise AssertionError("never reached: the import above already failed")
+"""
+
+
+async def test_dev_client_mounts_error_screen_on_broken_app() -> None:
+    """A bundle that fails to load mounts an on-device error screen, not a crash.
+
+    Regression: an app file with a top-level ``import`` the device cannot satisfy
+    (e.g. the Qt renderer) used to white-screen silently — the load exception was
+    only logged and the renderer never received a mount. The client now catches
+    it and mounts a red error screen carrying the traceback, and the poll loop
+    keeps running so the next saved edit recovers.
+    """
+    bridges: list[LoopbackBridge] = []
+
+    def make_bridge() -> Bridge:
+        bridge = LoopbackBridge()
+        bridges.append(bridge)
+        return bridge
+
+    logs: list[str] = []
+    responses: dict[str, bytes] = {
+        "/version": json.dumps({"hash": "h1"}).encode(),
+        "/bundle": _bundle_bytes(_BROKEN_APP_SRC),
+    }
+
+    async def fetch(url: str) -> bytes:
+        for path, body in responses.items():
+            if url.endswith(path):
+                return body
+        raise ValueError(url)
+
+    await run_dev_client(
+        "http://dev",
+        make_bridge=make_bridge,
+        register_sink=lambda _cb: None,
+        fetch=fetch,
+        poll_interval=0,
+        max_polls=1,
+        log=logs.append,
+    )
+
+    # An error screen was mounted (not left blank), and the failure was logged.
+    assert len(bridges) == 1
+    mount = bridges[0].sent[0]
+    assert mount["kind"] == "mount"
+    blob = json.dumps(mount)
+    assert "App failed to load" in blob
+    # The traceback names the offending import.
+    assert "tempest_missing_module_xyz" in blob
+    assert any("app failed to load" in line.lower() for line in logs)
+
+
+async def test_dev_client_recovers_after_error_screen() -> None:
+    """After an error screen, the next (fixed) push starts the app clean.
+
+    The poll loop must not get stuck on the error state: once the source is
+    fixed and the version changes, the client starts a fresh app rather than
+    trying to hot-reload the error screen's throwaway state.
+    """
+    bridges: list[LoopbackBridge] = []
+
+    def make_bridge() -> Bridge:
+        bridge = LoopbackBridge()
+        bridges.append(bridge)
+        return bridge
+
+    # Poll 1 serves the broken app (h1); once its bundle is fetched, flip to the
+    # fixed app (h2) so poll 2 sees a new version and recovers — deterministic,
+    # no gather/sleep race.
+    state: dict[str, Any] = {"hash": "h1", "bundle": _bundle_bytes(_BROKEN_APP_SRC)}
+
+    async def fetch(url: str) -> bytes:
+        if url.endswith("/version"):
+            return json.dumps({"hash": state["hash"]}).encode()
+        if url.endswith("/bundle"):
+            served = state["bundle"]
+            state["hash"] = "h2"
+            state["bundle"] = _bundle_bytes(_APP_SRC)
+            return served
+        raise ValueError(url)
+
+    await run_dev_client(
+        "http://dev",
+        make_bridge=make_bridge,
+        register_sink=lambda _cb: None,
+        fetch=fetch,
+        poll_interval=0,
+        max_polls=2,
+        log=lambda _: None,
+    )
+
+    # First bridge = error screen; second = the recovered real app, mounted.
+    assert len(bridges) == 2
+    assert "App failed to load" in json.dumps(bridges[0].sent[0])
+    assert bridges[1].sent[0]["kind"] == "mount"
+    assert "n=0" in json.dumps(bridges[1].sent[0])

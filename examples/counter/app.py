@@ -28,7 +28,6 @@ from tempestroid import (
     Text,
     Widget,
 )
-from tempestroid.renderers.qt import run_qt
 
 
 @dataclass
@@ -133,6 +132,11 @@ def main() -> int:
     Returns:
         The process exit code.
     """
+    # Import the Qt renderer lazily so this module stays renderer-agnostic: the
+    # Android device loads ``view``/``make_state`` from this same file and has no
+    # PySide6, so a top-level Qt import would crash the on-device load.
+    from tempestroid.renderers.qt import run_qt
+
     return run_qt(make_state(), view, title="tempestroid — counter", size=(320, 200))
 
 

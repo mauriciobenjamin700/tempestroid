@@ -94,7 +94,7 @@ Tracks `docs/plan.md`. Update the table when a phase opens/closes; keep the
 | B4 | Compose renderer (native): render the serialized tree, apply patches, route taps | ✅ done | on-device: Compose renders the mount tree (Text/Button/Column + style spec → Modifier/Arrangement), applies patch batches (recomposes), and a real button tap → `dispatchEvent` → handler → patch → UI updates (`count` 0→4 by tapping; verified by screenshot) |
 | B5 | dev server + QR (LAN code-push + log relay) | ✅ done | on-device: `tempest serve <app>` (over `adb reverse`) pushes the app source; the device's code-push client polls, fetches, re-execs and hot-restarts the `DeviceApp` — editing+saving the file live-reloaded the device UI without an APK rebuild (verified by screenshot) |
 | B6 | native capabilities (notifications) | ✅ done | on-device: a `notify()` call from a Python handler → `native` command over the bridge → `NativeModules`/`NotificationModule` → a system notification posts (verified via `dumpsys notification` + the shade). The `native` envelope + module-router is the template for further capabilities (camera, etc.) |
-| C | Polish: `tempest new`/`build`/`run`/`deploy` + multi-file bundle + stateful hot reload | ✅ done | `tempest new` scaffolds a runnable project; apps are **multi-file** — every device path bundles the whole project tree (`cli/bundle.py`: `resolve_project`/`build_bundle`/`extract_bundle`/`tree_signature`) onto `sys.path` and runs the entry via `spec_from_project`; `tempest build` produces a **standalone shippable APK** (project baked into the host via `stage_app_bundle` + Gradle, needs SDK/NDK — verified on device); `tempest deploy` is the **offline** device push (`deploy_offline`: bundled-host install if needed + one-shot bundle push + launch, no SDK/NDK — verified on device); `tempest run` = build + install + logs; `App.swap_view` powers stateful hot reload — `tempest dev` `r` (save) preserves state via diff, `R` restarts clean, device code-push `reload`s preserving on-device state (all covered by tests) |
+| C | Polish: `tempest new`/`build`/`run`/`deploy` + multi-file bundle + stateful hot reload | ✅ done | `tempest new` scaffolds a runnable project; apps are **multi-file** — every device path bundles the whole project tree (`cli/bundle.py`: `resolve_project`/`build_bundle`/`extract_bundle`/`tree_signature`) onto `sys.path` and runs the entry via `spec_from_project`; `tempest build` produces a **standalone shippable APK** via Gradle `assembleDebug` (project baked into the host via `stage_app_bundle`, needs SDK/NDK — verified on device), stamping each app with its **own `applicationId`** (`--app-id`, else derived `com.example.<project>`) so two tempestroid APKs install side by side instead of overwriting each other (`cli/release_build.py`: `build_apk`/`derive_app_id`, sharing `_prepare_gradle_build` with the `--release` AAB; `tempest run` launches `<app-id>/org.tempestroid.host.MainActivity`); `tempest deploy` is the **offline** device push (`deploy_offline`: bundled-host install if needed + one-shot bundle push + launch, no SDK/NDK — verified on device); `tempest run` = build + install + logs; `App.swap_view` powers stateful hot reload — `tempest dev` `r` (save) preserves state via diff, `R` restarts clean, device code-push `reload`s preserving on-device state (all covered by tests) |
 | D | Conformance golden snapshots (Qt vs Compose) | ✅ done | `tests/conformance/` pins both `Style` translators: golden snapshots of `to_compose` + `to_qss`/`layout_alignment` for canonical styles (regenerate with `UPDATE_GOLDEN=1`), plus a per-field coverage-parity table that fails if either translator starts/stops handling a field without updating the documented divergences |
 
 ### Trilho E — Paridade Flutter/RN (planejado)
@@ -170,7 +170,17 @@ dev server + QR (B5 native loop) is **done and verified on device**: `devserver/
 holds the `DevServer` (serves source + relays logs), `run_dev_client`/
 `serve_device` (the device poll-fetch-restart loop), and `render_qr`; `tempest
 serve <app>` drives it, and `MainActivity` enters dev mode on a `tempest_dev_url`
-intent extra. Native capabilities (B6) are wired and verified too: `native/`
+intent extra. **App files must stay renderer-agnostic — import the Qt renderer
+lazily (inside `main()`/`__main__`), never at module top.** A top-level
+`from tempestroid.renderers.qt import run_qt` crashes the on-device load (no
+PySide6) → white screen. Hardening (2026-06-04): both device entry points
+(`run_device_file`/`run_device_bundle` for the baked APK, and the code-push
+client) now catch any load/build failure and mount a visible **error screen**
+(`bridge/errors.py`, `run_device_error`) carrying the traceback instead of a
+blank window; the dev client commits the version hash on a load failure (no
+re-fetch storm) and recovers on the next saved edit; `DevServer.do_GET` swallows
+`BrokenPipeError`/`ConnectionError`. All verified on device. Native capabilities
+(B6) are wired and verified too: `native/`
 (`notify` + `send_native`/`native_command`) emits `{"kind":"native"}` envelopes
 the host routes via `NativeModules`/`NotificationModule`; a Python `notify()`
 posts a real system notification. **All of Trilho B (B0–B6) is implemented and

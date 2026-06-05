@@ -148,7 +148,20 @@ class DevServer:
                 self.wfile.flush()
 
             def do_GET(self) -> None:  # noqa: N802 - http.server API
-                """Serve ``/version``, ``/bundle``, and the legacy ``/app``."""
+                """Serve ``/version``, ``/bundle``, and the legacy ``/app``.
+
+                A dropped connection (the device's poll timed out and gave up
+                mid-transfer) raises ``BrokenPipeError``/``ConnectionError`` from
+                the socket write; swallow it so a flaky USB/LAN poll does not
+                spew a traceback per request — the device simply retries.
+                """
+                try:
+                    self._do_get()
+                except (BrokenPipeError, ConnectionError):
+                    pass
+
+            def _do_get(self) -> None:
+                """Dispatch the GET endpoints (wrapped by :meth:`do_GET`)."""
                 if self.path == "/version":
                     self._send_json({"hash": server.signature()})
                 elif self.path == "/bundle":
