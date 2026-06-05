@@ -4,6 +4,12 @@
 > com seletor **PT-BR / EN-US** no header — rode `uv run mkdocs serve` e abra
 > <http://127.0.0.1:8000> (PT) ou <http://127.0.0.1:8000/en/> (EN). Guia do
 > usuário, arquitetura e referência da API.
+>
+> 🤖 **Ler com sua IA / Read with your AI:** o site publica
+> [`/llms.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms.txt) (índice)
+> e [`/llms-full.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms-full.txt)
+> (docs inteiras num arquivo) seguindo a convenção [llmstxt.org](https://llmstxt.org/) —
+> entregue a URL ao seu assistente para usar o projeto como referência (sem servidor/MCP).
 
 Build **native Android apps** in **typed Python**.
 
