@@ -90,24 +90,70 @@ def test_new_rejects_existing_dir(tmp_path: Path):
     assert main(["new", "demo", "--into", str(tmp_path)]) == 1
 
 
-def test_build_reports_unresolvable_host(
+def test_build_dispatches_to_apk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest build` (no --release) builds a debug APK via Gradle build_apk.
+
+    The applicationId is derived from the project name when --app-id is omitted,
+    so two distinct projects produce distinct ids (installable side by side).
+    """
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "myapp"
+    app.mkdir()
+    (app / "pyproject.toml").write_text('[tool.tempest]\napp = "main.py"\n')
+    (app / "main.py").write_text(
+        "def make_state():\n    ...\ndef view(app):\n    ...\n"
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(_app: object, *, app_id: str, **_kw: object) -> Path:
+        seen["app_id"] = app_id
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", str(app / "main.py")]) == 0
+    assert seen["app_id"] == "com.example.myapp"
+
+
+def test_build_uses_given_app_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An explicit --app-id is passed straight through to the debug APK build."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    captured: dict[str, object] = {}
+
+    def fake_build_apk(_app: object, *, app_id: str, **_kw: object) -> Path:
+        captured["app_id"] = app_id
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", str(app), "--app-id", "com.acme.todo"]) == 0
+    assert captured["app_id"] == "com.acme.todo"
+
+
+def test_build_reports_gradle_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    # `tempest build` repackages the prebuilt host APK (no Gradle/android-host).
-    # When the host APK can't be resolved (no bundle, no network), it fails
-    # gracefully with exit 1 rather than crashing.
-    from tempestroid.cli import packaging
+    # When a prepare step fails (e.g. no JDK) build_apk raises StepError; the CLI
+    # reports it with exit 1 rather than crashing.
+    from tempestroid.cli import release_build
+    from tempestroid.cli.console import StepError
 
     app = tmp_path / "app.py"
     app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
     monkeypatch.chdir(tmp_path)
 
-    def _no_host(*_a: object, **_k: object) -> object:
-        raise packaging.ToolchainError("host APK unavailable (test)")
+    def _fail(*_a: object, **_k: object) -> object:
+        raise StepError("a JDK is required (test)")
 
-    monkeypatch.setattr(packaging, "resolve_host_apk", _no_host)
+    monkeypatch.setattr(release_build, "build_apk", _fail)
     assert main(["build", str(app)]) == 1
-    assert "build failed" in capsys.readouterr().out
 
 
 def test_deploy_reports_missing_device(

@@ -225,7 +225,8 @@ the dev server. Use `--no-launch` to serve only.
 project and runs `assembleDebug`, stamping each app with its **own
 `applicationId`** so two tempestroid APKs **install side by side instead of
 overwriting each other**. The id is `--app-id` (e.g. `com.acme.todo`), or derived
-from the project name (`com.example.<project>`) when omitted. This needs the full
+from the project name (`com.example.<project>`) when omitted; the launcher label
+(the name under the icon) is `--app-name`, or derived from the project name. This needs the full
 toolchain — Android SDK + NDK + the CPython toolchain — which the CLI **prepares
 whatever is missing** (run `tempest setup --install` to bootstrap the SDK/NDK).
 The output lands at `dist/<project>.apk` (debug-signed — installs like any debug
@@ -261,8 +262,8 @@ surfaced and the happy path stays quiet.
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` (`--app-id`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Prepares the env (SDK/NDK/toolchain) if missing. `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
-| `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-version`, `--version-code`, `-v` |
+| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` + launcher label (`--app-id`/`--app-name`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Prepares the env (SDK/NDK/toolchain) if missing. `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
+| `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 
 ### Running on a device from WSL
