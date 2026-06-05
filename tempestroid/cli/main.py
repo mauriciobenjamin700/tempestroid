@@ -235,6 +235,17 @@ def build_cmd(
         str | None,
         typer.Option("--keystore", help="Release keystore (default: auto-generated)."),
     ] = None,
+    fast: Annotated[
+        bool,
+        typer.Option(
+            "--fast",
+            "-f",
+            help="Skip Gradle: repackage the prebuilt host (no SDK/NDK) into a "
+            "shippable APK. Fast, but every app keeps the shared id "
+            "`org.tempestroid.host`, so apps overwrite each other on a device — "
+            "use it to iterate on one app, not to ship several side by side.",
+        ),
+    ] = False,
     verbose: Annotated[
         bool,
         typer.Option(
@@ -254,9 +265,14 @@ def build_cmd(
     With `--release`: a store-ready, release-signed **AAB** (Play Store format)
     via Gradle `bundleRelease`, stamped with `--app-id`/`--app-version`.
 
-    Either way the CLI **prepares whatever is missing** (SDK/NDK, source checkout,
-    CPython toolchain, release keystore). For a fast, toolchain-free run on your
-    own device, use `tempest deploy` (shared dev host — not a shippable APK).
+    With `--fast`: skip Gradle and repackage the prebuilt host APK (just the SDK
+    build-tools, no NDK/source/toolchain). Much faster, but the APK keeps the
+    shared `org.tempestroid.host` id — good for iterating on a single app, not
+    for shipping several side by side. `tempest deploy` covers the same
+    toolchain-free path when you only need it on your own connected device.
+
+    The Gradle paths **prepare whatever is missing** (SDK/NDK, source checkout,
+    CPython toolchain, release keystore) on first run.
     """
     resolved = _resolve_app_or_exit(app_path)
     if release:
@@ -264,6 +280,8 @@ def build_cmd(
             _run_release(resolved, app_id, app_name, app_version, version_code,
                          keystore, output, verbose)
         )
+    if fast:
+        raise typer.Exit(_run_build_fast(resolved, output, verbose))
     raise typer.Exit(
         _run_build(resolved, app_id, app_name, app_version, version_code, output,
                    verbose)
@@ -593,6 +611,52 @@ def _run_new(name: str, into: str) -> int:
     return 0
 
 
+def _run_build_fast(app: str, output: str | None, verbose: bool) -> int:
+    """Build a shippable APK by repackaging the prebuilt host (no Gradle).
+
+    The `--fast` path: bundle the whole project and inject it into the prebuilt
+    host APK, re-aligned + re-signed via the SDK build-tools only — no Gradle,
+    NDK, source checkout, or CPython toolchain. The APK keeps the shared
+    ``org.tempestroid.host`` id (an APK repackage cannot rewrite the binary
+    manifest's package), so it is for iterating on a single app, not for shipping
+    several side by side (use the default Gradle build with ``--app-id`` for
+    that). See :func:`tempestroid.cli.packaging.package_app_apk`.
+
+    Args:
+        app: Path to the app's entry file to bundle.
+        output: Output APK path, or ``None`` for ``dist/<project>.apk``.
+        verbose: Echo raw commands and stream full subprocess output.
+
+    Returns:
+        The process exit code.
+    """
+    import subprocess
+    from pathlib import Path
+
+    from tempestroid import __version__
+    from tempestroid.cli.apk_repack import ApkToolError
+    from tempestroid.cli.console import Console, StepError
+    from tempestroid.cli.packaging import ToolchainError, package_app_apk
+
+    console = Console(verbose=verbose)
+    try:
+        package_app_apk(
+            app,
+            version=__version__,
+            console=console,
+            output=Path(output) if output else None,
+        )
+    except StepError:
+        return 1
+    except (ApkToolError, ToolchainError, FileNotFoundError) as exc:
+        console.fail(f"build failed: {exc}")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        console.fail(f"apk packaging failed (exit {exc.returncode}).")
+        return exc.returncode or 1
+    return 0
+
+
 def _run_build(
     app: str,
     app_id: str | None,
@@ -684,20 +748,27 @@ def _run_release(
 
     from tempestroid.cli.bundle import resolve_project
     from tempestroid.cli.console import Console, StepError
-    from tempestroid.cli.release_build import ReleaseConfig, build_aab, derive_app_id
+    from tempestroid.cli.release_build import (
+        ReleaseConfig,
+        build_aab,
+        derive_app_id,
+        derive_app_name,
+    )
 
     console = Console(verbose=verbose)
+    project_name = resolve_project(app).root.name
     resolved_id = app_id
     if resolved_id is None:
         # Derive a placeholder id from the project name; a real store upload
         # needs the publisher's own id, so warn loudly.
-        resolved_id = derive_app_id(resolve_project(app).root.name)
+        resolved_id = derive_app_id(project_name)
         console.info(
             f"no --app-id given; using placeholder {resolved_id!r}. Set --app-id "
             "to your own (e.g. com.yourcompany.app) before publishing."
         )
     config = ReleaseConfig(
         app_id=resolved_id,
+        app_name=app_name or derive_app_name(project_name),
         version_name=app_version,
         version_code=version_code,
         keystore=Path(keystore) if keystore else None,
