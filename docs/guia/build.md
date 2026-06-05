@@ -147,6 +147,42 @@ lado a lado** em vez de um sobrescrever o outro. Assinado com a chave debug →
     do manifesto binário), então serve para **um app por vez**, não para vários
     lado a lado. Rode `tempest setup --install` para o SDK/NDK.
 
+## Ícone e tela de carregamento (splash)
+
+Todo APK já sai com um **ícone tempestroid** e uma **splash** padrão que cobre o
+boot do interpretador Python (alguns segundos). Para personalizar por app:
+
+```bash
+tempest build --icon icone.png \
+  --splash splash.png \
+  --splash-bg "#0b0f14"
+```
+
+!!! tip "Gere os dois a partir de UMA imagem com `tempest icon`"
+    Não quer dimensionar à mão? Aponte para um logo e o CLI gera os dois PNGs:
+
+    ```bash
+    tempest icon logo.png --out assets
+    # → assets/icon.png (quadrado) + assets/splash.png (centralizado, fundo transparente)
+    tempest build --icon assets/icon.png --splash assets/splash.png --splash-bg "#0b0f14"
+    ```
+
+    Precisa do Pillow: `pip install tempestroid[icons]` (ou `uv add tempestroid[icons]`).
+
+- `--icon icone.png` — o ícone de launcher (o que aparece na gaveta de apps).
+  **Só no build Gradle** (o default): o ícone é um recurso *compilado*, e um
+  repackage `--fast` não reescreve o `resources.arsc`, então com `--fast` o app
+  mantém o ícone padrão (o CLI avisa).
+- `--splash splash.png` — a imagem mostrada centralizada enquanto o Python sobe.
+- `--splash-bg "#rrggbb"` — a cor de fundo da splash (default `#0b0f14`).
+
+!!! tip "A splash cobre o boot do CPython"
+    O interpretador leva alguns segundos para iniciar. A splash é desenhada pela
+    Activity a partir de **assets** e fica na tela **até o primeiro `mount`** do
+    seu app — então o usuário vê sua marca, não uma tela em branco. Como vive em
+    assets (caminho estável), `--splash`/`--splash-bg` funcionam em **todos** os
+    caminhos de build, inclusive `--fast`.
+
 ## Publicar na Play Store (`--release` → AAB)
 
 A Play Store exige um **Android App Bundle** (`.aab`), assinado de release, com o

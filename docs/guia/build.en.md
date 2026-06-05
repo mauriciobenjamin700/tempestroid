@@ -144,6 +144,42 @@ and the app opens directly, no server.
     binary manifest's package), so it is for **one app at a time**, not several
     side by side. Run `tempest setup --install` for the SDK/NDK.
 
+## App icon and boot splash
+
+Every APK already ships a default **tempestroid icon** and a **splash** that
+covers the Python interpreter's boot (a few seconds). To customise per app:
+
+```bash
+tempest build --icon icon.png \
+  --splash splash.png \
+  --splash-bg "#0b0f14"
+```
+
+!!! tip "Generate both from ONE image with `tempest icon`"
+    Don't want to size them by hand? Point at a logo and the CLI writes both PNGs:
+
+    ```bash
+    tempest icon logo.png --out assets
+    # → assets/icon.png (square) + assets/splash.png (centered, transparent bg)
+    tempest build --icon assets/icon.png --splash assets/splash.png --splash-bg "#0b0f14"
+    ```
+
+    Needs Pillow: `pip install tempestroid[icons]` (or `uv add tempestroid[icons]`).
+
+- `--icon icon.png` — the launcher icon (shown in the app drawer). **Gradle build
+  only** (the default): the icon is a *compiled* resource, and a `--fast`
+  repackage can't rewrite `resources.arsc`, so with `--fast` the app keeps the
+  default icon (the CLI warns).
+- `--splash splash.png` — the image shown centered while Python starts.
+- `--splash-bg "#rrggbb"` — the splash background colour (default `#0b0f14`).
+
+!!! tip "The splash covers the CPython boot"
+    The interpreter takes a few seconds to start. The splash is drawn by the
+    Activity from **assets** and stays on screen **until your app's first
+    `mount`** — so the user sees your brand, not a blank screen. Because it lives
+    in assets (a stable path), `--splash`/`--splash-bg` work on **every** build
+    path, including `--fast`.
+
 ## Publish to the Play Store (`--release` → AAB)
 
 The Play Store requires an **Android App Bundle** (`.aab`), release-signed, with

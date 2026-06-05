@@ -170,6 +170,7 @@ uv run tempest serve                # LAN code-push + hot reload (whole project)
 uv run tempest doctor               # check the Android build/run prerequisites
 uv run tempest build                # build a standalone, shippable APK via Gradle (own app-id; needs SDK/NDK)
 uv run tempest run                  # build + install on a device + stream logs (needs SDK/NDK)
+uv run tempest icon logo.png        # generate icon.png + splash.png from one image (needs [icons])
 uv run tempest spec                 # print the typed contract (widgets/events) as JSON
 uv run tempest --version            # print the framework version (also: tempest version)
 uv run tempest --help
@@ -288,10 +289,11 @@ surfaced and the happy path stays quiet.
 | `tempest deploy [app]` | ✅ | Offline push of the whole project to a device (no SDK/NDK): install the bundled host (if needed) + push bundle + launch; `--force-install`, `-v` |
 | `tempest serve [app]` | ✅ | LAN code-push of the whole project + log relay + hot reload; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |
 | `tempest install [src]` | ✅ | Fetch + adb-install the prebuilt host APK (no SDK/NDK); resolves `src`/env/bundled/GitHub-release (cached); `src` = local `.apk`/URL |
+| `tempest icon <src>` | ✅ | Generate a square launcher `icon.png` + a centered `splash.png` from one source image (`--out`, `--icon-size`, `--splash-size`, `--splash-scale`). Needs Pillow (`pip install tempestroid[icons]`); feed the output to `tempest build --icon/--splash` |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` + launcher label (`--app-id`/`--app-name`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Prepares the env (SDK/NDK/toolchain) if missing. `--fast` → skip Gradle, repackage the prebuilt host (no SDK/NDK; shared id, single app). `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
+| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` + launcher label (`--app-id`/`--app-name`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Branding: `--icon icon.png` (launcher icon — Gradle only), `--splash splash.png` + `--splash-bg #rrggbb` (boot splash covering the CPython start — every path). Prepares the env (SDK/NDK/toolchain) if missing. `--fast` → skip Gradle, repackage the prebuilt host (no SDK/NDK; shared id + default icon, single app; splash still applies). `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
 | `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 

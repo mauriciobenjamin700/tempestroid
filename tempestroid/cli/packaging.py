@@ -20,8 +20,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tempestroid.cli.console import Console, StepError
+
+if TYPE_CHECKING:
+    from tempestroid.cli.branding import Branding
 
 __all__ = [
     "ToolchainError",
@@ -403,6 +407,7 @@ def package_app_apk(
     version: str,
     console: Console | None = None,
     output: Path | None = None,
+    branding: Branding | None = None,
 ) -> Path:
     """Build a shippable APK for ``app`` by repackaging the prebuilt host.
 
@@ -414,11 +419,18 @@ def package_app_apk(
     from a plain PyPI install. The output APK runs the app standalone and is
     shippable to anyone (debug-signed).
 
+    Per-app branding is applied for the **splash only** (its assets live at stable,
+    uncompiled paths the repackage can overwrite); a ``--icon`` cannot be applied
+    here (the launcher icon is a compiled resource) — the caller warns and the APK
+    keeps the host's default icon.
+
     Args:
         app: Path to the app's entry Python file.
         version: The tempestroid version (host-APK release fallback).
         console: Step reporter.
         output: Output APK path; defaults to ``dist/<project>.apk`` under the cwd.
+        branding: Optional per-app branding (splash overrides applied; icon
+            ignored on this path).
 
     Returns:
         The signed APK path.
@@ -430,6 +442,7 @@ def package_app_apk(
     """
     con = console or Console()
     from tempestroid.cli.apk_repack import repackage_host_apk
+    from tempestroid.cli.branding import apk_asset_replacements
     from tempestroid.cli.bundle import build_bundle, resolve_project
 
     layout = resolve_project(app)
@@ -438,7 +451,8 @@ def package_app_apk(
         con.detail(f"{len(bundle)} bytes from {layout.root}")
     host = resolve_host_apk(None, version=version, console=con)
     out = output or (Path.cwd() / "dist" / f"{layout.root.name}.apk")
-    repackage_host_apk(host, bundle, out, console=con)
+    replacements = apk_asset_replacements(branding) if branding else {}
+    repackage_host_apk(host, bundle, out, console=con, replacements=replacements)
     con.info(f"shippable APK: {out}")
     return out
 
