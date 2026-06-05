@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`tempest build` / `tempest run` (Gradle) no longer fail "SDK location not
+  found" when the shell has a stale `ANDROID_HOME`/`ANDROID_SDK_ROOT`.** The
+  Gradle prep used `setdefault`, which left a stale value (e.g. a non-existent
+  `~/Android/Sdk`) in place; AGP reads `ANDROID_HOME` and failed. It now resolves
+  a usable SDK (valid env → system fallback → managed) and **overwrites** both
+  `ANDROID_HOME` and `ANDROID_SDK_ROOT`, matching the `--fast`/`deploy` paths.
+  `tempest build --fast` (no Gradle) was unaffected.
+
 ## [0.8.0] — 2026-06-05
 
 ### Added

@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tempestroid.cli.console import Console, StepError
+from tempestroid.cli.setup_env import default_sdk_dir, install_android_sdk, jdk_ok
 
 if TYPE_CHECKING:
     from tempestroid.cli.branding import Branding
@@ -236,6 +237,36 @@ def ensure_toolchain(checkout: Path, console: Console) -> None:
         )
 
 
+def _prepare_sdk_env(con: Console) -> Path:
+    """Resolve a usable Android SDK and force it into the environment for Gradle.
+
+    ``default_sdk_dir`` resolves the SDK (a valid ``ANDROID_SDK_ROOT``/
+    ``ANDROID_HOME`` env value, else the system fallback, else the managed dir),
+    installing the SDK + NDK into it when incomplete. Then **both** env vars are
+    overwritten to the resolved path: a STALE ``ANDROID_HOME``/``ANDROID_SDK_ROOT``
+    left in the user's shell (e.g. pointing at a non-existent ``~/Android/Sdk``)
+    must not reach Gradle — AGP reads ``ANDROID_HOME`` and would otherwise fail
+    "SDK location not found". ``setdefault`` would leave the stale value in place,
+    so this overwrites.
+
+    Args:
+        con: Step reporter.
+
+    Returns:
+        The resolved SDK directory.
+
+    Raises:
+        StepError: If the SDK + NDK cannot be prepared.
+    """
+    sdk = default_sdk_dir()
+    if not (sdk / "ndk").is_dir() or not (sdk / "platform-tools").is_dir():
+        con.info("preparing the Android SDK + NDK…")
+        install_android_sdk(sdk, console=con)
+    os.environ["ANDROID_SDK_ROOT"] = str(sdk)
+    os.environ["ANDROID_HOME"] = str(sdk)
+    return sdk
+
+
 def _prepare_gradle_build(app: str | Path, con: Console) -> Path:
     """Prepare the Gradle build environment and stage the app bundle.
 
@@ -257,7 +288,6 @@ def _prepare_gradle_build(app: str | Path, con: Console) -> Path:
     from tempestroid import __version__
     from tempestroid.cli.bundle import resolve_project
     from tempestroid.cli.packaging import stage_app_bundle
-    from tempestroid.cli.setup_env import default_sdk_dir, install_android_sdk, jdk_ok
 
     layout = resolve_project(app)
 
@@ -267,11 +297,7 @@ def _prepare_gradle_build(app: str | Path, con: Console) -> Path:
         raise StepError(f"a JDK is required ({detail}).")
 
     # 2. SDK + NDK.
-    sdk = default_sdk_dir()
-    if not (sdk / "ndk").is_dir() or not (sdk / "platform-tools").is_dir():
-        con.info("preparing the Android SDK + NDK…")
-        install_android_sdk(sdk, console=con)
-    os.environ.setdefault("ANDROID_SDK_ROOT", str(sdk))
+    _prepare_sdk_env(con)
 
     # 3. Source checkout (android-host + toolchain scripts).
     checkout = ensure_source_checkout(__version__, con)
