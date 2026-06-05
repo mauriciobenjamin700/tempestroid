@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-06-04
+
+### Changed
+
+- **`tempest build` works from a PyPI install — no Gradle.** It now produces the
+  shippable APK by **repackaging the prebuilt host**: bundle the project, inject
+  it into the host APK, then re-align + re-sign via the Android SDK's
+  `zipalign`/`apksigner`. No Gradle, NDK, or `android-host` checkout — just the
+  SDK build-tools (`tempest setup --install` provides them). Output:
+  `dist/<project>.apk` (`-o` to choose); debug-signed; runs the app standalone.
+  `tempest run` = that build + install + launch + logcat. Verified on device.
+
+### Fixed
+
+- The host APK ships as a GitHub release asset (it embeds CPython, ~100 MB —
+  past PyPI's per-file limit), downloaded by `tempest install`/`deploy`/`build`
+  and cached; the wheel stays lean.
+
 ## [0.6.0] — 2026-06-04
 
 **Build, deploy & ship — multi-file projects on a device.** Apps are now
