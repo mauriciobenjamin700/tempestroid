@@ -246,6 +246,40 @@ def test_new_in_place_name_with_quote_stays_valid_python(
     compile((weird / "app.py").read_text(encoding="utf-8"), "app.py", "exec")
 
 
+def test_prepare_sdk_env_overwrites_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Gradle SDK prep overwrites a STALE ANDROID_HOME/ANDROID_SDK_ROOT.
+
+    Regression: a user shell with `ANDROID_HOME=~/Android` /
+    `ANDROID_SDK_ROOT=~/Android/Sdk` (non-existent) made `tempest build`/`run`
+    fail "SDK location not found" — AGP read the stale `ANDROID_HOME`. The prep
+    must force BOTH vars to the resolved SDK (not `setdefault`).
+    """
+    import os
+
+    from tempestroid.cli import release_build
+    from tempestroid.cli.console import Console
+
+    sdk = tmp_path / "sdk"
+    (sdk / "ndk").mkdir(parents=True)
+    (sdk / "platform-tools").mkdir()
+    monkeypatch.setattr(release_build, "default_sdk_dir", lambda: sdk)
+
+    def _no_install(*_a: object, **_k: object) -> None:
+        raise AssertionError("must not install when the SDK is already complete")
+
+    monkeypatch.setattr(release_build, "install_android_sdk", _no_install)
+    monkeypatch.setenv("ANDROID_HOME", "/stale/home")
+    monkeypatch.setenv("ANDROID_SDK_ROOT", "/stale/sdk")
+
+    prepare = release_build._prepare_sdk_env  # pyright: ignore[reportPrivateUsage]
+    resolved = prepare(Console())
+    assert resolved == sdk
+    assert os.environ["ANDROID_HOME"] == str(sdk)
+    assert os.environ["ANDROID_SDK_ROOT"] == str(sdk)
+
+
 def test_build_reports_gradle_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
