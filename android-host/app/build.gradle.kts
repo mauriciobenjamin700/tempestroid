@@ -175,9 +175,23 @@ abstract class CopyPythonStdlibTask @Inject constructor(
             // Nest under "python/" so the packaged assets tree is
             // assets/python/lib/python<ver>/... — MainActivity.extractAssets
             // lists the "python" subtree and copies it to filesDir/python.
-            from(stdlibDir) { into("python/lib/python$version") }
-            // TODO(B1): also copy unpacked wheels from wheelsDir into
-            // site-packages, plus the tempestroid core (Qt-free).
+            from(stdlibDir) {
+                into("python/lib/python$version")
+                // Trim the stdlib to shrink the APK/AAB: drop the regression
+                // test suites, the IDLE editor, Tk/turtle (no Tk on Android),
+                // packaging tooling (ensurepip/venv/lib2to3), the build config
+                // dir (Makefile/static lib — not used at runtime), docs data and
+                // bytecode caches. None are needed to run a tempestroid app; this
+                // cuts the bundled CPython roughly in half.
+                exclude(
+                    "**/test/**", "**/tests/**", "test/**", "tests/**",
+                    "idlelib/**", "**/idle_test/**",
+                    "tkinter/**", "turtledemo/**", "turtle.py",
+                    "ensurepip/**", "venv/**", "lib2to3/**",
+                    "config-*/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
+                    "pydoc_data/**", "**/__phello__/**", "__hello__.py",
+                )
+            }
             rename("""(.*)\.gz$""", "$1.gz-")
             into(outputDir)
         }
@@ -217,7 +231,14 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
                 // The Qt renderer needs PySide6 (absent on device). The CLI is
                 // kept: it imports Qt lazily, and the B5 dev client reuses its
                 // app loader (spec_from_source). Everything else is pure core.
-                exclude("renderers/qt/**", "**/__pycache__/**")
+                // CRITICAL: drop `_assets/` — it holds the ~100 MB prebuilt host
+                // APK (staged for the desktop `tempest install`); copying it here
+                // would bake a full copy of the host into the host itself (~80 MB
+                // of dead weight). It is never needed on-device.
+                exclude(
+                    "renderers/qt/**", "_assets/**",
+                    "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
+                )
             }
             into(outputDir)
         }
