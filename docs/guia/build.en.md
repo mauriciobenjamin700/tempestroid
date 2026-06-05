@@ -155,6 +155,17 @@ tempest build --icon icon.png \
   --splash-bg "#0b0f14"
 ```
 
+!!! tip "Generate both from ONE image with `tempest icon`"
+    Don't want to size them by hand? Point at a logo and the CLI writes both PNGs:
+
+    ```bash
+    tempest icon logo.png --out assets
+    # → assets/icon.png (square) + assets/splash.png (centered, transparent bg)
+    tempest build --icon assets/icon.png --splash assets/splash.png --splash-bg "#0b0f14"
+    ```
+
+    Needs Pillow: `pip install tempestroid[icons]` (or `uv add tempestroid[icons]`).
+
 - `--icon icon.png` — the launcher icon (shown in the app drawer). **Gradle build
   only** (the default): the icon is a *compiled* resource, and a `--fast`
   repackage can't rewrite `resources.arsc`, so with `--fast` the app keeps the

@@ -158,6 +158,17 @@ tempest build --icon icone.png \
   --splash-bg "#0b0f14"
 ```
 
+!!! tip "Gere os dois a partir de UMA imagem com `tempest icon`"
+    Não quer dimensionar à mão? Aponte para um logo e o CLI gera os dois PNGs:
+
+    ```bash
+    tempest icon logo.png --out assets
+    # → assets/icon.png (quadrado) + assets/splash.png (centralizado, fundo transparente)
+    tempest build --icon assets/icon.png --splash assets/splash.png --splash-bg "#0b0f14"
+    ```
+
+    Precisa do Pillow: `pip install tempestroid[icons]` (ou `uv add tempestroid[icons]`).
+
 - `--icon icone.png` — o ícone de launcher (o que aparece na gaveta de apps).
   **Só no build Gradle** (o default): o ícone é um recurso *compilado*, e um
   repackage `--fast` não reescreve o `resources.arsc`, então com `--fast` o app

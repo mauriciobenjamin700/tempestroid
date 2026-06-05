@@ -42,6 +42,11 @@ qt = [
     "PySide6>=6.7",
     "qasync>=0.27",
 ]
+# `tempest icon` — generate the launcher icon + boot splash from one source
+# image (Pillow). Opt in with `pip install tempestroid[icons]`.
+icons = [
+    "pillow>=10.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/mauriciobenjamin700/tempestroid"
@@ -64,6 +69,8 @@ dev = [
     "pytest-asyncio>=0.23",
     "PySide6>=6.7",
     "qasync>=0.27",
+    # `tempest icon` asset generator (kept here so the test suite can exercise it).
+    "pillow>=10.0",
     # Documentation site (PT-BR). `uv sync` installs it; build with
     # `uv run mkdocs build --strict` / serve with `uv run mkdocs serve`.
     # Pinned <9.6: the 9.6.x line prints a non-suppressible MkDocs-2.0 protest

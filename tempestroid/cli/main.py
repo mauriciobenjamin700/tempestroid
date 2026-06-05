@@ -196,6 +196,47 @@ def new_cmd(
     raise typer.Exit(_run_new(name, into, template))
 
 
+@app.command("icon")
+def icon_cmd(
+    source: Annotated[
+        str,
+        typer.Argument(help="Source image (logo/mark) to generate assets from."),
+    ],
+    out: Annotated[
+        str,
+        typer.Option(
+            "--out",
+            "-o",
+            help="Output directory for icon.png + splash.png (default: ./assets).",
+        ),
+    ] = "assets",
+    icon_size: Annotated[
+        int,
+        typer.Option("--icon-size", help="Launcher-icon square edge in px."),
+    ] = 512,
+    splash_size: Annotated[
+        int,
+        typer.Option("--splash-size", help="Splash canvas square edge in px."),
+    ] = 1024,
+    splash_scale: Annotated[
+        float,
+        typer.Option(
+            "--splash-scale",
+            help="Fraction of the splash canvas the mark occupies (0–1).",
+        ),
+    ] = 0.5,
+) -> None:
+    """Generate the launcher icon + boot splash from one source image.
+
+    Writes ``icon.png`` + ``splash.png`` ready for
+    ``tempest build --icon … --splash …``. Needs Pillow
+    (``pip install tempestroid[icons]``).
+    """
+    raise typer.Exit(
+        _run_icon(source, out, icon_size, splash_size, splash_scale)
+    )
+
+
 @app.command("build")
 def build_cmd(
     app_path: Annotated[
@@ -657,6 +698,48 @@ def _run_new(name: str, into: str, template: str) -> int:
         "  uv run tempest dev       # simulator + hot reload (reads pyproject)\n"
         "  uv run tempest install   # adb-install the bundled host (offline)\n"
         "  uv run tempest serve     # push to the device + auto-launch"
+    )
+    return 0
+
+
+def _run_icon(
+    source: str,
+    out: str,
+    icon_size: int,
+    splash_size: int,
+    splash_scale: float,
+) -> int:
+    """Generate icon.png + splash.png from a source image, reporting the outcome.
+
+    Args:
+        source: Path to the source image.
+        out: Output directory.
+        icon_size: Launcher-icon square edge in px.
+        splash_size: Splash canvas square edge in px.
+        splash_scale: Fraction of the splash canvas the mark occupies.
+
+    Returns:
+        The process exit code.
+    """
+    from tempestroid.cli.icongen import generate_assets
+
+    try:
+        assets = generate_assets(
+            source,
+            out,
+            icon_size=icon_size,
+            splash_size=splash_size,
+            splash_scale=splash_scale,
+        )
+    except (RuntimeError, FileNotFoundError, ValueError) as exc:
+        print(f"cannot generate assets: {exc}")
+        return 1
+    print(
+        f"wrote {assets.icon}\n"
+        f"wrote {assets.splash}\n"
+        "Use them with:\n"
+        f'  tempest build --icon {assets.icon} --splash {assets.splash} '
+        '--splash-bg "#0b0f14"'
     )
     return 0
 
