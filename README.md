@@ -231,9 +231,14 @@ toolchain — Android SDK + NDK + the CPython toolchain — which the CLI **prep
 whatever is missing** (run `tempest setup --install` to bootstrap the SDK/NDK).
 The output lands at `dist/<project>.apk` (debug-signed — installs like any debug
 build). `tempest run` is the same build plus install + launch + log streaming
-(it launches `<app-id>/org.tempestroid.host.MainActivity`). For a fast,
-toolchain-free way to run on your own device, use `tempest deploy` — but that is
-the shared dev host (not a per-app shippable artifact).
+(it launches `<app-id>/org.tempestroid.host.MainActivity`).
+
+For a **fast, toolchain-free** shippable APK, use `tempest build --fast`: it skips
+Gradle and **repackages the prebuilt host** (just the SDK build-tools, no NDK /
+source / CPython toolchain). Much quicker, but the APK keeps the shared
+`org.tempestroid.host` id — so it is for iterating on a *single* app, not for
+shipping several side by side. (`tempest deploy` covers the same toolchain-free
+path when you only need it on your own connected device.)
 
 > **Maintainers:** the host APK (~100 MB — it embeds CPython) is **not** shipped
 > inside the PyPI wheel (it would exceed PyPI's per-file limit). `make release`
@@ -262,7 +267,7 @@ surfaced and the happy path stays quiet.
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` + launcher label (`--app-id`/`--app-name`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Prepares the env (SDK/NDK/toolchain) if missing. `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
+| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` + launcher label (`--app-id`/`--app-name`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Prepares the env (SDK/NDK/toolchain) if missing. `--fast` → skip Gradle, repackage the prebuilt host (no SDK/NDK; shared id, single app). `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
 | `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 

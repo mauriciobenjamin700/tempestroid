@@ -137,6 +137,35 @@ def test_build_uses_given_app_id(
     assert captured["app_id"] == "com.acme.todo"
 
 
+def test_build_fast_uses_repackage_not_gradle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest build --fast` repackages the prebuilt host, skipping Gradle.
+
+    The `--fast` path must call `package_app_apk` (SDK build-tools only) and must
+    NOT touch the Gradle `build_apk`, so it works from a PyPI install without a
+    source checkout / NDK.
+    """
+    from tempestroid.cli import packaging, release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+
+    calls: dict[str, object] = {}
+
+    def fake_package_app_apk(_app: object, **_kw: object) -> Path:
+        calls["repackaged"] = True
+        return tmp_path / "out.apk"
+
+    def fail_build_apk(*_a: object, **_k: object) -> Path:
+        raise AssertionError("--fast must not call the Gradle build_apk")
+
+    monkeypatch.setattr(packaging, "package_app_apk", fake_package_app_apk)
+    monkeypatch.setattr(release_build, "build_apk", fail_build_apk)
+    assert main(["build", str(app), "--fast"]) == 0
+    assert calls.get("repackaged") is True
+
+
 def test_build_reports_gradle_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
