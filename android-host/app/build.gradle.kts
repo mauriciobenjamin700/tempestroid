@@ -41,6 +41,12 @@ android {
         // independent of it, so the JNI symbol names are unaffected).
         applicationId =
             (project.findProperty("tempest.applicationId") ?: "org.tempestroid.host").toString()
+        // Per-app launcher label (the name under the icon). `tempest build` passes
+        // -Ptempest.appLabel so two tempestroid apps are told apart on the device;
+        // defaults to the host name for a bare Gradle build. Resolved into the
+        // manifest's android:label="${appLabel}" placeholder.
+        manifestPlaceholders["appLabel"] =
+            (project.findProperty("tempest.appLabel") ?: "tempestroid host").toString()
         minSdk = 24          // CPython 3.14 Android minimum (API 24)
         targetSdk = 35
         versionCode =

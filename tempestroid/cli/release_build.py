@@ -1,10 +1,15 @@
-"""Store-ready release build (``tempest build --release``) → signed AAB.
+"""Gradle-driven shippable builds: a store AAB and a per-app debug APK.
 
-The Play Store wants an **Android App Bundle** (``.aab``), release-signed, with
-the publisher's own ``applicationId`` — which only the Gradle ``bundleRelease``
-path can produce (an AAB cannot be made by repackaging an APK). So this drives
-the ``android-host`` Gradle project, and **prepares whatever the environment is
-missing** first:
+The store AAB is ``tempest build --release``; the per-app debug APK is the
+default ``tempest build``. Both artifacts come from the **same Gradle project**
+(``android-host``), so each
+carries its **own ``applicationId``** — two apps built by tempestroid install
+side by side instead of overwriting each other (an APK repackage can't rewrite
+the binary manifest's package, so it can't give each app a distinct id; Gradle
+can, via ``-Ptempest.applicationId``). The Play Store additionally wants an
+**Android App Bundle** (``.aab``), release-signed — which only ``bundleRelease``
+produces. Either way this drives the Gradle project and **prepares whatever the
+environment is missing** first:
 
 * **SDK + NDK** — installed via :func:`tempestroid.cli.setup_env.install_android_sdk`.
 * **source checkout** (``android-host`` + ``toolchain/`` scripts) — an existing
@@ -31,14 +36,51 @@ from tempestroid.cli.console import Console, StepError
 
 __all__ = [
     "ReleaseConfig",
+    "derive_app_id",
+    "derive_app_name",
     "ensure_release_keystore",
     "ensure_source_checkout",
     "ensure_toolchain",
     "build_aab",
+    "build_apk",
 ]
 
 _REPO_URL = "https://github.com/mauriciobenjamin700/tempestroid"
 _CACHE = Path.home() / ".tempestroid"
+
+
+def derive_app_id(project_name: str) -> str:
+    """Derive a default ``applicationId`` from a project name.
+
+    Distinct project names yield distinct ids, so two tempestroid apps install
+    side by side. For a store release the publisher should still pass their own
+    ``--app-id`` (``com.example.*`` is a placeholder, not publishable).
+
+    Args:
+        project_name: The project directory name (e.g. ``"my-todo"``).
+
+    Returns:
+        A valid lowercase package id (e.g. ``"com.example.mytodo"``).
+    """
+    slug = "".join(ch for ch in project_name.lower() if ch.isalnum()) or "app"
+    return f"com.example.{slug}"
+
+
+def derive_app_name(project_name: str) -> str:
+    """Derive a human launcher label (the name under the icon) from a project.
+
+    Turns the project directory name into a title-cased label, so two tempestroid
+    apps are told apart on the home screen (the ``applicationId`` keeps them
+    independent; this is the cosmetic name).
+
+    Args:
+        project_name: The project directory name (e.g. ``"my-todo"``).
+
+    Returns:
+        A human label (e.g. ``"My Todo"``); ``"App"`` when the name is empty.
+    """
+    cleaned = project_name.replace("-", " ").replace("_", " ").strip()
+    return cleaned.title() if cleaned else "App"
 
 
 @dataclass(frozen=True)
@@ -47,6 +89,7 @@ class ReleaseConfig:
 
     Attributes:
         app_id: The store ``applicationId`` (e.g. ``com.acme.todo``).
+        app_name: The launcher label (the name under the icon).
         version_name: Human version (e.g. ``"1.0.0"``).
         version_code: Monotonic integer version code.
         keystore: Path to the release keystore, or ``None`` to auto-generate.
@@ -56,6 +99,7 @@ class ReleaseConfig:
     """
 
     app_id: str
+    app_name: str = "tempestroid host"
     version_name: str = "1.0.0"
     version_code: int = 1
     keystore: Path | None = None
@@ -188,6 +232,57 @@ def ensure_toolchain(checkout: Path, console: Console) -> None:
         )
 
 
+def _prepare_gradle_build(app: str | Path, con: Console) -> Path:
+    """Prepare the Gradle build environment and stage the app bundle.
+
+    Ensures a JDK, the Android SDK + NDK, the source checkout (``android-host`` +
+    toolchain scripts) and the CPython toolchain are present, then bundles the
+    user's whole project into the host assets — the steps shared by the debug
+    APK and the release AAB builds.
+
+    Args:
+        app: Path to the app's entry Python file.
+        con: Step reporter.
+
+    Returns:
+        The ``android-host`` Gradle project directory (where ``gradlew`` lives).
+
+    Raises:
+        StepError: If a prepare step fails (missing JDK, clone failure, …).
+    """
+    from tempestroid import __version__
+    from tempestroid.cli.bundle import resolve_project
+    from tempestroid.cli.packaging import stage_app_bundle
+    from tempestroid.cli.setup_env import default_sdk_dir, install_android_sdk, jdk_ok
+
+    layout = resolve_project(app)
+
+    # 1. JDK (required by Gradle + keytool) — guided, not auto-installed.
+    ok, detail = jdk_ok()
+    if not ok:
+        raise StepError(f"a JDK is required ({detail}).")
+
+    # 2. SDK + NDK.
+    sdk = default_sdk_dir()
+    if not (sdk / "ndk").is_dir() or not (sdk / "platform-tools").is_dir():
+        con.info("preparing the Android SDK + NDK…")
+        install_android_sdk(sdk, console=con)
+    os.environ.setdefault("ANDROID_SDK_ROOT", str(sdk))
+
+    # 3. Source checkout (android-host + toolchain scripts).
+    checkout = ensure_source_checkout(__version__, con)
+    host = checkout / "android-host"
+
+    # 4. CPython toolchain (heavy if absent).
+    ensure_toolchain(checkout, con)
+
+    # 5. Stage the user's project bundle into the host assets.
+    with con.step(f"Bundling project ({layout.entry})"):
+        stage_app_bundle(app, host)
+
+    return host
+
+
 def build_aab(
     app: str | Path,
     config: ReleaseConfig,
@@ -216,43 +311,16 @@ def build_aab(
     """
     con = console or Console()
     from tempestroid.cli.bundle import resolve_project
-    from tempestroid.cli.packaging import stage_app_bundle
-    from tempestroid.cli.setup_env import default_sdk_dir, install_android_sdk, jdk_ok
 
     layout = resolve_project(app)
-
-    # 1. JDK (required by Gradle + keytool) — guided, not auto-installed.
-    ok, detail = jdk_ok()
-    if not ok:
-        raise StepError(f"a JDK is required ({detail}).")
-
-    # 2. SDK + NDK.
-    sdk = default_sdk_dir()
-    if not (sdk / "ndk").is_dir() or not (sdk / "platform-tools").is_dir():
-        con.info("preparing the Android SDK + NDK…")
-        install_android_sdk(sdk, console=con)
-    os.environ.setdefault("ANDROID_SDK_ROOT", str(sdk))
-
-    # 3. Source checkout (android-host + toolchain scripts).
-    from tempestroid import __version__
-
-    checkout = ensure_source_checkout(__version__, con)
-    host = checkout / "android-host"
-
-    # 4. CPython toolchain (heavy if absent).
-    ensure_toolchain(checkout, con)
-
-    # 5. Release keystore.
+    host = _prepare_gradle_build(app, con)
     keystore = ensure_release_keystore(config, con)
 
-    # 6. Stage the user's project bundle into the host assets.
-    with con.step(f"Bundling project ({layout.entry})"):
-        stage_app_bundle(app, host)
-
-    # 7. gradlew bundleRelease with the publisher identity + signing.
+    # gradlew bundleRelease with the publisher identity + signing.
     env = dict(os.environ)
     props = [
         f"-Ptempest.applicationId={config.app_id}",
+        f"-Ptempest.appLabel={config.app_name}",
         f"-Ptempest.versionName={config.version_name}",
         f"-Ptempest.versionCode={config.version_code}",
         f"-Ptempest.keystore={keystore}",
@@ -272,4 +340,66 @@ def build_aab(
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(built, out)
     con.info(f"store AAB: {out}")
+    return out
+
+
+def build_apk(
+    app: str | Path,
+    *,
+    app_id: str,
+    app_name: str = "tempestroid host",
+    version_name: str = "1.0.0",
+    version_code: int = 1,
+    console: Console | None = None,
+    output: Path | None = None,
+) -> Path:
+    """Build a shippable, debug-signed ``.apk`` for ``app`` with its own id.
+
+    Prepares the environment (SDK/NDK, source checkout, CPython toolchain) as
+    needed, then drives ``gradlew assembleDebug`` stamping ``app_id`` as the
+    ``applicationId``. Because each app carries a distinct id, two tempestroid
+    APKs install side by side instead of overwriting each other. The APK is
+    signed with the standard Android debug keystore (AGP handles this) — fine for
+    sharing and sideloading, but not for a Play Store upload (use
+    :func:`build_aab` / ``--release`` for that).
+
+    Args:
+        app: Path to the app's entry Python file.
+        app_id: The ``applicationId`` to stamp (unique per app).
+        app_name: The launcher label (the name under the icon).
+        version_name: Human version string.
+        version_code: Monotonic integer version code.
+        console: Step reporter.
+        output: Output ``.apk`` path; defaults to ``dist/<project>.apk``.
+
+    Returns:
+        The debug-signed ``.apk`` path.
+
+    Raises:
+        StepError: If a prepare step or the build fails.
+        subprocess.CalledProcessError: If Gradle fails.
+    """
+    con = console or Console()
+    from tempestroid.cli.bundle import resolve_project
+
+    layout = resolve_project(app)
+    host = _prepare_gradle_build(app, con)
+
+    env = dict(os.environ)
+    props = [
+        f"-Ptempest.applicationId={app_id}",
+        f"-Ptempest.appLabel={app_name}",
+        f"-Ptempest.versionName={version_name}",
+        f"-Ptempest.versionCode={version_code}",
+    ]
+    with con.step(f"Gradle assembleDebug (applicationId={app_id})"):
+        con.run_command(["./gradlew", "assembleDebug", *props], cwd=host, env=env)
+
+    built = host / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+    if not built.is_file():
+        raise StepError(f"build succeeded but no APK at {built}")
+    out = output or (Path.cwd() / "dist" / f"{layout.root.name}.apk")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(built, out)
+    con.info(f"APK ({app_id}): {out}")
     return out

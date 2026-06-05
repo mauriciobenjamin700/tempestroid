@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`tempest build` per-app `applicationId` (install side by side).** The default
+  `tempest build` now produces the APK via Gradle `assembleDebug`, stamping each
+  app with its own `applicationId` (`--app-id`, else derived `com.example.<proj>`)
+  and launcher label (`--app-name`, else derived), so two tempestroid apps
+  install **side by side** instead of overwriting each other (an APK repackage
+  can't rewrite the binary manifest's package; Gradle can). The CLI prepares
+  whatever is missing (SDK/NDK, source checkout, CPython toolchain). Verified on
+  device: `com.example.appone` + `com.example.apptwo` coexist and run
+  independently.
+- **`tempest build --fast`.** Escape hatch that skips Gradle and repackages the
+  prebuilt host (SDK build-tools only — no NDK/source/toolchain), for fast
+  single-app iteration from a PyPI install. Keeps the shared
+  `org.tempestroid.host` id (single app; not for side-by-side shipping).
+
+### Fixed
+
+- **Apps no longer white-screen on the device.** App files that imported the Qt
+  renderer at module top crashed the on-device load (no PySide6) → blank window
+  (APK) and a silent re-fetch storm (`tempest serve`). The counter example + the
+  README quick-start now import `run_qt` lazily inside `__main__`. As a safety
+  net, both device entry points and the code-push client now mount a visible
+  **error screen** with the traceback (`bridge/errors.py`) instead of a blank
+  window, and the dev server swallows dropped-connection errors. Verified on
+  device, including live recovery on the next save.
+
 ## [0.6.2] — 2026-06-04
 
 ### Added

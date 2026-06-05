@@ -48,7 +48,7 @@
     </queries>
 
     <application
-        android:label="tempestroid host"
+        android:label="${appLabel}"
         android:allowBackup="false"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
