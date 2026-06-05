@@ -146,6 +146,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`layout`](examples/layout/app.py) | Refined layout — `Wrap` chips that wrap, a paginated `PageView` (`PageChangeEvent` + dot indicator) and a `CollapsingAppBar` that shrinks on scroll. |
 | [`platform`](examples/platform/app.py) | Platform/system (E8) — haptics, real preferences, the lifecycle stream and a `KeyboardAvoidingView`. |
 | [`theming`](examples/theming/app.py) | Cross-cutting (E9) — a light/dark `ThemeMode` toggle (`App.set_theme`), a PT↔AR locale/RTL toggle (`App.set_locale` + `translate`), and a counter label carrying `Semantics(label=…)`. |
+| [`native_caps`](examples/native_caps/app.py) | Native capabilities — `clipboard` / `storage` / `database` (SQLite) / `secure_storage` / `system`, each a request/response round-trip returning a typed result (device-verified). |
 
 The framework and the Qt simulator support the full widget set. The device
 (Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /

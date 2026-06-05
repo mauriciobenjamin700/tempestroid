@@ -32,7 +32,7 @@ testes verdes). Acrescenta uma regra própria:
 | Fase | Escopo | Status | Feito quando |
 |---|---|---|---|
 | F1 | `tempest build` Gradle por-app: `applicationId` único → apps do time instalam lado a lado | 🚧 em voo | dois apps tempestroid distintos instalam e rodam simultâneos no mesmo device; default sem-Gradle preservado para quem só tem PyPI |
-| F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | ⬜ planejado | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
+| F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | 🅿️ adiada (futuro) — grupo no-config ✅ (clipboard/storage/database/secure_storage/system); resto parkeado | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
 | F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ⬜ planejado | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
 
 ---
@@ -96,6 +96,13 @@ manifesto binário, então não dá `applicationId` distinto; só o Gradle dá.
 ---
 
 ## F2 — Validar as capacidades nativas Kotlin no device
+
+!!! note "Adiada — fazer no futuro"
+    O grupo **sem-config** (clipboard/storage/database/secure_storage/system) já
+    foi device-verificado (`examples/native_caps/app.py`). Os grupos restantes
+    (geolocation, camera+audio, share, bluetooth, connectivity+permissions,
+    biometria plena, push FCM) ficam **parkeados para o futuro** — o foco atual é
+    o **APK básico e funcional**. Quando retomar, siga "uma PR por grupo" abaixo.
 
 ### Objetivo
 Sair de "metade Python testada off-device" para **cada capacidade exercida no
