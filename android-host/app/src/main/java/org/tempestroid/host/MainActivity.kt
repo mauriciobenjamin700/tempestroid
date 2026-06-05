@@ -3,6 +3,7 @@ package org.tempestroid.host
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
 import android.system.Os
@@ -11,9 +12,14 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -25,8 +31,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
+import kotlinx.coroutines.delay
 import java.io.File
 import org.json.JSONObject
 
@@ -59,6 +69,25 @@ class MainActivity : FragmentActivity() {
      * reader, but this state is the one the renderer observes.
      */
     private var needsFrames by mutableStateOf(false)
+
+    /**
+     * Branded boot splash gate (assets-drawn, NOT the res SplashScreen API).
+     *
+     * Shown full-screen on the UI thread the instant the activity composes —
+     * BEFORE/while CPython boots off-thread (~seconds of otherwise-blank screen) —
+     * and kept up until the FIRST render arrives. "First render" is the first
+     * message through [PythonRuntime.messageSink] (a `mount`, including the
+     * on-device error screen from `run_device_error`, a `patch`, or a `native`
+     * envelope): any of these means Python is alive and content is on its way, so
+     * the splash dismisses. A timeout (see the splash composable) also dismisses
+     * it so a failed boot never leaves the splash stuck.
+     *
+     * The splash image is `assets/tempest/splash.png` centered over the color in
+     * `assets/tempest/splash_bg.txt` — stable zip paths the CLI `--fast` repackage
+     * path swaps per app. Reading happens at runtime in [loadSplashBgColor] /
+     * [setContent], so an app's custom splash needs no recompile.
+     */
+    private var splashVisible by mutableStateOf(true)
 
     /** Native capability router; registers its activity-result launchers here. */
     private lateinit var native: NativeModules
@@ -109,6 +138,11 @@ class MainActivity : FragmentActivity() {
         // interpreter thread, so hop to the main thread first.
         PythonRuntime.messageSink = { json ->
             runOnUiThread {
+                // First message from Python = the interpreter is alive and content
+                // is rendering (mount/patch, the run_device_error screen, or a
+                // native reply). Dismiss the boot splash to reveal the tree. Cheap
+                // and idempotent — a no-op once already false.
+                splashVisible = false
                 val message = JSONObject(json)
                 when (message.optString("kind")) {
                     "native" -> native.handle(message)
@@ -243,6 +277,12 @@ class MainActivity : FragmentActivity() {
                     // node decides its own Compose surface (RenderOverlay) and owns
                     // its inset; do NOT wrap these in safeDrawingPadding.
                     tree.overlays.forEach { overlay -> RenderOverlay(overlay, onEvent) }
+
+                    // Boot splash, top-most. Covers the whole window (edge-to-edge,
+                    // no safe-area inset — a splash bleeds under the bars by design)
+                    // while CPython boots, then fades out once the first render
+                    // arrives (splashVisible -> false) or the timeout fires.
+                    BootSplash(visible = splashVisible)
                 }
             }
         }
@@ -302,6 +342,65 @@ class MainActivity : FragmentActivity() {
         }, "tempest-python").start()
     }
 
+    /**
+     * Full-screen boot splash: `assets/tempest/splash.png` centered over the
+     * `assets/tempest/splash_bg.txt` color. Fades out when [visible] flips false.
+     *
+     * Robustness: a [SPLASH_TIMEOUT_MS] watchdog flips [splashVisible] false so a
+     * failed/slow boot never strands the splash. The bitmap + bg color are read
+     * from assets at runtime (remembered once) — an app's custom splash needs no
+     * recompile, only an asset swap.
+     *
+     * @param visible whether the splash should currently be shown.
+     */
+    @androidx.compose.runtime.Composable
+    private fun BootSplash(visible: Boolean) {
+        val bgColor = remember { loadSplashBgColor() }
+        val splashBitmap = remember {
+            try {
+                assets.open(SPLASH_IMAGE_ASSET).use { BitmapFactory.decodeStream(it) }
+            } catch (_: java.io.IOException) {
+                null
+            }
+        }
+        // Watchdog: dismiss after the timeout even if no render ever arrives.
+        LaunchedEffect(Unit) {
+            delay(SPLASH_TIMEOUT_MS)
+            splashVisible = false
+        }
+        AnimatedVisibility(visible = visible, exit = fadeOut()) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(bgColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                val bmp = splashBitmap
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = "tempestroid",
+                        modifier = Modifier.fillMaxWidth(0.6f),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Read and parse the splash background color from
+     * `assets/tempest/splash_bg.txt` (a single hex line like `#0b0f14`). Falls
+     * back to [DEFAULT_SPLASH_BG] when the asset is missing or unparseable.
+     */
+    private fun loadSplashBgColor(): Color {
+        val hex = try {
+            assets.open(SPLASH_BG_ASSET).use { input ->
+                input.readBytes().toString(Charsets.UTF_8).trim()
+            }
+        } catch (_: java.io.IOException) {
+            ""
+        }
+        return parseHexColor(hex) ?: DEFAULT_SPLASH_BG
+    }
+
     /** Request POST_NOTIFICATIONS on API 33+ so the B6 demo can post. */
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -348,6 +447,39 @@ class MainActivity : FragmentActivity() {
 
     companion object {
         private const val TAG = "tempestroid"
+
+        /** Splash image asset (stable zip path the CLI `--fast` path swaps). */
+        private const val SPLASH_IMAGE_ASSET = "tempest/splash.png"
+
+        /** Splash background color asset: one hex line, e.g. `#0b0f14`. */
+        private const val SPLASH_BG_ASSET = "tempest/splash_bg.txt"
+
+        /** Fallback splash background when the asset is missing/unparseable. */
+        private val DEFAULT_SPLASH_BG = Color(0xFF0B0F14)
+
+        /**
+         * Watchdog dismiss for the boot splash. A normal boot dismisses it far
+         * sooner (on the first render); this only guards a failed/hung boot from
+         * stranding the splash forever.
+         */
+        private const val SPLASH_TIMEOUT_MS = 20_000L
+
+        /**
+         * Parse `#RRGGBB` / `#AARRGGBB` (with or without the leading `#`) into a
+         * Compose [Color]. Returns null on any malformed input so the caller can
+         * fall back to a default.
+         */
+        private fun parseHexColor(raw: String): Color? {
+            val hex = raw.trim().removePrefix("#")
+            if (hex.length != 6 && hex.length != 8) return null
+            return try {
+                val parsed = hex.toLong(16)
+                val argb = if (hex.length == 6) 0xFF000000L or parsed else parsed
+                Color(argb.toInt())
+            } catch (_: NumberFormatException) {
+                null
+            }
+        }
 
         /**
          * Reserved event token Python routes straight to `App.pop` (E0d). Must

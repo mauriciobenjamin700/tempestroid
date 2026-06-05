@@ -124,18 +124,30 @@ def ensure_debug_keystore(console: Console | None = None) -> Path:
     return keystore
 
 
-def inject_bundle(host_apk: Path, bundle: bytes, dest: Path) -> None:
+def inject_bundle(
+    host_apk: Path,
+    bundle: bytes,
+    dest: Path,
+    *,
+    replacements: dict[str, bytes] | None = None,
+) -> None:
     """Copy ``host_apk`` to ``dest`` with the project bundle injected.
 
     Rewrites the zip, dropping the old signature (``META-INF/*.SF/.RSA/.MF``) and
     any prior bundle, adding ``assets/tempest_app_bundle.zip``. Each surviving
     entry keeps its original compression so native ``.so`` stay uncompressed.
+    Entries named in ``replacements`` are overwritten with the given bytes
+    (used for per-app branding assets — e.g. the boot splash — which live at
+    stable, uncompiled asset paths).
 
     Args:
         host_apk: The prebuilt host APK to repackage.
         bundle: The project bundle ``.zip`` bytes.
         dest: The output (unsigned, unaligned) APK path.
+        replacements: Optional ``zip entry path -> bytes`` overrides applied to
+            matching asset entries.
     """
+    overrides = dict(replacements or {})
     with zipfile.ZipFile(host_apk) as src, zipfile.ZipFile(dest, "w") as out:
         for info in src.infolist():
             name = info.filename
@@ -145,12 +157,19 @@ def inject_bundle(host_apk: Path, bundle: bytes, dest: Path) -> None:
                 continue  # drop the old signature — we re-sign
             if name == _BUNDLE_ASSET:
                 continue  # replace any prior bundle
-            data = src.read(name)
+            data = overrides.pop(name, None)
+            if data is None:
+                data = src.read(name)
             # Preserve the source entry's compression (STORED for .so etc.).
             new_info = zipfile.ZipInfo(name, date_time=info.date_time)
             new_info.compress_type = info.compress_type
             new_info.external_attr = info.external_attr
             out.writestr(new_info, data)
+        # Any replacement whose path was not already in the host APK is added.
+        for name, data in overrides.items():
+            extra = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            extra.compress_type = zipfile.ZIP_DEFLATED
+            out.writestr(extra, data)
         bundle_info = zipfile.ZipInfo(_BUNDLE_ASSET, date_time=(1980, 1, 1, 0, 0, 0))
         bundle_info.compress_type = zipfile.ZIP_DEFLATED
         out.writestr(bundle_info, bundle)
@@ -162,6 +181,7 @@ def repackage_host_apk(
     out_apk: Path,
     *,
     console: Console | None = None,
+    replacements: dict[str, bytes] | None = None,
 ) -> Path:
     """Repackage the prebuilt host APK with the user's bundle, signed + aligned.
 
@@ -173,6 +193,8 @@ def repackage_host_apk(
         bundle: The project bundle ``.zip`` bytes (from ``build_bundle``).
         out_apk: The signed, shippable APK to write.
         console: Step reporter.
+        replacements: Optional ``zip entry path -> bytes`` asset overrides (e.g.
+            the boot splash) applied during injection.
 
     Returns:
         ``out_apk``.
@@ -191,7 +213,7 @@ def repackage_host_apk(
     aligned = out_apk.with_suffix(".aligned.apk")
 
     with con.step(f"Injecting project bundle ({len(bundle)} bytes)"):
-        inject_bundle(host_apk, bundle, work)
+        inject_bundle(host_apk, bundle, work, replacements=replacements)
 
     with con.step("Aligning (zipalign)"):
         con.run_command([str(zipalign), "-p", "-f", "4", str(work), str(aligned)])

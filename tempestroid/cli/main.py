@@ -15,9 +15,12 @@ phase-C packaging commands — ``new`` (scaffold), ``build`` (APK), ``run``
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
+
+if TYPE_CHECKING:
+    from tempestroid.cli.branding import Branding
 
 __all__ = ["app", "main"]
 
@@ -245,6 +248,29 @@ def build_cmd(
         str | None,
         typer.Option("--keystore", help="Release keystore (default: auto-generated)."),
     ] = None,
+    icon: Annotated[
+        str | None,
+        typer.Option(
+            "--icon",
+            help="Launcher-icon PNG. Gradle builds only — the launcher icon is a "
+            "compiled resource, so `--fast` keeps the default icon.",
+        ),
+    ] = None,
+    splash: Annotated[
+        str | None,
+        typer.Option(
+            "--splash",
+            help="Boot-splash PNG shown while the interpreter starts (covers the "
+            "CPython boot). Works on every build path.",
+        ),
+    ] = None,
+    splash_bg: Annotated[
+        str | None,
+        typer.Option(
+            "--splash-bg",
+            help="Boot-splash background colour as #rrggbb (default #0b0f14).",
+        ),
+    ] = None,
     fast: Annotated[
         bool,
         typer.Option(
@@ -285,16 +311,29 @@ def build_cmd(
     CPython toolchain, release keystore) on first run.
     """
     resolved = _resolve_app_or_exit(app_path)
+    from tempestroid.cli.branding import load_branding
+
+    try:
+        branding = load_branding(icon, splash, splash_bg)
+    except ValueError as exc:
+        print(f"cannot build: {exc}")
+        raise typer.Exit(1) from exc
+    if fast and branding.icon is not None:
+        print(
+            "warning: --icon is ignored with --fast (the launcher icon is a "
+            "compiled resource); the APK keeps the default icon. Use the Gradle "
+            "build (drop --fast) to set a custom icon."
+        )
     if release:
         raise typer.Exit(
             _run_release(resolved, app_id, app_name, app_version, version_code,
-                         keystore, output, verbose)
+                         keystore, output, verbose, branding)
         )
     if fast:
-        raise typer.Exit(_run_build_fast(resolved, output, verbose))
+        raise typer.Exit(_run_build_fast(resolved, output, verbose, branding))
     raise typer.Exit(
         _run_build(resolved, app_id, app_name, app_version, version_code, output,
-                   verbose)
+                   verbose, branding)
     )
 
 
@@ -622,7 +661,9 @@ def _run_new(name: str, into: str, template: str) -> int:
     return 0
 
 
-def _run_build_fast(app: str, output: str | None, verbose: bool) -> int:
+def _run_build_fast(
+    app: str, output: str | None, verbose: bool, branding: Branding
+) -> int:
     """Build a shippable APK by repackaging the prebuilt host (no Gradle).
 
     The `--fast` path: bundle the whole project and inject it into the prebuilt
@@ -637,6 +678,8 @@ def _run_build_fast(app: str, output: str | None, verbose: bool) -> int:
         app: Path to the app's entry file to bundle.
         output: Output APK path, or ``None`` for ``dist/<project>.apk``.
         verbose: Echo raw commands and stream full subprocess output.
+        branding: Per-app branding (the splash is applied; the icon is ignored on
+            this path — see the build command).
 
     Returns:
         The process exit code.
@@ -656,6 +699,7 @@ def _run_build_fast(app: str, output: str | None, verbose: bool) -> int:
             version=__version__,
             console=console,
             output=Path(output) if output else None,
+            branding=branding,
         )
     except StepError:
         return 1
@@ -676,6 +720,7 @@ def _run_build(
     version_code: int,
     output: str | None,
     verbose: bool,
+    branding: Branding,
 ) -> int:
     """Build a shippable, debug-signed APK via Gradle, reporting the outcome.
 
@@ -693,6 +738,7 @@ def _run_build(
         version_code: The versionCode.
         output: Output APK path, or ``None`` for ``dist/<project>.apk``.
         verbose: Echo raw commands and stream full subprocess output.
+        branding: Per-app branding (icon + splash) applied to the build.
 
     Returns:
         The process exit code.
@@ -717,6 +763,7 @@ def _run_build(
             version_code=version_code,
             console=console,
             output=Path(output) if output else None,
+            branding=branding,
         )
     except StepError:
         return 1
@@ -738,6 +785,7 @@ def _run_release(
     keystore: str | None,
     output: str | None,
     verbose: bool,
+    branding: Branding,
 ) -> int:
     """Build a store-ready release AAB, preparing the environment, reporting outcome.
 
@@ -750,6 +798,7 @@ def _run_release(
         keystore: Path to a release keystore, or ``None`` to auto-generate.
         output: Output ``.aab`` path, or ``None`` for the default.
         verbose: Echo raw commands and stream full subprocess output.
+        branding: Per-app branding (icon + splash) applied to the build.
 
     Returns:
         The process exit code.
@@ -785,7 +834,13 @@ def _run_release(
         keystore=Path(keystore) if keystore else None,
     )
     try:
-        build_aab(app, config, console=console, output=Path(output) if output else None)
+        build_aab(
+            app,
+            config,
+            console=console,
+            output=Path(output) if output else None,
+            branding=branding,
+        )
     except StepError:
         return 1
     except FileNotFoundError as exc:

@@ -31,8 +31,12 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tempestroid.cli.console import Console, StepError
+
+if TYPE_CHECKING:
+    from tempestroid.cli.branding import Branding
 
 __all__ = [
     "ReleaseConfig",
@@ -289,6 +293,7 @@ def build_aab(
     *,
     console: Console | None = None,
     output: Path | None = None,
+    branding: Branding | None = None,
 ) -> Path:
     """Build a store-ready, release-signed ``.aab`` for ``app``.
 
@@ -301,6 +306,8 @@ def build_aab(
         config: The publisher identity + signing config.
         console: Step reporter.
         output: Output ``.aab`` path; defaults to ``dist/<project>-release.aab``.
+        branding: Optional per-app branding (icon + splash) staged into the host
+            for the build.
 
     Returns:
         The signed ``.aab`` path.
@@ -310,6 +317,7 @@ def build_aab(
         subprocess.CalledProcessError: If Gradle fails.
     """
     con = console or Console()
+    from tempestroid.cli.branding import Branding, staged_into_host
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
@@ -328,7 +336,9 @@ def build_aab(
         f"-Ptempest.storePassword={config.store_password}",
         f"-Ptempest.keyPassword={config.key_password}",
     ]
-    with con.step("Gradle bundleRelease (store AAB)"):
+    with staged_into_host(host, branding or Branding()), con.step(
+        "Gradle bundleRelease (store AAB)"
+    ):
         con.run_command(["./gradlew", "bundleRelease", *props], cwd=host, env=env)
 
     built = (
@@ -352,6 +362,7 @@ def build_apk(
     version_code: int = 1,
     console: Console | None = None,
     output: Path | None = None,
+    branding: Branding | None = None,
 ) -> Path:
     """Build a shippable, debug-signed ``.apk`` for ``app`` with its own id.
 
@@ -371,6 +382,8 @@ def build_apk(
         version_code: Monotonic integer version code.
         console: Step reporter.
         output: Output ``.apk`` path; defaults to ``dist/<project>.apk``.
+        branding: Optional per-app branding (icon + splash) staged into the host
+            for the build.
 
     Returns:
         The debug-signed ``.apk`` path.
@@ -380,6 +393,7 @@ def build_apk(
         subprocess.CalledProcessError: If Gradle fails.
     """
     con = console or Console()
+    from tempestroid.cli.branding import Branding, staged_into_host
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
@@ -392,7 +406,9 @@ def build_apk(
         f"-Ptempest.versionName={version_name}",
         f"-Ptempest.versionCode={version_code}",
     ]
-    with con.step(f"Gradle assembleDebug (applicationId={app_id})"):
+    with staged_into_host(host, branding or Branding()), con.step(
+        f"Gradle assembleDebug (applicationId={app_id})"
+    ):
         con.run_command(["./gradlew", "assembleDebug", *props], cwd=host, env=env)
 
     built = host / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"

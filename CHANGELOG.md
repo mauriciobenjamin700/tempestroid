@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **App icon + boot splash branding for `tempest build`.** Every APK now ships a
+  default tempestroid launcher icon and an asset-drawn boot splash that covers
+  the CPython start (no more blank window). Customise per app: `--icon icon.png`
+  (launcher icon — Gradle build only, since the icon is a compiled resource;
+  `--fast` keeps the default and warns), `--splash splash.png` and
+  `--splash-bg #rrggbb` (the splash image + background — drawn by the host from
+  `assets/tempest/`, so they apply on **every** build path including `--fast`).
+  The splash stays up until the app's first `mount`. Device-verified on both the
+  Gradle path (custom icon + splash) and `--fast` (custom splash).
 - **`examples/native_caps`** — a native-capabilities gallery exercising the
   no-extra-config group on a device: `clipboard` (`set_text`/`get_text`),
   `storage` (`write_file`/`read_file`/`list_files`), `database` (SQLite
