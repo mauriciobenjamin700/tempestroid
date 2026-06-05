@@ -107,21 +107,42 @@ To produce a **self-contained** `.apk` (runs with no dev server, hand it to
 anyone):
 
 ```bash
-tempest build                 # repackage the prebuilt host with your project
-tempest build -o /tmp/app.apk # choose the output path
+tempest build                              # Gradle: APK with its own applicationId
+tempest build --app-id com.yourco.app      # set the id (recommended for anything real)
+tempest build -o /tmp/app.apk              # choose the output path
 ```
 
-The result lands at `dist/<project>.apk` (or `-o`). `tempest build` bundles your
-project, resolves the **prebuilt host APK**, injects the bundle, then re-aligns
-(`zipalign`) and re-signs (`apksigner`, debug key). The APK has your project
-**baked in** — `adb install` it on any compatible device and the app opens
-directly, no server. Debug-signed → installs like any debug build.
+The result lands at `dist/<project>.apk` (or `-o`). By default `tempest build`
+runs Gradle (`assembleDebug`) and stamps each app with its **own `applicationId`**
++ launcher label, so two tempestroid apps **install side by side** instead of
+overwriting each other. Debug-signed → `adb install` it on any compatible device
+and the app opens directly, no server.
 
-!!! note "`build` needs only the SDK build-tools"
-    `tempest build`/`run` use only `zipalign` + `apksigner` from the **Android SDK
-    build-tools** — **no Gradle, NDK, or `android-host` checkout** — so they work
-    from a PyPI install. Run `tempest setup` to check the environment
-    (`tempest setup --install` installs the SDK + build-tools).
+!!! info "Do I set `--app-id`, or does the framework generate it?"
+    **Both — but for anything real, set your own.**
+
+    - You pass `--app-id com.yourco.app` → that's the `applicationId` (and
+      `--app-name "My App"` for the name under the icon).
+    - You **omit** it → the framework **derives** `com.example.<project-name>`,
+      just so you can build and install right away without deciding anything.
+
+    The derived `com.example.*` id is a **placeholder, not publishable** — the
+    Play Store rejects `com.example.*`. Rule of thumb: **test with the derived id;
+    set your own `--app-id`** (your company's reverse domain, e.g.
+    `com.yourco.app`) **as soon as the app is real**, and **keep the same id
+    forever** — changing it makes Android/Play treat it as a different app (loses
+    updates and data). The id is independent of the internal Java/JNI package
+    (`org.tempestroid.host`), so choosing your own never breaks the bridge.
+
+!!! note "Default `build` uses the toolchain; `--fast` skips it (1 app)"
+    Default `tempest build` runs Gradle, so it needs the SDK **+ NDK** + the
+    `android-host` checkout + the CPython toolchain — the CLI **prepares whatever
+    is missing**. To iterate fast on a **single** app without the toolchain, use
+    `tempest build --fast`: it skips Gradle and **repackages the prebuilt host**
+    (just the SDK build-tools, works from a PyPI install). Trade-off: `--fast`
+    keeps the shared `org.tempestroid.host` id (an APK repackage can't rewrite the
+    binary manifest's package), so it is for **one app at a time**, not several
+    side by side. Run `tempest setup --install` for the SDK/NDK.
 
 ## Publish to the Play Store (`--release` → AAB)
 

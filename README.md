@@ -244,9 +244,12 @@ the dev server. Use `--no-launch` to serve only.
 `tempest build`: it bundles the whole project into the `android-host` Gradle
 project and runs `assembleDebug`, stamping each app with its **own
 `applicationId`** so two tempestroid APKs **install side by side instead of
-overwriting each other**. The id is `--app-id` (e.g. `com.acme.todo`), or derived
-from the project name (`com.example.<project>`) when omitted; the launcher label
-(the name under the icon) is `--app-name`, or derived from the project name. This needs the full
+overwriting each other**. The id is `--app-id` (e.g. `com.yourco.app`), or
+**derived** as `com.example.<project>` when omitted — but the derived
+`com.example.*` is a **placeholder, not publishable** (the Play Store rejects
+it), so **set your own `--app-id` once the app is real and keep it forever**
+(changing it makes Android treat it as a different app). The launcher label (the
+name under the icon) is `--app-name`, or derived from the project name. This needs the full
 toolchain — Android SDK + NDK + the CPython toolchain — which the CLI **prepares
 whatever is missing** (run `tempest setup --install` to bootstrap the SDK/NDK).
 The output lands at `dist/<project>.apk` (debug-signed — installs like any debug
