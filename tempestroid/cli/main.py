@@ -848,14 +848,29 @@ def _run_build(
             output=Path(output) if output else None,
             branding=branding,
         )
-    except StepError:
-        return 1
     except FileNotFoundError as exc:
+        # A genuinely missing app file — not a toolchain gap. Don't fall back.
         console.fail(f"build failed: {exc}")
         return 1
-    except subprocess.CalledProcessError as exc:
-        console.fail(f"gradle assembleDebug failed (exit {exc.returncode}).")
-        return exc.returncode or 1
+    except (StepError, subprocess.CalledProcessError) as exc:
+        # The Gradle path needs the full toolchain (SDK/NDK + the CPython-Android
+        # prefix + a source checkout) — heavy, and often unavailable from a plain
+        # PyPI install. Rather than fail, fall back to the toolchain-free repackage
+        # (the `--fast` path): the user still gets a shippable APK. The trade-off
+        # is the shared `org.tempestroid.host` id (a repackage can't stamp a
+        # per-app id), so side-by-side install needs the toolchain.
+        reason = (
+            f"exit {exc.returncode}"
+            if isinstance(exc, subprocess.CalledProcessError)
+            else str(exc)
+        )
+        console.info(
+            f"Gradle build unavailable ({reason}) — falling back to the "
+            "toolchain-free repackage (`--fast`). The APK keeps the shared id "
+            f"`org.tempestroid.host` (not `{resolved_id}`); for a per-app id "
+            "prepare the toolchain (`tempest setup --install` + a source checkout)."
+        )
+        return _run_build_fast(app, output, verbose, branding)
     return 0
 
 
@@ -1003,18 +1018,16 @@ def _run_run(
     import shutil
     import subprocess
 
+    from tempestroid import __version__
     from tempestroid.cli.bundle import resolve_project
     from tempestroid.cli.console import Console, StepError
-    from tempestroid.cli.packaging import connected_devices
+    from tempestroid.cli.packaging import connected_devices, package_app_apk
     from tempestroid.cli.release_build import build_apk, derive_app_id, derive_app_name
 
     console = Console(verbose=verbose)
     project_name = resolve_project(app).root.name
     resolved_id = app_id or derive_app_id(project_name)
     resolved_name = app_name or derive_app_name(project_name)
-    # The activity class lives in the fixed namespace; the package is the per-app
-    # applicationId, so the launch component is <app_id>/<namespace>.MainActivity.
-    host_activity = f"{resolved_id}/org.tempestroid.host.MainActivity"
     try:
         adb = shutil.which("adb")
         with console.step("Checking for a connected device"):
@@ -1025,14 +1038,34 @@ def _run_run(
                 raise StepError("no ready device (connect one and run `adb devices`)")
             joined = ", ".join(devices)
             console.info(f"device: {joined}")
-        apk = build_apk(
-            app,
-            app_id=resolved_id,
-            app_name=resolved_name,
-            version_name=app_version,
-            version_code=version_code,
-            console=console,
-        )
+        # Build with the same Gradle-then-repackage fallback as `tempest build`:
+        # if the Gradle toolchain is unavailable, repackage the prebuilt host
+        # (shared id) so `run` still installs + launches something.
+        try:
+            apk = build_apk(
+                app,
+                app_id=resolved_id,
+                app_name=resolved_name,
+                version_name=app_version,
+                version_code=version_code,
+                console=console,
+            )
+        except (StepError, subprocess.CalledProcessError) as exc:
+            reason = (
+                f"exit {exc.returncode}"
+                if isinstance(exc, subprocess.CalledProcessError)
+                else str(exc)
+            )
+            console.info(
+                f"Gradle build unavailable ({reason}) — falling back to the "
+                "toolchain-free repackage. The APK keeps the shared id "
+                "`org.tempestroid.host`."
+            )
+            apk = package_app_apk(app, version=__version__, console=console)
+            resolved_id = "org.tempestroid.host"
+        # The activity class lives in the fixed namespace; the package is the
+        # per-app applicationId (or the shared host id after a fallback).
+        host_activity = f"{resolved_id}/org.tempestroid.host.MainActivity"
         with console.step(f"Installing {apk.name}"):
             console.run_command([adb, "install", "-r", str(apk)])
         with console.step(f"Launching {host_activity}"):

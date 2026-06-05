@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`tempest build` / `tempest run` auto-fall back to the toolchain-free
+  repackage when Gradle is unavailable.** The Gradle path needs the full
+  SDK/NDK + the CPython-Android toolchain (heavy, and often unstaged on a PyPI
+  install). Instead of failing, the default build now catches a Gradle/prep
+  failure and falls back to repackaging the prebuilt host (the `--fast` path) so
+  it still produces a shippable APK — with a clear warning that the APK keeps the
+  shared `org.tempestroid.host` id (a per-app id needs the toolchain). A genuinely
+  missing app file still errors. `--release` (AAB) and `--fast` are unchanged.
+
 ### Fixed
 
 - **`tempest build` / `tempest run` (Gradle) no longer fail "SDK location not

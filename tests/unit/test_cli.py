@@ -280,23 +280,39 @@ def test_prepare_sdk_env_overwrites_stale(
     assert os.environ["ANDROID_SDK_ROOT"] == str(sdk)
 
 
-def test_build_reports_gradle_failure(
+def test_build_falls_back_to_repackage_when_gradle_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    # When a prepare step fails (e.g. no JDK) build_apk raises StepError; the CLI
-    # reports it with exit 1 rather than crashing.
-    from tempestroid.cli import release_build
+    """`tempest build` falls back to the repackage when the Gradle toolchain fails.
+
+    The Gradle path needs the full SDK/NDK + CPython-Android toolchain, often
+    absent from a PyPI install. When `build_apk` raises (a prep `StepError` or a
+    Gradle `CalledProcessError`), the CLI must fall back to the toolchain-free
+    `package_app_apk` (repackage) and still produce an APK — not exit 1.
+    """
+    from pathlib import Path as _P
+
+    from tempestroid.cli import packaging, release_build
     from tempestroid.cli.console import StepError
 
     app = tmp_path / "app.py"
     app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
     monkeypatch.chdir(tmp_path)
 
-    def _fail(*_a: object, **_k: object) -> object:
+    def _gradle_fails(*_a: object, **_k: object) -> object:
         raise StepError("a JDK is required (test)")
 
-    monkeypatch.setattr(release_build, "build_apk", _fail)
-    assert main(["build", str(app)]) == 1
+    calls: dict[str, object] = {}
+
+    def fake_repackage(_app: object, **_kw: object) -> _P:
+        calls["repackaged"] = True
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", _gradle_fails)
+    monkeypatch.setattr(packaging, "package_app_apk", fake_repackage)
+    assert main(["build", str(app)]) == 0
+    assert calls.get("repackaged") is True
+    assert "falling back" in capsys.readouterr().out.lower()
 
 
 def test_deploy_reports_missing_device(
