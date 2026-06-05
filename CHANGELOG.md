@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-06-04
+
+### Added
+
+- **`tempest build --release` → store-ready signed AAB.** Builds the Play Store
+  format (Android App Bundle) via Gradle `bundleRelease`, stamped with
+  `--app-id` / `--app-version` / `--version-code` / `--keystore`. The CLI
+  **auto-prepares whatever is missing**: SDK + NDK, a source checkout (cloned at
+  the version tag when absent), the CPython toolchain, and a release keystore
+  (generated when not supplied — back it up). The Java/JNI package stays
+  `org.tempestroid.host`, so a custom `applicationId` doesn't break the bridge.
+  Verified producing a valid jar-signed AAB. The default (no `--release`) stays
+  the fast debug-APK repackage.
+
 ## [0.6.1] — 2026-06-04
 
 ### Changed
