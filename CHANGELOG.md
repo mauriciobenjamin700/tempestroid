@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-05
+
 ### Added
 
 - **App icon + boot splash branding for `tempest build`.** Every APK now ships a
@@ -340,7 +342,8 @@ runtime (Trilho B, phases B0–B6) is validated on a real arm64 device.
 - **Conformance suite** pinning the Qt and Compose `Style` translators with
   golden snapshots (phase D).
 
-[Unreleased]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.6.2...v0.7.0
 [0.2.0]: https://github.com/mauriciobenjamin700/tempestroid/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mauriciobenjamin700/tempestroid/releases/tag/v0.1.0

@@ -31,9 +31,11 @@ testes verdes). Acrescenta uma regra própria:
 
 | Fase | Escopo | Status | Feito quando |
 |---|---|---|---|
-| F1 | `tempest build` Gradle por-app: `applicationId` único → apps do time instalam lado a lado | 🚧 em voo | dois apps tempestroid distintos instalam e rodam simultâneos no mesmo device; default sem-Gradle preservado para quem só tem PyPI |
+| F1 | `tempest build` Gradle por-app: `applicationId` único → apps do time instalam lado a lado | ✅ done (v0.7.0, PR #41) | dois apps tempestroid distintos instalam e rodam simultâneos no mesmo device; `--fast` repackage preservado |
 | F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | 🅿️ adiada (futuro) — grupo no-config ✅ (clipboard/storage/database/secure_storage/system); resto parkeado | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
-| F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ⬜ planejado | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
+| F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ✅ done (v0.7.0, PR #43) | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
+| F-branding | Ícone + splash no `tempest build` + `tempest icon` (gera de uma imagem) | ✅ done (v0.8.0, PR #47) | ícone default + splash de assets cobrem o boot; `--icon/--splash/--splash-bg` + `tempest icon` device-verificados |
+| F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | ⬜ planejado | `tempest build --release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
 
 ---
 
@@ -218,6 +220,43 @@ sem copiar exemplo na mão. Reforça o contrato pythônico.
   (`tempest dev`) e **no device** (`tempest serve`) sem edição.
 - `tempest new x --template native` idem, com a chamada nativa funcionando (device).
 - Cada template tem teste verde provando o contrato; README/docs atualizados.
+
+---
+
+## F4 — Distribuição profissional (planejado)
+
+### Objetivo
+Sair de "APK pra amigos sideloarem" (debug-signed) para **distribuível de
+verdade**: APK release-assinado com keystore própria, ícone adaptativo, e a
+cobertura device fechada. Hoje (v0.8.0) já dá pra mandar um APK pros amigos
+(`tempest build` → debug-signed, id/ícone/splash próprios, instala por
+sideload); F4 cobre o salto para "profissional".
+
+### Sub-tarefas
+1. **APK release-signed standalone** — `tempest build --release-apk --keystore
+   minha.jks --app-id … --app-version …`: hoje só existe APK **debug-signed**
+   (`tempest build`) ou **AAB** de loja (`--release`); falta um **APK** assinado
+   com a keystore do publisher para distribuir **fora da Play** (site, loja
+   alternativa, link direto) com identidade real. Gradle `assembleRelease` +
+   signing config (reaproveitar `ensure_release_keystore`).
+2. **Ícone adaptativo** — `tempest icon --adaptive` gera as camadas
+   foreground/background + o `mipmap-anydpi-v26/ic_launcher.xml` (adaptive icon),
+   para o launcher aplicar a máscara (arredondado/squircle) como um app nativo.
+   Hoje o ícone é um PNG quadrado simples (sem máscara do launcher).
+3. **Cobertura device dos widgets** — matriz de quais widgets do Trilho E
+   renderizam no Compose vs. só no Qt; fechar os gaps prioritários.
+4. **Fechar a F2** (capacidades nativas restantes no device) — pré-requisito para
+   um app "profissional" que use câmera/geo/etc.
+5. **Trim de tamanho** (opcional) — investigar reduzir o ~58MB do CPython
+   embutido (stdlib pruning, compressão) para apps pequenos.
+
+### Feito quando
+- `tempest build --release-apk --keystore …` produz um `.apk` release-assinado
+  que instala num device e abre, assinado com a chave do publisher (verificável
+  por `apksigner verify`).
+- `tempest icon --adaptive` gera um adaptive icon que o launcher mascara.
+- A matriz de widgets/nativas device-verificada está publicada e verde nos itens
+  prioritários.
 
 ---
 
