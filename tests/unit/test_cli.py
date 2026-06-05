@@ -140,3 +140,53 @@ def test_spec_prints_json(capsys: pytest.CaptureFixture[str]):
     out = capsys.readouterr().out
     data = json.loads(out)
     assert "widgets" in data and "events" in data
+
+
+def test_build_release_dispatches_to_aab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest build --release` builds an AAB via build_aab, deriving an app-id."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "myapp"
+    app.mkdir()
+    (app / "pyproject.toml").write_text('[tool.tempest]\napp = "main.py"\n')
+    (app / "main.py").write_text(
+        "def make_state():\n    ...\ndef view(app):\n    ...\n"
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_build_aab(app_arg: object, config: object, **_kw: object) -> Path:
+        seen["app"] = app_arg
+        seen["app_id"] = config.app_id  # type: ignore[attr-defined]
+        return tmp_path / "out.aab"
+
+    monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
+    assert main(["build", str(app / "main.py"), "--release"]) == 0
+    # No --app-id → a derived placeholder from the project dir name.
+    assert seen["app_id"] == "com.example.myapp"
+
+
+def test_build_release_uses_given_app_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An explicit --app-id is passed straight through to the release config."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    captured: dict[str, object] = {}
+
+    def fake_build_aab(_app: object, config: object, **_kw: object) -> Path:
+        captured["app_id"] = config.app_id  # type: ignore[attr-defined]
+        captured["version"] = config.version_name  # type: ignore[attr-defined]
+        return tmp_path / "out.aab"
+
+    monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
+    rc = main(
+        ["build", str(app), "--release", "--app-id", "com.acme.todo",
+         "--app-version", "2.1.0"]
+    )
+    assert rc == 0
+    assert captured == {"app_id": "com.acme.todo", "version": "2.1.0"}

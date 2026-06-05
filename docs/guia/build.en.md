@@ -123,6 +123,33 @@ directly, no server. Debug-signed → installs like any debug build.
     from a PyPI install. Run `tempest setup` to check the environment
     (`tempest setup --install` installs the SDK + build-tools).
 
+## Publish to the Play Store (`--release` → AAB)
+
+The Play Store requires an **Android App Bundle** (`.aab`), release-signed, with
+your own `applicationId`. `tempest build --release` produces that via Gradle
+`bundleRelease` and **prepares whatever is missing** (SDK/NDK, source checkout,
+CPython toolchain, keystore):
+
+```bash
+tempest build main.py --release \
+  --app-id com.yourcompany.todo \
+  --app-version 1.0.0 \
+  --version-code 1 \
+  --keystore release.jks          # omit → generates ~/.tempestroid/release.jks
+# → dist/<project>-release.aab  (upload to the Play Console)
+```
+
+!!! warning "Keep the keystore"
+    The release keystore signs your app. **Losing it blocks future Play updates.**
+    Back up `--keystore` (or the generated `~/.tempestroid/release.jks`). Use your
+    **own** `--app-id` — the `com.example.*` placeholder won't publish.
+
+!!! info "`--release` needs the full toolchain"
+    Unlike the debug APK (repackage), the AAB is a from-source build: it needs the
+    SDK **+ NDK** + an `android-host` checkout + the staged CPython toolchain. The
+    CLI installs/clones/stages what's missing (the CPython staging is heavy:
+    downloads + native wheel build).
+
 ## Environment setup
 
 !!! tip "Let `tempest setup` configure it for you"

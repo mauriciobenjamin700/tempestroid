@@ -195,8 +195,32 @@ def build_cmd(
     output: Annotated[
         str | None,
         typer.Option(
-            "--output", "-o", help="Output APK path (default: dist/<project>.apk)."
+            "--output", "-o", help="Output path (default: dist/<project>.apk|.aab)."
         ),
+    ] = None,
+    release: Annotated[
+        bool,
+        typer.Option(
+            "--release",
+            help="Build a store-ready, release-signed AAB (Gradle); prepares the "
+            "environment (SDK/NDK, source, toolchain, keystore) if missing.",
+        ),
+    ] = False,
+    app_id: Annotated[
+        str | None,
+        typer.Option("--app-id", help="Release applicationId (e.g. com.acme.todo)."),
+    ] = None,
+    app_version: Annotated[
+        str,
+        typer.Option("--app-version", help="Release versionName (default 1.0.0)."),
+    ] = "1.0.0",
+    version_code: Annotated[
+        int,
+        typer.Option("--version-code", help="Release versionCode (default 1)."),
+    ] = 1,
+    keystore: Annotated[
+        str | None,
+        typer.Option("--keystore", help="Release keystore (default: auto-generated)."),
     ] = None,
     verbose: Annotated[
         bool,
@@ -207,16 +231,23 @@ def build_cmd(
         ),
     ] = False,
 ) -> None:
-    """Build a standalone, shippable APK with the whole project baked in.
+    """Build a shippable artifact with the whole project baked in.
 
-    Bundles the app's entire project tree (multi-file imports included) and
-    repackages the prebuilt host APK with it — re-aligned + re-signed via the
-    Android SDK's `zipalign`/`apksigner`. **No Gradle, NDK, or `android-host`
-    checkout** — just the SDK build-tools (run `tempest setup` to get them). The
-    result runs the app with no dev server and can be handed to anyone. For a fast
-    run on your own connected device, use `tempest deploy`.
+    Default: a self-contained **APK** by repackaging the prebuilt host
+    (`zipalign`/`apksigner`) — no Gradle/NDK/`android-host`, just the SDK
+    build-tools. Hand it to anyone; runs with no dev server.
+
+    With `--release`: a store-ready, release-signed **AAB** (Play Store format)
+    via Gradle `bundleRelease`, stamped with `--app-id`/`--app-version`. The CLI
+    **prepares whatever is missing** (SDK/NDK, source checkout, CPython toolchain,
+    release keystore). For a fast run on your own device, use `tempest deploy`.
     """
     resolved = _resolve_app_or_exit(app_path)
+    if release:
+        raise typer.Exit(
+            _run_release(resolved, app_id, app_version, version_code, keystore,
+                         output, verbose)
+        )
     raise typer.Exit(_run_build(resolved, output, verbose))
 
 
@@ -557,6 +588,66 @@ def _run_build(app: str, output: str | None, verbose: bool) -> int:
         return 1
     except subprocess.CalledProcessError as exc:
         console.fail(f"apk packaging failed (exit {exc.returncode}).")
+        return exc.returncode or 1
+    return 0
+
+
+def _run_release(
+    app: str,
+    app_id: str | None,
+    app_version: str,
+    version_code: int,
+    keystore: str | None,
+    output: str | None,
+    verbose: bool,
+) -> int:
+    """Build a store-ready release AAB, preparing the environment, reporting outcome.
+
+    Args:
+        app: Path to the app's entry file.
+        app_id: The store applicationId, or ``None`` to derive one (with a warning).
+        app_version: The release versionName.
+        version_code: The release versionCode.
+        keystore: Path to a release keystore, or ``None`` to auto-generate.
+        output: Output ``.aab`` path, or ``None`` for the default.
+        verbose: Echo raw commands and stream full subprocess output.
+
+    Returns:
+        The process exit code.
+    """
+    import subprocess
+    from pathlib import Path
+
+    from tempestroid.cli.bundle import resolve_project
+    from tempestroid.cli.console import Console, StepError
+    from tempestroid.cli.release_build import ReleaseConfig, build_aab
+
+    console = Console(verbose=verbose)
+    resolved_id = app_id
+    if resolved_id is None:
+        # Derive a placeholder id from the project name; a real store upload
+        # needs the publisher's own id, so warn loudly.
+        name = resolve_project(app).root.name.replace("-", "").replace("_", "")
+        resolved_id = f"com.example.{name or 'app'}"
+        console.info(
+            f"no --app-id given; using placeholder {resolved_id!r}. Set --app-id "
+            "to your own (e.g. com.yourcompany.app) before publishing."
+        )
+    config = ReleaseConfig(
+        app_id=resolved_id,
+        version_name=app_version,
+        version_code=version_code,
+        keystore=Path(keystore) if keystore else None,
+    )
+    try:
+        build_aab(app, config, console=console, output=Path(output) if output else None)
+    except StepError:
+        return 1
+    except FileNotFoundError as exc:
+        console.fail(f"release build failed: {exc}")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        console.fail(f"gradle bundleRelease failed (exit {exc.returncode}).")
         return exc.returncode or 1
     return 0
 

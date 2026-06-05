@@ -46,6 +46,13 @@ from tempestroid.cli.packaging import (
     stage_app_source,
 )
 from tempestroid.cli.project import AppResolutionError, resolve_app
+from tempestroid.cli.release_build import (
+    ReleaseConfig,
+    build_aab,
+    ensure_release_keystore,
+    ensure_source_checkout,
+    ensure_toolchain,
+)
 from tempestroid.cli.scaffold import (
     DEFAULT_APP_TEMPLATE,
     ScaffoldResult,
@@ -92,6 +99,11 @@ __all__ = [
     "inject_bundle",
     "repackage_host_apk",
     "package_app_apk",
+    "ReleaseConfig",
+    "build_aab",
+    "ensure_release_keystore",
+    "ensure_source_checkout",
+    "ensure_toolchain",
     "adb_reverse",
     "build_apk",
     "bundled_host_apk",

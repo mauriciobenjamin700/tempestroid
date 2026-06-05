@@ -35,11 +35,18 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "org.tempestroid.host"
+        // applicationId / version are overridable so `tempest build --release`
+        // can stamp the user's own store identity (the Java/JNI package stays
+        // `org.tempestroid.host` via `namespace` above — applicationId is
+        // independent of it, so the JNI symbol names are unaffected).
+        applicationId =
+            (project.findProperty("tempest.applicationId") ?: "org.tempestroid.host").toString()
         minSdk = 24          // CPython 3.14 Android minimum (API 24)
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode =
+            (project.findProperty("tempest.versionCode") ?: "1").toString().toInt()
+        versionName =
+            (project.findProperty("tempest.versionName") ?: "0.0.1").toString()
         ndk { abiFilters += abi }
         externalNativeBuild {
             cmake {
@@ -75,6 +82,30 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+
+    // Release signing for the store AAB (`tempest build --release`). The keystore
+    // is passed in via gradle properties; when absent, the release build stays
+    // unsigned (the CLI generates/uses a keystore and supplies these).
+    val keystorePath = project.findProperty("tempest.keystore")?.toString()
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = project.findProperty("tempest.storePassword")?.toString()
+                keyAlias = project.findProperty("tempest.keyAlias")?.toString()
+                keyPassword = project.findProperty("tempest.keyPassword")?.toString()
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false  // R8 would strip Python-reflected classes
+            if (keystorePath != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
 
     buildFeatures {
         compose = true
