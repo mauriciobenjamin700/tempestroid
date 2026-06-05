@@ -17,7 +17,19 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-__all__ = ["scaffold", "DEFAULT_APP_TEMPLATE", "ScaffoldResult"]
+from tempestroid.cli.templates import TEMPLATES, py_safe, render_files
+
+__all__ = ["scaffold", "DEFAULT_APP_TEMPLATE", "ScaffoldResult", "template_names"]
+
+
+def template_names() -> list[str]:
+    """List the available ``tempest new`` template names.
+
+    Returns:
+        ``["default", ...]`` — the built-in single-file template plus every
+        multi-file template in :data:`tempestroid.cli.templates.TEMPLATES`.
+    """
+    return ["default", *TEMPLATES.keys()]
 
 DEFAULT_APP_TEMPLATE = """\
 \"\"\"{name} — a tempestroid app.
@@ -232,27 +244,42 @@ def _project_slug(name: str) -> str:
     return slug or "app"
 
 
-def scaffold(name: str, *, parent: str | Path = ".") -> ScaffoldResult:
-    """Create a fully configured app project from the default template.
+def scaffold(
+    name: str, *, parent: str | Path = ".", template: str = "default"
+) -> ScaffoldResult:
+    """Create a fully configured app project from a template.
 
     ``name == "."`` scaffolds in place into ``parent`` (the current directory by
     default), taking the project name from the directory; any other ``name``
     creates a new subdirectory under ``parent``.
+
+    All templates share the common project files (``pyproject.toml`` with the
+    ``[tool.tempest] app`` pointer, ``README.md``, ``.gitignore``); the chosen
+    template supplies the app modules. ``default`` writes a single ``app.py``;
+    the multi-file templates (see :data:`tempestroid.cli.templates.TEMPLATES`)
+    write a ``state.py`` + ``screens/`` + ``components/`` tree.
 
     Args:
         name: The project/directory name, or ``"."`` to scaffold in place. A
             named project must start with a letter and contain only letters,
             digits, ``-`` or ``_``.
         parent: Directory to create the project under (default: cwd).
+        template: The template name (``"default"`` or a key of
+            :data:`tempestroid.cli.templates.TEMPLATES`).
 
     Returns:
         A :class:`ScaffoldResult` describing what was written.
 
     Raises:
-        ValueError: If a named ``name`` is not a valid project/identifier name.
+        ValueError: If a named ``name`` is not a valid project/identifier name,
+            or ``template`` is unknown.
         FileExistsError: If the target directory exists (named) or already holds
             an ``app.py`` (in place).
     """
+    if template != "default" and template not in TEMPLATES:
+        known = ", ".join(template_names())
+        raise ValueError(f"unknown template {template!r}; choose one of: {known}")
+
     in_place = name in (".", "./")
     if in_place:
         root = Path(parent).resolve()
@@ -273,9 +300,17 @@ def scaffold(name: str, *, parent: str | Path = ".") -> ScaffoldResult:
         root.mkdir(parents=True)
 
     project = _project_slug(display)
-    (root / "app.py").write_text(
-        DEFAULT_APP_TEMPLATE.format(name=display), encoding="utf-8"
-    )
+    if template == "default":
+        # Escape the name for the generated .py (docstring + f-string + title);
+        # an in-place scaffold's directory name is otherwise unconstrained.
+        (root / "app.py").write_text(
+            DEFAULT_APP_TEMPLATE.format(name=py_safe(display)), encoding="utf-8"
+        )
+    else:
+        for rel_path, content in render_files(TEMPLATES[template], display).items():
+            target = root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
     (root / "pyproject.toml").write_text(
         PYPROJECT_TEMPLATE.format(project=project), encoding="utf-8"
     )

@@ -178,9 +178,19 @@ def new_cmd(
             help="Parent directory for a named project (default: current dir).",
         ),
     ] = ".",
+    template: Annotated[
+        str,
+        typer.Option(
+            "--template",
+            "-t",
+            help="Project template — default (single app.py), multi (state + "
+            "screens/ + components/ + Navigator), or native (multi plus a "
+            "screen calling native capabilities).",
+        ),
+    ] = "default",
 ) -> None:
     """Scaffold a fully configured tempestroid app."""
-    raise typer.Exit(_run_new(name, into))
+    raise typer.Exit(_run_new(name, into, template))
 
 
 @app.command("build")
@@ -581,12 +591,13 @@ def _run_install(source: str | None, *, launch: bool, verbose: bool) -> int:
         return exc.returncode or 1
 
 
-def _run_new(name: str, into: str) -> int:
+def _run_new(name: str, into: str, template: str) -> int:
     """Scaffold a fully configured app project, reporting the outcome.
 
     Args:
         name: The project name, or ``"."`` to scaffold in the current directory.
         into: Parent directory to create a named project under.
+        template: The project template (``"default"``, ``"multi"``, ``"native"``).
 
     Returns:
         The process exit code.
@@ -594,7 +605,7 @@ def _run_new(name: str, into: str) -> int:
     from tempestroid.cli.scaffold import scaffold
 
     try:
-        result = scaffold(name, parent=into)
+        result = scaffold(name, parent=into, template=template)
     except (ValueError, FileExistsError) as exc:
         print(f"cannot scaffold: {exc}")
         return 1
