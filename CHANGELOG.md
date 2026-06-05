@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`examples/native_caps`** — a native-capabilities gallery exercising the
+  no-extra-config group on a device: `clipboard` (`set_text`/`get_text`),
+  `storage` (`write_file`/`read_file`/`list_files`), `database` (SQLite
+  `execute`), `secure_storage` (`set_secret`/`get_secret`) and `system`
+  (`set_status_bar`/`keep_awake`). Each call returns a typed result (or a guarded
+  `(device only)` / `NativeError`). Device-verified (Trilho F / F2): all five
+  round-trip on a real device with their typed results.
+
 ## [0.7.0] — 2026-06-05
 
 ### Added

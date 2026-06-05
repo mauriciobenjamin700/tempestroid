@@ -32,7 +32,7 @@ testes verdes). Acrescenta uma regra própria:
 | Fase | Escopo | Status | Feito quando |
 |---|---|---|---|
 | F1 | `tempest build` Gradle por-app: `applicationId` único → apps do time instalam lado a lado | 🚧 em voo | dois apps tempestroid distintos instalam e rodam simultâneos no mesmo device; default sem-Gradle preservado para quem só tem PyPI |
-| F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | ⬜ planejado | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
+| F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | 🚧 em andamento (grupo no-config ✅: clipboard/storage/database/secure_storage/system) | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
 | F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ⬜ planejado | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
 
 ---
