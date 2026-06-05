@@ -21,6 +21,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prebuilt host (SDK build-tools only — no NDK/source/toolchain), for fast
   single-app iteration from a PyPI install. Keeps the shared
   `org.tempestroid.host` id (single app; not for side-by-side shipping).
+- **`tempest new --template`/`-t`.** Scaffold a multi-file project, not just a
+  single `app.py`. `multi` writes a pythonic layout (a typed `state.py`, one
+  `view` per screen under `screens/`, a reusable `Card` `Component` under
+  `components/`, and an `app.py` routing with `Navigator`/`Route`); `native` adds
+  a screen calling native capabilities (`notify` fire-and-forget +
+  `await get_position()` guarded by `on_device()`/`NativeError`). Every generated
+  module stays renderer-agnostic (Qt imported lazily), so the project runs in the
+  Qt simulator and on the device unchanged. `default` (single file) is unchanged.
 
 ### Fixed
 

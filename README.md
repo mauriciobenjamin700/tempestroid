@@ -173,6 +173,20 @@ current directory. The generated `pyproject.toml` carries `[tool.tempest] app =
 "app.py"`, so **`dev` / `serve` / `build` / `run` take no app argument inside a
 project** — pass an explicit path (`tempest build path/to/app.py`) only to override.
 
+Pick a starting structure with `--template`/`-t`:
+
+- `default` (the default) — a single `app.py`, great for a quick demo.
+- `multi` — a pythonic multi-file layout: a typed `state.py`, one `view` per
+  screen under `screens/`, a reusable `Card` `Component` under `components/`, and
+  an `app.py` that routes with `Navigator` / `Route` (push/pop + Android back).
+- `native` — the `multi` layout plus a screen that calls native capabilities:
+  `notify` (fire-and-forget) and `await get_position()` (request/response,
+  guarded by `on_device()` + `try/except NativeError`).
+
+```bash
+uv run tempest new myapp -t multi    # multi-file project for a real app
+```
+
 `tempest dev` cockpit commands: `r` (hot reload, state preserved), `R` (hot
 restart, clean state), `s` (raise window), `q` (quit). Saving the file
 hot-reloads; a reload incompatible with the live state falls back to a clean
@@ -259,7 +273,7 @@ surfaced and the happy path stays quiet.
 
 | Command | Status | Notes |
 |---|---|---|
-| `tempest new [name]` | ✅ | Scaffold a fully configured project (`.` = current dir); writes `pyproject.toml` + `app.py` + `.gitignore` |
+| `tempest new [name]` | ✅ | Scaffold a fully configured project (`.` = current dir); writes `pyproject.toml` + `app.py` + `.gitignore`. `--template`/`-t`: `default` (single file), `multi` (state + screens/ + components/ + Navigator), `native` (multi + native-capabilities screen) |
 | `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `-v` for tracebacks |
 | `tempest deploy [app]` | ✅ | Offline push of the whole project to a device (no SDK/NDK): install the bundled host (if needed) + push bundle + launch; `--force-install`, `-v` |
 | `tempest serve [app]` | ✅ | LAN code-push of the whole project + log relay + hot reload; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |

@@ -166,6 +166,86 @@ def test_build_fast_uses_repackage_not_gradle(
     assert calls.get("repackaged") is True
 
 
+def _assert_scaffold_loads(root: Path) -> None:
+    """Load a scaffolded project via the real loader and mount it once.
+
+    Proves the generated tree is importable (renderer-agnostic — no Qt import at
+    module top), honors the ``make_state`` + ``view`` contract, and renders to a
+    node tree through a real ``App`` — exactly what the device/dev loader does.
+    """
+    import sys
+
+    from tempestroid.cli.app_loader import spec_from_project
+    from tempestroid.core.state import App
+
+    spec = spec_from_project(root, "app.py")
+    try:
+        app: App[object] = App(
+            spec.make_state(), spec.view, apply_patches=lambda _p: None
+        )
+        scene = app.start()
+        assert scene.root is not None
+    finally:
+        # Drop the project's top-level modules so a second scaffold in the same
+        # test session re-imports its own copies (root is added to sys.path).
+        for mod in (
+            "app", "state", "screens", "components",
+            "screens.home", "screens.detail", "screens.native",
+            "components.card",
+        ):
+            sys.modules.pop(mod, None)
+
+
+def test_new_multi_template_scaffolds(tmp_path: Path):
+    """`tempest new -t multi` writes a loadable multi-file project."""
+    assert main(["new", "demo", "--into", str(tmp_path), "-t", "multi"]) == 0
+    root = tmp_path / "demo"
+    assert (root / "state.py").is_file()
+    assert (root / "screens" / "home.py").is_file()
+    assert (root / "screens" / "detail.py").is_file()
+    assert (root / "components" / "card.py").is_file()
+    _assert_scaffold_loads(root)
+
+
+def test_new_native_template_scaffolds(tmp_path: Path):
+    """`tempest new -t native` adds a native-capabilities screen and loads."""
+    assert main(["new", "demo", "--into", str(tmp_path), "-t", "native"]) == 0
+    root = tmp_path / "demo"
+    assert (root / "screens" / "native.py").is_file()
+    native_src = (root / "screens" / "native.py").read_text(encoding="utf-8")
+    assert "get_position" in native_src and "NativeError" in native_src
+    _assert_scaffold_loads(root)
+
+
+def test_new_rejects_unknown_template(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """An unknown --template fails gracefully (exit 1) listing the valid names."""
+    assert main(["new", "demo", "--into", str(tmp_path), "-t", "bogus"]) == 1
+    assert "unknown template" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("template", ["default", "multi", "native"])
+def test_new_in_place_name_with_quote_stays_valid_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, template: str
+):
+    """An in-place scaffold whose dir name has a quote/backslash still loads.
+
+    Regression: the project name is interpolated into the generated ``.py``
+    files; an in-place scaffold takes the (unvalidated) directory name, so a
+    name with a double-quote or backslash must be escaped or the generated code
+    is invalid Python. Every template's `app.py` must still compile.
+    """
+    # Build the name from chars so the test source holds no literal with a
+    # quote/backslash (which would trip the quote conventions either way).
+    weird = tmp_path / f"we{chr(34)}ird{chr(92)}app"
+    weird.mkdir()
+    monkeypatch.chdir(weird)
+    assert main(["new", ".", "-t", template]) == 0
+    # The generated entry compiles (escaping kept the literals valid).
+    compile((weird / "app.py").read_text(encoding="utf-8"), "app.py", "exec")
+
+
 def test_build_reports_gradle_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
