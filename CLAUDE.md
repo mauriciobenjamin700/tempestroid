@@ -423,11 +423,21 @@ Project skills that guard framework health — use them, don't reinvent the chec
   the three-matched-layers invariant (IR + Qt + Compose + conformance), then
   chains `framework-guard` and points at `dual-verify`. Use to start or close any
   E0–E9 sub-task.
+- **`git-worktree`** — `bash .claude/skills/git-worktree/worktree.sh
+  new|list|rm|prune …`. Creates and manages an **isolated git worktree per
+  parallel task** so concurrent agents never share one working tree (a shared
+  tree lets one switch `HEAD` or leave uncommitted files mid-run → commits land
+  on the wrong branch, unrelated changes leak into the PR — this has bitten the
+  repo). `new <branch> [base]` fetches origin and adds
+  `../<repo>-worktrees/<branch>` off `origin/main` (or a given base); work,
+  commit + open the PR from there, then `rm <branch>` when merged. Use **before**
+  any work that may run alongside another agent, or to recover after a
+  shared-tree mishap. See the **Git** section's "one worktree per agent/task".
 
 Run `framework-guard` + `docs-sync-check` before every commit; `phase-closer`
 (A–D) or `parity-phase` (Trilho E) before closing a phase; `android-doctor`
 before any Android build and `dual-verify` before calling a framework-surface
-change done.
+change done; `git-worktree` to isolate any task that may run in parallel.
 
 ## Workflow
 
@@ -464,8 +474,11 @@ change done.
     and whether the device half was exercised (and if not, say so explicitly).
     The reviewer and the owner both read this.
   - **Branches + Conventional Commits always.** Work on a `feat/`/`fix/`/`ref/`
-    branch (a `git worktree` off a clean base when the tree is shared). Branches
-    keep history clean and let the owner bisect QA feedback.
+    branch (a `git worktree` off a clean base when the tree is shared — use the
+    **`git-worktree`** skill: `worktree.sh new <branch>`). Branches keep history
+    clean and let the owner bisect QA feedback. **Whenever work may run alongside
+    another agent in this repo, take a worktree first** — a shared tree has let a
+    parallel task switch `HEAD` and reset tracked files mid-run.
   - Before starting, check `origin/main` + open branches so you don't redo landed
     or in-flight work.
 
