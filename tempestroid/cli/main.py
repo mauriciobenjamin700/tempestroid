@@ -239,11 +239,21 @@ def icon_cmd(
 
 @app.command("build")
 def build_cmd(
-    app_path: Annotated[
-        str | None,
+    target: Annotated[
+        str,
         typer.Argument(
-            metavar="[APP]",
-            help="Path to the app file. Omitted → read [tool.tempest] app.",
+            metavar="[TARGET]",
+            help="What to build: apk (default — a debug, per-app APK to share / "
+            "sideload) or prd (a store-ready release AAB). A path to an app file "
+            "is also accepted (builds an apk).",
+        ),
+    ] = "apk",
+    app: Annotated[
+        str | None,
+        typer.Option(
+            "--app",
+            "-a",
+            help="App file to build. Omitted → read [tool.tempest] app.",
         ),
     ] = None,
     output: Annotated[
@@ -252,64 +262,51 @@ def build_cmd(
             "--output", "-o", help="Output path (default: dist/<project>.apk|.aab)."
         ),
     ] = None,
-    release: Annotated[
-        bool,
-        typer.Option(
-            "--release",
-            help="Build a store-ready, release-signed AAB (Gradle); prepares the "
-            "environment (SDK/NDK, source, toolchain, keystore) if missing.",
-        ),
-    ] = False,
     app_id: Annotated[
         str | None,
         typer.Option(
-            "--app-id",
-            help="applicationId (e.g. com.acme.todo). Each app needs its own so "
-            "two tempestroid APKs install side by side; derived from the project "
-            "name when omitted.",
+            "--app-id", help="applicationId override (else [tool.tempest] id)."
         ),
     ] = None,
     app_name: Annotated[
         str | None,
         typer.Option(
-            "--app-name",
-            help="Launcher label (the name under the icon); derived from the "
-            "project name when omitted.",
+            "--app-name", help="Launcher label override (else [tool.tempest] name)."
         ),
     ] = None,
     app_version: Annotated[
-        str,
-        typer.Option("--app-version", help="versionName (default 1.0.0)."),
-    ] = "1.0.0",
+        str | None,
+        typer.Option(
+            "--app-version", help="versionName override (else config / 1.0.0)."
+        ),
+    ] = None,
     version_code: Annotated[
-        int,
-        typer.Option("--version-code", help="versionCode (default 1)."),
-    ] = 1,
+        int | None,
+        typer.Option("--version-code", help="versionCode override (else 1)."),
+    ] = None,
     keystore: Annotated[
         str | None,
-        typer.Option("--keystore", help="Release keystore (default: auto-generated)."),
+        typer.Option(
+            "--keystore", help="Release keystore (prd; default: auto-generated)."
+        ),
     ] = None,
     icon: Annotated[
         str | None,
         typer.Option(
-            "--icon",
-            help="Launcher-icon PNG. Gradle builds only — the launcher icon is a "
-            "compiled resource, so `--fast` keeps the default icon.",
+            "--icon", help="Launcher-icon PNG override (else [tool.tempest] icon)."
         ),
     ] = None,
     splash: Annotated[
         str | None,
         typer.Option(
-            "--splash",
-            help="Boot-splash PNG shown while the interpreter starts (covers the "
-            "CPython boot). Works on every build path.",
+            "--splash", help="Boot-splash PNG override (else [tool.tempest] splash)."
         ),
     ] = None,
     splash_bg: Annotated[
         str | None,
         typer.Option(
             "--splash-bg",
-            help="Boot-splash background colour as #rrggbb (default #0b0f14).",
+            help="Splash bg #rrggbb override (else config / #0b0f14).",
         ),
     ] = None,
     fast: Annotated[
@@ -317,64 +314,81 @@ def build_cmd(
         typer.Option(
             "--fast",
             "-f",
-            help="Skip Gradle: repackage the prebuilt host (no SDK/NDK) into a "
-            "shippable APK. Fast, but every app keeps the shared id "
-            "`org.tempestroid.host`, so apps overwrite each other on a device — "
-            "use it to iterate on one app, not to ship several side by side.",
+            help="Advanced: skip Gradle, repackage the prebuilt host (no SDK at "
+            "all). Keeps the shared id `org.tempestroid.host` (one app per device).",
+        ),
+    ] = False,
+    from_source: Annotated[
+        bool,
+        typer.Option(
+            "--from-source",
+            help="Advanced: stage the full CPython toolchain from source instead "
+            "of reusing the prebuilt host natives (slow; needs the NDK).",
         ),
     ] = False,
     verbose: Annotated[
         bool,
-        typer.Option(
-            "--verbose",
-            "-v",
-            help="Echo raw commands and stream the full tool output.",
-        ),
+        typer.Option("--verbose", "-v", help="Echo raw commands + full output."),
     ] = False,
 ) -> None:
-    """Build a shippable artifact with the whole project baked in.
+    """Build a shippable APK (or a store AAB) with the whole project baked in.
 
-    Default: a self-contained, debug-signed **APK** via Gradle `assembleDebug`,
-    stamped with its own `--app-id` (derived from the project name when omitted)
-    so two tempestroid apps install side by side instead of overwriting each
-    other. Hand it to anyone; runs with no dev server.
+    `tempest build` / `tempest build apk` → a debug-signed **APK** with the
+    project's **own applicationId** (so any number of tempestroid apps install
+    side by side, never overwriting each other), reusing the prebuilt host
+    natives — needs only a JDK + the Android SDK (no NDK, no CPython toolchain).
+    Identity + branding come from `[tool.tempest]` in pyproject.toml
+    (`id` / `name` / `icon` / `splash` / `splash_bg` / `version`), so the command
+    stays short; flags override per build.
 
-    With `--release`: a store-ready, release-signed **AAB** (Play Store format)
-    via Gradle `bundleRelease`, stamped with `--app-id`/`--app-version`.
+    `tempest build prd` → a store-ready, release-signed **AAB** for the Play
+    Store (`--keystore`, else an auto-generated one).
 
-    With `--fast`: skip Gradle and repackage the prebuilt host APK (just the SDK
-    build-tools, no NDK/source/toolchain). Much faster, but the APK keeps the
-    shared `org.tempestroid.host` id — good for iterating on a single app, not
-    for shipping several side by side. `tempest deploy` covers the same
-    toolchain-free path when you only need it on your own connected device.
-
-    The Gradle paths **prepare whatever is missing** (SDK/NDK, source checkout,
-    CPython toolchain, release keystore) on first run.
+    Advanced: `--fast` repackages the prebuilt host with no SDK at all (but a
+    shared id — one app per device); `--from-source` stages the full CPython
+    toolchain instead of reusing the prebuilt natives.
     """
-    resolved = _resolve_app_or_exit(app_path)
     from tempestroid.cli.branding import load_branding
+    from tempestroid.cli.project import read_config
 
+    # The positional is the build target; a path slipped there is treated as the
+    # app file (so `tempest build app.py` still works).
+    target_norm = target.lower()
+    app_arg = app
+    if app_arg is None and target_norm not in {"apk", "prd", "aab", "release"}:
+        app_arg, target_norm = target, "apk"
+    resolved = _resolve_app_or_exit(app_arg)
+
+    # `[tool.tempest]` provides the defaults; explicit flags override.
+    cfg = read_config(resolved)
+    eff_id = app_id or cfg.app_id
+    eff_name = app_name or cfg.app_name
+    eff_version = app_version or cfg.version or "1.0.0"
+    eff_code = version_code if version_code is not None else 1
     try:
-        branding = load_branding(icon, splash, splash_bg)
+        branding = load_branding(
+            icon or cfg.icon, splash or cfg.splash, splash_bg or cfg.splash_bg
+        )
     except ValueError as exc:
         print(f"cannot build: {exc}")
         raise typer.Exit(1) from exc
+
+    is_release = target_norm in {"prd", "aab", "release"}
     if fast and branding.icon is not None:
         print(
             "warning: --icon is ignored with --fast (the launcher icon is a "
-            "compiled resource); the APK keeps the default icon. Use the Gradle "
-            "build (drop --fast) to set a custom icon."
+            "compiled resource); the APK keeps the default icon."
         )
-    if release:
+    if is_release:
         raise typer.Exit(
-            _run_release(resolved, app_id, app_name, app_version, version_code,
-                         keystore, output, verbose, branding)
+            _run_release(resolved, eff_id, eff_name, eff_version, eff_code,
+                         keystore, output, verbose, branding, from_source)
         )
     if fast:
         raise typer.Exit(_run_build_fast(resolved, output, verbose, branding))
     raise typer.Exit(
-        _run_build(resolved, app_id, app_name, app_version, version_code, output,
-                   verbose, branding)
+        _run_build(resolved, eff_id, eff_name, eff_version, eff_code, output,
+                   verbose, branding, from_source)
     )
 
 
@@ -804,13 +818,14 @@ def _run_build(
     output: str | None,
     verbose: bool,
     branding: Branding,
+    from_source: bool = False,
 ) -> int:
-    """Build a shippable, debug-signed APK via Gradle, reporting the outcome.
+    """Build a shippable, debug-signed per-app APK via Gradle, reporting outcome.
 
-    Bundles the whole project into the ``android-host`` Gradle project and runs
-    ``assembleDebug`` stamping a unique ``applicationId`` (derived from the
-    project name when ``app_id`` is ``None``) so two tempestroid APKs install
-    side by side. Prepares the env (SDK/NDK, source, toolchain) as needed. See
+    Runs ``assembleDebug`` stamping a unique ``applicationId`` (derived from the
+    project name when ``app_id`` is ``None``) so any number of tempestroid APKs
+    install side by side. Reuses the prebuilt host natives by default (JDK + SDK
+    only); ``from_source`` stages the full CPython toolchain instead. See
     :func:`tempestroid.cli.release_build.build_apk`.
 
     Args:
@@ -822,6 +837,8 @@ def _run_build(
         output: Output APK path, or ``None`` for ``dist/<project>.apk``.
         verbose: Echo raw commands and stream full subprocess output.
         branding: Per-app branding (icon + splash) applied to the build.
+        from_source: Stage the CPython toolchain from source instead of reusing
+            the prebuilt host natives.
 
     Returns:
         The process exit code.
@@ -847,6 +864,7 @@ def _run_build(
             console=console,
             output=Path(output) if output else None,
             branding=branding,
+            prebuilt=not from_source,
         )
     except FileNotFoundError as exc:
         # A genuinely missing app file — not a toolchain gap. Don't fall back.
@@ -884,6 +902,7 @@ def _run_release(
     output: str | None,
     verbose: bool,
     branding: Branding,
+    from_source: bool = False,
 ) -> int:
     """Build a store-ready release AAB, preparing the environment, reporting outcome.
 
@@ -897,6 +916,8 @@ def _run_release(
         output: Output ``.aab`` path, or ``None`` for the default.
         verbose: Echo raw commands and stream full subprocess output.
         branding: Per-app branding (icon + splash) applied to the build.
+        from_source: Stage the CPython toolchain from source instead of reusing
+            the prebuilt host natives.
 
     Returns:
         The process exit code.
@@ -938,6 +959,7 @@ def _run_release(
             console=console,
             output=Path(output) if output else None,
             branding=branding,
+            prebuilt=not from_source,
         )
     except StepError:
         return 1

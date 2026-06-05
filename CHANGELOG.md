@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`tempest build apk` / `tempest build prd` — short, config-driven, per-app
+  builds.** `tempest build apk` (the default) produces a debug APK with the
+  project's **own `applicationId`** (so any number of tempestroid apps install
+  side by side, never overwriting), reusing the **prebuilt host natives** — it
+  needs only a **JDK + the Android SDK** (no NDK, no CPython toolchain; the heavy
+  toolchain staging that broke from-source builds on a PyPI install is gone).
+  Identity + branding are read from **`[tool.tempest]`** in pyproject.toml
+  (`id` / `name` / `icon` / `splash` / `splash_bg` / `version`), so the command
+  stays short — no flag soup; flags still override. `tempest build prd` is the
+  store-ready release AAB. Advanced flags: `--fast` (repackage, no SDK, shared
+  id), `--from-source` (stage the CPython toolchain). Gradle `build.gradle.kts`
+  gained a `-Ptempest.prebuiltHost` mode that reuses the prebuilt APK's
+  `libpython`/`libtempest_host`/stdlib (no CMake/NDK), so AGP still stamps the
+  per-app id + all provider authorities correctly (no install collisions).
+
 ### Changed
 
 - **`tempest build` / `tempest run` auto-fall back to the toolchain-free

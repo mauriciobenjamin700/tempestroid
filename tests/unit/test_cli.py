@@ -347,10 +347,45 @@ def test_spec_prints_json(capsys: pytest.CaptureFixture[str]):
     assert "widgets" in data and "events" in data
 
 
+def test_build_apk_reads_id_from_tool_tempest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest build apk` reads the applicationId from [tool.tempest] (no flag).
+
+    Config-driven: `id`/`name` in pyproject drive a short `tempest build apk`,
+    so each project ships its own id (N apps side by side) without a flag soup.
+    """
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "todo"
+    app.mkdir()
+    (app / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "app.py"\nid = "com.acme.todo"\nname = "Todo"\n'
+    )
+    (app / "app.py").write_text(
+        "def make_state():\n    ...\ndef view(app):\n    ...\n"
+    )
+    monkeypatch.chdir(app)
+
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(
+        _app: object, *, app_id: str, app_name: str, **_kw: object
+    ) -> Path:
+        seen["app_id"] = app_id
+        seen["app_name"] = app_name
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", "apk"]) == 0
+    assert seen["app_id"] == "com.acme.todo"
+    assert seen["app_name"] == "Todo"
+
+
 def test_build_release_dispatches_to_aab(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """`tempest build --release` builds an AAB via build_aab, deriving an app-id."""
+    """`tempest build prd` builds an AAB via build_aab, deriving an app-id."""
     from tempestroid.cli import release_build
 
     app = tmp_path / "myapp"
@@ -368,8 +403,8 @@ def test_build_release_dispatches_to_aab(
         return tmp_path / "out.aab"
 
     monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
-    assert main(["build", str(app / "main.py"), "--release"]) == 0
-    # No --app-id → a derived placeholder from the project dir name.
+    assert main(["build", "prd", "--app", str(app / "main.py")]) == 0
+    # No id (flag or [tool.tempest]) → a derived placeholder from the project dir.
     assert seen["app_id"] == "com.example.myapp"
 
 
@@ -390,7 +425,7 @@ def test_build_release_uses_given_app_id(
 
     monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
     rc = main(
-        ["build", str(app), "--release", "--app-id", "com.acme.todo",
+        ["build", "prd", "--app", str(app), "--app-id", "com.acme.todo",
          "--app-version", "2.1.0"]
     )
     assert rc == 0

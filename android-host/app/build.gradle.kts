@@ -30,6 +30,26 @@ val abi = (project.findProperty("tempest.abi") ?: "arm64-v8a").toString()
 val pythonPrefix = rootProject.file((project.findProperty("tempest.pythonPrefix") ?: "../toolchain/dist/python/arm64-v8a").toString())
 val wheelsDir = rootProject.file((project.findProperty("tempest.wheelsDir") ?: "../toolchain/dist/wheels").toString())
 
+// --- Prebuilt-natives build mode -------------------------------------------
+// `-Ptempest.prebuiltHost=<DIR>` points at an *extracted* tempestroid host APK
+// (the CLI unzips a cached host APK into a temp dir and passes it). When set, the
+// build REUSES the natives + stdlib + deps already inside that APK instead of
+// re-staging the CPython-Android toolchain — so it needs only the JDK + Android
+// SDK (NO NDK, NO CPython toolchain): nothing is compiled from C.
+//
+// Expected <DIR> layout (matches an unzipped APK, see CLI extractor):
+//   <DIR>/lib/arm64-v8a/                       libpython3.14.so, libpython3.so,
+//                                              libcrypto_python.so, libsqlite3_python.so,
+//                                              libssl_python.so, libtempest_host.so
+//   <DIR>/assets/python/lib/python<ver>/       full CPython stdlib + lib-dynload/ + site-packages/
+//                                              (already trimmed, .gz already renamed .gz- by AGP)
+//
+// When the property is UNSET the default source-build path stays byte-for-byte
+// unchanged (CMake builds libtempest_host.so, toolchain/dist supplies the rest).
+val prebuiltHostDir: File? =
+    (project.findProperty("tempest.prebuiltHost")?.toString())?.let { rootProject.file(it) }
+val isPrebuilt = prebuiltHostDir != null
+
 android {
     namespace = "org.tempestroid.host"
     compileSdk = 35
@@ -54,10 +74,15 @@ android {
         versionName =
             (project.findProperty("tempest.versionName") ?: "0.0.1").toString()
         ndk { abiFilters += abi }
-        externalNativeBuild {
-            cmake {
-                arguments += "-DPYTHON_VERSION=$pythonVersion"
-                arguments += "-DPYTHON_PREFIX_DIR=${pythonPrefix.absolutePath}"
+        // In prebuilt mode nothing is compiled from C — the prebuilt
+        // libtempest_host.so is reused — so the CMake configuration is skipped
+        // entirely (no NDK / no CPython headers required).
+        if (!isPrebuilt) {
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DPYTHON_VERSION=$pythonVersion"
+                    arguments += "-DPYTHON_PREFIX_DIR=${pythonPrefix.absolutePath}"
+                }
             }
         }
     }
@@ -76,10 +101,15 @@ android {
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~:!__pycache__"
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/c/CMakeLists.txt")
-            version = "3.22.1"
+    // Register the CMake project ONLY in source-build mode. Omitting it in
+    // prebuilt mode means AGP never invokes the NDK toolchain (the prebuilt
+    // libtempest_host.so is staged into jniLibs instead).
+    if (!isPrebuilt) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/c/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
     }
 
@@ -171,34 +201,57 @@ abstract class CopyPythonStdlibTask @Inject constructor(
     @get:Input
     abstract val pythonVersion: Property<String>
 
+    // Prebuilt mode: the source tree was already trimmed + had its .gz files
+    // renamed .gz- by a prior APK build, and bundles its own site-packages/. So
+    // copy it verbatim (no trim, no rename) and exclude site-packages — the
+    // site-packages task stages those (deps from here, tempestroid from source).
+    @get:Input
+    abstract val prebuilt: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
     @TaskAction
     fun stage() {
         val version = pythonVersion.get()
+        val isPrebuilt = prebuilt.get()
         fs.copy {
             // Nest under "python/" so the packaged assets tree is
             // assets/python/lib/python<ver>/... — MainActivity.extractAssets
             // lists the "python" subtree and copies it to filesDir/python.
             from(stdlibDir) {
                 into("python/lib/python$version")
-                // Trim the stdlib to shrink the APK/AAB: drop the regression
-                // test suites, the IDLE editor, Tk/turtle (no Tk on Android),
-                // packaging tooling (ensurepip/venv/lib2to3), the build config
-                // dir (Makefile/static lib — not used at runtime), docs data and
-                // bytecode caches. None are needed to run a tempestroid app; this
-                // cuts the bundled CPython roughly in half.
-                exclude(
-                    "**/test/**", "**/tests/**", "test/**", "tests/**",
-                    "idlelib/**", "**/idle_test/**",
-                    "tkinter/**", "turtledemo/**", "turtle.py",
-                    "ensurepip/**", "venv/**", "lib2to3/**",
-                    "config-*/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
-                    "pydoc_data/**", "**/__phello__/**", "__hello__.py",
-                )
+                if (isPrebuilt) {
+                    // Already-prepared stdlib from an extracted host APK: keep
+                    // it as-is; only drop the bundled site-packages (staged by
+                    // CopyPythonSitePackagesTask) and any caches.
+                    exclude(
+                        "site-packages/**",
+                        "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
+                    )
+                } else {
+                    // Trim the stdlib to shrink the APK/AAB: drop the regression
+                    // test suites, the IDLE editor, Tk/turtle (no Tk on Android),
+                    // packaging tooling (ensurepip/venv/lib2to3), the build config
+                    // dir (Makefile/static lib — not used at runtime), docs data and
+                    // bytecode caches. None are needed to run a tempestroid app; this
+                    // cuts the bundled CPython roughly in half.
+                    exclude(
+                        "**/test/**", "**/tests/**", "test/**", "tests/**",
+                        "idlelib/**", "**/idle_test/**",
+                        "tkinter/**", "turtledemo/**", "turtle.py",
+                        "ensurepip/**", "venv/**", "lib2to3/**",
+                        "config-*/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
+                        "pydoc_data/**", "**/__phello__/**", "__hello__.py",
+                    )
+                }
             }
-            rename("""(.*)\.gz$""", "$1.gz-")
+            // The .gz files in an extracted APK are ALREADY renamed .gz- (AGP did
+            // it on the host build); re-renaming would produce .gz--. Only rename
+            // in source mode.
+            if (!isPrebuilt) {
+                rename("""(.*)\.gz$""", "$1.gz-")
+            }
             into(outputDir)
         }
     }
@@ -224,14 +277,26 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
     @get:Input
     abstract val pythonVersion: Property<String>
 
+    // Prebuilt mode: depsDir is the host APK's bundled site-packages, which also
+    // contains a tempestroid/ copy — exclude it so the framework is re-staged
+    // FRESH from the source tree (coreSrc), matching the source-build behaviour.
+    @get:Input
+    abstract val prebuilt: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
     @TaskAction
     fun stage() {
         val sp = "python/lib/python${pythonVersion.get()}/site-packages"
+        val isPrebuilt = prebuilt.get()
         fs.copy {
-            from(depsDir) { into(sp) }
+            from(depsDir) {
+                into(sp)
+                if (isPrebuilt) {
+                    exclude("tempestroid/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo")
+                }
+            }
             from(coreSrc) {
                 into("$sp/tempestroid")
                 // The Qt renderer needs PySide6 (absent on device). The CLI is
@@ -251,26 +316,87 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
     }
 }
 
+val pyVer = pythonVersion
+
+// Source dirs differ by mode. In prebuilt mode every input comes from the
+// extracted host APK (<DIR>); in source mode they come from toolchain/dist + src.
+val libsSourceDir = if (isPrebuilt) {
+    File(prebuiltHostDir, "lib/$targetAbi")
+} else {
+    file("$pythonPrefix/lib")
+}
+val stdlibSourceDir = if (isPrebuilt) {
+    File(prebuiltHostDir, "assets/python/lib/python$pyVer")
+} else {
+    file("$pythonPrefix/lib/python$pyVer")
+}
+val depsSourceDir = if (isPrebuilt) {
+    File(prebuiltHostDir, "assets/python/lib/python$pyVer/site-packages")
+} else {
+    rootProject.file("../toolchain/dist/site-packages")
+}
+val tempestroidCore = rootProject.file("../tempestroid")
+
 val copyPythonLibs by tasks.registering(CopyPythonLibsTask::class) {
-    libDir.fileValue(file("$pythonPrefix/lib"))
+    // The include pattern (libpython*.so + lib*_python.so) matches exactly the
+    // CPython runtime set in BOTH layouts and never picks up libtempest_host.so
+    // or the androidx/camera/mlkit libs sitting in the prebuilt lib/<abi> dir.
+    libDir.fileValue(libsSourceDir)
     abiName.set(targetAbi)
     outputDir.set(layout.buildDirectory.dir("generated/jniLibs"))
 }
 
-val pyVer = pythonVersion
 val copyPythonStdlib by tasks.registering(CopyPythonStdlibTask::class) {
-    stdlibDir.fileValue(file("$pythonPrefix/lib/python$pyVer"))
+    stdlibDir.fileValue(stdlibSourceDir)
     pythonVersion.set(pyVer)
+    prebuilt.set(isPrebuilt)
     outputDir.set(layout.buildDirectory.dir("generated/assets/python"))
 }
 
-val sitePackagesDir = rootProject.file("../toolchain/dist/site-packages")
-val tempestroidCore = rootProject.file("../tempestroid")
 val copyPythonSitePackages by tasks.registering(CopyPythonSitePackagesTask::class) {
-    depsDir.fileValue(sitePackagesDir)
+    depsDir.fileValue(depsSourceDir)
     coreSrc.fileValue(tempestroidCore)
     pythonVersion.set(pyVer)
+    prebuilt.set(isPrebuilt)
     outputDir.set(layout.buildDirectory.dir("generated/assets/site-packages"))
+}
+
+// Prebuilt-only: reuse the host APK's already-compiled libtempest_host.so (the
+// JNI shim) instead of building it via CMake/NDK. Same generated-jniLibs shape
+// as copyPythonLibs (the .so must sit under <abi>/).
+abstract class CopyPrebuiltTempestHostTask @Inject constructor(
+    private val fs: FileSystemOperations,
+) : DefaultTask() {
+    @get:InputDirectory
+    abstract val libDir: DirectoryProperty
+
+    @get:Input
+    abstract val abiName: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        val abi = abiName.get()
+        fs.copy {
+            from(libDir) {
+                include("libtempest_host.so")
+                into(abi)
+            }
+            into(outputDir)
+        }
+    }
+}
+
+val copyPrebuiltTempestHost = if (isPrebuilt) {
+    tasks.register("copyPrebuiltTempestHost", CopyPrebuiltTempestHostTask::class) {
+        libDir.fileValue(libsSourceDir)
+        abiName.set(targetAbi)
+        outputDir.set(layout.buildDirectory.dir("generated/jniLibsTempestHost"))
+    }
+} else {
+    null
 }
 
 androidComponents {
@@ -278,6 +404,11 @@ androidComponents {
         variant.sources.jniLibs?.addGeneratedSourceDirectory(
             copyPythonLibs, CopyPythonLibsTask::outputDir
         )
+        copyPrebuiltTempestHost?.let {
+            variant.sources.jniLibs?.addGeneratedSourceDirectory(
+                it, CopyPrebuiltTempestHostTask::outputDir
+            )
+        }
         variant.sources.assets?.addGeneratedSourceDirectory(
             copyPythonStdlib, CopyPythonStdlibTask::outputDir
         )
