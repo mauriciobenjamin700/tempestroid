@@ -73,7 +73,6 @@ Qt is an optional extra.
 from dataclasses import dataclass
 
 from tempestroid import App, Button, Column, Style, Text, Widget
-from tempestroid.renderers.qt import run_qt
 
 
 @dataclass
@@ -99,8 +98,22 @@ def view(app: App[CounterState]) -> Widget:
 
 
 if __name__ == "__main__":
+    # Import the Qt renderer lazily — keep the module Qt-free so the SAME file
+    # also loads on the Android device (which has no PySide6). A top-level
+    # `from tempestroid.renderers.qt import run_qt` would crash the on-device
+    # load; the framework now shows an error screen instead of a blank window,
+    # but the fix is to import Qt only where you run the desktop simulator.
+    from tempestroid.renderers.qt import run_qt
+
     raise SystemExit(run_qt(make_state(), view, title="counter"))
 ```
+
+> 💡 The module above only ever imports `tempestroid` (renderer-agnostic) at the
+> top level — `run_qt` is imported lazily inside `__main__`. That is what lets
+> the same `make_state()` + `view(app)` run in the Qt simulator **and** on a
+> device via `tempest serve` with no changes. If an app file (or one of its
+> imports) fails to load on the device, the host now renders a red **error
+> screen** carrying the traceback instead of a silent white window.
 
 Full example with sync **and** `async` handlers:
 [`examples/counter/app.py`](examples/counter/app.py).
@@ -148,7 +161,7 @@ uv run tempest install              # download + adb-install the prebuilt host (
 uv run tempest deploy               # push the whole project to a device — offline, no SDK/NDK
 uv run tempest serve                # LAN code-push + hot reload (whole project) in dev mode
 uv run tempest doctor               # check the Android build/run prerequisites
-uv run tempest build                # build a standalone, shippable APK (project baked in; needs SDK/NDK)
+uv run tempest build                # build a standalone, shippable APK via Gradle (own app-id; needs SDK/NDK)
 uv run tempest run                  # build + install on a device + stream logs (needs SDK/NDK)
 uv run tempest spec                 # print the typed contract (widgets/events) as JSON
 uv run tempest --version            # print the framework version (also: tempest version)
@@ -208,13 +221,18 @@ the dev server. Use `--no-launch` to serve only.
 
 **Shipping a standalone APK — `tempest build`.** To produce a self-contained
 `.apk` you can give to anyone (it runs the app with **no** dev server), use
-`tempest build`: it bundles the whole project and **repackages the prebuilt host
-APK** with it — injecting the bundle and re-aligning + re-signing via the Android
-SDK's `zipalign`/`apksigner`. **No Gradle, NDK, or `android-host` checkout** — it
-works from a plain PyPI install with just the SDK build-tools (run `tempest
-setup` to get them; `tempest setup --install` installs the SDK + build-tools).
+`tempest build`: it bundles the whole project into the `android-host` Gradle
+project and runs `assembleDebug`, stamping each app with its **own
+`applicationId`** so two tempestroid APKs **install side by side instead of
+overwriting each other**. The id is `--app-id` (e.g. `com.acme.todo`), or derived
+from the project name (`com.example.<project>`) when omitted. This needs the full
+toolchain — Android SDK + NDK + the CPython toolchain — which the CLI **prepares
+whatever is missing** (run `tempest setup --install` to bootstrap the SDK/NDK).
 The output lands at `dist/<project>.apk` (debug-signed — installs like any debug
-build). `tempest run` is the same build plus install + launch + log streaming.
+build). `tempest run` is the same build plus install + launch + log streaming
+(it launches `<app-id>/org.tempestroid.host.MainActivity`). For a fast,
+toolchain-free way to run on your own device, use `tempest deploy` — but that is
+the shared dev host (not a per-app shippable artifact).
 
 > **Maintainers:** the host APK (~100 MB — it embeds CPython) is **not** shipped
 > inside the PyPI wheel (it would exceed PyPI's per-file limit). `make release`
@@ -243,8 +261,8 @@ surfaced and the happy path stays quiet.
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [app]` | ✅ | Shippable APK by repackaging the prebuilt host (no Gradle/NDK/checkout — just SDK build-tools); `-o`, `-v`. `--release` → store-ready signed **AAB** via Gradle (`--app-id`/`--app-version`/`--keystore`; prepares the env if missing) |
-| `tempest run [app]` | ✅ | `build` + install on a device + stream logs (needs SDK build-tools + adb); `-v` |
+| `tempest build [app]` | ✅ | Shippable, debug-signed APK via Gradle `assembleDebug` with its own `applicationId` (`--app-id`, else derived — two apps install side by side); `-o`, `--app-version`, `--version-code`, `-v`. Prepares the env (SDK/NDK/toolchain) if missing. `--release` → store-ready signed **AAB** via `bundleRelease` (`--keystore`) |
+| `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 
 ### Running on a device from WSL

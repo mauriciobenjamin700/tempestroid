@@ -17,11 +17,13 @@ import json
 import shutil
 import sys
 import tempfile
+import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from tempestroid.bridge.device import Bridge, DeviceApp
+from tempestroid.bridge.errors import error_screen
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
     BACKGROUND_TOKEN_PREFIX,
@@ -152,40 +154,100 @@ async def run_dev_client(
     while max_polls is None or polls < max_polls:
         polls += 1
         try:
+            # Network zone: a transient fetch failure (timeout, reset) must NOT
+            # commit the hash, so the next poll retries the same version.
             version = json.loads((await fetch(f"{url}/version")).decode("utf-8")).get(
                 "hash"
             )
             if version != current["hash"]:
                 data = await fetch(f"{url}/bundle")
-                spec, root = _load_bundle_spec(data, current["root"])
-                current["root"] = root
-                device: DeviceApp[Any] | None = current["device"]
-                short = str(version)[:8]
-                if device is None:
-                    device = DeviceApp(spec.make_state(), spec.view, make_bridge())
-                    current["device"] = device
-                    await device.start()
-                    log(f"[tempest] pushed app {short}")
-                else:
-                    # Hot-reload preserving on-device state; if the new view is
-                    # incompatible with the live state, restart clean.
-                    try:
-                        device.reload(spec.view)
-                        log(f"[tempest] hot-reloaded {short} (state preserved)")
-                    except Exception as reload_exc:  # noqa: BLE001
-                        device = DeviceApp(
-                            spec.make_state(), spec.view, make_bridge()
-                        )
-                        current["device"] = device
-                        await device.start()
-                        log(
-                            f"[tempest] hot-restarted {short} "
-                            f"(state reset: {reload_exc})"
-                        )
+                # App zone: from here the bundle is in hand. Commit the hash up
+                # front so a *broken* app (load/build error) is not re-fetched on
+                # every poll — we wait for the next edit. The error is surfaced
+                # on-device as a red error screen instead of a blank window.
                 current["hash"] = version
+                await _apply_push(data, current, make_bridge, log)
         except Exception as exc:  # noqa: BLE001 - keep the loop alive on any error
             log(f"[tempest] dev client error: {exc}")
         await asyncio.sleep(poll_interval)
+
+
+async def _apply_push(
+    data: bytes,
+    current: dict[str, Any],
+    make_bridge: Callable[[], Bridge],
+    log: Callable[[str], None],
+) -> None:
+    """Load a freshly-fetched bundle and (re)start or hot-reload the app.
+
+    A load/build failure is caught and mounted as an on-device error screen (the
+    device analogue of the desktop dev loop printing a caught exception) rather
+    than left as a blank window — the developer sees *what* broke without
+    attaching ``adb``. The poll loop keeps running, so the next saved edit
+    recovers.
+
+    Args:
+        data: The bundle ``.zip`` bytes fetched from ``/bundle``.
+        current: The mutable load state (``device``/``root``) shared with the
+            poll loop.
+        make_bridge: Factory for a fresh :class:`Bridge` per (re)load.
+        log: Sink for status lines.
+    """
+    try:
+        spec, root = _load_bundle_spec(data, current["root"])
+        current["root"] = root
+    except Exception:  # noqa: BLE001 - surface any load failure on-device
+        await _mount_error(current, make_bridge, log, traceback.format_exc())
+        return
+    device: DeviceApp[Any] | None = current["device"]
+    is_error = bool(current.get("error"))
+    if device is None or is_error:
+        # First push, or replacing an error screen: start clean.
+        try:
+            device = DeviceApp(spec.make_state(), spec.view, make_bridge())
+            current["device"] = device
+            current["error"] = False
+            await device.start()
+            log("[tempest] pushed app")
+        except Exception:  # noqa: BLE001 - a first-build error is still on-device
+            await _mount_error(current, make_bridge, log, traceback.format_exc())
+        return
+    # Hot-reload preserving on-device state; if the new view is incompatible
+    # with the live state, restart clean.
+    try:
+        device.reload(spec.view)
+        log("[tempest] hot-reloaded (state preserved)")
+    except Exception as reload_exc:  # noqa: BLE001
+        try:
+            device = DeviceApp(spec.make_state(), spec.view, make_bridge())
+            current["device"] = device
+            await device.start()
+            log(f"[tempest] hot-restarted (state reset: {reload_exc})")
+        except Exception:  # noqa: BLE001 - the clean restart also failed
+            await _mount_error(current, make_bridge, log, traceback.format_exc())
+
+
+async def _mount_error(
+    current: dict[str, Any],
+    make_bridge: Callable[[], Bridge],
+    log: Callable[[str], None],
+    detail: str,
+) -> None:
+    """Mount a red error screen on the device and flag the error state.
+
+    Args:
+        current: The mutable load state (``device``/``error``).
+        make_bridge: Factory for a fresh :class:`Bridge`.
+        log: Sink for status lines.
+        detail: The traceback / error detail to show on-device.
+    """
+    log(f"[tempest] app failed to load:\n{detail}")
+    device: DeviceApp[Any] = DeviceApp(
+        None, lambda _app: error_screen("App failed to load", detail), make_bridge()
+    )
+    current["device"] = device
+    current["error"] = True
+    await device.start()
 
 
 def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
@@ -209,7 +271,10 @@ def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
         """Fetch a URL body (raw bytes) off the event loop thread."""
 
         def _get() -> bytes:
-            with urllib.request.urlopen(target, timeout=10) as response:  # noqa: S310
+            # A generous timeout: the first poll races the cold-start of the
+            # ``adb reverse`` tunnel, and ``/bundle`` can be a large multi-file
+            # archive — 10s was tight enough to spuriously time out on both.
+            with urllib.request.urlopen(target, timeout=30) as response:  # noqa: S310
                 return response.read()
 
         return await asyncio.to_thread(_get)

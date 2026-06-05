@@ -53,6 +53,7 @@ __all__ = [
     "run_device",
     "run_device_file",
     "run_device_bundle",
+    "run_device_error",
 ]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -287,26 +288,52 @@ def run_device(
     loop.run_forever()
 
 
+def run_device_error(title: str, detail: str) -> None:
+    """Boot a minimal app showing an error screen, then run forever.
+
+    The fallback for the baked-APK entry points when loading the user's app
+    fails: rather than leave the device on a blank white screen with the cause
+    buried in ``logcat``, mount a visible red error screen carrying the
+    traceback. The interpreter stays live so the screen persists.
+
+    Args:
+        title: A short, human summary (e.g. ``"App failed to load"``).
+        detail: The error detail / traceback to show on the device.
+    """
+    from tempestroid.bridge.errors import error_screen
+
+    run_device(None, lambda _app: error_screen(title, detail))
+
+
 def run_device_file(path: str, route: str | None = None) -> None:
     """Load an app file (``make_state`` + ``view``) and run it on the device.
 
     The device entry point for an APK bundled by ``tempest build``: the user's
     app source is packaged as an asset, extracted to ``path`` on first launch,
     and run here. Mirrors :func:`run_device` but sources the state/view from a
-    file via the same loader the dev cockpit and code-push client use.
+    file via the same loader the dev cockpit and code-push client use. A load
+    failure (e.g. the app file imports the Qt renderer at module level, which is
+    absent on the device) surfaces as an on-device error screen instead of a
+    blank white window.
 
     Args:
         path: Absolute path to the extracted app file on the device.
         route: Optional deep-link path forwarded to :func:`run_device` (the
             Android ``tempest_route`` intent extra) to open on the linked screen.
     """
+    import traceback
     from pathlib import Path
 
     from tempestroid.cli.app_loader import spec_from_source
 
-    source = Path(path).read_text(encoding="utf-8")
-    spec = spec_from_source(source, filename=path)
-    run_device(spec.make_state(), spec.view, route=route)
+    try:
+        source = Path(path).read_text(encoding="utf-8")
+        spec = spec_from_source(source, filename=path)
+        state, view = spec.make_state(), spec.view
+    except Exception:  # noqa: BLE001 - surface any load failure on-device
+        run_device_error("App failed to load", traceback.format_exc())
+        return
+    run_device(state, view, route=route)
 
 
 def run_device_bundle(zip_path: str, route: str | None = None) -> None:
@@ -324,13 +351,19 @@ def run_device_bundle(zip_path: str, route: str | None = None) -> None:
         route: Optional deep-link path forwarded to :func:`run_device` (the
             Android ``tempest_route`` intent extra) to open on the linked screen.
     """
+    import traceback
     from pathlib import Path
 
     from tempestroid.cli.app_loader import spec_from_project
     from tempestroid.cli.bundle import extract_bundle
 
-    archive = Path(zip_path)
-    data = archive.read_bytes()
-    layout = extract_bundle(data, archive.parent / "tempest_app")
-    spec = spec_from_project(layout.root, layout.entry)
-    run_device(spec.make_state(), spec.view, route=route)
+    try:
+        archive = Path(zip_path)
+        data = archive.read_bytes()
+        layout = extract_bundle(data, archive.parent / "tempest_app")
+        spec = spec_from_project(layout.root, layout.entry)
+        state, view = spec.make_state(), spec.view
+    except Exception:  # noqa: BLE001 - surface any load failure on-device
+        run_device_error("App failed to load", traceback.format_exc())
+        return
+    run_device(state, view, route=route)
