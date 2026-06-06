@@ -203,6 +203,12 @@ class Color(BaseModel):
         g: Green channel, 0-255.
         b: Blue channel, 0-255.
         a: Alpha channel, 0.0 (transparent) to 1.0 (opaque).
+
+    Methods:
+        from_hex: Build a color from a hex string (classmethod).
+        rgba: Build a color from explicit channel values (classmethod).
+        to_hex: Render the color as ``#RRGGBB`` (or ``#RRGGBBAA`` when translucent).
+        to_rgba_string: Render the color as a CSS-style ``rgba(...)`` string.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -308,7 +314,19 @@ class Color(BaseModel):
 
 
 class Edge(BaseModel):
-    """Per-side spacing in logical pixels (used for padding and margin)."""
+    """Per-side spacing in logical pixels (used for padding and margin).
+
+    Attributes:
+        top: Spacing on the top side.
+        right: Spacing on the right side.
+        bottom: Spacing on the bottom side.
+        left: Spacing on the left side.
+
+    Methods:
+        all: Build an edge with the same spacing on every side (classmethod).
+        symmetric: Build an edge with mirrored vertical/horizontal spacing
+            (classmethod).
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -459,6 +477,9 @@ class Style(BaseModel):
     Every field is optional: ``None`` means "unset", letting the leaf renderer
     fall back to its own default. Styles are frozen; combine them with
     :meth:`merge` to layer overrides without mutation.
+
+    Methods:
+        merge: Layer another style on top of this one (returns a new ``Style``).
     """
 
     model_config = ConfigDict(frozen=True)

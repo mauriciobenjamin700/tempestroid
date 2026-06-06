@@ -155,6 +155,12 @@ class AnimationController:
 
     Attributes:
         value: The current progress, 0.0..1.0 — read by the ``view``.
+
+    Methods:
+        bind: Attach the controller to an app's frame clock.
+        forward: Animate ``value`` toward 1.0 and (re)register on the app clock.
+        reverse: Animate ``value`` toward 0.0 and (re)register on the app clock.
+        stop: Halt the animation and unregister from the app clock.
     """
 
     def __init__(
@@ -305,6 +311,9 @@ class Tween(BaseModel, Generic[T]):
     Attributes:
         begin: The value at ``t == 0.0``.
         end: The value at ``t == 1.0``.
+
+    Methods:
+        at: Interpolate between ``begin`` and ``end`` at fraction ``t``.
     """
 
     model_config = ConfigDict(frozen=True)

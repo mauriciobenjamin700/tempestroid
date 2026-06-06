@@ -30,6 +30,9 @@ class Locale(BaseModel):
         language: The BCP-47 language tag (e.g. ``"pt"``, ``"en"``, ``"ar"``).
         region: The optional region/country subtag (e.g. ``"BR"``, ``"US"``).
         rtl: Whether the locale lays out right-to-left (e.g. Arabic, Hebrew).
+
+    Properties:
+        tag: The locale as a BCP-47 tag (``language`` or ``language-REGION``).
     """
 
     model_config = ConfigDict(frozen=True)

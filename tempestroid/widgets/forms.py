@@ -156,6 +156,10 @@ class Form(Widget):
         fields: The form's fields, in display order.
         on_submit: Handler invoked with a :class:`SubmitEvent` when the form is
             submitted with valid values.
+
+    Methods:
+        validate: Validate every field against ``values`` and build the
+            :class:`FormState` (used to gate submit).
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_submit": SubmitEvent}

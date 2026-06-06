@@ -57,6 +57,10 @@ class Theme(BaseModel):
         on_primary: The color of content drawn on ``primary``.
         on_background: The color of content drawn on ``background``.
         error: The color used to signal errors.
+
+    Methods:
+        is_dark: Resolve whether the theme renders dark, given the platform
+            setting (resolves ``SYSTEM`` against the media query).
     """
 
     model_config = ConfigDict(frozen=True)
