@@ -71,6 +71,11 @@ def clean_cache(*, include_keystore: bool = False) -> list[Path]:
 
     Returns:
         The cache paths that existed and were removed, in display order.
+
+    Raises:
+        OSError: If a cache entry exists but cannot be removed (e.g. a file in
+            use or a permission error). Callers that want a graceful exit should
+            handle it (see :func:`tempestroid.cli.main._run_clean`).
     """
     targets = [
         _CACHE / "host-extracted",

@@ -506,3 +506,14 @@ def test_doctor_fails_when_build_prereq_missing(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(packaging, "preflight", fake_preflight)
     assert main(["doctor"]) != 0
+
+
+def test_clean_command_handles_unremovable_cache(monkeypatch: pytest.MonkeyPatch):
+    """A cache entry that can't be removed yields a graceful exit 1, not a crash."""
+    from tempestroid.cli import release_build
+
+    def boom(*, include_keystore: bool = False) -> list[Path]:
+        raise OSError("device or resource busy")
+
+    monkeypatch.setattr(release_build, "clean_cache", boom)
+    assert main(["clean"]) == 1

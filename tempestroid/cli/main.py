@@ -1183,13 +1183,18 @@ def _run_clean(include_keystore: bool) -> int:
         include_keystore: Also delete the cached release keystore.
 
     Returns:
-        Always ``0`` — a clean is idempotent (an empty cache is success).
+        ``0`` on success (an empty cache counts as success), ``1`` if a cache
+        entry could not be removed.
     """
     from tempestroid.cli.console import Console
     from tempestroid.cli.release_build import clean_cache
 
     console = Console()
-    removed = clean_cache(include_keystore=include_keystore)
+    try:
+        removed = clean_cache(include_keystore=include_keystore)
+    except OSError as exc:
+        console.fail(f"could not clean the cache: {exc}")
+        return 1
     if not removed:
         console.info("cache already clean — nothing to remove.")
         return 0
