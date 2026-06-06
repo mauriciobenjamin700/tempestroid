@@ -108,10 +108,20 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.sdist]
-# Strict allowlist: ship the package + docs/examples + metadata. The B-track
-# build scaffolding (Gradle/Kotlin/C host + CPython toolchain) is only needed in
-# a full repo checkout for `tempest build`/`run`, never by PyPI consumers.
-only-include = ["tempestroid", "examples", "docs", "README.md", "LICENSE", "CHANGELOG.md", "mkdocs.yml"]
+# Ship the package + docs/examples + metadata + the android-host Gradle project
+# (the wheel force-includes it as tempestroid/_android_host, and the wheel is
+# built FROM the sdist on PyPI, so it must be in the sdist too). Build outputs +
+# the CPython toolchain (toolchain/dist) are NOT shipped — `tempest build` runs
+# in prebuilt mode (reuses the host APK's natives), never from source on PyPI.
+only-include = ["tempestroid", "android-host", "examples", "docs", "README.md", "LICENSE", "CHANGELOG.md", "mkdocs.yml"]
+exclude = [
+    "android-host/build",
+    "android-host/.gradle",
+    "android-host/app/build",
+    "android-host/local.properties",
+    "android-host/app/src/main/assets/tempest_app_bundle.zip",
+    "android-host/app/src/main/assets/tempest_app.py",
+]
 
 [tool.ruff]
 line-length = 88
