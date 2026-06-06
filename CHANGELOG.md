@@ -22,6 +22,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gained a `-Ptempest.prebuiltHost` mode that reuses the prebuilt APK's
   `libpython`/`libtempest_host`/stdlib (no CMake/NDK), so AGP still stamps the
   per-app id + all provider authorities correctly (no install collisions).
+  The `android-host` Gradle project now **ships inside the wheel**
+  (`tempestroid/_android_host`, ~1.3 MB of Gradle/Kotlin/C source), copied to a
+  cache on first build — so `tempest build apk` works from a plain `pip install`
+  with **no `git clone`** and always matched to the installed version. Verified
+  end to end from a clean wheel install: `tempest new` → `tempest build apk`
+  produced a per-app APK (`com.example.euapp`) via Gradle in ~23 s, no toolchain.
 
 ### Changed
 

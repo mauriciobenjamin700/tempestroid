@@ -92,6 +92,20 @@ artifacts = ["tempestroid/_assets/*.apk"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tempestroid"]
+# Ship the android-host Gradle project INSIDE the wheel (as tempestroid/_android_host,
+# ~1.3 MB of Gradle/Kotlin/C source) so `tempest build apk`/`prd` works from a
+# plain `pip install` — no `git clone` of the repo, always matched to the
+# installed version. The heavy bits (prebuilt host APK, CPython natives) are NOT
+# here: the build runs in prebuilt mode, reusing the host APK's natives. Build
+# outputs + machine-specific files are excluded.
+force-include = { "android-host" = "tempestroid/_android_host" }
+exclude = [
+    "**/build/**",
+    "**/.gradle/**",
+    "tempestroid/_android_host/local.properties",
+    "tempestroid/_android_host/app/src/main/assets/tempest_app_bundle.zip",
+    "tempestroid/_android_host/app/src/main/assets/tempest_app.py",
+]
 
 [tool.hatch.build.targets.sdist]
 # Strict allowlist: ship the package + docs/examples + metadata. The B-track

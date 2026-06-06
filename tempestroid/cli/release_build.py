@@ -312,6 +312,73 @@ def _extract_prebuilt_host(con: Console) -> Path:
     return dest
 
 
+def _resolve_host_checkout(con: Console, version: str, *, prebuilt: bool) -> Path:
+    """Resolve a usable ``android-host`` Gradle project for the build.
+
+    Order: an existing checkout (``TEMPESTROID_ANDROID_HOST`` / a repo checkout
+    found by walking up from the cwd) → the **android-host bundled in the wheel**
+    (``tempestroid/_android_host``, copied to a writable cache; prebuilt mode
+    only, since it carries no CPython toolchain) → a ``git clone`` of the repo at
+    the version tag (from-source, or when no bundled copy exists).
+
+    The bundled copy makes ``tempest build`` work from a plain ``pip install``
+    with no ``git`` and always matched to the installed version.
+
+    Args:
+        con: Step reporter.
+        version: The installed tempestroid version (clone tag ``v<version>``).
+        prebuilt: Whether the prebuilt-natives build is in use (allows the
+            bundled checkout, which has no ``toolchain/`` scripts).
+
+    Returns:
+        The checkout root (the dir containing ``android-host/``).
+
+    Raises:
+        StepError: If no checkout can be resolved.
+    """
+    from importlib import resources
+
+    from tempestroid.cli.packaging import ToolchainError, find_android_host
+
+    try:
+        return find_android_host().parent
+    except ToolchainError:
+        pass
+    if prebuilt:
+        try:
+            bundled = resources.files("tempestroid").joinpath("_android_host")
+            gradlew = bundled.joinpath("gradlew")
+            if gradlew.is_file():
+                cache_root = _CACHE / "host-src"
+                target = cache_root / "android-host"
+                framework = cache_root / "tempestroid"
+                if not (target / "gradlew").is_file() or not framework.is_dir():
+                    with con.step("Preparing bundled android-host"):
+                        shutil.rmtree(cache_root, ignore_errors=True)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with resources.as_file(bundled) as src:
+                            shutil.copytree(src, target)
+                        # gradlew must be executable after the copy.
+                        (target / "gradlew").chmod(0o755)
+                        # The Gradle build re-stages the framework from a sibling
+                        # `../tempestroid` (coreSrc). Copy the installed package
+                        # there, minus the bundled host + the heavy APK asset.
+                        pkg = resources.files("tempestroid")
+                        with resources.as_file(pkg) as pkg_src:
+                            shutil.copytree(
+                                pkg_src,
+                                framework,
+                                ignore=shutil.ignore_patterns(
+                                    "_android_host", "_assets", "__pycache__",
+                                    "*.pyc",
+                                ),
+                            )
+                return cache_root
+        except (OSError, ModuleNotFoundError):
+            pass
+    return ensure_source_checkout(version, con)
+
+
 def _prepare_gradle_build(
     app: str | Path, con: Console, *, prebuilt: bool = True
 ) -> tuple[Path, Path | None]:
@@ -350,8 +417,8 @@ def _prepare_gradle_build(
     # 2. SDK (+ NDK only for the from-source build).
     _prepare_sdk_env(con, need_ndk=not prebuilt)
 
-    # 3. Source checkout (android-host Gradle project).
-    checkout = ensure_source_checkout(__version__, con)
+    # 3. android-host Gradle project (existing checkout → bundled → clone).
+    checkout = _resolve_host_checkout(con, __version__, prebuilt=prebuilt)
     host = checkout / "android-host"
 
     # 4. Natives: reuse the prebuilt host (fast) or stage the CPython toolchain.
