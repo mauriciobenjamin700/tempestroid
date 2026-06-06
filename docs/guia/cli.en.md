@@ -25,9 +25,10 @@ uv run tempest --help
 | `tempest serve <app>` | ✅ | LAN code-push + hot reload of the whole project (phase B5). |
 | `tempest install [src]` | ✅ | adb-installs the prebuilt host (no SDK/NDK). |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON. |
-| `tempest doctor` | ✅ | Diagnose the Android build/run prerequisites (JDK, android-host, SDK, adb, device) and report what's missing. |
+| `tempest doctor` | ✅ | Diagnose the Android build/run prerequisites (JDK, android-host, SDK, adb, device). Build readiness sets the exit code; a missing device is informational (only `run`/`install` need one). |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/build-tools; `--install` installs the Android SDK. |
 | `tempest version` | ✅ | Print the framework version (same as `--version`). |
+| `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore. |
 | `tempest build [apk\|prd]` | ✅ | `apk`: a **per-app** APK (own id → N apps side by side) via Gradle reusing the prebuilt natives (**JDK + SDK only**, no NDK/toolchain). `prd`: a release AAB. Reads `[tool.tempest]`. |
 | `tempest run` | ✅ | `build apk` + install on a device + stream logs. |
 | `tempest icon <img>` | ✅ | Generate `icon.png` + `splash.png` from one image (Pillow). |

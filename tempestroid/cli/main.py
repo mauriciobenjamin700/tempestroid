@@ -527,6 +527,26 @@ def version_cmd() -> None:
     typer.echo(f"tempest {__version__}")
 
 
+@app.command("clean", rich_help_panel="Diagnose & inspect")
+def clean_cmd(
+    include_keystore: Annotated[
+        bool,
+        typer.Option(
+            "--keystore",
+            help="Also delete the cached release keystore (blocks future updates).",
+        ),
+    ] = False,
+) -> None:
+    """Reset tempestroid's build caches under `~/.tempestroid`.
+
+    Removes the extracted host natives, the bundled-host working copy, and the
+    cloned source — all re-created on the next build. Fixes stale-cache build
+    failures after a `pip install --upgrade`. The release keystore is kept
+    unless `--keystore` is passed.
+    """
+    raise typer.Exit(_run_clean(include_keystore))
+
+
 def _resolve_app_or_exit(app_path: str | None) -> str:
     """Resolve the app path from the argument or project config, or exit.
 
@@ -1117,23 +1137,66 @@ def _run_run(
 def _run_doctor(verbose: bool) -> int:
     """Probe the Android build/run prerequisites and report them.
 
+    Build readiness (JDK + android-host + SDK) decides the exit code; a missing
+    ``adb``/device is reported as informational, since ``build apk``/``prd`` need
+    no device — only ``run``/``install``/``deploy`` do.
+
     Args:
         verbose: Show resolution hints for failed checks.
 
     Returns:
-        ``0`` when every prerequisite is satisfied, else ``1``.
+        ``0`` when the build prerequisites are satisfied, else ``1``.
     """
     from tempestroid.cli.console import Console
-    from tempestroid.cli.packaging import preflight, report_preflight
+    from tempestroid.cli.packaging import preflight
 
+    # Build needs JDK + android-host + SDK; adb/device are run-only.
+    build_critical = {"jdk", "android-host", "android-sdk"}
     console = Console(verbose=verbose)
     console.info("tempest doctor — Android build/run prerequisites")
-    ok = report_preflight(preflight(need_device=True), console)
-    if ok:
-        console.info("all prerequisites satisfied — ready to build and run.")
+
+    build_ok = True
+    for check in preflight(need_device=True):
+        if check.ok:
+            console.info(f"{check.name}: {check.detail}")
+            continue
+        if check.name in build_critical:
+            build_ok = False
+            console.fail(f"{check.name}: {check.detail}")
+        else:
+            # Run-only (adb/device): not a build blocker.
+            console.info(f"{check.name}: {check.detail} (only for run/install)")
+        if check.hint:
+            console.info(f"  → {check.hint}")
+
+    if build_ok:
+        console.info("build prerequisites satisfied — ready to `tempest build`.")
         return 0
-    console.fail("some prerequisites are missing (see above).")
+    console.fail("build prerequisites are missing (see above).")
     return 1
+
+
+def _run_clean(include_keystore: bool) -> int:
+    """Remove the rebuildable build caches under ``~/.tempestroid``.
+
+    Args:
+        include_keystore: Also delete the cached release keystore.
+
+    Returns:
+        Always ``0`` — a clean is idempotent (an empty cache is success).
+    """
+    from tempestroid.cli.console import Console
+    from tempestroid.cli.release_build import clean_cache
+
+    console = Console()
+    removed = clean_cache(include_keystore=include_keystore)
+    if not removed:
+        console.info("cache already clean — nothing to remove.")
+        return 0
+    for path in removed:
+        console.info(f"removed {path}")
+    console.info(f"cleaned {len(removed)} cache entries.")
+    return 0
 
 
 def _run_setup(install: bool, sdk_dir: str | None, verbose: bool) -> int:

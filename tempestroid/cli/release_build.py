@@ -48,10 +48,48 @@ __all__ = [
     "ensure_toolchain",
     "build_aab",
     "build_apk",
+    "clean_cache",
 ]
 
 _REPO_URL = "https://github.com/mauriciobenjamin700/tempestroid"
 _CACHE = Path.home() / ".tempestroid"
+
+
+def clean_cache(*, include_keystore: bool = False) -> list[Path]:
+    """Remove tempestroid's rebuildable build caches under ``~/.tempestroid``.
+
+    Clears the extracted host natives, the bundled-host working copy, and the
+    cloned source — all of which are re-created on the next build. A stale cache
+    after a wheel upgrade is a known cause of build failures, so this gives users
+    a one-shot reset instead of ``rm -rf`` by hand.
+
+    The release keystore (``release.jks``) is preserved by default: losing it
+    blocks future Play updates. Pass ``include_keystore=True`` to drop it too.
+
+    Args:
+        include_keystore: Also delete the cached ``release.jks`` keystore.
+
+    Returns:
+        The cache paths that existed and were removed, in display order.
+    """
+    targets = [
+        _CACHE / "host-extracted",
+        _CACHE / "host-src",
+        _CACHE / "src",
+    ]
+    if include_keystore:
+        targets.append(_CACHE / "release.jks")
+
+    removed: list[Path] = []
+    for target in targets:
+        if not target.exists():
+            continue
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        removed.append(target)
+    return removed
 
 
 def derive_app_id(project_name: str) -> str:
