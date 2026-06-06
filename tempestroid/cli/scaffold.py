@@ -145,10 +145,18 @@ description = "A tempestroid app — native Android in typed Python."
 requires-python = ">=3.11"
 dependencies = ["tempestroid[qt]>=0.2"]
 
-# `tempest dev`/`serve`/`build`/`run` read this when no app path is given, so
-# inside the project you can run `tempest dev` with no arguments.
+# `tempest dev`/`serve`/`build`/`run` read this, so inside the project you run
+# the commands with no arguments. `tempest build apk` reads the keys below to
+# stamp the APK — set `id` to your own reverse-domain before publishing (the
+# derived `com.example.*` is a non-publishable placeholder).
 [tool.tempest]
 app = "app.py"
+# id = "com.yourcompany.{project}"   # applicationId (derived from the name if unset)
+# name = "My App"                    # launcher label (the name under the icon)
+# icon = "icon.png"                  # launcher icon (`tempest icon logo.png` makes one)
+# splash = "splash.png"              # boot splash shown while Python starts
+# splash_bg = "#0b0f14"              # splash background colour
+# version = "1.0.0"                  # versionName
 """
 
 README_TEMPLATE = """\
@@ -185,12 +193,17 @@ uv run tempest serve                    # push over LAN + auto-launch in dev mod
 `tempest serve` pushes app code to the installed host and edit-and-save
 hot-reloads on the device — no Gradle build or toolchain needed.
 
-## Build an APK from source (advanced — needs Android SDK/NDK)
+## Ship an APK (needs a JDK + the Android SDK)
 
 ```bash
-uv run tempest build                    # package an APK from source
+uv run tempest setup --install          # one-time: install the Android SDK
+uv run tempest build apk                # → dist/<project>.apk (its own app id)
 uv run tempest run                      # build + install on a device + logs
+uv run tempest build prd                # store-ready release AAB
 ```
+
+The APK carries its own `applicationId` (set `[tool.tempest] id` above), so it
+installs side by side with other apps. No NDK or CPython toolchain needed.
 """
 
 GITIGNORE_TEMPLATE = """\

@@ -10,13 +10,86 @@ with no arguments.
 from __future__ import annotations
 
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["AppResolutionError", "resolve_app"]
+__all__ = ["AppResolutionError", "resolve_app", "TempestConfig", "read_config"]
 
 
 class AppResolutionError(RuntimeError):
     """Raised when no app path is given and none can be inferred from config."""
+
+
+@dataclass(frozen=True)
+class TempestConfig:
+    """The ``[tool.tempest]`` build config resolved from a project's pyproject.
+
+    Every field is optional; the build derives sensible defaults (from the
+    project name) when a value is absent. ``icon``/``splash`` are resolved to
+    absolute paths against the project directory.
+
+    Attributes:
+        app_id: The ``applicationId`` (``id`` key), or ``None`` to derive one.
+        app_name: The launcher label (``name`` key), or ``None`` to derive one.
+        icon: Path to a launcher-icon image (``icon`` key), or ``None``.
+        splash: Path to a boot-splash image (``splash`` key), or ``None``.
+        splash_bg: Splash background ``#rrggbb`` (``splash_bg`` key), or ``None``.
+        version: The versionName (``version`` key), or ``None`` (default 1.0.0).
+    """
+
+    app_id: str | None = None
+    app_name: str | None = None
+    icon: str | None = None
+    splash: str | None = None
+    splash_bg: str | None = None
+    version: str | None = None
+
+
+def read_config(app_path: str | Path) -> TempestConfig:
+    """Read the ``[tool.tempest]`` build config for the project containing ``app``.
+
+    Walks up from the app file to the nearest ``pyproject.toml`` and reads the
+    build keys (``id``/``name``/``icon``/``splash``/``splash_bg``/``version``).
+    ``icon``/``splash`` paths are resolved against that pyproject's directory.
+
+    Args:
+        app_path: Path to the app's entry file.
+
+    Returns:
+        The resolved :class:`TempestConfig` (all-``None`` when no config found).
+    """
+    start = Path(app_path).resolve().parent
+    found: tuple[Path, dict[str, object]] | None = None
+    for directory in (start, *start.parents):
+        config = directory / "pyproject.toml"
+        if not config.is_file():
+            continue
+        try:
+            data = tomllib.loads(config.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return TempestConfig()
+        found = (directory, data.get("tool", {}).get("tempest", {}))
+        break
+    if found is None:
+        return TempestConfig()
+    directory, table = found
+
+    def _str(key: str) -> str | None:
+        value = table.get(key)
+        return value if isinstance(value, str) and value else None
+
+    def _path(key: str) -> str | None:
+        value = _str(key)
+        return str((directory / value).resolve()) if value else None
+
+    return TempestConfig(
+        app_id=_str("id"),
+        app_name=_str("name"),
+        icon=_path("icon"),
+        splash=_path("splash"),
+        splash_bg=_str("splash_bg"),
+        version=_str("version"),
+    )
 
 
 def _read_configured_app(start: Path) -> Path | None:

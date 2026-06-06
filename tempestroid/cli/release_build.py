@@ -237,50 +237,168 @@ def ensure_toolchain(checkout: Path, console: Console) -> None:
         )
 
 
-def _prepare_sdk_env(con: Console) -> Path:
+def _prepare_sdk_env(con: Console, *, need_ndk: bool = True) -> Path:
     """Resolve a usable Android SDK and force it into the environment for Gradle.
 
     ``default_sdk_dir`` resolves the SDK (a valid ``ANDROID_SDK_ROOT``/
     ``ANDROID_HOME`` env value, else the system fallback, else the managed dir),
-    installing the SDK + NDK into it when incomplete. Then **both** env vars are
-    overwritten to the resolved path: a STALE ``ANDROID_HOME``/``ANDROID_SDK_ROOT``
-    left in the user's shell (e.g. pointing at a non-existent ``~/Android/Sdk``)
-    must not reach Gradle — AGP reads ``ANDROID_HOME`` and would otherwise fail
-    "SDK location not found". ``setdefault`` would leave the stale value in place,
-    so this overwrites.
+    installing it when incomplete. Then **both** env vars are overwritten to the
+    resolved path: a STALE ``ANDROID_HOME``/``ANDROID_SDK_ROOT`` left in the
+    user's shell (e.g. a non-existent ``~/Android/Sdk``) must not reach Gradle —
+    AGP reads ``ANDROID_HOME`` and would otherwise fail "SDK location not found".
+    ``setdefault`` would leave the stale value in place, so this overwrites.
 
     Args:
         con: Step reporter.
+        need_ndk: Whether the NDK is required (the source build needs it; the
+            prebuilt-natives build does not, so it only needs ``platform-tools``).
 
     Returns:
         The resolved SDK directory.
 
     Raises:
-        StepError: If the SDK + NDK cannot be prepared.
+        StepError: If the SDK (+ NDK when required) cannot be prepared.
     """
     sdk = default_sdk_dir()
-    if not (sdk / "ndk").is_dir() or not (sdk / "platform-tools").is_dir():
-        con.info("preparing the Android SDK + NDK…")
+    missing_pt = not (sdk / "platform-tools").is_dir()
+    missing_ndk = need_ndk and not (sdk / "ndk").is_dir()
+    if missing_pt or missing_ndk:
+        con.info("preparing the Android SDK…")
         install_android_sdk(sdk, console=con)
     os.environ["ANDROID_SDK_ROOT"] = str(sdk)
     os.environ["ANDROID_HOME"] = str(sdk)
     return sdk
 
 
-def _prepare_gradle_build(app: str | Path, con: Console) -> Path:
+def _extract_prebuilt_host(con: Console) -> Path:
+    """Resolve the prebuilt host APK and extract it for the prebuilt build mode.
+
+    The host APK already contains every native (``libpython``, the ``_python``
+    runtime libs, ``libtempest_host``) plus the CPython stdlib + site-packages —
+    so the Gradle build can reuse them and skip the heavy CPython toolchain. This
+    resolves the host APK (bundled asset → cache → GitHub release download) and
+    unzips it into a per-version cache dir consumed via ``-Ptempest.prebuiltHost``.
+
+    Args:
+        con: Step reporter.
+
+    Returns:
+        The extracted host directory (contains ``lib/`` + ``assets/python/``).
+
+    Raises:
+        StepError: If the host APK cannot be resolved.
+    """
+    import zipfile
+
+    from tempestroid import __version__
+    from tempestroid.cli.packaging import ToolchainError, resolve_host_apk
+
+    try:
+        host_apk = resolve_host_apk(None, version=__version__, console=con)
+    except (ToolchainError, FileNotFoundError) as exc:
+        raise StepError(f"could not resolve the prebuilt host APK: {exc}") from exc
+    dest = _CACHE / "host-extracted" / __version__
+    marker = dest / "assets" / "python" / "lib"
+    if not marker.is_dir():
+        with con.step("Extracting prebuilt host natives"):
+            shutil.rmtree(dest, ignore_errors=True)
+            dest.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(host_apk) as zf:
+                for info in zf.infolist():
+                    if info.filename.startswith(
+                        ("lib/", "assets/python/")
+                    ) and not info.is_dir():
+                        zf.extract(info, dest)
+    return dest
+
+
+def _resolve_host_checkout(con: Console, version: str, *, prebuilt: bool) -> Path:
+    """Resolve a usable ``android-host`` Gradle project for the build.
+
+    Order: an existing checkout (``TEMPESTROID_ANDROID_HOST`` / a repo checkout
+    found by walking up from the cwd) → the **android-host bundled in the wheel**
+    (``tempestroid/_android_host``, copied to a writable cache; prebuilt mode
+    only, since it carries no CPython toolchain) → a ``git clone`` of the repo at
+    the version tag (from-source, or when no bundled copy exists).
+
+    The bundled copy makes ``tempest build`` work from a plain ``pip install``
+    with no ``git`` and always matched to the installed version.
+
+    Args:
+        con: Step reporter.
+        version: The installed tempestroid version (clone tag ``v<version>``).
+        prebuilt: Whether the prebuilt-natives build is in use (allows the
+            bundled checkout, which has no ``toolchain/`` scripts).
+
+    Returns:
+        The checkout root (the dir containing ``android-host/``).
+
+    Raises:
+        StepError: If no checkout can be resolved.
+    """
+    from importlib import resources
+
+    from tempestroid.cli.packaging import ToolchainError, find_android_host
+
+    try:
+        return find_android_host().parent
+    except ToolchainError:
+        pass
+    if prebuilt:
+        try:
+            bundled = resources.files("tempestroid").joinpath("_android_host")
+            gradlew = bundled.joinpath("gradlew")
+            if gradlew.is_file():
+                cache_root = _CACHE / "host-src"
+                target = cache_root / "android-host"
+                framework = cache_root / "tempestroid"
+                if not (target / "gradlew").is_file() or not framework.is_dir():
+                    with con.step("Preparing bundled android-host"):
+                        shutil.rmtree(cache_root, ignore_errors=True)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with resources.as_file(bundled) as src:
+                            shutil.copytree(src, target)
+                        # gradlew must be executable after the copy.
+                        (target / "gradlew").chmod(0o755)
+                        # The Gradle build re-stages the framework from a sibling
+                        # `../tempestroid` (coreSrc). Copy the installed package
+                        # there, minus the bundled host + the heavy APK asset.
+                        pkg = resources.files("tempestroid")
+                        with resources.as_file(pkg) as pkg_src:
+                            shutil.copytree(
+                                pkg_src,
+                                framework,
+                                ignore=shutil.ignore_patterns(
+                                    "_android_host", "_assets", "__pycache__",
+                                    "*.pyc",
+                                ),
+                            )
+                return cache_root
+        except (OSError, ModuleNotFoundError):
+            pass
+    return ensure_source_checkout(version, con)
+
+
+def _prepare_gradle_build(
+    app: str | Path, con: Console, *, prebuilt: bool = True
+) -> tuple[Path, Path | None]:
     """Prepare the Gradle build environment and stage the app bundle.
 
-    Ensures a JDK, the Android SDK + NDK, the source checkout (``android-host`` +
-    toolchain scripts) and the CPython toolchain are present, then bundles the
-    user's whole project into the host assets — the steps shared by the debug
-    APK and the release AAB builds.
+    Ensures a JDK, the Android SDK, and the ``android-host`` source checkout. In
+    **prebuilt mode** (the default) it extracts the prebuilt host APK's natives +
+    stdlib (no NDK, no CPython toolchain — fast + reliable from a PyPI install);
+    otherwise it stages the full CPython toolchain (the heavy from-source path).
+    Then it bundles the user's whole project into the host assets.
 
     Args:
         app: Path to the app's entry Python file.
         con: Step reporter.
+        prebuilt: Reuse the prebuilt host natives (``True``, default) instead of
+            staging the CPython toolchain from source.
 
     Returns:
-        The ``android-host`` Gradle project directory (where ``gradlew`` lives).
+        A ``(host, prebuilt_dir)`` pair — the ``android-host`` Gradle project dir
+        and the extracted prebuilt host dir (``None`` in from-source mode).
 
     Raises:
         StepError: If a prepare step fails (missing JDK, clone failure, …).
@@ -296,21 +414,25 @@ def _prepare_gradle_build(app: str | Path, con: Console) -> Path:
     if not ok:
         raise StepError(f"a JDK is required ({detail}).")
 
-    # 2. SDK + NDK.
-    _prepare_sdk_env(con)
+    # 2. SDK (+ NDK only for the from-source build).
+    _prepare_sdk_env(con, need_ndk=not prebuilt)
 
-    # 3. Source checkout (android-host + toolchain scripts).
-    checkout = ensure_source_checkout(__version__, con)
+    # 3. android-host Gradle project (existing checkout → bundled → clone).
+    checkout = _resolve_host_checkout(con, __version__, prebuilt=prebuilt)
     host = checkout / "android-host"
 
-    # 4. CPython toolchain (heavy if absent).
-    ensure_toolchain(checkout, con)
+    # 4. Natives: reuse the prebuilt host (fast) or stage the CPython toolchain.
+    prebuilt_dir: Path | None = None
+    if prebuilt:
+        prebuilt_dir = _extract_prebuilt_host(con)
+    else:
+        ensure_toolchain(checkout, con)
 
     # 5. Stage the user's project bundle into the host assets.
     with con.step(f"Bundling project ({layout.entry})"):
         stage_app_bundle(app, host)
 
-    return host
+    return host, prebuilt_dir
 
 
 def build_aab(
@@ -320,12 +442,13 @@ def build_aab(
     console: Console | None = None,
     output: Path | None = None,
     branding: Branding | None = None,
+    prebuilt: bool = True,
 ) -> Path:
     """Build a store-ready, release-signed ``.aab`` for ``app``.
 
-    Prepares the environment (SDK/NDK, source checkout, CPython toolchain,
-    keystore) as needed, then drives ``gradlew bundleRelease`` with the app
-    bundled and the publisher's identity/signing applied.
+    Prepares the environment (SDK, source checkout, prebuilt host natives or the
+    CPython toolchain, keystore) as needed, then drives ``gradlew bundleRelease``
+    with the app bundled and the publisher's identity/signing applied.
 
     Args:
         app: Path to the app's entry Python file.
@@ -334,6 +457,8 @@ def build_aab(
         output: Output ``.aab`` path; defaults to ``dist/<project>-release.aab``.
         branding: Optional per-app branding (icon + splash) staged into the host
             for the build.
+        prebuilt: Reuse the prebuilt host natives (``True``, default; no NDK /
+            CPython toolchain) instead of staging the toolchain from source.
 
     Returns:
         The signed ``.aab`` path.
@@ -347,7 +472,7 @@ def build_aab(
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
-    host = _prepare_gradle_build(app, con)
+    host, prebuilt_dir = _prepare_gradle_build(app, con, prebuilt=prebuilt)
     keystore = ensure_release_keystore(config, con)
 
     # gradlew bundleRelease with the publisher identity + signing.
@@ -362,6 +487,8 @@ def build_aab(
         f"-Ptempest.storePassword={config.store_password}",
         f"-Ptempest.keyPassword={config.key_password}",
     ]
+    if prebuilt_dir is not None:
+        props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
     with staged_into_host(host, branding or Branding()), con.step(
         "Gradle bundleRelease (store AAB)"
     ):
@@ -389,16 +516,21 @@ def build_apk(
     console: Console | None = None,
     output: Path | None = None,
     branding: Branding | None = None,
+    prebuilt: bool = True,
 ) -> Path:
     """Build a shippable, debug-signed ``.apk`` for ``app`` with its own id.
 
-    Prepares the environment (SDK/NDK, source checkout, CPython toolchain) as
-    needed, then drives ``gradlew assembleDebug`` stamping ``app_id`` as the
-    ``applicationId``. Because each app carries a distinct id, two tempestroid
-    APKs install side by side instead of overwriting each other. The APK is
-    signed with the standard Android debug keystore (AGP handles this) — fine for
-    sharing and sideloading, but not for a Play Store upload (use
-    :func:`build_aab` / ``--release`` for that).
+    Prepares the environment (SDK, source checkout, prebuilt host natives or the
+    CPython toolchain) as needed, then drives ``gradlew assembleDebug`` stamping
+    ``app_id`` as the ``applicationId``. Because each app carries a distinct id,
+    two tempestroid APKs install side by side instead of overwriting each other.
+    The APK is signed with the standard Android debug keystore (AGP handles this)
+    — fine for sharing and sideloading, but not for a Play Store upload (use
+    :func:`build_aab` for that).
+
+    By default it builds in **prebuilt-natives mode** — reusing the prebuilt host
+    APK's CPython + JNI libs, so it needs only a JDK + the Android SDK (no NDK, no
+    CPython toolchain) and works from a plain PyPI install.
 
     Args:
         app: Path to the app's entry Python file.
@@ -410,6 +542,8 @@ def build_apk(
         output: Output ``.apk`` path; defaults to ``dist/<project>.apk``.
         branding: Optional per-app branding (icon + splash) staged into the host
             for the build.
+        prebuilt: Reuse the prebuilt host natives (``True``, default) instead of
+            staging the CPython toolchain from source.
 
     Returns:
         The debug-signed ``.apk`` path.
@@ -423,7 +557,7 @@ def build_apk(
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
-    host = _prepare_gradle_build(app, con)
+    host, prebuilt_dir = _prepare_gradle_build(app, con, prebuilt=prebuilt)
 
     env = dict(os.environ)
     props = [
@@ -432,6 +566,8 @@ def build_apk(
         f"-Ptempest.versionName={version_name}",
         f"-Ptempest.versionCode={version_code}",
     ]
+    if prebuilt_dir is not None:
+        props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
     with staged_into_host(host, branding or Branding()), con.step(
         f"Gradle assembleDebug (applicationId={app_id})"
     ):

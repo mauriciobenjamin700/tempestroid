@@ -280,23 +280,39 @@ def test_prepare_sdk_env_overwrites_stale(
     assert os.environ["ANDROID_SDK_ROOT"] == str(sdk)
 
 
-def test_build_reports_gradle_failure(
+def test_build_falls_back_to_repackage_when_gradle_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    # When a prepare step fails (e.g. no JDK) build_apk raises StepError; the CLI
-    # reports it with exit 1 rather than crashing.
-    from tempestroid.cli import release_build
+    """`tempest build` falls back to the repackage when the Gradle toolchain fails.
+
+    The Gradle path needs the full SDK/NDK + CPython-Android toolchain, often
+    absent from a PyPI install. When `build_apk` raises (a prep `StepError` or a
+    Gradle `CalledProcessError`), the CLI must fall back to the toolchain-free
+    `package_app_apk` (repackage) and still produce an APK — not exit 1.
+    """
+    from pathlib import Path as _P
+
+    from tempestroid.cli import packaging, release_build
     from tempestroid.cli.console import StepError
 
     app = tmp_path / "app.py"
     app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
     monkeypatch.chdir(tmp_path)
 
-    def _fail(*_a: object, **_k: object) -> object:
+    def _gradle_fails(*_a: object, **_k: object) -> object:
         raise StepError("a JDK is required (test)")
 
-    monkeypatch.setattr(release_build, "build_apk", _fail)
-    assert main(["build", str(app)]) == 1
+    calls: dict[str, object] = {}
+
+    def fake_repackage(_app: object, **_kw: object) -> _P:
+        calls["repackaged"] = True
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", _gradle_fails)
+    monkeypatch.setattr(packaging, "package_app_apk", fake_repackage)
+    assert main(["build", str(app)]) == 0
+    assert calls.get("repackaged") is True
+    assert "falling back" in capsys.readouterr().out.lower()
 
 
 def test_deploy_reports_missing_device(
@@ -331,10 +347,45 @@ def test_spec_prints_json(capsys: pytest.CaptureFixture[str]):
     assert "widgets" in data and "events" in data
 
 
+def test_build_apk_reads_id_from_tool_tempest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest build apk` reads the applicationId from [tool.tempest] (no flag).
+
+    Config-driven: `id`/`name` in pyproject drive a short `tempest build apk`,
+    so each project ships its own id (N apps side by side) without a flag soup.
+    """
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "todo"
+    app.mkdir()
+    (app / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "app.py"\nid = "com.acme.todo"\nname = "Todo"\n'
+    )
+    (app / "app.py").write_text(
+        "def make_state():\n    ...\ndef view(app):\n    ...\n"
+    )
+    monkeypatch.chdir(app)
+
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(
+        _app: object, *, app_id: str, app_name: str, **_kw: object
+    ) -> Path:
+        seen["app_id"] = app_id
+        seen["app_name"] = app_name
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", "apk"]) == 0
+    assert seen["app_id"] == "com.acme.todo"
+    assert seen["app_name"] == "Todo"
+
+
 def test_build_release_dispatches_to_aab(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """`tempest build --release` builds an AAB via build_aab, deriving an app-id."""
+    """`tempest build prd` builds an AAB via build_aab, deriving an app-id."""
     from tempestroid.cli import release_build
 
     app = tmp_path / "myapp"
@@ -352,8 +403,8 @@ def test_build_release_dispatches_to_aab(
         return tmp_path / "out.aab"
 
     monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
-    assert main(["build", str(app / "main.py"), "--release"]) == 0
-    # No --app-id → a derived placeholder from the project dir name.
+    assert main(["build", "prd", "--app", str(app / "main.py")]) == 0
+    # No id (flag or [tool.tempest]) → a derived placeholder from the project dir.
     assert seen["app_id"] == "com.example.myapp"
 
 
@@ -374,7 +425,7 @@ def test_build_release_uses_given_app_id(
 
     monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
     rc = main(
-        ["build", str(app), "--release", "--app-id", "com.acme.todo",
+        ["build", "prd", "--app", str(app), "--app-id", "com.acme.todo",
          "--app-version", "2.1.0"]
     )
     assert rc == 0
