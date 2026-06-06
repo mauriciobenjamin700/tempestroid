@@ -25,7 +25,9 @@ uv run tempest --help
 | `tempest serve <app>` | ✅ | Code-push por LAN + hot reload do projeto inteiro (fase B5). |
 | `tempest install [src]` | ✅ | adb-instala o host pré-compilado (sem SDK/NDK). |
 | `tempest spec` | ✅ | Contrato tipado de widgets/eventos como JSON. |
+| `tempest doctor` | ✅ | Diagnostica os pré-requisitos de build/run Android (JDK, android-host, SDK, adb, dispositivo) e diz o que falta. |
 | `tempest setup` | ✅ | Configura o ambiente de build: diagnostica JDK/SDK/build-tools; `--install` instala o Android SDK. |
+| `tempest version` | ✅ | Imprime a versão do framework (igual a `--version`). |
 | `tempest build [apk\|prd]` | ✅ | `apk`: APK **per-app** (id próprio → N apps lado a lado), via Gradle reusando os nativos pré-compilados (**só JDK + SDK**, sem NDK/toolchain). `prd`: AAB de release. Lê `[tool.tempest]`. |
 | `tempest run` | ✅ | `build apk` + instala no dispositivo + transmite logs. |
 | `tempest icon <img>` | ✅ | Gera `icon.png` + `splash.png` de uma imagem (Pillow). |

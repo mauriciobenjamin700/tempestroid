@@ -26,7 +26,16 @@ __all__ = ["app", "main"]
 
 app: typer.Typer = typer.Typer(
     name="tempest",
-    help="Build native Android apps in typed Python.",
+    help=(
+        "Build native Android apps in typed Python.\n\n"
+        "Typical flow:\n"
+        "  tempest new myapp     scaffold a project\n"
+        "  tempest dev           preview in the desktop simulator (hot reload)\n"
+        "  tempest serve         live code-push to a connected device\n"
+        "  tempest build apk     a shippable per-app APK (config in pyproject)\n\n"
+        "Run `tempest doctor` to check the Android prerequisites, or "
+        "`tempest <command> --help` for any command."
+    ),
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
@@ -62,18 +71,10 @@ def _root(  # pyright: ignore[reportUnusedFunction]  # wired by Typer via the de
         ),
     ] = False,
 ) -> None:
-    """Root callback wiring global flags such as ``--version``."""
+    """Root callback wiring global flags such as --version."""
 
 
-@app.command("version")
-def version_cmd() -> None:
-    """Show the framework version (alias of ``--version``)."""
-    from tempestroid import __version__
-
-    typer.echo(f"tempest {__version__}")
-
-
-@app.command("dev")
+@app.command("dev", rich_help_panel="Create & develop")
 def dev_cmd(
     app_path: Annotated[
         str | None,
@@ -96,7 +97,7 @@ def dev_cmd(
     raise typer.Exit(_run_dev(resolved, verbose))
 
 
-@app.command("serve")
+@app.command("serve", rich_help_panel="Create & develop")
 def serve_cmd(
     app_path: Annotated[
         str | None,
@@ -127,7 +128,7 @@ def serve_cmd(
     raise typer.Exit(_run_serve(resolved, host, port, launch=not no_launch))
 
 
-@app.command("install")
+@app.command("install", rich_help_panel="Ship & install")
 def install_cmd(
     source: Annotated[
         str | None,
@@ -154,7 +155,7 @@ def install_cmd(
     raise typer.Exit(_run_install(source, launch=not no_launch, verbose=verbose))
 
 
-@app.command("spec")
+@app.command("spec", rich_help_panel="Diagnose & inspect")
 def spec_cmd() -> None:
     """Print the typed contract (widgets/events) as JSON."""
     import json
@@ -165,7 +166,7 @@ def spec_cmd() -> None:
     raise typer.Exit(0)
 
 
-@app.command("new")
+@app.command("new", rich_help_panel="Create & develop")
 def new_cmd(
     name: Annotated[
         str,
@@ -196,7 +197,7 @@ def new_cmd(
     raise typer.Exit(_run_new(name, into, template))
 
 
-@app.command("icon")
+@app.command("icon", rich_help_panel="Ship & install")
 def icon_cmd(
     source: Annotated[
         str,
@@ -237,7 +238,7 @@ def icon_cmd(
     )
 
 
-@app.command("build")
+@app.command("build", rich_help_panel="Ship & install")
 def build_cmd(
     target: Annotated[
         str,
@@ -392,7 +393,7 @@ def build_cmd(
     )
 
 
-@app.command("deploy")
+@app.command("deploy", rich_help_panel="Ship & install")
 def deploy_cmd(
     app_path: Annotated[
         str | None,
@@ -428,7 +429,7 @@ def deploy_cmd(
     raise typer.Exit(_run_deploy(resolved, force_install, verbose))
 
 
-@app.command("run")
+@app.command("run", rich_help_panel="Ship & install")
 def run_cmd(
     app_path: Annotated[
         str | None,
@@ -475,7 +476,7 @@ def run_cmd(
     )
 
 
-@app.command("doctor")
+@app.command("doctor", rich_help_panel="Diagnose & inspect")
 def doctor_cmd(
     verbose: Annotated[
         bool,
@@ -486,7 +487,7 @@ def doctor_cmd(
     raise typer.Exit(_run_doctor(verbose))
 
 
-@app.command("setup")
+@app.command("setup", rich_help_panel="Diagnose & inspect")
 def setup_cmd(
     install: Annotated[
         bool,
@@ -516,6 +517,14 @@ def setup_cmd(
     stay guided). Not needed for the offline `tempest deploy` / `serve` paths.
     """
     raise typer.Exit(_run_setup(install, sdk_dir, verbose))
+
+
+@app.command("version", rich_help_panel="Diagnose & inspect")
+def version_cmd() -> None:
+    """Show the framework version (same as --version)."""
+    from tempestroid import __version__
+
+    typer.echo(f"tempest {__version__}")
 
 
 def _resolve_app_or_exit(app_path: str | None) -> str:

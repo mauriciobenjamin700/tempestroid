@@ -97,10 +97,35 @@ def test_preflight_all_ok_without_device(
     monkeypatch.setenv("TEMPESTROID_ANDROID_HOST", str(host))
     monkeypatch.setenv("ANDROID_SDK_ROOT", str(tmp_path))
     monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr(
+        "tempestroid.cli.setup_env.jdk_ok", lambda: (True, "openjdk 21")
+    )
     checks = preflight(host=host)
     names = {c.name for c in checks}
-    assert names == {"android-host", "android-sdk", "adb"}
+    assert names == {"jdk", "android-host", "android-sdk", "adb"}
     assert all(c.ok for c in checks)
+
+
+def test_preflight_accepts_bundled_android_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """No checkout but the wheel-bundled `_android_host` satisfies the probe."""
+    monkeypatch.setenv("ANDROID_SDK_ROOT", str(tmp_path))
+    monkeypatch.setattr("shutil.which", _which_adb)
+    monkeypatch.setattr(
+        "tempestroid.cli.setup_env.jdk_ok", lambda: (True, "openjdk 21")
+    )
+
+    def _no_checkout() -> Path:
+        raise ToolchainError("no android-host checkout")
+
+    monkeypatch.setattr("tempestroid.cli.packaging.find_android_host", _no_checkout)
+    monkeypatch.setattr(
+        "tempestroid.cli.packaging._bundled_android_host_available", lambda: True
+    )
+    by_name = {c.name: c for c in preflight()}
+    assert by_name["android-host"].ok is True
+    assert "bundled" in by_name["android-host"].detail
 
 
 def test_preflight_flags_missing_adb_and_device(
