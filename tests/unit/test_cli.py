@@ -430,3 +430,90 @@ def test_build_release_uses_given_app_id(
     )
     assert rc == 0
     assert captured == {"app_id": "com.acme.todo", "version": "2.1.0"}
+
+
+def test_clean_cache_removes_dirs_keeps_keystore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tempestroid.cli import release_build
+
+    monkeypatch.setattr(release_build, "_CACHE", tmp_path)
+    (tmp_path / "host-extracted").mkdir()
+    (tmp_path / "host-src").mkdir()
+    (tmp_path / "src").mkdir()
+    keystore = tmp_path / "release.jks"
+    keystore.write_text("key")
+
+    removed = release_build.clean_cache()
+
+    assert {p.name for p in removed} == {"host-extracted", "host-src", "src"}
+    assert not (tmp_path / "host-src").exists()
+    assert keystore.exists()  # preserved by default
+
+
+def test_clean_cache_drops_keystore_when_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tempestroid.cli import release_build
+
+    monkeypatch.setattr(release_build, "_CACHE", tmp_path)
+    (tmp_path / "release.jks").write_text("key")
+
+    removed = release_build.clean_cache(include_keystore=True)
+
+    assert tmp_path / "release.jks" in removed
+    assert not (tmp_path / "release.jks").exists()
+
+
+def test_clean_command_idempotent_on_empty_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tempestroid.cli import release_build
+
+    monkeypatch.setattr(release_build, "_CACHE", tmp_path)
+    assert main(["clean"]) == 0
+
+
+def test_doctor_passes_without_device(monkeypatch: pytest.MonkeyPatch):
+    """A missing device must not fail doctor — only build readiness does."""
+    from tempestroid.cli import packaging
+    from tempestroid.cli.packaging import PreflightCheck
+
+    def fake_preflight(*, need_device: bool = False, host: object = None):
+        return [
+            PreflightCheck("jdk", True, "openjdk 21"),
+            PreflightCheck("android-host", True, "bundled in the package"),
+            PreflightCheck("android-sdk", True, "/usr/lib/android-sdk"),
+            PreflightCheck("adb", False, "not on PATH", "install platform-tools."),
+            PreflightCheck("device", False, "none connected"),
+        ]
+
+    monkeypatch.setattr(packaging, "preflight", fake_preflight)
+    assert main(["doctor"]) == 0
+
+
+def test_doctor_fails_when_build_prereq_missing(monkeypatch: pytest.MonkeyPatch):
+    """A missing build-critical prerequisite (JDK) makes doctor exit non-zero."""
+    from tempestroid.cli import packaging
+    from tempestroid.cli.packaging import PreflightCheck
+
+    def fake_preflight(*, need_device: bool = False, host: object = None):
+        return [
+            PreflightCheck("jdk", False, "not found", "install a JDK >= 17."),
+            PreflightCheck("android-host", True, "bundled in the package"),
+            PreflightCheck("android-sdk", True, "/usr/lib/android-sdk"),
+        ]
+
+    monkeypatch.setattr(packaging, "preflight", fake_preflight)
+    assert main(["doctor"]) != 0
+
+
+def test_clean_command_handles_unremovable_cache(monkeypatch: pytest.MonkeyPatch):
+    """A cache entry that can't be removed yields a graceful exit 1, not a crash."""
+    from tempestroid.cli import release_build
+
+    def boom(*, include_keystore: bool = False) -> list[Path]:
+        raise OSError("device or resource busy")
+
+    monkeypatch.setattr(release_build, "clean_cache", boom)
+    assert main(["clean"]) == 1

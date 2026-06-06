@@ -128,6 +128,26 @@ def find_android_host(start: str | Path | None = None) -> Path:
     )
 
 
+def _bundled_android_host_available() -> bool:
+    """Report whether the android-host Gradle project is bundled in the package.
+
+    The wheel ships ``tempestroid/_android_host`` so ``tempest build`` works from
+    a plain ``pip install`` (no ``git clone``). Returns ``True`` when that bundled
+    copy is present (a repo checkout has it at the repo root instead, handled by
+    :func:`find_android_host`).
+
+    Returns:
+        ``True`` when the bundled ``_android_host/gradlew`` is importable.
+    """
+    from importlib import resources
+
+    try:
+        gradlew = resources.files("tempestroid").joinpath("_android_host", "gradlew")
+        return gradlew.is_file()
+    except (ModuleNotFoundError, OSError):
+        return False
+
+
 def _android_env() -> dict[str, str]:
     """Build the subprocess environment with the Android SDK root resolved.
 
@@ -267,20 +287,39 @@ def preflight(
     """
     checks: list[PreflightCheck] = []
 
+    # JDK — required by Gradle for `tempest build apk`/`prd`/`run`.
+    from tempestroid.cli.setup_env import jdk_ok
+
+    jdk_present, jdk_detail = jdk_ok()
+    checks.append(
+        PreflightCheck(
+            "jdk",
+            jdk_present,
+            jdk_detail,
+            "" if jdk_present else "install a JDK >= 17 (e.g. openjdk-21-jdk).",
+        )
+    )
+
+    # android-host Gradle project: an existing checkout (repo / env var) OR the
+    # copy bundled inside the wheel (used by a plain `pip install`).
     try:
         host_dir = host or find_android_host()
-        checks.append(PreflightCheck("android-host", True, str(host_dir)))
-    except ToolchainError as exc:
-        checks.append(
-            PreflightCheck(
-                "android-host",
-                False,
-                str(exc),
-                "for a device run use `tempest install` + `tempest serve` "
-                "(no source build); to build an APK, run from a checkout or set "
-                "TEMPESTROID_ANDROID_HOST.",
+        checks.append(PreflightCheck("android-host", True, f"checkout: {host_dir}"))
+    except ToolchainError:
+        if _bundled_android_host_available():
+            checks.append(
+                PreflightCheck("android-host", True, "bundled in the package")
             )
-        )
+        else:
+            checks.append(
+                PreflightCheck(
+                    "android-host",
+                    False,
+                    "not found",
+                    "reinstall tempestroid, run from a checkout, or set "
+                    "TEMPESTROID_ANDROID_HOST.",
+                )
+            )
 
     try:
         sdk = _android_env()["ANDROID_SDK_ROOT"]
@@ -288,7 +327,11 @@ def preflight(
     except ToolchainError as exc:
         checks.append(
             PreflightCheck(
-                "android-sdk", False, str(exc), "set ANDROID_SDK_ROOT to your SDK."
+                "android-sdk",
+                False,
+                str(exc),
+                "run `tempest setup --install` to install the SDK, or set "
+                "ANDROID_SDK_ROOT.",
             )
         )
 

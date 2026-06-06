@@ -26,7 +26,16 @@ __all__ = ["app", "main"]
 
 app: typer.Typer = typer.Typer(
     name="tempest",
-    help="Build native Android apps in typed Python.",
+    help=(
+        "Build native Android apps in typed Python.\n\n"
+        "Typical flow:\n"
+        "  tempest new myapp     scaffold a project\n"
+        "  tempest dev           preview in the desktop simulator (hot reload)\n"
+        "  tempest serve         live code-push to a connected device\n"
+        "  tempest build apk     a shippable per-app APK (config in pyproject)\n\n"
+        "Run `tempest doctor` to check the Android prerequisites, or "
+        "`tempest <command> --help` for any command."
+    ),
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
@@ -62,18 +71,10 @@ def _root(  # pyright: ignore[reportUnusedFunction]  # wired by Typer via the de
         ),
     ] = False,
 ) -> None:
-    """Root callback wiring global flags such as ``--version``."""
+    """Root callback wiring global flags such as --version."""
 
 
-@app.command("version")
-def version_cmd() -> None:
-    """Show the framework version (alias of ``--version``)."""
-    from tempestroid import __version__
-
-    typer.echo(f"tempest {__version__}")
-
-
-@app.command("dev")
+@app.command("dev", rich_help_panel="Create & develop")
 def dev_cmd(
     app_path: Annotated[
         str | None,
@@ -96,7 +97,7 @@ def dev_cmd(
     raise typer.Exit(_run_dev(resolved, verbose))
 
 
-@app.command("serve")
+@app.command("serve", rich_help_panel="Create & develop")
 def serve_cmd(
     app_path: Annotated[
         str | None,
@@ -127,7 +128,7 @@ def serve_cmd(
     raise typer.Exit(_run_serve(resolved, host, port, launch=not no_launch))
 
 
-@app.command("install")
+@app.command("install", rich_help_panel="Ship & install")
 def install_cmd(
     source: Annotated[
         str | None,
@@ -154,7 +155,7 @@ def install_cmd(
     raise typer.Exit(_run_install(source, launch=not no_launch, verbose=verbose))
 
 
-@app.command("spec")
+@app.command("spec", rich_help_panel="Diagnose & inspect")
 def spec_cmd() -> None:
     """Print the typed contract (widgets/events) as JSON."""
     import json
@@ -165,7 +166,7 @@ def spec_cmd() -> None:
     raise typer.Exit(0)
 
 
-@app.command("new")
+@app.command("new", rich_help_panel="Create & develop")
 def new_cmd(
     name: Annotated[
         str,
@@ -196,7 +197,7 @@ def new_cmd(
     raise typer.Exit(_run_new(name, into, template))
 
 
-@app.command("icon")
+@app.command("icon", rich_help_panel="Ship & install")
 def icon_cmd(
     source: Annotated[
         str,
@@ -237,7 +238,7 @@ def icon_cmd(
     )
 
 
-@app.command("build")
+@app.command("build", rich_help_panel="Ship & install")
 def build_cmd(
     target: Annotated[
         str,
@@ -392,7 +393,7 @@ def build_cmd(
     )
 
 
-@app.command("deploy")
+@app.command("deploy", rich_help_panel="Ship & install")
 def deploy_cmd(
     app_path: Annotated[
         str | None,
@@ -428,7 +429,7 @@ def deploy_cmd(
     raise typer.Exit(_run_deploy(resolved, force_install, verbose))
 
 
-@app.command("run")
+@app.command("run", rich_help_panel="Ship & install")
 def run_cmd(
     app_path: Annotated[
         str | None,
@@ -475,7 +476,7 @@ def run_cmd(
     )
 
 
-@app.command("doctor")
+@app.command("doctor", rich_help_panel="Diagnose & inspect")
 def doctor_cmd(
     verbose: Annotated[
         bool,
@@ -486,7 +487,7 @@ def doctor_cmd(
     raise typer.Exit(_run_doctor(verbose))
 
 
-@app.command("setup")
+@app.command("setup", rich_help_panel="Diagnose & inspect")
 def setup_cmd(
     install: Annotated[
         bool,
@@ -516,6 +517,34 @@ def setup_cmd(
     stay guided). Not needed for the offline `tempest deploy` / `serve` paths.
     """
     raise typer.Exit(_run_setup(install, sdk_dir, verbose))
+
+
+@app.command("version", rich_help_panel="Diagnose & inspect")
+def version_cmd() -> None:
+    """Show the framework version (same as --version)."""
+    from tempestroid import __version__
+
+    typer.echo(f"tempest {__version__}")
+
+
+@app.command("clean", rich_help_panel="Diagnose & inspect")
+def clean_cmd(
+    include_keystore: Annotated[
+        bool,
+        typer.Option(
+            "--keystore",
+            help="Also delete the cached release keystore (blocks future updates).",
+        ),
+    ] = False,
+) -> None:
+    """Reset tempestroid's build caches under `~/.tempestroid`.
+
+    Removes the extracted host natives, the bundled-host working copy, and the
+    cloned source — all re-created on the next build. Fixes stale-cache build
+    failures after a `pip install --upgrade`. The release keystore is kept
+    unless `--keystore` is passed.
+    """
+    raise typer.Exit(_run_clean(include_keystore))
 
 
 def _resolve_app_or_exit(app_path: str | None) -> str:
@@ -1108,23 +1137,71 @@ def _run_run(
 def _run_doctor(verbose: bool) -> int:
     """Probe the Android build/run prerequisites and report them.
 
+    Build readiness (JDK + android-host + SDK) decides the exit code; a missing
+    ``adb``/device is reported as informational, since ``build apk``/``prd`` need
+    no device — only ``run``/``install``/``deploy`` do.
+
     Args:
         verbose: Show resolution hints for failed checks.
 
     Returns:
-        ``0`` when every prerequisite is satisfied, else ``1``.
+        ``0`` when the build prerequisites are satisfied, else ``1``.
     """
     from tempestroid.cli.console import Console
-    from tempestroid.cli.packaging import preflight, report_preflight
+    from tempestroid.cli.packaging import preflight
 
+    # Build needs JDK + android-host + SDK; adb/device are run-only.
+    build_critical = {"jdk", "android-host", "android-sdk"}
     console = Console(verbose=verbose)
     console.info("tempest doctor — Android build/run prerequisites")
-    ok = report_preflight(preflight(need_device=True), console)
-    if ok:
-        console.info("all prerequisites satisfied — ready to build and run.")
+
+    build_ok = True
+    for check in preflight(need_device=True):
+        if check.ok:
+            console.info(f"{check.name}: {check.detail}")
+            continue
+        if check.name in build_critical:
+            build_ok = False
+            console.fail(f"{check.name}: {check.detail}")
+        else:
+            # Run-only (adb/device): not a build blocker.
+            console.info(f"{check.name}: {check.detail} (only for run/install)")
+        if check.hint:
+            console.info(f"  → {check.hint}")
+
+    if build_ok:
+        console.info("build prerequisites satisfied — ready to `tempest build`.")
         return 0
-    console.fail("some prerequisites are missing (see above).")
+    console.fail("build prerequisites are missing (see above).")
     return 1
+
+
+def _run_clean(include_keystore: bool) -> int:
+    """Remove the rebuildable build caches under ``~/.tempestroid``.
+
+    Args:
+        include_keystore: Also delete the cached release keystore.
+
+    Returns:
+        ``0`` on success (an empty cache counts as success), ``1`` if a cache
+        entry could not be removed.
+    """
+    from tempestroid.cli.console import Console
+    from tempestroid.cli.release_build import clean_cache
+
+    console = Console()
+    try:
+        removed = clean_cache(include_keystore=include_keystore)
+    except OSError as exc:
+        console.fail(f"could not clean the cache: {exc}")
+        return 1
+    if not removed:
+        console.info("cache already clean — nothing to remove.")
+        return 0
+    for path in removed:
+        console.info(f"removed {path}")
+    console.info(f"cleaned {len(removed)} cache entries.")
+    return 0
 
 
 def _run_setup(install: bool, sdk_dir: str | None, verbose: bool) -> int:
