@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-06-06
+
+### Added
+
+- **`tempest clean` — reset the build caches.** Removes the rebuildable caches
+  under `~/.tempestroid` (`host-extracted` / `host-src` / `src`), fixing
+  stale-cache build failures after a `pip install --upgrade`. The release
+  keystore (`release.jks`) is preserved by default — losing it blocks future
+  Play updates — and dropped only with `--keystore`. A cache entry that can't be
+  removed yields a graceful exit 1, not a crash.
+- **Grouped, flow-oriented `tempest --help`.** Commands are organised into three
+  panels — **Create & develop** (`new` / `dev` / `serve`), **Ship & install**
+  (`install` / `icon` / `build` / `deploy` / `run`) and **Diagnose & inspect**
+  (`spec` / `doctor` / `setup` / `version` / `clean`) — plus a "Typical flow"
+  block (`new → dev → serve → build apk`).
+
+### Changed
+
+- **`tempest doctor` separates build readiness from device readiness.** The exit
+  code now reflects only the build prerequisites (JDK + android-host + SDK); a
+  missing `adb`/device is reported as informational ("only for run/install"),
+  since `build apk`/`prd` need no device. `doctor` also probes the **JDK** and
+  accepts the **wheel-bundled `_android_host`**, so a plain `pip install`
+  (no repo checkout) passes the diagnosis.
+
 ## [0.8.1] — 2026-06-05
 
 ### Added
