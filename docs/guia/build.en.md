@@ -53,18 +53,25 @@ no path argument inside the project.
 |---|---|---|---|
 | Run quickly on **my** device | `tempest deploy` | nothing (just adb) | App running on the device (ephemeral) |
 | Edit + see live (hot reload) | `tempest serve` | nothing (just adb) | LAN code-push loop |
-| **Ship an APK** for someone to test | `tempest build` | SDK build-tools | Self-contained, distributable `.apk` |
-| Build + install + logs | `tempest run` | SDK build-tools + adb | Installs the APK and tails logs |
+| **Ship an APK** to someone | `tempest build apk` | JDK + Android SDK | `.apk` with its own `applicationId` (**N apps side by side**) |
+| Build + install + logs | `tempest run` | JDK + SDK + adb | Installs the APK and tails logs |
+| Publish to the Play Store | `tempest build prd` | JDK + SDK + keystore | Release-signed `.aab` |
+| Iterate on one app, **no SDK install** | `tempest build --fast` | SDK build-tools only | `.apk` (shared id, one app) |
 
-!!! info "Two philosophies"
-    - **Push (ephemeral)** (`deploy`/`serve`): a **generic host** (CPython +
-      framework) is installed once; your Python is pushed on top. Fast, offline.
-      But the app lives **inside the host** — it is not an artifact you can hand
-      to someone else.
-    - **Shippable APK** (`build`/`run`): **repackage the prebuilt host** with your
-      project injected (re-signed via the SDK's `zipalign`/`apksigner`). **No
-      Gradle, NDK, or `android-host` checkout** — just the SDK build-tools. This
-      is the path that yields a distributable `.apk`.
+!!! info "How it works (no heavy toolchain)"
+    `tempest build apk` runs **Gradle** (which stamps the `applicationId` + every
+    provider authority per app → they **install side by side, no collisions**) but
+    **reuses the prebuilt host natives** (`libpython`, the stdlib, the JNI shim)
+    that ship in the package. So it needs only a **JDK + the Android SDK** — **no
+    NDK, no compiling CPython**. The `android-host` project ships **inside the
+    wheel**, so it works from a plain `pip install` with **no `git clone`**.
+
+    - `deploy`/`serve`: push your code to a **generic host** that is installed
+      once (fast, offline) — the app lives inside the host, not a shippable artifact.
+    - `--fast`: repackage the prebuilt host with **no SDK at all** (just
+      build-tools), but a shared `org.tempestroid.host` id → **one app per device**.
+    - `--from-source`: the heavy build that stages the CPython toolchain (rarely
+      needed).
 
 ## Run on my device (no toolchain)
 
@@ -85,7 +92,7 @@ tempest deploy            # install the bundled host (once) + push the project +
 !!! warning "`deploy` yields no artifact"
     The app pushed by `deploy` lives in the host session. On a cold boot, or on
     someone else's phone, the host runs the built-in demo — **not** your app. For
-    something distributable, use [`tempest build`](#ship-an-apk).
+    something distributable, use [`tempest build apk`](#build-an-apk-tempest-build-apk).
 
 For a **hot-reload loop** (edit + save → reloads on device):
 
@@ -101,48 +108,52 @@ tempest serve             # LAN code-push: saving any file reloads on device
 PyPI wheel does **not** embed the ~100 MB APK, so the download is the normal path
 from a PyPI install (offline thereafter).
 
-## Ship an APK
+## Build an APK (`tempest build apk`)
 
-To produce a **self-contained** `.apk` (runs with no dev server, hand it to
-anyone):
+To produce a **self-contained** `.apk` (runs with no dev server, with your
+project's **own id** → installs side by side with any other tempestroid app):
 
 ```bash
-tempest build                              # Gradle: APK with its own applicationId
-tempest build --app-id com.yourco.app      # set the id (recommended for anything real)
-tempest build -o /tmp/app.apk              # choose the output path
+tempest build apk          # reads [tool.tempest], writes dist/<project>.apk
+tempest build apk -o /tmp/app.apk
 ```
 
-The result lands at `dist/<project>.apk` (or `-o`). By default `tempest build`
-runs Gradle (`assembleDebug`) and stamps each app with its **own `applicationId`**
-+ launcher label, so two tempestroid apps **install side by side** instead of
-overwriting each other. Debug-signed → `adb install` it on any compatible device
-and the app opens directly, no server.
+Identity + look come from **`[tool.tempest]`** in pyproject.toml — no flag soup:
 
-!!! info "Do I set `--app-id`, or does the framework generate it?"
-    **Both — but for anything real, set your own.**
+```toml
+[tool.tempest]
+app = "app.py"
+id = "com.yourcompany.todolist"  # applicationId; derived from the project if omitted
+name = "Todo List"               # name under the icon
+icon = "icon.png"                # optional
+splash = "splash.png"            # optional
+splash_bg = "#0b0f14"            # optional
+version = "1.0.0"                # optional (default 1.0.0)
+```
 
-    - You pass `--app-id com.yourco.app` → that's the `applicationId` (and
-      `--app-name "My App"` for the name under the icon).
-    - You **omit** it → the framework **derives** `com.example.<project-name>`,
-      just so you can build and install right away without deciding anything.
+The result lands at `dist/<project>.apk`, debug-signed → `adb install` it on any
+device and it opens directly, no server. Each project carries its **own
+`applicationId`**, so **N apps install side by side** (never overwriting). The
+`--app-id`/`--app-name`/`--icon`/… flags override the config per build.
 
-    The derived `com.example.*` id is a **placeholder, not publishable** — the
-    Play Store rejects `com.example.*`. Rule of thumb: **test with the derived id;
-    set your own `--app-id`** (your company's reverse domain, e.g.
-    `com.yourco.app`) **as soon as the app is real**, and **keep the same id
-    forever** — changing it makes Android/Play treat it as a different app (loses
-    updates and data). The id is independent of the internal Java/JNI package
-    (`org.tempestroid.host`), so choosing your own never breaks the bridge.
+!!! info "Do I set `id`, or does the framework generate it?"
+    **Both — but for anything real, set your own.** Omitted → the framework
+    **derives** `com.example.<project>` just so you can build right away. That
+    `com.example.*` is a **placeholder, not publishable** (the Play Store rejects
+    it). Rule: **test with the derived id; set your own `id`** (your reverse
+    domain, e.g. `com.yourco.app`) and **keep it forever** — changing it makes
+    Android/Play treat it as a different app. The `id` is independent of the
+    internal Java/JNI package (`org.tempestroid.host`), so choosing your own
+    never breaks the bridge.
 
-!!! note "Default `build` uses the toolchain; `--fast` skips it (1 app)"
-    Default `tempest build` runs Gradle, so it needs the SDK **+ NDK** + the
-    `android-host` checkout + the CPython toolchain — the CLI **prepares whatever
-    is missing**. To iterate fast on a **single** app without the toolchain, use
-    `tempest build --fast`: it skips Gradle and **repackages the prebuilt host**
-    (just the SDK build-tools, works from a PyPI install). Trade-off: `--fast`
-    keeps the shared `org.tempestroid.host` id (an APK repackage can't rewrite the
-    binary manifest's package), so it is for **one app at a time**, not several
-    side by side. Run `tempest setup --install` for the SDK/NDK.
+!!! note "Needs only JDK + Android SDK (no NDK, no toolchain)"
+    `tempest build apk` runs Gradle **reusing the prebuilt host natives**
+    (libpython/JNI/stdlib shipped in the package) → it **does not compile CPython
+    and needs no NDK**. The `android-host` project ships **inside the wheel**, so
+    it works from a plain `pip install` with **no `git clone`**. Run `tempest
+    setup --install` once for the SDK (the JDK is a prerequisite). Without JDK/SDK
+    the build **falls back to `--fast`** (shared id) with a warning instead of
+    failing.
 
 ## App icon and boot splash
 
@@ -180,65 +191,52 @@ tempest build --icon icon.png \
     in assets (a stable path), `--splash`/`--splash-bg` work on **every** build
     path, including `--fast`.
 
-## Publish to the Play Store (`--release` → AAB)
+## Publish to the Play Store (`tempest build prd` → AAB)
 
-The Play Store requires an **Android App Bundle** (`.aab`), release-signed, with
-your own `applicationId`. `tempest build --release` produces that via Gradle
-`bundleRelease` and **prepares whatever is missing** (SDK/NDK, source checkout,
-CPython toolchain, keystore):
+The Play Store requires a release-signed **Android App Bundle** (`.aab`).
+`tempest build prd` produces it via Gradle `bundleRelease`, reading `[tool.tempest]`
+and using a keystore (yours via `--keystore`, else a generated cached one):
 
 ```bash
-tempest build main.py --release \
-  --app-id com.yourcompany.todo \
-  --app-version 1.0.0 \
-  --version-code 1 \
-  --keystore release.jks          # omit → generates ~/.tempestroid/release.jks
+tempest build prd                          # uses [tool.tempest] id/name/version
+tempest build prd --keystore release.jks   # your keystore (else ~/.tempestroid/release.jks)
 # → dist/<project>-release.aab  (upload to the Play Console)
 ```
 
-!!! warning "Keep the keystore"
-    The release keystore signs your app. **Losing it blocks future Play updates.**
-    Back up `--keystore` (or the generated `~/.tempestroid/release.jks`). Use your
-    **own** `--app-id` — the `com.example.*` placeholder won't publish.
+!!! warning "Keep the keystore + set your id"
+    The release keystore signs your app. **Losing it blocks future Play updates** —
+    back up `--keystore` (or the generated `~/.tempestroid/release.jks`). And set
+    your own `id` in `[tool.tempest]` — the `com.example.*` placeholder won't
+    publish.
 
-!!! info "`--release` needs the full toolchain"
-    Unlike the debug APK (repackage), the AAB is a from-source build: it needs the
-    SDK **+ NDK** + an `android-host` checkout + the staged CPython toolchain. The
-    CLI installs/clones/stages what's missing (the CPython staging is heavy:
-    downloads + native wheel build).
+!!! note "Same light base as `apk`"
+    Like `apk`, `prd` reuses the prebuilt host natives → **JDK + Android SDK only**,
+    no NDK or CPython toolchain. (To build the toolchain from scratch, the advanced
+    `--from-source` flag exists.)
 
 ## Environment setup
 
 !!! tip "Let `tempest setup` configure it for you"
     ```bash
-    tempest setup            # diagnose JDK/SDK/NDK/build-tools/toolchain + plan
-    tempest setup --install  # install the Android SDK + NDK (needs a JDK)
+    tempest setup            # diagnose JDK/SDK/build-tools + plan
+    tempest setup --install  # install the Android SDK (needs a JDK)
     ```
     `tempest setup` (no flag) reports what's missing and how to fix it. With
     `--install` it downloads the command-line tools, accepts the licenses, and
-    installs `platform-tools` + `platforms;android-35` + `build-tools;35.0.0` +
-    `ndk;27.3.13750724` into a managed directory (`--sdk-dir` to choose). The
-    **JDK** and `make toolchain` stay guided (not auto-installed).
+    installs the SDK into a managed directory (`--sdk-dir` to choose). The **JDK**
+    stays guided (not auto-installed).
 
-For the toolchain paths (`build`/`run`), the build host needs:
+`tempest build apk`/`prd`/`run` need:
 
-- **Android SDK + NDK.** Export `ANDROID_SDK_ROOT` pointing at the SDK (on this
-  reference host: `/usr/lib/android-sdk`, **not** the stale `ANDROID_HOME`):
+- **A JDK** (`java -version`) — a prerequisite (guided, not installed by the CLI).
+- **The Android SDK.** `tempest setup --install` installs/configures it; or export
+  `ANDROID_SDK_ROOT` to an existing SDK. **No NDK needed** (the build reuses the
+  prebuilt natives).
 
-    ```bash
-    export ANDROID_SDK_ROOT=/usr/lib/android-sdk
-    ```
-
-- **JDK 21** (`java -version`).
-- **Gradle wrapper 8.11.1** (`android-host/gradlew`) — the global Gradle 9.x is
-  incompatible with AGP 8.7; **always** use the wrapper (the `tempest` commands
-  already do).
-- The **staged Python toolchain**: CPython 3.14 + native wheels
-  (`pydantic-core`) under `toolchain/dist/`. Generate with:
-
-    ```bash
-    make toolchain
-    ```
+!!! note "Advanced `--from-source` path"
+    Only with `--from-source` does the build stage the heavy toolchain (CPython
+    3.14 + native wheels via `make toolchain`) and need the **NDK** + the Gradle
+    wrapper 8.11.1. The normal (prebuilt) flow needs none of that.
 
 On the **device**: enable **USB debugging**; on MIUI/HyperOS (Xiaomi/Redmi/POCO)
 also enable **"Install via USB"**, or `adb install` fails with
@@ -251,10 +249,10 @@ also enable **"Install via USB"**, or `adb install` fails with
 
 ## Send the APK for someone to test
 
-1. Build: `tempest build` (or `--release`).
-2. Grab the `.apk` at `android-host/app/build/outputs/apk/debug/app-debug.apk`.
+1. Build: `tempest build apk`.
+2. Grab the `.apk` at `dist/<project>.apk`.
 3. Send the file (messenger, link, etc.).
-4. They install it (`adb install app-debug.apk`, or opening the `.apk` on the
+4. They install it (`adb install <project>.apk`, or opening the `.apk` on the
    device with "unknown sources" allowed).
 
 The app runs standalone — without your computer, without a dev server.
@@ -263,9 +261,11 @@ The app runs standalone — without your computer, without a dev server.
 
 - Apps are **multi-file**: the project tree ships with them, on `sys.path`, in
   both the simulator and the device.
-- `tempest deploy` / `serve` run on **your** device **without a toolchain** —
-  great for testing, but yield no artifact.
-- `tempest build` yields a **distributable, self-contained APK** — needs SDK/NDK +
-  an `android-host` checkout.
+- `tempest deploy` / `serve` run on **your** device **without any SDK** — great
+  for testing, but yield no artifact.
+- `tempest build apk` yields a **distributable, per-app APK** (its own id → N apps
+  side by side) — needs only **JDK + Android SDK** (no NDK, no CPython toolchain;
+  `android-host` ships in the wheel). Identity + branding from `[tool.tempest]`.
+- `tempest build prd` is the store-ready release AAB.
 - `tempest doctor` validates the environment; the [WSL guide](dispositivo-wsl.md)
   covers USB passthrough.

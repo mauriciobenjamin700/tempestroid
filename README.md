@@ -242,29 +242,32 @@ the normal path — offline thereafter. With a device connected,
 `tempest serve` wires `adb reverse` and launches the host in dev mode pointing at
 the dev server. Use `--no-launch` to serve only.
 
-**Shipping a standalone APK — `tempest build`.** To produce a self-contained
+**Shipping a standalone APK — `tempest build apk`.** To produce a self-contained
 `.apk` you can give to anyone (it runs the app with **no** dev server), use
-`tempest build`: it bundles the whole project into the `android-host` Gradle
-project and runs `assembleDebug`, stamping each app with its **own
-`applicationId`** so two tempestroid APKs **install side by side instead of
-overwriting each other**. The id is `--app-id` (e.g. `com.yourco.app`), or
-**derived** as `com.example.<project>` when omitted — but the derived
-`com.example.*` is a **placeholder, not publishable** (the Play Store rejects
-it), so **set your own `--app-id` once the app is real and keep it forever**
-(changing it makes Android treat it as a different app). The launcher label (the
-name under the icon) is `--app-name`, or derived from the project name. This needs the full
-toolchain — Android SDK + NDK + the CPython toolchain — which the CLI **prepares
-whatever is missing** (run `tempest setup --install` to bootstrap the SDK/NDK).
-The output lands at `dist/<project>.apk` (debug-signed — installs like any debug
-build). `tempest run` is the same build plus install + launch + log streaming
-(it launches `<app-id>/org.tempestroid.host.MainActivity`).
+`tempest build apk`: it stamps the APK with the project's **own `applicationId`**
+so **any number of tempestroid apps install side by side** (never overwriting).
+Identity + branding come from **`[tool.tempest]`** in `pyproject.toml`:
 
-For a **fast, toolchain-free** shippable APK, use `tempest build --fast`: it skips
-Gradle and **repackages the prebuilt host** (just the SDK build-tools, no NDK /
-source / CPython toolchain). Much quicker, but the APK keeps the shared
-`org.tempestroid.host` id — so it is for iterating on a *single* app, not for
-shipping several side by side. (`tempest deploy` covers the same toolchain-free
-path when you only need it on your own connected device.)
+```toml
+[tool.tempest]
+app = "app.py"
+id = "com.yourcompany.todolist"   # applicationId; derived (com.example.<project>) if unset
+name = "Todo List"                # launcher label; icon / splash / splash_bg / version optional
+```
+
+The derived `com.example.*` id is a **placeholder, not publishable** (the Play
+Store rejects it) — set your own `id` before publishing and **keep it forever**.
+The build runs Gradle but **reuses the prebuilt host natives** (libpython / the
+JNI shim / stdlib that ship in the package) and bundles the `android-host`
+project **inside the wheel**, so it needs only a **JDK + the Android SDK** — **no
+NDK, no CPython toolchain, no `git clone`** (`tempest setup --install` bootstraps
+the SDK). Output: `dist/<project>.apk` (debug-signed). `tempest build prd` is the
+store-ready release **AAB**; `tempest run` = build + install + launch + logs.
+
+Without a JDK/SDK, `tempest build` falls back to **`--fast`** (repackage the
+prebuilt host, no SDK at all) with a warning — that APK keeps the shared
+`org.tempestroid.host` id (one app per device). `tempest deploy` covers the same
+toolchain-free path for your own connected device.
 
 > **Maintainers:** the host APK (~100 MB — it embeds CPython) is **not** shipped
 > inside the PyPI wheel (it would exceed PyPI's per-file limit). `make release`

@@ -9,8 +9,8 @@ uv run python examples/counter/app.py           # run an app directly in the Qt 
 uv run tempest dev examples/counter/app.py       # dev loop: edit + save → hot reload
 uv run tempest deploy examples/multifile/main.py # offline push to a device (no SDK/NDK)
 uv run tempest serve examples/device_counter/app.py  # LAN code-push, no APK rebuild
-uv run tempest build MyApp/main.py              # standalone shippable APK (needs SDK/NDK)
-uv run tempest run MyApp/main.py                # build + install on a device + logs
+uv run tempest build apk                        # per-app APK, side by side (JDK + SDK)
+uv run tempest run                              # build + install on a device + logs
 uv run tempest spec                             # print the typed contract (widgets/events) as JSON
 uv run tempest --help
 ```
@@ -25,9 +25,10 @@ uv run tempest --help
 | `tempest serve <app>` | ✅ | LAN code-push + hot reload of the whole project (phase B5). |
 | `tempest install [src]` | ✅ | adb-installs the prebuilt host (no SDK/NDK). |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON. |
-| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` installs the Android SDK + NDK. |
-| `tempest build <app>` | ✅ | **Standalone shippable APK** with the project baked in (needs Android SDK/NDK). |
-| `tempest run <app>` | ✅ | Build + install on a device + stream logs. |
+| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/build-tools; `--install` installs the Android SDK. |
+| `tempest build [apk\|prd]` | ✅ | `apk`: a **per-app** APK (own id → N apps side by side) via Gradle reusing the prebuilt natives (**JDK + SDK only**, no NDK/toolchain). `prd`: a release AAB. Reads `[tool.tempest]`. |
+| `tempest run` | ✅ | `build apk` + install on a device + stream logs. |
+| `tempest icon <img>` | ✅ | Generate `icon.png` + `splash.png` from one image (Pillow). |
 
 Apps are **multi-file**: the project tree ships with them (on `sys.path`) in both
 the simulator and the device. See [Build, deploy and ship](build.md) for the
@@ -49,10 +50,11 @@ Saving the file triggers a hot reload automatically; if the reload is
 incompatible with the live state, the loop falls back to a clean restart. A bad
 save is caught and printed — the loop survives.
 
-!!! note "build / run need the Android toolchain"
-    `tempest build`/`run` drive the `android-host` Gradle project + `adb`, so they
-    require an Android SDK/NDK and a checkout of the host tree. To run on a device
-    **without** a toolchain, use `tempest deploy`/`serve`. See
+!!! note "build / run need a JDK + the Android SDK"
+    `tempest build`/`run` run Gradle reusing the prebuilt natives (the
+    `android-host` ships in the package), so they need a **JDK + the Android SDK**
+    — **no NDK, no CPython toolchain, no `git clone`**. To run on a device
+    **without an SDK**, use `tempest deploy`/`serve`. See
     [Build, deploy and ship](build.md), [installation](../instalacao.md) and the
     [runtime research](../research/android-runtime.md).
 

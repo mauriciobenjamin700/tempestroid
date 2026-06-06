@@ -55,19 +55,25 @@ dispensam o argumento de caminho dentro do projeto.
 |---|---|---|---|
 | Rodar rápido no **meu** aparelho | `tempest deploy` | nada (só adb) | App rodando no device (efêmero) |
 | Editar e ver ao vivo (hot reload) | `tempest serve` | nada (só adb) | Loop de code-push por LAN |
-| **Mandar um APK** para alguém testar | `tempest build` | SDK + NDK + toolchain (auto) | `.apk` com `applicationId` próprio (lado a lado) |
-| Iterar rápido num app só, sem toolchain | `tempest build --fast` | só SDK build-tools | `.apk` (id compartilhado, 1 app) |
-| Build + instalar + logs | `tempest run` | SDK build-tools + adb | Instala o APK e segue os logs |
+| **Mandar um APK** para alguém testar | `tempest build apk` | JDK + Android SDK | `.apk` com `applicationId` próprio (**N apps lado a lado**) |
+| Build + instalar + logs no device | `tempest run` | JDK + SDK + adb | Instala o APK e segue os logs |
+| Publicar na Play Store | `tempest build prd` | JDK + SDK + keystore | `.aab` de release assinado |
+| Iterar num app só, **sem instalar SDK** | `tempest build --fast` | só SDK build-tools | `.apk` (id compartilhado, 1 app) |
 
-!!! info "Duas filosofias"
-    - **Push (efêmero)** (`deploy`/`serve`): um **host genérico** (CPython +
-      framework) é instalado uma vez; seu código Python é empurrado por cima.
-      Rápido, offline. Mas o app vive **dentro do host** — não é um artefato que
-      você manda para outra pessoa.
-    - **APK shippable** (`build`/`run`): gera um `.apk` distribuível com seu
-      projeto **assado dentro**. Por padrão via **Gradle** (`assembleDebug`), com
-      `applicationId` próprio (apps lado a lado); com `--fast`, **repacka o host
-      pré-compilado** (só SDK build-tools, id compartilhado, 1 app).
+!!! info "Como funciona (sem toolchain pesada)"
+    `tempest build apk` roda o **Gradle** (que carimba o `applicationId` + todas as
+    *provider authorities* por app → **instalam lado a lado sem colisão**), mas
+    **reusa os nativos do host pré-compilado** (`libpython`, a stdlib, o JNI) que
+    já vêm no pacote. Logo precisa só de **JDK + Android SDK** — **sem NDK, sem
+    compilar CPython**. O projeto `android-host` vem **dentro do wheel**, então
+    funciona de um `pip install` puro, **sem `git clone`**.
+
+    - `deploy`/`serve`: empurram seu código pra um **host genérico** já instalado
+      (rápido, offline) — o app vive dentro do host, não é um artefato distribuível.
+    - `--fast`: repackage do host pré-compilado **sem SDK nenhum** (só build-tools),
+      mas com id compartilhado `org.tempestroid.host` → **1 app por device**.
+    - `--from-source`: build pesado, estagiando a toolchain CPython (raramente
+      necessário).
 
 ## Rodar no meu aparelho (sem toolchain)
 
@@ -88,7 +94,7 @@ O `tempest deploy`:
 !!! warning "`deploy` não gera artefato"
     O app empurrado por `deploy` vive na sessão do host. Em um boot frio, ou no
     celular de outra pessoa, o host roda o demo embutido — **não** o seu app.
-    Para algo distribuível, use [`tempest build`](#publicar-um-apk).
+    Para algo distribuível, use [`tempest build apk`](#gerar-um-apk-tempest-build-apk).
 
 Para um **loop de hot reload** (editar + salvar → recarrega no device):
 
@@ -104,48 +110,52 @@ estagiado com `make stage-host`) → download do release do GitHub
 O wheel do PyPI **não** embute o APK (~100 MB), então num install via PyPI o
 download é o caminho normal (offline depois disso).
 
-## Publicar um APK
+## Gerar um APK (`tempest build apk`)
 
-Para gerar um `.apk` **autocontido** (roda sem dev server, dá para mandar para
-qualquer pessoa):
+Para um `.apk` **autocontido** (roda sem dev server, com o **id próprio** do seu
+projeto → instala lado a lado com qualquer outro app tempestroid):
 
 ```bash
-tempest build                              # Gradle: APK com applicationId próprio
-tempest build --app-id com.suaempresa.app  # define o id (recomendado para algo real)
-tempest build -o /tmp/app.apk              # escolhe o caminho de saída
+tempest build apk          # lê o [tool.tempest], gera dist/<projeto>.apk
+tempest build apk -o /tmp/app.apk
 ```
 
-O resultado fica em `dist/<projeto>.apk` (ou em `-o`). Por padrão o `tempest
-build` roda o Gradle (`assembleDebug`) e carimba cada app com seu **próprio
-`applicationId`** + rótulo de launcher, para que dois apps tempestroid **instalem
-lado a lado** em vez de um sobrescrever o outro. Assinado com a chave debug →
-`adb install` em qualquer aparelho compatível e o app abre direto, sem servidor.
+A identidade e o visual vêm do **`[tool.tempest]`** no `pyproject.toml` — sem
+flag-soup:
 
-!!! info "Devo definir o `--app-id` ou o framework gera sozinho?"
-    **Os dois — mas, para algo real, defina o seu.**
+```toml
+[tool.tempest]
+app = "app.py"
+id = "com.suaempresa.todolist"   # applicationId; derivado do projeto se omitido
+name = "Todo List"               # rótulo sob o ícone
+icon = "icone.png"               # opcional
+splash = "splash.png"            # opcional
+splash_bg = "#0b0f14"            # opcional
+version = "1.0.0"                # opcional (default 1.0.0)
+```
 
-    - Você passa `--app-id com.suaempresa.app` → é esse o `applicationId` (e
-      `--app-name "Meu App"` para o nome sob o ícone).
-    - Você **omite** → o framework **deriva** `com.example.<nome-do-projeto>`, só
-      para você conseguir buildar e instalar na hora, sem decidir nada.
+O resultado fica em `dist/<projeto>.apk`, assinado com a chave debug →
+`adb install` em qualquer aparelho e abre direto, sem servidor. Cada projeto sai
+com seu **próprio `applicationId`**, então **N apps instalam lado a lado** (nunca
+um sobre o outro). As flags `--app-id`/`--app-name`/`--icon`/… sobrescrevem o
+config por build.
 
-    O id derivado `com.example.*` é um **placeholder, não publicável** — a Play
-    Store rejeita `com.example.*`. Regra prática: **teste com o derivado; defina o
-    seu `--app-id`** (domínio reverso da sua empresa, ex. `com.suaempresa.app`)
-    **assim que o app for pra valer**, e **mantenha o mesmo id para sempre** —
-    mudá-lo cria outro app aos olhos do Android/da Play (perde updates e dados).
-    O id é independente do pacote Java/JNI interno (`org.tempestroid.host`), então
-    escolher o seu não quebra a ponte.
+!!! info "Devo definir o `id` ou o framework gera sozinho?"
+    **Os dois — mas, para algo real, defina o seu.** Omitido → o framework
+    **deriva** `com.example.<projeto>` só pra você buildar na hora. Esse
+    `com.example.*` é **placeholder, não publicável** (a Play rejeita). Regra:
+    **teste com o derivado; defina o seu `id`** (domínio reverso, ex.
+    `com.suaempresa.app`) **e mantenha o mesmo pra sempre** — mudá-lo vira outro
+    app aos olhos do Android/Play. O `id` é independente do pacote Java/JNI
+    interno (`org.tempestroid.host`), então escolher o seu não quebra a ponte.
 
-!!! note "O `build` padrão usa o toolchain; `--fast` dispensa (1 app)"
-    O `tempest build` padrão roda o Gradle, então precisa de SDK **+ NDK** +
-    checkout `android-host` + toolchain CPython — o CLI **prepara o que faltar**.
-    Para iterar rápido num **único** app sem o toolchain, use `tempest build
-    --fast`: pula o Gradle e **repacka o host pré-compilado** (só os SDK
-    build-tools, funciona de um install via PyPI). Trade-off: o `--fast` mantém o
-    id compartilhado `org.tempestroid.host` (um repackage não reescreve o package
-    do manifesto binário), então serve para **um app por vez**, não para vários
-    lado a lado. Rode `tempest setup --install` para o SDK/NDK.
+!!! note "Precisa só de JDK + Android SDK (sem NDK, sem toolchain)"
+    `tempest build apk` roda o Gradle **reusando os nativos do host pré-compilado**
+    (libpython/JNI/stdlib que já vêm no pacote) → **não compila CPython, não usa
+    NDK**. O `android-host` vem **dentro do wheel**, então funciona de um `pip
+    install` puro, **sem `git clone`**. Rode `tempest setup --install` uma vez pro
+    SDK (o JDK é pré-requisito). Sem JDK/SDK, o build **cai pro `--fast`** (id
+    compartilhado) com aviso, em vez de falhar.
 
 ## Ícone e tela de carregamento (splash)
 
@@ -183,33 +193,28 @@ tempest build --icon icone.png \
     assets (caminho estável), `--splash`/`--splash-bg` funcionam em **todos** os
     caminhos de build, inclusive `--fast`.
 
-## Publicar na Play Store (`--release` → AAB)
+## Publicar na Play Store (`tempest build prd` → AAB)
 
-A Play Store exige um **Android App Bundle** (`.aab`), assinado de release, com o
-seu próprio `applicationId`. `tempest build --release` gera isso via Gradle
-`bundleRelease` e **prepara o ambiente que faltar** (SDK/NDK, checkout do source,
-toolchain CPython, keystore):
+A Play Store exige um **Android App Bundle** (`.aab`), assinado de release.
+`tempest build prd` gera isso via Gradle `bundleRelease`, lendo o `[tool.tempest]`
+e usando uma keystore (a sua via `--keystore`, ou uma gerada e cacheada):
 
 ```bash
-tempest build main.py --release \
-  --app-id com.suaempresa.todo \
-  --app-version 1.0.0 \
-  --version-code 1 \
-  --keystore release.jks          # omita → gera uma em ~/.tempestroid/release.jks
+tempest build prd                          # usa [tool.tempest] id/name/version
+tempest build prd --keystore release.jks   # sua keystore (senão gera em ~/.tempestroid/release.jks)
 # → dist/<projeto>-release.aab  (sobe no Play Console)
 ```
 
-!!! warning "Guarde a keystore"
+!!! warning "Guarde a keystore + defina o seu id"
     A keystore de release assina seu app. **Perdê-la impede atualizar o app na
-    Play** depois. Faça backup da `--keystore` (ou da gerada em
-    `~/.tempestroid/release.jks`). Use seu **próprio** `--app-id` — o placeholder
-    `com.example.*` não publica.
+    Play** depois — faça backup da `--keystore` (ou da gerada em
+    `~/.tempestroid/release.jks`). E defina o seu `id` no `[tool.tempest]` — o
+    placeholder `com.example.*` não publica.
 
-!!! info "O `--release` precisa do toolchain completo"
-    Diferente do APK debug (repackage), o AAB é build de fonte: precisa de
-    SDK **+ NDK** + checkout do `android-host` + toolchain CPython staged. O CLI
-    instala/clona/staga o que faltar (o staging do CPython é pesado: download +
-    build de wheels nativos).
+!!! note "Mesma base leve do `apk`"
+    Como o `apk`, o `prd` reusa os nativos do host pré-compilado → **só JDK +
+    Android SDK**, sem NDK nem toolchain CPython. (Se algum dia precisar buildar a
+    toolchain do zero, há a flag avançada `--from-source`.)
 
 ## Configuração de ambiente
 
@@ -224,25 +229,17 @@ tempest build main.py --release \
     `ndk;27.3.13750724` num diretório gerenciado (`--sdk-dir` para escolher).
     O **JDK** e o `make toolchain` ficam guiados (não são instalados sozinhos).
 
-Para os caminhos com toolchain (`build`/`run`), o host de build precisa de:
+`tempest build apk`/`prd`/`run` precisam de:
 
-- **Android SDK + NDK.** Exporte `ANDROID_SDK_ROOT` apontando para o SDK (neste
-  host de referência: `/usr/lib/android-sdk`, **não** o `ANDROID_HOME` obsoleto):
+- **JDK** (`java -version`) — pré-requisito (guiado, não instalado pelo CLI).
+- **Android SDK.** `tempest setup --install` instala/configura; ou exporte
+  `ANDROID_SDK_ROOT` para um SDK existente. **NDK não é necessário** (o build
+  reusa os nativos pré-compilados).
 
-    ```bash
-    export ANDROID_SDK_ROOT=/usr/lib/android-sdk
-    ```
-
-- **JDK 21** (`java -version`).
-- **Gradle wrapper 8.11.1** (`android-host/gradlew`) — o Gradle global 9.x é
-  incompatível com o AGP 8.7; **sempre** use o wrapper (os comandos do `tempest`
-  já o fazem).
-- A **toolchain Python estagiada**: CPython 3.14 + wheels nativos
-  (`pydantic-core`) em `toolchain/dist/`. Gere com:
-
-    ```bash
-    make toolchain
-    ```
+!!! note "Caminho avançado `--from-source`"
+    Só se você passar `--from-source` o build estagia a toolchain pesada (CPython
+    3.14 + wheels nativos via `make toolchain`) e precisa do **NDK** + do Gradle
+    wrapper 8.11.1. No fluxo normal (prebuilt) nada disso é preciso.
 
 No **aparelho**: ligue **Depuração USB**; em MIUI/HyperOS (Xiaomi/Redmi/POCO)
 ligue também **"Instalar via USB"**, senão `adb install` falha com
@@ -255,10 +252,10 @@ ligue também **"Instalar via USB"**, senão `adb install` falha com
 
 ## Mandar o APK para alguém testar
 
-1. Gere: `tempest build` (ou `--release`).
-2. Pegue o `.apk` em `android-host/app/build/outputs/apk/debug/app-debug.apk`.
+1. Gere: `tempest build apk`.
+2. Pegue o `.apk` em `dist/<projeto>.apk`.
 3. Envie o arquivo (mensageiro, link, etc.).
-4. A pessoa instala (`adb install app-debug.apk`, ou abrindo o `.apk` no aparelho
+4. A pessoa instala (`adb install <projeto>.apk`, ou abrindo o `.apk` no aparelho
    com "fontes desconhecidas" liberado).
 
 O app roda standalone — sem o seu computador, sem dev server.
