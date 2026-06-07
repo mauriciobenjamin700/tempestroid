@@ -31,8 +31,10 @@ O tempestroid separa **o que renderizar** (uma IR tipada e serializável) de
 
 `view(app)` devolve uma árvore de `Widget` — modelos Pydantic frozen onde
 representam valores imutáveis. Cada widget é um nó declarativo: `Text`, `Button`,
-`Column`, `Row`, `Container` e os inputs com valor (`Input`, `Checkbox`,
-`DatePicker`, `FilePicker`).
+`Column`, `Row`, `Container`, os inputs com valor (`Input`, `Checkbox`,
+`DatePicker`, `FilePicker`, …) e dezenas de outros (listas virtualizadas,
+navegação, overlays, animação, gestos, mídia) — todos suportados pelos **dois
+renderizadores**. A lista completa está no [guia de exemplos](guia/exemplos.md#conjunto-de-widgets-atual).
 
 ### 2. build → Node
 

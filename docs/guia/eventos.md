@@ -17,6 +17,17 @@ Todos herdam de `Event` (Pydantic frozen).
 | `DateChangeEvent` | `value: str` (ISO `yyyy-mm-dd`) | `DatePicker.on_change` |
 | `FileSelectEvent` | `uri: str`, `name: str \| None` | `FilePicker.on_select` |
 
+!!! info "Estes são os eventos de núcleo — há 31 no total"
+    A tabela acima mostra os mais comuns. O Trilho E acrescentou muitos outros —
+    navegação (`RouteChangeEvent`/`PageChangeEvent`), listas (`ScrollEvent`/
+    `EndReachedEvent`/`RefreshEvent`), gestos (`PanEvent`/`ScaleEvent`/
+    `SwipeEvent`/`ReorderEvent`/`LongPressEvent`), formulários (`SubmitEvent`/
+    `ValidationEvent`/`RangeChangeEvent`/`TimeChangeEvent`), overlays
+    (`DismissEvent`/`MenuSelectEvent`) e plataforma (`SensorEvent`/
+    `LifecycleEvent`/`ConnectivityEvent`/`DeepLinkEvent`/`QrScanEvent`/
+    `ThemeChangeEvent`/`LocaleChangeEvent`). Liste o contrato completo com
+    `tempest spec` ou veja a [referência de API](../referencia/api.md).
+
 ## O portão de validação: `parse_event`
 
 `parse_event(event_type, raw)` transforma um *payload* cru (um *mapping*) em um

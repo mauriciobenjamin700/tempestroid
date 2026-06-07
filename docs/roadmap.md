@@ -3,7 +3,7 @@
 O desenvolvimento segue duas trilhas-base e uma trilha de expansão. **Trilho A**
 é o framework em Python puro (desktop/CPython). **Trilho B** é o runtime Android
 (CPython 3.14 + host Kotlin + ponte JNI + renderizador Compose). **Trilho E** é a
-paridade com Flutter/React Native (planejado). O plano completo está em
+paridade com Flutter/React Native (**concluído** — E0–E9). O plano completo está em
 [Plano de design (EN)](plan.md) e, para o Trilho E, em
 [Plano de paridade](plan-parity.md).
 
@@ -68,9 +68,9 @@ reservado `__native_result__:<id>` — **sem mudança de C/JNI**. Falhas levanta
     **escritos mas ainda não validados num device** — precisam do toolchain
     Android SDK/NDK.
 
-## Trilho E — Paridade Flutter / React Native (planejado)
+## Trilho E — Paridade Flutter / React Native (concluído)
 
-Roadmap para fechar o gap com o que Flutter + RN oferecem de fábrica. Toda fase
+Fechou o gap com o que Flutter + RN oferecem de fábrica. Toda fase
 entrega as **três camadas casadas** (IR/diff + renderizador Qt + renderizador
 Compose) e só fecha com os **dois renderizadores verdes** + (havendo device)
 verificação dual. Spec fase-a-fase em [Plano de paridade](plan-parity.md).
@@ -81,16 +81,16 @@ E4–E9 acoplam menos e reordenam por demanda (exceto E6c←E1 e E3d←E0).
 
 | Fase | Escopo | Risco núcleo | Status |
 |---|---|---|---|
-| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | baixo (reusa diff) | 🔜 |
-| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | médio (diff por janela) | 🔜 |
-| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu, action sheet) | **alto** (`Scene` + `Path` namespaced) | 🔜 |
-| E3 | Framework de animação (controller, tween/curva, implícita, gesto, Hero, shimmer) | **alto** (clock de frames) | 🔜 |
-| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder) | baixo (padrão pronto) | 🔜 |
-| E5 | Inputs e formulários (dropdown, time, range, form/validação, autocomplete, OTP, máscara) | baixo | 🔜 |
-| E6 | Layout refinado (flex-wrap, pager/carousel, app bar colapsável, tabela, aspect ratio) | baixo | 🔜 |
-| E7 | Mídia e gráficos (vídeo, webview, canvas, svg, câmera live, QR, mapa, blur, clip) | médio (IR de canvas) | 🔜 |
-| E8 | Plataforma/sistema (haptics, sensores, lifecycle, permissões, biometria, storage, SQLite, push) | baixo (padrão B6 + token p/ stream) | 🔜 |
-| E9 | Transversais (tema/dark + MediaQuery, i18n/RTL, acessibilidade, fontes custom + escala) | médio (contexto + RTL) | 🔜 |
+| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | baixo (reusa diff) | ✅ |
+| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | médio (diff por janela) | ✅ |
+| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu, action sheet) | **alto** (`Scene` + `Path` namespaced) | ✅ |
+| E3 | Framework de animação (controller, tween/curva, implícita, gesto, Hero, shimmer) | **alto** (clock de frames) | ✅ |
+| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder) | baixo (padrão pronto) | ✅ |
+| E5 | Inputs e formulários (dropdown, time, range, form/validação, autocomplete, OTP, máscara) | baixo | ✅ |
+| E6 | Layout refinado (flex-wrap, pager/carousel, app bar colapsável, tabela, aspect ratio) | baixo | ✅ |
+| E7 | Mídia e gráficos (vídeo, webview, canvas, svg, câmera live, QR, mapa, blur, clip) | médio (IR de canvas) | ✅ |
+| E8 | Plataforma/sistema (haptics, sensores, lifecycle, permissões, biometria, storage, SQLite, push) | baixo (padrão B6 + token p/ stream) | ✅ |
+| E9 | Transversais (tema/dark + MediaQuery, i18n/RTL, acessibilidade, fontes custom + escala) | médio (contexto + RTL) | ✅ |
 
 !!! info "Tudo dentro do projeto — sem projetos extras"
     Toda implementação do Trilho E mora **dentro do repositório `tempestroid`**:
@@ -114,11 +114,16 @@ Guardas de saúde do framework, encadeadas pelos *gates*:
 
 ## Próximos passos abertos
 
-- **Validar as capacidades nativas expandidas no device:** os módulos Kotlin de
-  geo/share/câmera/storage/clipboard/bluetooth precisam ser exercitados num
-  device real (rodar `make doctor` → `make apk-install` → `dual-verify`).
-- **Inputs no dispositivo (Compose):** o renderizador Kotlin ainda cai para uma
-  caixa vazia em alguns widgets de entrada; falta crescer os casos no host. No
-  simulador Qt esses widgets já funcionam.
-- **Iniciar o Trilho E por E0 (navegação):** pré-requisito de quase tudo;
-  começar pela sub-tarefa de núcleo (`E0a`) com `make parity PHASE=E0`.
+Trilhos A–D, B (B0–B6) e E (E0–E9) estão **concluídos** e verificados em device:
+os **dois renderizadores** (Qt + Compose) suportam o conjunto completo de
+widgets, incluindo os inputs com valor no aparelho. O que resta é estabilização
+para distribuição (Trilho F — ver [`docs/plan-stable.md`](plan-stable.md)):
+
+- **F2 — validar as capacidades nativas restantes no device** (1 PR por grupo):
+  geolocation, câmera+áudio, share, bluetooth, connectivity+permissões,
+  biometria plena (digital cadastrada) e push FCM real (precisa
+  `google-services.json`). A metade Python já é testada off-device; falta o
+  exercício em hardware (`make doctor` → `make apk-install` → `dual-verify`).
+- **F4 — distribuição profissional:** APK release-assinado standalone (keystore
+  própria), ícone adaptativo (`tempest icon --adaptive`) e matriz de cobertura
+  device dos widgets/nativas restantes.

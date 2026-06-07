@@ -118,7 +118,18 @@ nav:
   - Começo rápido: inicio-rapido.md
   - Arquitetura: arquitetura.md
   - Guia do usuário:
-      - Widgets: guia/widgets.md
+      - Widgets:
+          - Visão geral: guia/widgets.md
+          - Texto, ação e indicadores: guia/widgets/basics.md
+          - Layout: guia/widgets/layout.md
+          - Inputs com valor: guia/widgets/inputs.md
+          - Listas virtualizadas: guia/widgets/lists.md
+          - Navegação: guia/widgets/navigation.md
+          - Overlays e feedback: guia/widgets/overlays.md
+          - Animação: guia/widgets/animation.md
+          - Gestos: guia/widgets/gestures.md
+          - Mídia e gráficos: guia/widgets/media.md
+          - Componentes compostos: guia/widgets/components.md
       - Estilos: guia/estilos.md
       - Eventos: guia/eventos.md
       - CLI (tempest): guia/cli.md

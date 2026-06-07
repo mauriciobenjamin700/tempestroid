@@ -164,14 +164,17 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`theming`](examples/theming/app.py) | Cross-cutting (E9) — a light/dark `ThemeMode` toggle (`App.set_theme`), a PT↔AR locale/RTL toggle (`App.set_locale` + `translate`), and a counter label carrying `Semantics(label=…)`. |
 | [`native_caps`](examples/native_caps/app.py) | Native capabilities — `clipboard` / `storage` / `database` (SQLite) / `secure_storage` / `system`, each a request/response round-trip returning a typed result (device-verified). |
 
-The framework and the Qt simulator support the full widget set. The device
-(Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /
-`SafeArea` (insetting against the real `WindowInsets.safeDrawing`) / `Stack` /
-`GestureDetector`, the value widgets `Input` / `TextArea` / `Checkbox` /
-`Switch` / `Slider` / `DatePicker` / `FilePicker` (with their typed change
-events), and the presentation/utility widgets `ProgressBar` / `Spinner` /
-`Image` (via Coil) / `Icon` (named Material icons) / `ScrollView`. See
-[`examples/README.md`](examples/README.md).
+**Both renderers** — the Qt simulator and Compose on the device — support the
+full Track E widget set (~70 types): layout, text & action, the value-bearing
+inputs (`Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider`
+/ `Select` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` /
+`MaskedInput` / `Autocomplete` / `Form`) with their typed change events,
+virtualized lists, navigation, overlays, animation, gestures, and media. Parity
+is pinned by the conformance suite (golden snapshots of both `Style` translators)
+and device-verified across E0–E9. A few hardware widgets (`CameraPreview` /
+`QrScanner` / `MapView`) are device-only and show a signalled placeholder on Qt.
+See the [widget set](https://mauriciobenjamin700.github.io/tempestroid/guia/exemplos/#conjunto-de-widgets-atual)
+and [`examples/README.md`](examples/README.md).
 
 ---
 

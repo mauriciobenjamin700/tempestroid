@@ -4,127 +4,74 @@ Widgets são as primitivas declarativas da IR — uma árvore de modelos Pydanti
 o reconciliador faz o *diff* e os renderizadores aplicam. Importe sempre do nível
 do pacote: `from tempestroid import Text, Button, ...`.
 
-## Layout e conteúdo
+O framework exporta **~100 widgets**, todos suportados pelos **dois
+renderizadores** (simulador Qt no desktop + Compose no dispositivo). Este guia é o
+índice; cada família tem sua própria página tutorial com exemplos completos e a
+tabela de props de cada widget.
 
-| Widget | Papel | Props principais |
-|---|---|---|
-| `Text` | Rótulo de texto. | `content: str` |
-| `Button` | Botão tocável. | `label: str`, `on_click` |
-| `Column` | Empilha filhos na vertical. | `children: list[Widget]` |
-| `Row` | Empilha filhos na horizontal. | `children: list[Widget]` |
-| `Container` | Embrulha um único filho. | `child: Widget \| None` |
-| `ScrollView` | Área rolável. | `horizontal: bool`, `child` |
-| `SafeArea` | Afasta o filho das barras do sistema + notch. | `child`, `edges: list[SafeAreaEdge]` (padrão todos) |
+## Catálogo por família
 
-```python
-from tempestroid import Button, Column, Row, ScrollView, Style, Text
+| Família | O que cobre |
+|---|---|
+| [Texto, ação e indicadores](widgets/basics.md) | `Text` / `Button` / `ProgressBar` / `Spinner` |
+| [Layout](widgets/layout.md) | `Column` / `Row` / `Container` / `Stack` / `Wrap` / `ScrollView` / `SafeArea` / `AspectRatio` / `PageView` / `KeyboardAvoidingView` |
+| [Inputs com valor](widgets/inputs.md) | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
+| [Listas virtualizadas](widgets/lists.md) | `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` / `RefreshControl` |
+| [Navegação](widgets/navigation.md) | `Navigator` / `TabView` / `TabBar` / `RouteDrawer` |
+| [Overlays e feedback](widgets/overlays.md) | `Dialog` / `BottomSheet` / `Menu` / `Popover` / `Toast` / `Tooltip` / `ActionSheet` |
+| [Animação](widgets/animation.md) | `Animated` / `AnimatedList` / `Hero` / `Shimmer` / `Skeleton` |
+| [Gestos](widgets/gestures.md) | `GestureDetector` / `PanHandler` / `ScaleHandler` / `DoubleTapHandler` / `Draggable` / `DragTarget` / `Dismissible` / `ReorderableList` / `InteractiveViewer` |
+| [Mídia e gráficos](widgets/media.md) | `Image` / `Icon` / `Canvas` / `Svg` / `VideoPlayer` / `WebView` / `Blur` / `BackdropFilter` / `ClipPath` / `CameraPreview` / `QrScanner` / `MapView` |
+| [Componentes compostos](widgets/components.md) | `Card` / `ListTile` / `Scaffold` / `AppBar` / `NavBar` / `SegmentedControl` / `Rating` / `Table` … (29) |
 
-ScrollView(
-    child=Column(
-        style=Style(gap=8.0),
-        children=[
-            Text(content="Olá", key="hi"),
-            Row(children=[
-                Button(label="-", on_click=dec, key="dec"),
-                Button(label="+", on_click=inc, key="inc"),
-            ]),
-        ],
-    ),
-)
-```
+!!! tip "Por onde começar"
+    Se você está chegando agora, siga na ordem: **[Texto, ação e
+    indicadores](widgets/basics.md)** → **[Layout](widgets/layout.md)** →
+    **[Inputs com valor](widgets/inputs.md)**. O resto pode ser lido por demanda.
 
-## Inputs com valor
+## Conceitos transversais
 
-Os *leaves* que carregam um valor e emitem um evento de mudança tipado. Cada um
-declara seu *handler* de mudança em `event_schemas`, então a fronteira valida o
-*payload*.
+Estes valem para qualquer widget — vale ler antes de mergulhar nas famílias.
 
-| Widget | Valor / props | Handler | Evento |
-|---|---|---|---|
-| `Input` | `value`, `placeholder`, `secure`, `pattern`, `error`, `keyboard`, `max_length` | `on_change` | `TextChangeEvent` |
-| `TextArea` | `value`, `placeholder`, `rows`, `max_length` | `on_change` | `TextChangeEvent` |
-| `Checkbox` | `label`, `checked` | `on_change` | `ToggleEvent` |
-| `Switch` | `label`, `checked` | `on_change` | `ToggleEvent` |
-| `Slider` | `value`, `min_value`, `max_value`, `step` | `on_change` | `SlideEvent` |
-| `DatePicker` | `value` (ISO `yyyy-mm-dd`), `label` | `on_change` | `DateChangeEvent` |
-| `FilePicker` | `label`, `value` | `on_select` | `FileSelectEvent` |
-
-```python
-from tempestroid import Checkbox, DatePicker, Input, Slider, Switch, TextArea
-
-Input(value=state.name, placeholder="Seu nome", on_change=on_name, key="name")
-Input(value=state.pwd, secure=True, keyboard=KeyboardType.PASSWORD, on_change=on_pwd, key="pwd")
-TextArea(value=state.bio, rows=4, max_length=280, on_change=on_bio, key="bio")
-Switch(label="Notificações", checked=state.notify, on_change=on_notify, key="sw")
-Slider(value=state.volume, min_value=0.0, max_value=100.0, step=1.0, on_change=on_vol, key="vol")
-```
-
-O *handler* recebe o evento tipado (ou pode ser declarado sem argumentos quando o
-valor não importa):
-
-```python
-def on_name(event: TextChangeEvent) -> None:
-    app.set_state(lambda s: setattr(s, "name", event.value))
-```
-
-### Validação de `Input`
-
-`Input` carrega validação no próprio widget: `secure` mascara o texto, `pattern`
-é uma regex que o renderizador pode usar para validar, `error` exibe uma mensagem
-de erro, e `keyboard` (enum `KeyboardType`: `TEXT`, `NUMBER`, `EMAIL`, `PHONE`,
-`URL`, `PASSWORD`) sugere o teclado no dispositivo.
-
-## Mídia
-
-| Widget | Papel | Props |
-|---|---|---|
-| `Image` | Imagem por URL/URI. | `src`, `fit` (`ImageFit`), `alt` |
-| `Icon` | Ícone nomeado. | `name`, `size` |
-
-`ImageFit` aceita `CONTAIN`, `COVER`, `FILL`, `NONE`.
-
-## Indicadores
-
-| Widget | Papel | Props |
-|---|---|---|
-| `ProgressBar` | Barra de progresso. | `value`, `indeterminate` |
-| `Spinner` | Indicador de carregamento. | `size` |
-
-## Chaves (`key`)
+### Chaves (`key`)
 
 Dê um `key` estável a cada filho de uma lista. O reconciliador usa chaves para
 emitir `Reorder` em vez de recriar widgets, e para casar nós entre rebuilds.
 
-## Percorrendo a árvore
+### Percorrendo a árvore
 
 Todo widget expõe `child_nodes()` — use-o para caminhar a árvore de forma
 genérica, sem alcançar o armazenamento interno de cada tipo. *Leaves* (`Text`,
 `Image`, inputs) devolvem `[]`.
 
-!!! warning "Suporte no dispositivo"
-    O framework e o **simulador Qt** suportam o conjunto completo de widgets. O
-    **renderizador do dispositivo (Compose)** acompanha o conjunto-base (`Text` /
-    `Button` / `Column` / `Row` / `Container` + `on_click`); widgets mais novos
-    podem cair para um *fallback* até o host Kotlin crescer os casos
-    correspondentes (continuação do Trilho B). Veja o [roadmap](../roadmap.md).
+### Estilo, semântica e foco
 
-## Contrato de eventos por widget
+Toda subclasse de `Widget` aceita `style` (um [`Style`](estilos.md)),
+`semantics`/`focusable`/`focus_order` (acessibilidade) e `key`. Por isso essas
+props não aparecem nas tabelas de cada família — são universais.
+
+### Contrato de eventos por widget
 
 Cada widget declara o evento que cada *handler* emite via a classvar
 `event_schemas` (ex.: `Button.event_schemas == {"on_click": TapEvent}`). Esse
-contrato é publicado por [`introspect()`](../referencia/api.md#introspeccao) e
-consumido pela fronteira do dispositivo. Veja [Eventos](eventos.md).
+contrato é publicado por [`introspect()`](../referencia/api.md) e consumido pela
+fronteira do dispositivo. Veja [Eventos](eventos.md).
+
+!!! info "Paridade dos dois renderizadores"
+    O conjunto completo renderiza tanto no **simulador Qt** quanto no
+    **dispositivo (Compose)** — a paridade é fixada pela suíte de conformância
+    (*golden snapshots* dos dois tradutores `Style`). A única exceção são alguns
+    widgets de hardware (`CameraPreview` / `QrScanner` / `MapView`), que são
+    **device-only** e aparecem como *placeholder* sinalizado no Qt.
 
 ## Recapitulando
 
 - Widgets são modelos Pydantic; importe sempre do nível do pacote
   (`from tempestroid import ...`).
-- Layout: `Column`/`Row`/`Container`/`ScrollView`/`SafeArea`; conteúdo: `Text`,
-  `Button`, mídia e indicadores.
+- São ~100 widgets em 10 famílias — use o catálogo acima.
 - *Inputs* com valor emitem um evento de mudança tipado (`on_change` /
-  `on_select`).
-- Dê um `key` estável a filhos de listas — é o que deixa o *diff* reordenar em
-  vez de recriar.
+  `on_select`); dê um `key` estável a filhos de listas.
+- `style`/`semantics`/`focusable`/`key` são universais a todo widget.
 
 ## Próximos passos
 

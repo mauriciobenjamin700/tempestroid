@@ -30,16 +30,38 @@ uv run tempest serve examples/<name>/app.py
 
 ## Current widget set
 
-The framework and the **Qt simulator** support the full set — `Text` / `Button`
-/ `Column` / `Row` / `Container` plus the value-bearing inputs and the utility
-widgets (`Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` /
-`ScrollView` / `TextArea`) — with `on_click` and the typed change events.
+**Both renderers** — the Qt simulator (desktop) and Compose (device) — support
+the full Track E set. The old "Compose only renders five widgets" gap is gone:
+the value-bearing inputs (`Input` / `TextArea` / `Checkbox` / `Switch` /
+`Slider` / `Select` / `DatePicker` / `FilePicker` / …) render **natively on the
+device** via Jetpack Compose and fold their typed events back into state. Parity
+is pinned by the conformance suite (golden snapshots of both `Style → Qt` and
+`Style → Compose` translators) and was verified on a device across E0–E9.
 
-The **device renderer (Compose)** currently renders `Text` / `Button` / `Column`
-/ `Row` / `Container` and `on_click`; newer widgets fall back until the Kotlin
-host grows the matching cases (Track B follow-up). So device-targeted apps stay
-**button-driven**: `todo` adds from a preset pool instead of typed text, and
-`calculator` uses its keypad as the input surface.
+Coverage (both renderers, unless noted):
+
+| Category | Widgets |
+|---|---|
+| Layout | `Column` / `Row` / `Container` / `Stack` / `Wrap` / `ScrollView` / `SafeArea` / `AspectRatio` / `PageView` / `KeyboardAvoidingView` |
+| Text & action | `Text` / `Button` / `Icon` / `Image` (`on_click`) |
+| Value inputs | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Select` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
+| Virtualized lists | `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` (+ pull-to-refresh, infinite scroll) |
+| Navigation | `Navigator` / `TabView` / `TabBar` / `RouteDrawer` |
+| Overlays | `Dialog` / `BottomSheet` / `Menu` / `Popover` / `Toast` / `Tooltip` / `ActionSheet` |
+| Animation | `Animated` / `AnimatedList` / `Hero` / `Shimmer` / `Skeleton` |
+| Gestures | `GestureDetector` / `PanHandler` / `ScaleHandler` / `DoubleTapHandler` / `Draggable` / `DragTarget` / `Dismissible` / `ReorderableList` / `InteractiveViewer` |
+| Media & graphics | `Canvas` / `Svg` / `VideoPlayer` / `WebView` / `Blur` / `BackdropFilter` / `ClipPath` |
+| Indicators | `ProgressBar` / `Spinner` |
+
+!!! note "Media/camera divergence (device-only)"
+    A few hardware widgets — `CameraPreview` / `QrScanner` / `MapView` — render
+    only on the device (Compose) and show up as a **signalled placeholder on
+    Qt**, not the other way around. Per-field divergences between the two
+    translators are documented in the conformance suite (`tests/conformance/`).
+
+The `form` and `gallery` examples exercise the real value inputs — in the
+simulator **and** on the device. Apps like `calculator` stay keypad-driven by
+app design, not by a renderer limit.
 
 !!! tip "Stable handlers"
     Rebuilds compare handler props by identity, so a fresh `lambda` each build
