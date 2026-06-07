@@ -78,6 +78,12 @@ programaticamente com `run_qt(state, view, device=Device.PIXEL_7)`.
     **grande** (ex.: `pixel-8-pro`, 448×998) — se o layout se comporta nos dois
     extremos, os tamanhos intermediários seguem bem.
 
+!!! info "Até onde o simulador é fiel?"
+    O simulador reflete fielmente estrutura, estado, eventos e a maior parte do
+    `Style`, mas **não** a aparência nativa (Material 3), animações, overlays e
+    fontes — esses só são 100% fiéis no aparelho. Veja
+    [fidelidade do simulador](arquitetura.md#fidelidade-do-simulador-o-que-ele-reflete-e-o-que-nao).
+
 ## Passo 3 — Edite e veja ao vivo
 
 Com o simulador aberto, abra `app.py` no editor e mude algum texto — por

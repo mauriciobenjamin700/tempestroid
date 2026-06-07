@@ -77,6 +77,12 @@ programmatically with `run_qt(state, view, device=Device.PIXEL_7)`.
     one (e.g. `pixel-8-pro`, 448×998) — if the layout behaves at both extremes,
     the sizes in between follow.
 
+!!! info "How faithful is the simulator?"
+    It faithfully reflects structure, state, events and most of `Style`, but
+    **not** the native look (Material 3), animations, overlays and fonts — those
+    are only 100% faithful on the device. See
+    [simulator fidelity](arquitetura.md#simulator-fidelity-what-it-reflects-and-what-it-doesnt).
+
 ## Step 3 — Edit and see it live
 
 With the simulator open, open `app.py` in your editor and change some text
