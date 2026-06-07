@@ -201,3 +201,68 @@ def test_serialize_semantics_omits_none_fields():
 
     node = serialize_node(build(Text(content="x", semantics=Semantics(label="only"))))
     assert node["props"]["semantics"] == {"label": "only"}
+
+
+def test_serialize_icon_inlines_curated_path():
+    """A curated `Icon` name gains an `iconPath` carrying its SVG `d` string."""
+    from tempestroid import Icon
+    from tempestroid.icons import icon_path
+
+    node = serialize_node(build(Icon(name="search")))
+    assert node["type"] == "Icon"
+    assert node["props"]["name"] == "search"
+    assert node["props"]["iconPath"] == icon_path("search")
+    json.dumps(node)
+
+
+def test_serialize_icon_unknown_name_has_no_path():
+    """An unknown icon name carries no `iconPath` (device falls back to text)."""
+    from tempestroid import Icon
+
+    node = serialize_node(build(Icon(name="totally-not-an-icon")))
+    assert node["props"]["name"] == "totally-not-an-icon"
+    assert "iconPath" not in node["props"]
+
+
+def test_serialize_input_inlines_leading_and_trailing_icon_paths():
+    """`Input` leading/trailing icon names resolve to `*Path` siblings."""
+    from tempestroid.icons import Icons, icon_path
+
+    node = serialize_node(
+        build(
+            Input(
+                value="",
+                placeholder="email",
+                leading_icon=Icons.MAIL,
+                trailing_icon=Icons.EYE,
+            )
+        )
+    )
+    assert node["props"]["leading_icon"] == "mail"
+    assert node["props"]["trailing_icon"] == "eye"
+    assert node["props"]["leadingIconPath"] == icon_path("mail")
+    assert node["props"]["trailingIconPath"] == icon_path("eye")
+    json.dumps(node)
+
+
+def test_serialize_dropdown_and_autocomplete_icon_paths():
+    """`Dropdown`/`Autocomplete` resolve curated icon names like `Input`."""
+    from tempestroid import Autocomplete, Dropdown
+    from tempestroid.icons import icon_path
+
+    dropdown = serialize_node(
+        build(Dropdown(options=["a", "b"], leading_icon="user"))
+    )
+    assert dropdown["props"]["leadingIconPath"] == icon_path("user")
+
+    autocomplete = serialize_node(
+        build(Autocomplete(value="", options=["x"], trailing_icon="search"))
+    )
+    assert autocomplete["props"]["trailingIconPath"] == icon_path("search")
+
+
+def test_serialize_input_without_icons_has_no_path_props():
+    """An icon-less input never grows `*Path` props."""
+    node = serialize_node(build(Input(value="x", placeholder="p")))
+    assert "leadingIconPath" not in node["props"]
+    assert "trailingIconPath" not in node["props"]

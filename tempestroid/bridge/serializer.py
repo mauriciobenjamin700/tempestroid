@@ -26,6 +26,7 @@ from tempestroid.core.ir import (
     Replace,
     Update,
 )
+from tempestroid.icons import icon_path
 from tempestroid.renderers.compose import to_compose
 from tempestroid.style import Style
 from tempestroid.widgets import MenuItem
@@ -33,6 +34,27 @@ from tempestroid.widgets import MenuItem
 __all__ = ["serialize_node", "serialize_patch"]
 
 _JSON_SCALARS = (str, int, float, bool)
+
+#: Node types whose curated icon-name props are resolved to their SVG ``d`` path
+#: at serialization time. Mapping ``prop name -> resolved-path prop name`` keeps
+#: the device free of any Python ``icons`` dependency: the curated geometry is
+#: the single source of truth (``tempestroid/icons.py``) and crosses the bridge
+#: inline, so the Kotlin renderer never maintains a drifting copy of the table.
+_ICON_PROP_RESOLUTION: dict[str, dict[str, str]] = {
+    "Icon": {"name": "iconPath"},
+    "Input": {
+        "leading_icon": "leadingIconPath",
+        "trailing_icon": "trailingIconPath",
+    },
+    "Autocomplete": {
+        "leading_icon": "leadingIconPath",
+        "trailing_icon": "trailingIconPath",
+    },
+    "Dropdown": {
+        "leading_icon": "leadingIconPath",
+        "trailing_icon": "trailingIconPath",
+    },
+}
 
 
 def _is_menu_item_list(value: Any) -> TypeGuard[list[MenuItem]]:  # noqa: ANN401 — narrows an untyped prop value
@@ -181,4 +203,30 @@ def _serialize_props(
         elif isinstance(value, _JSON_SCALARS) or isinstance(value, (list, dict)):
             out[name] = value
         # Anything else is silently dropped — v1 widgets carry only the above.
+    _resolve_icon_paths(node_type, out)
     return out
+
+
+def _resolve_icon_paths(node_type: str | None, props: dict[str, Any]) -> None:
+    """Inline the curated SVG ``d`` path for any icon-name prop on ``props``.
+
+    Resolves the curated geometry on the Python side so the device renders a
+    built-in icon by drawing the path, with no Kotlin-side copy of the table to
+    drift. The original name prop is left intact for the device's
+    unknown-name fallback (platform icon / literal text); only curated names
+    gain a ``*Path`` sibling carrying their ``d`` string.
+
+    Args:
+        node_type: The owning node's type (``None`` for a bare
+            ``Update.set_props`` where the type is unknown — nothing resolves).
+        props: The already-serialized prop dict, mutated in place.
+    """
+    resolution = _ICON_PROP_RESOLUTION.get(node_type) if node_type else None
+    if resolution is None:
+        return
+    for name_prop, path_prop in resolution.items():
+        name = props.get(name_prop)
+        if isinstance(name, str):
+            path = icon_path(name)
+            if path is not None:
+                props[path_prop] = path

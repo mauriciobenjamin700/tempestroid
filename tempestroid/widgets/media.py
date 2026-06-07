@@ -82,10 +82,20 @@ class Image(Widget):
 
 
 class Icon(Widget):
-    """A vector icon from the platform's icon set.
+    """A vector icon, drawn from the built-in curated set or a platform set.
+
+    The ``name`` may be one of the framework's curated icon names — see
+    :class:`tempestroid.icons.Icons` and :data:`tempestroid.icons.ICON_PATHS`
+    (e.g. ``Icons.SEARCH`` / ``"search"``) — in which case the renderer strokes
+    the built-in single-path geometry resolved via
+    :func:`tempestroid.icons.icon_path`. Otherwise ``name`` is treated as an
+    arbitrary platform icon identifier (e.g. a Material Icons name like
+    ``"home"``); when neither resolves, the renderer falls back to showing the
+    name. This keeps the field contract unchanged.
 
     Attributes:
-        name: The icon identifier (e.g. a Material Icons name like ``"home"``).
+        name: The icon identifier — a curated :class:`~tempestroid.icons.Icons`
+            value (or its string) or an arbitrary platform icon name.
         size: The icon's edge length in logical pixels, or ``None`` for the
             renderer default.
     """

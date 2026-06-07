@@ -87,6 +87,13 @@ class Input(Widget):
         error: An optional validation message shown when the value is invalid.
         keyboard: The soft-keyboard variant the field requests.
         max_length: An optional cap on the number of characters.
+        leading_icon: An optional icon name shown inside the field on the start
+            (leading) edge — a curated :class:`~tempestroid.icons.Icons` value
+            (or its string) or an arbitrary platform icon name. The renderer
+            resolves and places it; ``None`` shows no leading icon.
+        trailing_icon: An optional icon name shown inside the field on the end
+            (trailing) edge, resolved like :attr:`leading_icon`. ``None`` shows
+            no trailing icon.
         on_change: Handler invoked with a :class:`TextChangeEvent` on each edit.
     """
 
@@ -118,6 +125,20 @@ class Input(Widget):
     )
     max_length: int | None = Field(
         default=None, description="An optional cap on the number of characters."
+    )
+    leading_icon: str | None = Field(
+        default=None,
+        description=(
+            "Optional icon name shown inside the field on the start (leading) "
+            "edge — a curated Icons value or an arbitrary platform icon name."
+        ),
+    )
+    trailing_icon: str | None = Field(
+        default=None,
+        description=(
+            "Optional icon name shown inside the field on the end (trailing) "
+            "edge — a curated Icons value or an arbitrary platform icon name."
+        ),
     )
     on_change: TextChangeHandler | None = Field(
         default=None,
@@ -282,6 +303,11 @@ class Dropdown(Widget):
         options: The selectable option strings, in display order.
         value: The currently selected option, or ``None`` when nothing is chosen.
         placeholder: The hint shown while no option is selected.
+        leading_icon: An optional icon name shown inside the control on the start
+            (leading) edge — a curated :class:`~tempestroid.icons.Icons` value
+            (or its string) or an arbitrary platform icon name.
+        trailing_icon: An optional icon name shown inside the control on the end
+            (trailing) edge, resolved like :attr:`leading_icon`.
         on_select: Handler invoked with a :class:`SelectEvent` (carrying the
             option ``value`` and its 0-based ``index``) on selection.
     """
@@ -298,6 +324,20 @@ class Dropdown(Widget):
     )
     placeholder: str = Field(
         default="Select…", description="The hint shown while no option is selected."
+    )
+    leading_icon: str | None = Field(
+        default=None,
+        description=(
+            "Optional icon name shown inside the control on the start (leading) "
+            "edge — a curated Icons value or an arbitrary platform icon name."
+        ),
+    )
+    trailing_icon: str | None = Field(
+        default=None,
+        description=(
+            "Optional icon name shown inside the control on the end (trailing) "
+            "edge — a curated Icons value or an arbitrary platform icon name."
+        ),
     )
     on_select: SelectHandler | None = Field(
         default=None,
@@ -377,6 +417,11 @@ class Autocomplete(Widget):
         options: The candidate suggestions, filtered against the typed text.
         value: The current text value.
         placeholder: The hint shown when the field is empty.
+        leading_icon: An optional icon name shown inside the field on the start
+            (leading) edge — a curated :class:`~tempestroid.icons.Icons` value
+            (or its string) or an arbitrary platform icon name.
+        trailing_icon: An optional icon name shown inside the field on the end
+            (trailing) edge, resolved like :attr:`leading_icon`.
         on_change: Handler invoked with a :class:`TextChangeEvent` on each edit.
         on_select: Handler invoked with a :class:`SelectEvent` when a suggestion
             is selected.
@@ -394,6 +439,20 @@ class Autocomplete(Widget):
     value: str = Field(default="", description="The current text value.")
     placeholder: str = Field(
         default="", description="The hint shown when the field is empty."
+    )
+    leading_icon: str | None = Field(
+        default=None,
+        description=(
+            "Optional icon name shown inside the field on the start (leading) "
+            "edge — a curated Icons value or an arbitrary platform icon name."
+        ),
+    )
+    trailing_icon: str | None = Field(
+        default=None,
+        description=(
+            "Optional icon name shown inside the field on the end (trailing) "
+            "edge — a curated Icons value or an arbitrary platform icon name."
+        ),
     )
     on_change: TextChangeHandler | None = Field(
         default=None,

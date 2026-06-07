@@ -16,9 +16,11 @@ import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path as FsPath
 from typing import TYPE_CHECKING, Any, cast
+from xml.sax import saxutils
 
 from PySide6.QtCore import (
     QAbstractAnimation,
+    QByteArray,
     QDate,
     QEasingCurve,
     QElapsedTimer,
@@ -116,6 +118,7 @@ from tempestroid.core.ir import (
     Scene,
     Update,
 )
+from tempestroid.icons import Icons, icon_path
 from tempestroid.renderers.qt.style_translator import (
     layout_alignment,
     self_alignment,
@@ -547,27 +550,101 @@ def _to_qt_input_mask(mask: str) -> str:
     return "".join(out)
 
 
-def _eye_icon(revealed: bool) -> QIcon:
-    """Render a small open/closed-eye glyph into an icon for the reveal toggle.
+#: Cache of rendered vector-icon pixmaps keyed by ``(name, size, color_argb)`` so
+#: a glyph is parsed/stroked once and reused across every label and line-edit
+#: action that asks for the same name/size/color.
+_ICON_PIXMAP_CACHE: dict[tuple[str, int, int], QPixmap] = {}
+
+
+def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
+    """Build a stroked vector-icon pixmap from the curated icon set.
+
+    Wraps the icon's single SVG ``d`` string (from :func:`icon_path`) in a tiny
+    ``<svg viewBox="0 0 24 24">`` document with a stroked, fill-none path in the
+    requested color and rasterizes it via ``QSvgRenderer`` (robust SVG path
+    parsing, antialiased, round cap/join, stroke width ~2 on the 24 grid). The
+    result is cached by ``(name, size, color)``.
+
+    Args:
+        name: A curated icon name (an :class:`Icons` member or raw string).
+        size: The target square pixel size of the pixmap.
+        color: The stroke color (the surrounding foreground/text color).
+
+    Returns:
+        A transparent ``QPixmap`` of ``size`` x ``size`` carrying the stroked
+        glyph, or ``None`` when the name is unknown or ``QtSvg`` is unavailable
+        (the caller falls back to text).
+    """
+    d = icon_path(name)
+    if d is None:
+        return None
+    size = max(1, int(size))
+    key = (name, size, color.rgba())
+    cached = _ICON_PIXMAP_CACHE.get(key)
+    if cached is not None:
+        return cached
+    renderer_cls = _load_svg_renderer()
+    if renderer_cls is None:
+        return None
+    # Inline the d string in a minimal stroke-only SVG; escape the path data so a
+    # stray ``<``/``&``/``"`` can never break the document or the quoted attribute
+    # (curated paths have none, but a custom name's path is escaped defensively).
+    safe_d = saxutils.escape(d, {'"': "&quot;"})
+    stroke = color.name(QColor.NameFormat.HexRgb)
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+        f'width="{size}" height="{size}">'
+        f'<path d="{safe_d}" fill="none" stroke="{stroke}" stroke-width="2" '
+        f'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    )
+    renderer = renderer_cls(QByteArray(svg.encode("utf-8")))
+    if not renderer.isValid():
+        return None
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    renderer.render(painter)
+    painter.end()
+    _ICON_PIXMAP_CACHE[key] = pixmap
+    return pixmap
+
+
+def _icon_qicon(name: str, size: int, color: QColor) -> QIcon | None:
+    """Build a :class:`QIcon` from a curated vector icon, or ``None`` if unknown.
+
+    Args:
+        name: A curated icon name (an :class:`Icons` member or raw string).
+        size: The target square pixel size.
+        color: The stroke color.
+
+    Returns:
+        A ``QIcon`` wrapping the stroked glyph, or ``None`` when unavailable.
+    """
+    pixmap = _icon_pixmap(name, size, color)
+    if pixmap is None:
+        return None
+    return QIcon(pixmap)
+
+
+def _eye_icon(revealed: bool, color: QColor) -> QIcon:
+    """Render the reveal-toggle glyph as a modern stroked line icon.
+
+    Uses the curated :data:`Icons.EYE` (revealed) / :data:`Icons.EYE_OFF`
+    (masked) vector glyphs via :func:`_icon_qicon`. Falls back to an empty icon
+    only when ``QtSvg`` is unavailable (no emoji).
 
     Args:
         revealed: Whether the password is currently revealed (open eye) or
-            masked (closed eye).
+            masked (crossed-out eye).
+        color: The stroke color (the field's foreground color).
 
     Returns:
-        A 16×16 icon carrying the matching glyph.
+        A 16×16 icon carrying the matching line glyph.
     """
-    pixmap = QPixmap(16, 16)
-    pixmap.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(pixmap)
-    painter.setPen(QColor(90, 90, 90))
-    font = QFont()
-    font.setPixelSize(13)
-    painter.setFont(font)
-    glyph = "👁" if revealed else "🙈"
-    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, glyph)
-    painter.end()
-    return QIcon(pixmap)
+    name = Icons.EYE if revealed else Icons.EYE_OFF
+    icon = _icon_qicon(str(name), 16, color)
+    return icon if icon is not None else QIcon()
 
 
 class _TextLabel(QLabel):
@@ -3498,6 +3575,12 @@ class QtRenderer:
         # Live password-reveal toggle actions, keyed by line-edit id, so a secure
         # Input keeps a single eye action across idempotent re-applies.
         self._eye_actions: dict[int, QAction] = {}
+        # Live leading/trailing vector-icon slot actions, keyed by line-edit id,
+        # so an ``leading_icon``/``trailing_icon`` change replaces (never stacks)
+        # the in-field glyph and a ``None`` removes it. Each entry tracks the
+        # current ``(icon_name, QAction)`` per edge.
+        self._leading_icons: dict[int, tuple[str, QAction]] = {}
+        self._trailing_icons: dict[int, tuple[str, QAction]] = {}
         # A second value connection per widget, for the few controls that wire two
         # distinct signals (``Autocomplete``: ``textChanged`` via ``_value_conns``
         # plus the completer's ``activated`` here). Keyed by the line-edit id.
@@ -3734,6 +3817,8 @@ class QtRenderer:
         self._click_conns.clear()
         self._value_conns.clear()
         self._eye_actions.clear()
+        self._leading_icons.clear()
+        self._trailing_icons.clear()
         self._select_conns.clear()
         self._completer_options.clear()
         for overlay in self._overlays:
@@ -5626,6 +5711,7 @@ class QtRenderer:
             )
         )
         self._apply_secure(widget, bool(props.get("secure", False)))
+        self._apply_input_icons(widget, props)
         pattern = cast("str | None", props.get("pattern"))
         self._bind_value(
             widget,
@@ -5660,18 +5746,89 @@ class QtRenderer:
         if action is not None:
             return
         widget.setEchoMode(QLineEdit.EchoMode.Password)
-        toggle = QAction(_eye_icon(revealed=False), "Reveal password", widget)
+        color = widget.palette().color(QPalette.ColorRole.Text)
+        toggle = QAction(
+            _eye_icon(revealed=False, color=color), "Reveal password", widget
+        )
         toggle.setCheckable(True)
 
         def _reveal(checked: bool) -> None:
             widget.setEchoMode(
                 QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
             )
-            toggle.setIcon(_eye_icon(revealed=checked))
+            toggle.setIcon(_eye_icon(revealed=checked, color=color))
 
         toggle.toggled.connect(_reveal)
         widget.addAction(toggle, QLineEdit.ActionPosition.TrailingPosition)
         self._eye_actions[id(widget)] = toggle
+
+    def _apply_input_icons(self, widget: QLineEdit, props: dict[str, Any]) -> None:
+        """Place/refresh the in-field leading and trailing vector-icon slots.
+
+        ``leading_icon`` is shown on the start edge and ``trailing_icon`` on the
+        end edge (start/end follow the renderer's RTL flag — Qt mirrors the
+        leading/trailing action positions automatically with the layout
+        direction). Each edge tracks its current ``(name, QAction)`` per
+        line-edit id so an unchanged name is a no-op, a changed name replaces the
+        action (never stacks), and ``None`` removes any existing slot.
+
+        Args:
+            widget: The Qt line edit.
+            props: The node's current props (carry ``leading_icon`` /
+                ``trailing_icon`` as curated icon names or ``None``).
+        """
+        color = widget.palette().color(QPalette.ColorRole.Text)
+        self._apply_input_icon_edge(
+            widget,
+            cast("str | None", props.get("leading_icon")),
+            QLineEdit.ActionPosition.LeadingPosition,
+            self._leading_icons,
+            color,
+        )
+        self._apply_input_icon_edge(
+            widget,
+            cast("str | None", props.get("trailing_icon")),
+            QLineEdit.ActionPosition.TrailingPosition,
+            self._trailing_icons,
+            color,
+        )
+
+    @staticmethod
+    def _apply_input_icon_edge(
+        widget: QLineEdit,
+        name: str | None,
+        position: QLineEdit.ActionPosition,
+        slots: dict[int, tuple[str, QAction]],
+        color: QColor,
+    ) -> None:
+        """Reconcile a single leading/trailing icon slot on a line edit.
+
+        Args:
+            widget: The Qt line edit.
+            name: The desired curated icon name, or ``None`` to clear the slot.
+            position: The Qt action position (leading/trailing edge).
+            slots: The per-edge tracking dict (``id -> (name, action)``).
+            color: The stroke color for the rendered glyph.
+        """
+        wid = id(widget)
+        existing = slots.get(wid)
+        if name is None:
+            if existing is not None:
+                widget.removeAction(existing[1])
+                slots.pop(wid, None)
+            return
+        if existing is not None:
+            if existing[0] == name:
+                return  # unchanged — keep the live action
+            widget.removeAction(existing[1])
+            slots.pop(wid, None)
+        icon = _icon_qicon(name, 16, color)
+        if icon is None:
+            return  # unknown name / no QtSvg → no slot, no crash
+        action = QAction(icon, name, widget)
+        action.setEnabled(False)  # decorative slot, not clickable
+        widget.addAction(action, position)
+        slots[wid] = (name, action)
 
     def _apply_textarea(self, widget: QPlainTextEdit, props: dict[str, Any]) -> None:
         """Apply props to a multi-line text input and wire its change handler.
@@ -5982,18 +6139,30 @@ class QtRenderer:
     def _apply_icon(widget: QLabel, props: dict[str, Any]) -> None:
         """Apply props to an icon label.
 
-        The simulator shows the icon's ``name`` as text (no icon font is bundled);
-        the device renders the real vector glyph from its icon set.
+        When the ``name`` resolves to a curated vector glyph (:func:`icon_path`),
+        the stroked line icon is rendered into the label's pixmap at ``size``
+        (default 20px), colored from the label's palette text color. An unknown
+        name falls back to showing the name as text (no exception).
 
         Args:
             widget: The Qt label backing the icon.
             props: The node's current props.
         """
-        widget.setText(cast("str", props.get("name", "")))
-        size = props.get("size")
-        if size is not None:
+        name = cast("str", props.get("name", ""))
+        size_prop = props.get("size")
+        size = int(cast("float", size_prop)) if size_prop is not None else 20
+        color = widget.palette().color(QPalette.ColorRole.Text)
+        pixmap = _icon_pixmap(name, size, color) if name else None
+        if pixmap is not None:
+            widget.setText("")
+            widget.setPixmap(pixmap)
+            return
+        # Unknown name (or no QtSvg): keep the legacy text fallback.
+        widget.setPixmap(QPixmap())
+        widget.setText(name)
+        if size_prop is not None:
             font = widget.font()
-            font.setPixelSize(int(cast("float", size)))
+            font.setPixelSize(size)
             widget.setFont(font)
 
     def _apply_checkbox(self, widget: QCheckBox, props: dict[str, Any]) -> None:
@@ -6206,6 +6375,7 @@ class QtRenderer:
                 )
                 conn = str_signal.connect(_on_activated)
                 self._select_conns[id(widget)] = (str_signal, conn)
+        self._apply_input_icons(widget, props)
         self._bind_value(
             widget,
             widget.textChanged,
@@ -6595,6 +6765,8 @@ class QtRenderer:
         self._click_conns.pop(widget_id, None)
         self._value_conns.pop(widget_id, None)
         self._eye_actions.pop(widget_id, None)
+        self._leading_icons.pop(widget_id, None)
+        self._trailing_icons.pop(widget_id, None)
         for child in rendered.children:
             self._purge_connections(child)
 
