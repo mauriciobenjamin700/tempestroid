@@ -90,6 +90,17 @@ de erro, e `keyboard` (enum `KeyboardType`: `TEXT`, `NUMBER`, `EMAIL`, `PHONE`,
 | `ProgressBar` | Barra de progresso. | `value`, `indeterminate` |
 | `Spinner` | Indicador de carregamento. | `size` |
 
+!!! info "Este guia cobre as primitivas — há ~100 widgets no total"
+    As tabelas acima são as **primitivas de núcleo**. O framework exporta ~100
+    widgets, incluindo navegação (`Navigator`/`TabView`/`RouteDrawer`), listas
+    virtualizadas (`LazyColumn`/`SectionList`), overlays (`Dialog`/`BottomSheet`/
+    `Menu`), animação (`Animated`/`Hero`/`Shimmer`), gestos (`Draggable`/
+    `Dismissible`/`InteractiveViewer`), mídia/gráficos (`Canvas`/`Svg`/
+    `VideoPlayer`/`WebView`) e componentes compostos (`Card`/`Scaffold`/`NavBar`).
+    Todos são suportados pelos **dois renderizadores** — veja a
+    [tabela de cobertura completa](exemplos.md#conjunto-de-widgets-atual) e a
+    [referência de API](../referencia/api.md).
+
 ## Chaves (`key`)
 
 Dê um `key` estável a cada filho de uma lista. O reconciliador usa chaves para

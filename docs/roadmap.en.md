@@ -3,7 +3,7 @@
 Development follows two base tracks and one expansion track. **Track A** is the
 pure-Python framework (desktop/CPython). **Track B** is the Android runtime
 (CPython 3.14 + Kotlin host + JNI bridge + Compose renderer). **Track E** is
-parity with Flutter/React Native (planned). The full plan is in
+parity with Flutter/React Native (**done** — E0–E9). The full plan is in
 [Design plan (EN)](plan.md) and, for Track E, in
 [Parity plan](plan-parity.md).
 
@@ -67,7 +67,7 @@ reserved token `__native_result__:<id>` — **no C/JNI change**. Failures raise
     modules + manifest perms/`FileProvider` are **written but not yet validated on
     a device** — they need the Android SDK/NDK toolchain.
 
-## Track E — Flutter / React Native parity (planned)
+## Track E — Flutter / React Native parity (done)
 
 Roadmap to close the gap with what Flutter + RN ship out of the box. Every phase
 delivers the **three matched layers** (IR/diff + Qt renderer + Compose renderer)
@@ -80,16 +80,16 @@ transitions; E4–E9 couple less and reorder on demand (except E6c←E1 and E3d�
 
 | Phase | Scope | Core risk | Status |
 |---|---|---|---|
-| E0 | Navigation and routes (push/pop stack, tabs, drawer, back button, deep link) | low (reuses diff) | 🔜 |
-| E1 | Virtualized lists + scroll (lazy, sticky section, pull-to-refresh, infinite scroll) | medium (windowed diff) | 🔜 |
-| E2 | Overlays and feedback (dialog, bottom sheet, toast, tooltip, menu, action sheet) | **high** (`Scene` + namespaced `Path`) | 🔜 |
-| E3 | Animation framework (controller, tween/curve, implicit, gesture, Hero, shimmer) | **high** (frame clock) | 🔜 |
-| E4 | Advanced gestures (pan/drag-drop, pinch/zoom, double-tap, dismissible, reorder) | low (pattern ready) | 🔜 |
-| E5 | Inputs and forms (dropdown, time, range, form/validation, autocomplete, OTP, mask) | low | 🔜 |
-| E6 | Refined layout (flex-wrap, pager/carousel, collapsing app bar, table, aspect ratio) | low | 🔜 |
-| E7 | Media and graphics (video, webview, canvas, svg, live camera, QR, map, blur, clip) | medium (canvas IR) | 🔜 |
-| E8 | Platform/system (haptics, sensors, lifecycle, permissions, biometrics, storage, SQLite, push) | low (B6 pattern + stream token) | 🔜 |
-| E9 | Cross-cutting (theme/dark + MediaQuery, i18n/RTL, accessibility, custom fonts + scale) | medium (context + RTL) | 🔜 |
+| E0 | Navigation and routes (push/pop stack, tabs, drawer, back button, deep link) | low (reuses diff) | ✅ |
+| E1 | Virtualized lists + scroll (lazy, sticky section, pull-to-refresh, infinite scroll) | medium (windowed diff) | ✅ |
+| E2 | Overlays and feedback (dialog, bottom sheet, toast, tooltip, menu, action sheet) | **high** (`Scene` + namespaced `Path`) | ✅ |
+| E3 | Animation framework (controller, tween/curve, implicit, gesture, Hero, shimmer) | **high** (frame clock) | ✅ |
+| E4 | Advanced gestures (pan/drag-drop, pinch/zoom, double-tap, dismissible, reorder) | low (pattern ready) | ✅ |
+| E5 | Inputs and forms (dropdown, time, range, form/validation, autocomplete, OTP, mask) | low | ✅ |
+| E6 | Refined layout (flex-wrap, pager/carousel, collapsing app bar, table, aspect ratio) | low | ✅ |
+| E7 | Media and graphics (video, webview, canvas, svg, live camera, QR, map, blur, clip) | medium (canvas IR) | ✅ |
+| E8 | Platform/system (haptics, sensors, lifecycle, permissions, biometrics, storage, SQLite, push) | low (B6 pattern + stream token) | ✅ |
+| E9 | Cross-cutting (theme/dark + MediaQuery, i18n/RTL, accessibility, custom fonts + scale) | medium (context + RTL) | ✅ |
 
 !!! info "Everything inside the project — no extra projects"
     All Track E work lives **inside the `tempestroid` repository**: the Python

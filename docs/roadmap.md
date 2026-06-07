@@ -3,7 +3,7 @@
 O desenvolvimento segue duas trilhas-base e uma trilha de expansão. **Trilho A**
 é o framework em Python puro (desktop/CPython). **Trilho B** é o runtime Android
 (CPython 3.14 + host Kotlin + ponte JNI + renderizador Compose). **Trilho E** é a
-paridade com Flutter/React Native (planejado). O plano completo está em
+paridade com Flutter/React Native (**concluído** — E0–E9). O plano completo está em
 [Plano de design (EN)](plan.md) e, para o Trilho E, em
 [Plano de paridade](plan-parity.md).
 
@@ -68,9 +68,9 @@ reservado `__native_result__:<id>` — **sem mudança de C/JNI**. Falhas levanta
     **escritos mas ainda não validados num device** — precisam do toolchain
     Android SDK/NDK.
 
-## Trilho E — Paridade Flutter / React Native (planejado)
+## Trilho E — Paridade Flutter / React Native (concluído)
 
-Roadmap para fechar o gap com o que Flutter + RN oferecem de fábrica. Toda fase
+Fechou o gap com o que Flutter + RN oferecem de fábrica. Toda fase
 entrega as **três camadas casadas** (IR/diff + renderizador Qt + renderizador
 Compose) e só fecha com os **dois renderizadores verdes** + (havendo device)
 verificação dual. Spec fase-a-fase em [Plano de paridade](plan-parity.md).
@@ -81,16 +81,16 @@ E4–E9 acoplam menos e reordenam por demanda (exceto E6c←E1 e E3d←E0).
 
 | Fase | Escopo | Risco núcleo | Status |
 |---|---|---|---|
-| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | baixo (reusa diff) | 🔜 |
-| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | médio (diff por janela) | 🔜 |
-| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu, action sheet) | **alto** (`Scene` + `Path` namespaced) | 🔜 |
-| E3 | Framework de animação (controller, tween/curva, implícita, gesto, Hero, shimmer) | **alto** (clock de frames) | 🔜 |
-| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder) | baixo (padrão pronto) | 🔜 |
-| E5 | Inputs e formulários (dropdown, time, range, form/validação, autocomplete, OTP, máscara) | baixo | 🔜 |
-| E6 | Layout refinado (flex-wrap, pager/carousel, app bar colapsável, tabela, aspect ratio) | baixo | 🔜 |
-| E7 | Mídia e gráficos (vídeo, webview, canvas, svg, câmera live, QR, mapa, blur, clip) | médio (IR de canvas) | 🔜 |
-| E8 | Plataforma/sistema (haptics, sensores, lifecycle, permissões, biometria, storage, SQLite, push) | baixo (padrão B6 + token p/ stream) | 🔜 |
-| E9 | Transversais (tema/dark + MediaQuery, i18n/RTL, acessibilidade, fontes custom + escala) | médio (contexto + RTL) | 🔜 |
+| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | baixo (reusa diff) | ✅ |
+| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | médio (diff por janela) | ✅ |
+| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu, action sheet) | **alto** (`Scene` + `Path` namespaced) | ✅ |
+| E3 | Framework de animação (controller, tween/curva, implícita, gesto, Hero, shimmer) | **alto** (clock de frames) | ✅ |
+| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder) | baixo (padrão pronto) | ✅ |
+| E5 | Inputs e formulários (dropdown, time, range, form/validação, autocomplete, OTP, máscara) | baixo | ✅ |
+| E6 | Layout refinado (flex-wrap, pager/carousel, app bar colapsável, tabela, aspect ratio) | baixo | ✅ |
+| E7 | Mídia e gráficos (vídeo, webview, canvas, svg, câmera live, QR, mapa, blur, clip) | médio (IR de canvas) | ✅ |
+| E8 | Plataforma/sistema (haptics, sensores, lifecycle, permissões, biometria, storage, SQLite, push) | baixo (padrão B6 + token p/ stream) | ✅ |
+| E9 | Transversais (tema/dark + MediaQuery, i18n/RTL, acessibilidade, fontes custom + escala) | médio (contexto + RTL) | ✅ |
 
 !!! info "Tudo dentro do projeto — sem projetos extras"
     Toda implementação do Trilho E mora **dentro do repositório `tempestroid`**:

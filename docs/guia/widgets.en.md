@@ -89,6 +89,17 @@ message, and `keyboard` (enum `KeyboardType`: `TEXT`, `NUMBER`, `EMAIL`, `PHONE`
 | `ProgressBar` | Progress bar. | `value`, `indeterminate` |
 | `Spinner` | Loading indicator. | `size` |
 
+!!! info "This guide covers the primitives — there are ~100 widgets in total"
+    The tables above are the **core primitives**. The framework exports ~100
+    widgets, including navigation (`Navigator`/`TabView`/`RouteDrawer`),
+    virtualized lists (`LazyColumn`/`SectionList`), overlays (`Dialog`/
+    `BottomSheet`/`Menu`), animation (`Animated`/`Hero`/`Shimmer`), gestures
+    (`Draggable`/`Dismissible`/`InteractiveViewer`), media/graphics (`Canvas`/
+    `Svg`/`VideoPlayer`/`WebView`) and composite components (`Card`/`Scaffold`/
+    `NavBar`). All are supported by **both renderers** — see the
+    [full coverage table](exemplos.md#current-widget-set) and the
+    [API reference](../referencia/api.md).
+
 ## Keys (`key`)
 
 Give each child of a list a stable `key`. The reconciler uses keys to emit
