@@ -6,10 +6,12 @@ the ``tempestroid[qt]`` dependency and the ``[tool.tempest] app`` pointer (so
 ``tempest dev``/``serve``/``build`` run with no app argument inside the
 project), a ``README.md`` with the dev-loop commands, and a ``.gitignore``.
 
-``tempest new .`` scaffolds **in place** into the current directory (the project
-name is taken from the directory name); ``tempest new <name>`` creates a new
-subdirectory. The template is pure Python — no Qt import at module level — so the
-same file targets the desktop simulator and the Android device.
+``tempest new`` (no argument, the default) scaffolds **in place** into the
+current directory and takes the project/app id from the directory name — the user
+is expected to already be inside their project folder and virtualenv, so no extra
+wrapping directory is created. Passing ``tempest new <name>`` creates a new
+subdirectory instead. The template is pure Python — no Qt import at module level —
+so the same file targets the desktop simulator and the Android device.
 """
 
 from __future__ import annotations

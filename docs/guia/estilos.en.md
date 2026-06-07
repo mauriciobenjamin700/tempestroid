@@ -37,10 +37,11 @@ Column(
 
 | Group | Fields |
 |---|---|
-| **Layout** | `direction`, `justify`, `align`, `align_self`, `grow`, `gap` |
+| **Layout** | `direction`, `justify`, `align`, `align_self`, `grow`, `gap`, `flex_wrap`, `stack_align` |
+| **Position** | `position`, `top`, `right`, `bottom`, `left` |
 | **Box** | `padding`, `margin`, `border`, `radius` |
 | **Paint** | `background`, `color`, `opacity`, `shadow` |
-| **Typography** | `font_family`, `font_size`, `font_weight`, `font_style`, `text_align`, `text_decoration`, `letter_spacing`, `line_height`, `max_lines`, `text_overflow` |
+| **Typography** | `font_family`, `font_asset`, `font_size`, `font_weight`, `font_style`, `text_align`, `text_decoration`, `text_scale`, `letter_spacing`, `line_height`, `max_lines`, `text_overflow` |
 | **Sizing** | `width`, `height`, `min_width`, `max_width`, `min_height`, `max_height`, `aspect_ratio` |
 | **Animation** | `transition` |
 
@@ -81,6 +82,9 @@ Style(
 | `FlexDirection` | `ROW`, `COLUMN`. |
 | `JustifyContent` | `START`, `CENTER`, `END`, `SPACE_BETWEEN`, `SPACE_AROUND`, `SPACE_EVENLY`. |
 | `AlignItems` | `START`, `CENTER`, `END`, `STRETCH`. |
+| `FlexWrap` | `NOWRAP`, `WRAP`, `WRAP_REVERSE` (used by `Wrap`/`flex_wrap`). |
+| `StackAlign` | `TOP_START`…`BOTTOM_END` (child alignment inside a `Stack`). |
+| `Position` | `STATIC`, `ABSOLUTE` (with `top`/`right`/`bottom`/`left`). |
 | `TextAlign` | `LEFT`, `CENTER`, `RIGHT`, `JUSTIFY`. |
 | `FontWeight` | `NORMAL`, `BOLD` (and numeric weights). |
 | `FontStyle` | `NORMAL`, `ITALIC`. |

@@ -171,8 +171,9 @@ def new_cmd(
     name: Annotated[
         str,
         typer.Argument(
-            help="Project name for a new subdirectory; use a dot to scaffold in "
-            "the current directory (the default).",
+            help="Leave empty to scaffold in the CURRENT directory (the default) "
+            "using its folder name as the app id — you are already inside your "
+            "project/venv. Pass a name only if you want it in a new subdirectory.",
         ),
     ] = ".",
     into: Annotated[
@@ -193,7 +194,13 @@ def new_cmd(
         ),
     ] = "default",
 ) -> None:
-    """Scaffold a fully configured tempestroid app."""
+    """Scaffold a tempestroid app in the current directory.
+
+    Run it from inside your already-created project folder (and virtualenv):
+    `tempest new` writes the starter files in place and uses the folder name as
+    the app id — no extra wrapping directory. Pass a name to create a new
+    subdirectory instead.
+    """
     raise typer.Exit(_run_new(name, into, template))
 
 

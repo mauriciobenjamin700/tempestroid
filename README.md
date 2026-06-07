@@ -167,7 +167,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 **Both renderers** — the Qt simulator and Compose on the device — support the
 full Track E widget set (~70 types): layout, text & action, the value-bearing
 inputs (`Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider`
-/ `Select` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` /
+/ `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` /
 `MaskedInput` / `Autocomplete` / `Form`) with their typed change events,
 virtualized lists, navigation, overlays, animation, gestures, and media. Parity
 is pinned by the conformance suite (golden snapshots of both `Style` translators)
@@ -181,7 +181,7 @@ and [`examples/README.md`](examples/README.md).
 ## CLI
 
 ```bash
-uv run tempest new .                # scaffold a fully configured project in the current dir
+uv run tempest new                  # scaffold in the CURRENT dir (id = folder name)
 uv run tempest dev                  # dev loop: edit + save → hot reload (reads pyproject)
 uv run tempest install              # download + adb-install the prebuilt host (no SDK/NDK)
 uv run tempest deploy               # push the whole project to a device — offline, no SDK/NDK
@@ -196,10 +196,12 @@ uv run tempest --version            # print the framework version (also: tempest
 uv run tempest --help
 ```
 
-`tempest new <name>` makes a new subdirectory; `tempest new .` scaffolds in the
-current directory. The generated `pyproject.toml` carries `[tool.tempest] app =
-"app.py"`, so **`dev` / `serve` / `build` / `run` take no app argument inside a
-project** — pass an explicit path (`tempest build path/to/app.py`) only to override.
+Run `tempest new` **inside your already-created project folder** (and venv): it
+scaffolds in place and uses the **folder name as the app id** — no extra wrapping
+directory. Pass a name (`tempest new other`) only if you want a new subdirectory.
+The generated `pyproject.toml` carries `[tool.tempest] app = "app.py"`, so
+**`dev` / `serve` / `build` / `run` take no app argument inside a project** —
+pass an explicit path (`tempest build path/to/app.py`) only to override.
 
 Pick a starting structure with `--template`/`-t`:
 
@@ -212,7 +214,7 @@ Pick a starting structure with `--template`/`-t`:
   guarded by `on_device()` + `try/except NativeError`).
 
 ```bash
-uv run tempest new myapp -t multi    # multi-file project for a real app
+uv run tempest new -t multi          # multi-file project (in the current dir)
 ```
 
 `tempest dev` cockpit commands: `r` (hot reload, state preserved), `R` (hot
@@ -307,7 +309,7 @@ surfaced and the happy path stays quiet.
 
 | Command | Status | Notes |
 |---|---|---|
-| `tempest new [name]` | ✅ | Scaffold a fully configured project (`.` = current dir); writes `pyproject.toml` + `app.py` + `.gitignore`. `--template`/`-t`: `default` (single file), `multi` (state + screens/ + components/ + Navigator), `native` (multi + native-capabilities screen) |
+| `tempest new [name]` | ✅ | Scaffold a fully configured project **in the current dir** (id = folder name); pass a `name` only for a new subdirectory. Writes `pyproject.toml` + `app.py` + `.gitignore`. `--template`/`-t`: `default` (single file), `multi` (state + screens/ + components/ + Navigator), `native` (multi + native-capabilities screen) |
 | `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `-v` for tracebacks |
 | `tempest deploy [app]` | ✅ | Offline push of the whole project to a device (no SDK/NDK): install the bundled host (if needed) + push bundle + launch; `--force-install`, `-v` |
 | `tempest serve [app]` | ✅ | LAN code-push of the whole project + log relay + hot reload; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |

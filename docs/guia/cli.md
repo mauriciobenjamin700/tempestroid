@@ -4,7 +4,7 @@ O ponto de entrada `tempest` cobre o ciclo de vida do app: criar, desenvolver no
 simulador, empurrar para o dispositivo, empacotar e inspecionar o contrato.
 
 ```bash
-uv run tempest new MyApp                        # scaffold de um novo projeto de app
+uv run tempest new                              # scaffold na pasta atual (id = nome da pasta)
 uv run python examples/counter/app.py           # rodar um app direto no simulador Qt
 uv run tempest dev examples/counter/app.py       # dev loop: editar + salvar → hot reload
 uv run tempest deploy examples/multifile/main.py # push offline no aparelho (sem SDK/NDK)
@@ -19,7 +19,7 @@ uv run tempest --help
 
 | Comando | Status | Descrição |
 |---|---|---|
-| `tempest new <nome>` | ✅ | Cria um projeto de app executável. |
+| `tempest new` | ✅ | Cria um projeto de app executável **na pasta atual** (id = nome da pasta). Passe um nome só para criar uma subpasta. |
 | `tempest dev <app>` | ✅ | Simulador + hot reload / hot restart (precisa do extra `qt`). |
 | `tempest deploy <app>` | ✅ | Push **offline** do projeto inteiro no aparelho (sem SDK/NDK): instala o host empacotado + empurra + abre. |
 | `tempest serve <app>` | ✅ | Code-push por LAN + hot reload do projeto inteiro (fase B5). |
