@@ -790,6 +790,235 @@ DataTable(
 
 ---
 
+## Formulários brasileiros
+
+Estes componentes baixam para as primitivas `Input` / `MaskedInput` envolvidas
+num `Column` rotulado (rótulo opcional acima, o campo, e uma linha de erro
+vermelha opcional abaixo). Cada um expõe um `on_change` que recebe o **novo
+valor em string** — você nunca toca no objeto de evento. Combine cada campo com
+a função de validação correspondente em `tempestroid.validators` para validação
+por campo dentro de um `Form`: passe o componente como `child` de um `FormField`
+com a lista `validators` apropriada, e o `Form` agrega os erros e bloqueia o
+submit inválido antes de qualquer patch.
+
+!!! info "Validadores prontos"
+    `tempestroid.validators` traz `validate_cpf`, `validate_cnpj`,
+    `validate_email` e `validate_phone` — funções puras
+    `Callable[[Any], str | None]` que devolvem uma mensagem PT-BR quando o valor
+    é inválido ou `None` quando válido. Elas removem máscara (pontos, traços,
+    parênteses) antes de validar, então `"123.456.789-09"` valida igual aos
+    dígitos puros.
+
+### EmailInput
+
+Campo de e-mail rotulado com teclado de e-mail, ícone `mail` e `pattern`
+embutido (`EMAIL_PATTERN`).
+
+```python
+from tempestroid import EmailInput, FormField, validate_email
+
+FormField(
+    name="email",
+    validators=[validate_email],
+    child=EmailInput(
+        value=app.state.email,
+        on_change=lambda v: app.set_state(lambda s: setattr(s, "email", v)),
+        key="email",
+    ),
+    key="email-field",
+)
+```
+
+Teclado `EMAIL`; valida com `validate_email`.
+
+### PasswordInput
+
+Campo de senha seguro (oculto, com o botão de olho embutido) e ícone `lock`.
+
+```python
+from tempestroid import FormField, PasswordInput
+
+FormField(
+    name="password",
+    child=PasswordInput(
+        value=app.state.password,
+        on_change=lambda v: app.set_state(lambda s: setattr(s, "password", v)),
+        key="password",
+    ),
+    key="password-field",
+)
+```
+
+Campo seguro (`secure=True`); sem máscara — combine com seu próprio validador
+de força, se quiser.
+
+### PhoneInput
+
+Telefone brasileiro mascarado `(99) 99999-9999`.
+
+```python
+from tempestroid import FormField, PhoneInput, validate_phone
+
+FormField(
+    name="phone",
+    validators=[validate_phone],
+    child=PhoneInput(
+        value=app.state.phone,
+        on_change=lambda v: app.set_state(lambda s: setattr(s, "phone", v)),
+        key="phone",
+    ),
+    key="phone-field",
+)
+```
+
+Máscara `(99) 99999-9999`, teclado `PHONE`; valida com `validate_phone`
+(aceita 10 ou 11 dígitos).
+
+### CPFInput
+
+Campo de CPF mascarado `999.999.999-99`.
+
+```python
+from tempestroid import CPFInput, FormField, validate_cpf
+
+FormField(
+    name="cpf",
+    validators=[validate_cpf],
+    child=CPFInput(
+        value=app.state.cpf,
+        on_change=lambda v: app.set_state(lambda s: setattr(s, "cpf", v)),
+        key="cpf",
+    ),
+    key="cpf-field",
+)
+```
+
+Máscara `999.999.999-99`, teclado `NUMBER`; valida com `validate_cpf`
+(11 dígitos + dígitos verificadores).
+
+### CNPJInput
+
+Campo de CNPJ mascarado `99.999.999/9999-99`.
+
+```python
+from tempestroid import CNPJInput, FormField, validate_cnpj
+
+FormField(
+    name="cnpj",
+    validators=[validate_cnpj],
+    child=CNPJInput(
+        value=app.state.cnpj,
+        on_change=lambda v: app.set_state(lambda s: setattr(s, "cnpj", v)),
+        key="cnpj",
+    ),
+    key="cnpj-field",
+)
+```
+
+Máscara `99.999.999/9999-99`, teclado `NUMBER`; valida com `validate_cnpj`
+(14 dígitos + dígitos verificadores).
+
+### AddressInput
+
+Bloco de endereço brasileiro agrupado: CEP (mascarado `99999-999`), rua, número,
+complemento, bairro, cidade e UF. Um único `on_change(field_name, new_value)` é
+chamado para o campo alterado, onde `field_name` é `"cep"`, `"street"`,
+`"number"`, `"complement"`, `"neighborhood"`, `"city"` ou `"state"`.
+
+```python
+from tempestroid import AddressInput
+
+AddressInput(
+    cep=app.state.cep,
+    street=app.state.street,
+    city=app.state.city,
+    state=app.state.uf,
+    on_change=lambda field, value: app.set_state(
+        lambda s: setattr(s, field, value)
+    ),
+    key="address",
+)
+```
+
+CEP mascarado `99999-999` (teclado `NUMBER`); os demais campos são `Input`
+livres. Sem validador embutido — valide cada campo no app conforme necessário.
+
+---
+
+## Entrada de mídia
+
+Estes componentes baixam para as primitivas `FilePicker` e `Image`. Cada um
+expõe um `on_pick` que recebe a **URI** do arquivo escolhido (de
+`FileSelectEvent.uri`) — você nunca toca no objeto de evento.
+
+### ImagePicker
+
+Seletor de imagem com prévia inline da imagem escolhida (um `FilePicker` mais um
+`Image` de prévia quando há URI).
+
+```python
+from tempestroid import ImagePicker
+
+ImagePicker(
+    value=app.state.image_uri,
+    label="Foto do produto",
+    on_pick=lambda uri: app.set_state(lambda s: setattr(s, "image_uri", uri)),
+    key="image-picker",
+)
+```
+
+| Prop | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `value` | `str` | `""` | URI da imagem escolhida (vazio = sem prévia). |
+| `label` | `str` | `""` | Título opcional acima do seletor. |
+| `on_pick` | `handler → str` | — | Chamado com a URI escolhida. **Obrigatório.** |
+
+### DocumentPicker
+
+Seletor de documento rotulado (apenas o `FilePicker`, sem prévia).
+
+```python
+from tempestroid import DocumentPicker
+
+DocumentPicker(
+    value=app.state.doc_uri,
+    label="Comprovante",
+    on_pick=lambda uri: app.set_state(lambda s: setattr(s, "doc_uri", uri)),
+    key="doc-picker",
+)
+```
+
+| Prop | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `value` | `str` | `""` | URI do documento escolhido. |
+| `label` | `str` | `""` | Título opcional acima do seletor. |
+| `on_pick` | `handler → str` | — | Chamado com a URI escolhida. **Obrigatório.** |
+
+### ImagePicture
+
+Foto de perfil circular: a foto escolhida recortada em círculo (ou um ícone
+`user` como placeholder) sobre um botão de troca. Diferente de `Avatar`, que
+mostra iniciais.
+
+```python
+from tempestroid import ImagePicture
+
+ImagePicture(
+    src=app.state.photo_uri,
+    size=120.0,
+    on_pick=lambda uri: app.set_state(lambda s: setattr(s, "photo_uri", uri)),
+    key="profile-photo",
+)
+```
+
+| Prop | Tipo | Padrão | Descrição |
+|---|---|---|---|
+| `src` | `str` | `""` | URI da foto atual (vazio mostra o placeholder). |
+| `size` | `float` | `96.0` | Diâmetro do círculo em pixels lógicos. |
+| `on_pick` | `handler → str` | — | Chamado com a URI escolhida. **Obrigatório.** |
+
+---
+
 ## Recapitulando
 
 - Componentes herdam de `Component` e implementam `render()`, que devolve uma
