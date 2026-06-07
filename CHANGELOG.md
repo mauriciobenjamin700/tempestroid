@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-06-06
+
+### Documentation
+
+- **Full multi-file widget tutorials (PT + EN).** The single thin widgets guide
+  became a tutorial hub plus 10 per-family pages under `docs/guia/widgets/`
+  (`basics` / `layout` / `inputs` / `lists` / `navigation` / `overlays` /
+  `animation` / `gestures` / `media` / `components`). Each widget gets a one-line
+  purpose, a complete copy-pasteable example, and a prop table generated from the
+  real `introspect()` schema — so the docs reflect the actual ~100-widget surface
+  instead of implying a 5-widget framework. Every code block was AST-parsed and
+  every import checked against the real exports.
+- **Corrected stale "Compose renders only 5 widgets" claims** across the examples
+  guide, architecture page, roadmap and README: both renderers (Qt + Compose)
+  support the full Track E set, pinned by conformance and device-verified. The
+  only device-only widgets are `CameraPreview` / `QrScanner` / `MapView` (Qt
+  placeholder). Marked Track E (E0–E9) done in the roadmap/plan (it was still
+  tabled as 🔜 / "planned").
+
 ## [0.9.1] — 2026-06-06
 
 ### Documentation
