@@ -183,6 +183,7 @@ and [`examples/README.md`](examples/README.md).
 ```bash
 uv run tempest new                  # scaffold in the CURRENT dir (id = folder name)
 uv run tempest dev                  # dev loop: edit + save → hot reload (reads pyproject)
+uv run tempest dev -d pixel-7       # …sized to a device preset (dp; matches Compose)
 uv run tempest install              # download + adb-install the prebuilt host (no SDK/NDK)
 uv run tempest deploy               # push the whole project to a device — offline, no SDK/NDK
 uv run tempest serve                # LAN code-push + hot reload (whole project) in dev mode
@@ -310,7 +311,7 @@ surfaced and the happy path stays quiet.
 | Command | Status | Notes |
 |---|---|---|
 | `tempest new [name]` | ✅ | Scaffold a fully configured project **in the current dir** (id = folder name); pass a `name` only for a new subdirectory. Writes `pyproject.toml` + `app.py` + `.gitignore`. `--template`/`-t`: `default` (single file), `multi` (state + screens/ + components/ + Navigator), `native` (multi + native-capabilities screen) |
-| `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `-v` for tracebacks |
+| `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `--device`/`-d` sizes the window to a device preset (e.g. `pixel-7`, `galaxy-s24` — dp, matches Compose); `-v` for tracebacks |
 | `tempest deploy [app]` | ✅ | Offline push of the whole project to a device (no SDK/NDK): install the bundled host (if needed) + push bundle + launch; `--force-install`, `-v` |
 | `tempest serve [app]` | ✅ | LAN code-push of the whole project + log relay + hot reload; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |
 | `tempest install [src]` | ✅ | Fetch + adb-install the prebuilt host APK (no SDK/NDK); resolves `src`/env/bundled/GitHub-release (cached); `src` = local `.apk`/URL |
@@ -718,6 +719,8 @@ can match a real device instead of a generic guess.
   Xiaomi, Moto, OnePlus). Each member carries `width` / `height` (in `dp`) and a
   human `label`; `.size` returns the `(width, height)` tuple.
 - **`DEFAULT_DEVICE`** — the simulator default (`Device.REDMI_NOTE_12`, 393×873 dp).
+- **`resolve_device(name)`** — resolve a forgiving name (`"pixel-7"`, `"PIXEL_7"`,
+  `"Google Pixel 7"`) to a `Device`, or `None`. Backs `tempest dev --device`.
 
 ```python
 from tempestroid import Device, run_qt

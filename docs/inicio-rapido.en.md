@@ -54,6 +54,29 @@ interactive *cockpit*:
 | `s` | Raises the simulator window to the front. |
 | `q` | Quits. |
 
+### Pick the screen size (device presets)
+
+The simulator opens at a generic phone size, but you should **test at your
+target devices' sizes**. Pass `--device` (or `-d`) with a preset:
+
+```bash
+uv run tempest dev --device pixel-7        # 412×915 dp
+uv run tempest dev -d galaxy-s24           # 384×824 dp
+uv run tempest dev -d redmi-note-12        # 393×873 dp (default)
+```
+
+Sizes are in **dp** (density-independent pixels) — exactly the layout space
+Compose uses on the device, so what fits in the simulator fits on the device.
+Names are forgiving (`pixel-7`, `PIXEL_7`, `pixel 7`, `Google Pixel 7` all
+resolve the same). The full catalog is 33 presets (Pixel, Galaxy S/A,
+Redmi/Poco/Xiaomi, Moto, OnePlus) in the `Device` enum — use it
+programmatically with `run_qt(state, view, device=Device.PIXEL_7)`.
+
+!!! tip "Which to test"
+    Cover a **small/narrow phone** (e.g. `galaxy-s8`, 360×740) and a **large**
+    one (e.g. `pixel-8-pro`, 448×998) — if the layout behaves at both extremes,
+    the sizes in between follow.
+
 ## Step 3 — Edit and see it live
 
 With the simulator open, open `app.py` in your editor and change some text

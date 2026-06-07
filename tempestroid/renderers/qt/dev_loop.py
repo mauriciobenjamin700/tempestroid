@@ -27,7 +27,7 @@ from PySide6.QtWidgets import QApplication
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
 from tempestroid.core.state import App
-from tempestroid.devices import DEFAULT_DEVICE
+from tempestroid.devices import DEFAULT_DEVICE, Device
 from tempestroid.renderers.qt.app_runner import BackKeyFilter, connect_lifecycle
 from tempestroid.renderers.qt.simulator import Simulator
 
@@ -111,17 +111,27 @@ def _ms(started: float) -> str:
     return f"{(time.monotonic() - started) * 1000:.0f}ms"
 
 
-def run_dev(path: str | Path, *, verbose: bool = False) -> int:
+def run_dev(
+    path: str | Path,
+    *,
+    verbose: bool = False,
+    device: Device | None = None,
+) -> int:
     """Run the dev cockpit for an app file until quit.
 
     Args:
         path: Path to the app's Python file.
         verbose: Print full tracebacks when a save fails to reload.
+        device: An optional :class:`~tempestroid.devices.Device` preset to size
+            the simulator window to that device's logical viewport. When ``None``
+            the window falls back to :data:`~tempestroid.devices.DEFAULT_DEVICE`'s
+            size (the unchanged default).
 
     Returns:
         The process exit code.
     """
     app_path = Path(path).resolve()
+    window_size = (device or DEFAULT_DEVICE).size
     qt_app = cast("QApplication", QApplication.instance() or QApplication(sys.argv))
     connect_lifecycle(qt_app)
     loop = qasync.QEventLoop(qt_app)
@@ -141,7 +151,7 @@ def run_dev(path: str | Path, *, verbose: bool = False) -> int:
     simulator.host.installEventFilter(back_filter)
     simulator.host.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     simulator.host.setWindowTitle(f"tempestroid dev — {app_path.name}")
-    simulator.host.resize(*DEFAULT_DEVICE.size)
+    simulator.host.resize(*window_size)
     simulator.host.show()
     print(_BANNER.format(app=app_path))
 
