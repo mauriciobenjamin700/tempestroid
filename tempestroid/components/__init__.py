@@ -11,6 +11,11 @@ navigation building blocks:
 * :class:`Sidebar` — fixed-width lateral column.
 * :class:`Scaffold` — page frame stacking app bar, body and bottom bar.
 * :class:`NavBar` — selectable navigation/tab bar with an active index.
+* Brazilian form inputs — :class:`EmailInput`, :class:`PasswordInput`,
+  :class:`PhoneInput`, :class:`CPFInput`, :class:`CNPJInput` and the grouped
+  :class:`AddressInput` (pair them with :mod:`tempestroid.validators`).
+* Media pickers — :class:`ImagePicker`, :class:`DocumentPicker` and the circular
+  :class:`ImagePicture` profile-photo picker.
 
 The default theme tokens and :func:`merge_style` (used to overlay a caller's
 ``style`` onto a component default) are re-exported for building custom
@@ -34,12 +39,25 @@ from tempestroid.components.base import (
     SURFACE,
     merge_style,
 )
+from tempestroid.components.brforms import (
+    AddressInput,
+    CNPJInput,
+    CPFInput,
+    EmailInput,
+    PasswordInput,
+    PhoneInput,
+)
 from tempestroid.components.cards import Avatar, Card, Divider, ListTile
 from tempestroid.components.dates import Calendar, Clock
 from tempestroid.components.disclosure import Accordion
 from tempestroid.components.feedback import Badge, Banner, EmptyState
 from tempestroid.components.fields import SearchBar, Stepper
 from tempestroid.components.layout import Grid, Scaffold, Sidebar
+from tempestroid.components.mediainputs import (
+    DocumentPicker,
+    ImagePicker,
+    ImagePicture,
+)
 from tempestroid.components.menu import Burger, Drawer
 from tempestroid.components.navigation import Breadcrumb, NavBar
 from tempestroid.components.selection import (
@@ -74,6 +92,15 @@ __all__ = [
     "Rating",
     "Stepper",
     "SearchBar",
+    "EmailInput",
+    "PasswordInput",
+    "PhoneInput",
+    "CPFInput",
+    "CNPJInput",
+    "AddressInput",
+    "ImagePicker",
+    "DocumentPicker",
+    "ImagePicture",
     "Accordion",
     "Banner",
     "EmptyState",
