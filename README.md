@@ -466,9 +466,10 @@ The declarative IR — bare-noun widgets.
   (`App.pop`); the device back button is the Compose/device half.
 - **`Component`** (base) — a composite widget that lowers to a primitive tree via
   `render()`; the reconciler expands it before diffing, so renderers never see it.
-- Value-bearing inputs: **`Input`** (text — with `secure` password masking +
-  reveal toggle, regex `pattern`, `keyboard` type, `max_length`), **`TextArea`**
-  (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
+- Value-bearing inputs: **`Input`** (text — with `secure` password masking + a
+  modern eye / eye-off reveal toggle, regex `pattern`, `keyboard` type,
+  `max_length`, and `leading_icon`/`trailing_icon` shown inside the field),
+  **`TextArea`** (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
   **`Slider`** (numeric range), **`DatePicker`** (ISO date), **`FilePicker`**
   (file selection).
 - Selection + segmented inputs (phase E5): **`Dropdown`** (single-choice select —
@@ -492,8 +493,10 @@ The declarative IR — bare-noun widgets.
   field's `error` filled in; the app gates `SubmitEvent` on `FormState.valid`. Both
   `Form.fields` and `FormField.child` cross the bridge as child nodes (never as
   props); validators are pure Python and are never serialized.
-- Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
-  **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
+- Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph —
+  resolves a built-in [`Icons`](#icons-tempestroidicons) name to a vector glyph,
+  else falls back to the platform set), **`ProgressBar`**
+  (determinate/indeterminate), **`Spinner`** (activity).
 - Media + graphics widgets (phase E7): **`Canvas`** — a retained-mode drawing
   surface taking a `commands` list of serializable draw commands
   (**`MoveTo`** / **`LineTo`** / **`ArcTo`** / **`Close`** / **`FillCmd`** /
@@ -538,6 +541,21 @@ The declarative IR — bare-noun widgets.
   (circle/rounded_rect/oval).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
   (`on_click`, `on_change`, `on_select`); sync or `async`, zero- or one-argument.
+
+### Icons (`tempestroid.icons`)
+
+A curated, DIY (dependency-free) set of common line icons — Lucide-style vector
+glyphs both renderers draw identically by stroking one 24×24 SVG path. Pass a
+name to `Icon(name=…)` or to an input's `leading_icon`/`trailing_icon`.
+
+- **`Icons`** — a `StrEnum` of the curated names (`Icons.EYE`, `Icons.LOCK`,
+  `Icons.SEARCH`, … `Icons.EYE == "eye"`), so you get autocomplete and may also
+  pass the raw string.
+- **`ICON_PATHS`** — `dict[str, str]` mapping each name to its SVG path `d` data.
+- **`icon_path(name)`** — resolve an `Icons` member or raw string to its `d`
+  string, or `None` when unknown (renderers fall back to the platform set / the
+  raw name).
+- **`icon_names()`** — the sorted list of available names.
 
 ### Components (`tempestroid.components`)
 
