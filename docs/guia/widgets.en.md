@@ -1,142 +1,80 @@
 # Widgets
 
-Widgets are the declarative primitives of the IR — a tree of Pydantic models the
+Widgets are the declarative IR primitives — a tree of Pydantic models the
 reconciler diffs and the renderers apply. Always import from the package level:
 `from tempestroid import Text, Button, ...`.
 
-## Layout and content
+The framework exports **~100 widgets**, all supported by **both renderers** (the
+Qt simulator on desktop + Compose on the device). This page is the index; each
+family has its own tutorial page with complete examples and a per-widget prop
+table.
 
-| Widget | Role | Main props |
-|---|---|---|
-| `Text` | Text label. | `content: str` |
-| `Button` | Tappable button. | `label: str`, `on_click` |
-| `Column` | Stacks children vertically. | `children: list[Widget]` |
-| `Row` | Stacks children horizontally. | `children: list[Widget]` |
-| `Container` | Wraps a single child. | `child: Widget \| None` |
-| `ScrollView` | Scrollable area. | `horizontal: bool`, `child` |
-| `SafeArea` | Insets its child past the system bars + notch. | `child`, `edges: list[SafeAreaEdge]` (default all) |
+## Catalog by family
 
-```python
-from tempestroid import Button, Column, Row, ScrollView, Style, Text
+| Family | Covers |
+|---|---|
+| [Text, action & indicators](widgets/basics.md) | `Text` / `Button` / `ProgressBar` / `Spinner` |
+| [Layout](widgets/layout.md) | `Column` / `Row` / `Container` / `Stack` / `Wrap` / `ScrollView` / `SafeArea` / `AspectRatio` / `PageView` / `KeyboardAvoidingView` |
+| [Value inputs](widgets/inputs.md) | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
+| [Virtualized lists](widgets/lists.md) | `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` / `RefreshControl` |
+| [Navigation](widgets/navigation.md) | `Navigator` / `TabView` / `TabBar` / `RouteDrawer` |
+| [Overlays & feedback](widgets/overlays.md) | `Dialog` / `BottomSheet` / `Menu` / `Popover` / `Toast` / `Tooltip` / `ActionSheet` |
+| [Animation](widgets/animation.md) | `Animated` / `AnimatedList` / `Hero` / `Shimmer` / `Skeleton` |
+| [Gestures](widgets/gestures.md) | `GestureDetector` / `PanHandler` / `ScaleHandler` / `DoubleTapHandler` / `Draggable` / `DragTarget` / `Dismissible` / `ReorderableList` / `InteractiveViewer` |
+| [Media & graphics](widgets/media.md) | `Image` / `Icon` / `Canvas` / `Svg` / `VideoPlayer` / `WebView` / `Blur` / `BackdropFilter` / `ClipPath` / `CameraPreview` / `QrScanner` / `MapView` |
+| [Composite components](widgets/components.md) | `Card` / `ListTile` / `Scaffold` / `AppBar` / `NavBar` / `SegmentedControl` / `Rating` / `Table` … (29) |
 
-ScrollView(
-    child=Column(
-        style=Style(gap=8.0),
-        children=[
-            Text(content="Hello", key="hi"),
-            Row(children=[
-                Button(label="-", on_click=dec, key="dec"),
-                Button(label="+", on_click=inc, key="inc"),
-            ]),
-        ],
-    ),
-)
-```
+!!! tip "Where to start"
+    New here? Follow this order: **[Text, action &
+    indicators](widgets/basics.md)** → **[Layout](widgets/layout.md)** →
+    **[Value inputs](widgets/inputs.md)**. Read the rest on demand.
 
-## Value-bearing inputs
+## Cross-cutting concepts
 
-The leaves that carry a value and emit a typed change event. Each declares its
-change handler in `event_schemas`, so the boundary validates the payload.
+These hold for any widget — worth reading before diving into the families.
 
-| Widget | Value / props | Handler | Event |
-|---|---|---|---|
-| `Input` | `value`, `placeholder`, `secure`, `pattern`, `error`, `keyboard`, `max_length` | `on_change` | `TextChangeEvent` |
-| `TextArea` | `value`, `placeholder`, `rows`, `max_length` | `on_change` | `TextChangeEvent` |
-| `Checkbox` | `label`, `checked` | `on_change` | `ToggleEvent` |
-| `Switch` | `label`, `checked` | `on_change` | `ToggleEvent` |
-| `Slider` | `value`, `min_value`, `max_value`, `step` | `on_change` | `SlideEvent` |
-| `DatePicker` | `value` (ISO `yyyy-mm-dd`), `label` | `on_change` | `DateChangeEvent` |
-| `FilePicker` | `label`, `value` | `on_select` | `FileSelectEvent` |
+### Keys (`key`)
 
-```python
-from tempestroid import Checkbox, DatePicker, Input, Slider, Switch, TextArea
-
-Input(value=state.name, placeholder="Your name", on_change=on_name, key="name")
-Input(value=state.pwd, secure=True, keyboard=KeyboardType.PASSWORD, on_change=on_pwd, key="pwd")
-TextArea(value=state.bio, rows=4, max_length=280, on_change=on_bio, key="bio")
-Switch(label="Notifications", checked=state.notify, on_change=on_notify, key="sw")
-Slider(value=state.volume, min_value=0.0, max_value=100.0, step=1.0, on_change=on_vol, key="vol")
-```
-
-The handler receives the typed event (or may be declared zero-argument when the
-value is not needed):
-
-```python
-def on_name(event: TextChangeEvent) -> None:
-    app.set_state(lambda s: setattr(s, "name", event.value))
-```
-
-### `Input` validation
-
-`Input` carries validation on the widget itself: `secure` masks the text,
-`pattern` is a regex the renderer can validate against, `error` displays an error
-message, and `keyboard` (enum `KeyboardType`: `TEXT`, `NUMBER`, `EMAIL`, `PHONE`,
-`URL`, `PASSWORD`) hints the device keyboard.
-
-## Media
-
-| Widget | Role | Props |
-|---|---|---|
-| `Image` | Image by URL/URI. | `src`, `fit` (`ImageFit`), `alt` |
-| `Icon` | Named icon. | `name`, `size` |
-
-`ImageFit` accepts `CONTAIN`, `COVER`, `FILL`, `NONE`.
-
-## Indicators
-
-| Widget | Role | Props |
-|---|---|---|
-| `ProgressBar` | Progress bar. | `value`, `indeterminate` |
-| `Spinner` | Loading indicator. | `size` |
-
-!!! info "This guide covers the primitives — there are ~100 widgets in total"
-    The tables above are the **core primitives**. The framework exports ~100
-    widgets, including navigation (`Navigator`/`TabView`/`RouteDrawer`),
-    virtualized lists (`LazyColumn`/`SectionList`), overlays (`Dialog`/
-    `BottomSheet`/`Menu`), animation (`Animated`/`Hero`/`Shimmer`), gestures
-    (`Draggable`/`Dismissible`/`InteractiveViewer`), media/graphics (`Canvas`/
-    `Svg`/`VideoPlayer`/`WebView`) and composite components (`Card`/`Scaffold`/
-    `NavBar`). All are supported by **both renderers** — see the
-    [full coverage table](exemplos.md#current-widget-set) and the
-    [API reference](../referencia/api.md).
-
-## Keys (`key`)
-
-Give each child of a list a stable `key`. The reconciler uses keys to emit
+Give every child of a list a stable `key`. The reconciler uses keys to emit a
 `Reorder` instead of recreating widgets, and to match nodes across rebuilds.
 
-## Walking the tree
+### Traversing the tree
 
 Every widget exposes `child_nodes()` — use it to walk the tree generically,
 without reaching into each type's internal storage. Leaves (`Text`, `Image`,
 inputs) return `[]`.
 
-!!! warning "Device support"
-    The framework and the **Qt simulator** support the full widget set. The
-    **device renderer (Compose)** tracks the base set (`Text` / `Button` /
-    `Column` / `Row` / `Container` + `on_click`); newer widgets may fall back
-    until the Kotlin host grows the matching cases (Track B follow-up). See the
-    [roadmap](../roadmap.md).
+### Style, semantics & focus
 
-## The event contract per widget
+Every `Widget` subclass accepts `style` (a [`Style`](estilos.md)),
+`semantics`/`focusable`/`focus_order` (accessibility) and `key`. That's why those
+props don't appear in each family's tables — they are universal.
 
-Each widget declares the event each handler emits via the `event_schemas`
-classvar (e.g. `Button.event_schemas == {"on_click": TapEvent}`). This contract is
-published by [`introspect()`](../referencia/api.md#introspection) and consumed by
-the device boundary. See [Events](eventos.md).
+### Per-widget event contract
+
+Each widget declares the event every handler emits via the `event_schemas`
+classvar (e.g. `Button.event_schemas == {"on_click": TapEvent}`). That contract
+is published by [`introspect()`](../referencia/api.md) and consumed by the device
+boundary. See [Events](eventos.md).
+
+!!! info "Both renderers reach parity"
+    The full set renders in both the **Qt simulator** and on the **device
+    (Compose)** — parity is pinned by the conformance suite (golden snapshots of
+    both `Style` translators). The only exception is a few hardware widgets
+    (`CameraPreview` / `QrScanner` / `MapView`), which are **device-only** and
+    show a signalled placeholder on Qt.
 
 ## Recap
 
 - Widgets are Pydantic models; always import from the package level
   (`from tempestroid import ...`).
-- Layout: `Column`/`Row`/`Container`/`ScrollView`/`SafeArea`; content: `Text`,
-  `Button`, media, and indicators.
-- Value-bearing inputs emit a typed change event (`on_change` / `on_select`).
-- Give list children a stable `key` — that's what lets the diff reorder instead
-  of recreating.
+- ~100 widgets across 10 families — use the catalog above.
+- Value inputs emit a typed change event (`on_change` / `on_select`); give list
+  children a stable `key`.
+- `style`/`semantics`/`focusable`/`key` are universal to every widget.
 
 ## Next steps
 
-➡️ Make widgets look good with **[Styles](estilos.md)**, understand typed
-**[Events](eventos.md)**, or see full apps in the
-**[Example gallery](exemplos.md)**.
+➡️ Make widgets pretty with **[Styles](estilos.md)**, learn the typed
+**[Events](eventos.md)**, or see full apps in the **[Examples
+gallery](exemplos.md)**.
