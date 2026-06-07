@@ -74,8 +74,14 @@ class FormState(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    errors: dict[str, str] = Field(default_factory=dict)
-    valid: bool = True
+    errors: dict[str, str] = Field(
+        description="A mapping of field name to its error message. Only failing fields "
+        "appear; an empty mapping means every field passed.",
+        default_factory=dict,
+    )
+    valid: bool = Field(
+        default=True, description="``True`` when no field has an error."
+    )
 
 
 class FormField(Widget):
@@ -102,18 +108,37 @@ class FormField(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_validate": ValidationEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    name: str
+    name: str = Field(
+        description="The field's name (the key used in :attr:`FormState.errors` and "
+        ":attr:`~tempestroid.widgets.events.SubmitEvent.values`).",
+    )
     # ``list[Callable]`` reads as ``list[Unknown]`` under pyright strict's
     # reportUnknownVariableType (a known limitation with callable element types);
     # the element type is fully specified by ``_AnnotatedValidator`` and the
     # ``WithJsonSchema`` keeps introspection working. Scoped ignore, not a hole.
     validators: list[_AnnotatedValidator] = Field(  # pyright: ignore[reportUnknownVariableType]
-        default_factory=list
+        description=(
+            "The typed validation rules run against this field's value. Pure "
+            "Python — never serialized over the boundary."
+        ),
+        default_factory=list,
     )
-    label: str = ""
-    error: str = ""
-    child: Widget | None = None
-    on_validate: ValidationHandler | None = None
+    label: str = Field(
+        default="", description="An optional label shown above the input."
+    )
+    error: str = Field(
+        default="",
+        description='The current validation message (``""`` when valid). Mirrored from '
+        "the owning form's :class:`FormState`.",
+    )
+    child: Widget | None = Field(
+        default=None, description="The wrapped input widget rendered inside the field."
+    )
+    on_validate: ValidationHandler | None = Field(
+        default=None,
+        description="Optional handler invoked with a :class:`ValidationEvent` when "
+        "this field is validated.",
+    )
 
     def run_validators(self, value: Any) -> str | None:  # noqa: ANN401 — value is an opaque field value
         """Run this field's validators against ``value``.
@@ -168,9 +193,14 @@ class Form(Widget):
     # ``FormField`` carries a ``list[Callable]`` (validators) that pyright treats
     # as partially unknown, which propagates here; the type is fully specified.
     fields: list[FormField] = Field(  # pyright: ignore[reportUnknownVariableType]
-        default_factory=list
+        description="The form's fields, in display order.",
+        default_factory=list,
     )
-    on_submit: SubmitHandler | None = None
+    on_submit: SubmitHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`SubmitEvent` when the form is "
+        "submitted with valid values.",
+    )
 
     # ``validate`` is the public, contract-mandated entry point (E5). It shadows
     # Pydantic's deprecated ``BaseModel.validate`` classmethod with a different,

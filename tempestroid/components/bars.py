@@ -47,9 +47,16 @@ class AppBar(Component):
         actions: Trailing action widgets laid out at the end of the bar.
     """
 
-    title: str = ""
-    leading: Widget | None = None
-    actions: list[Widget] = Field(default_factory=_no_widgets)
+    title: str = Field(default="", description="The bar's title text.")
+    leading: Widget | None = Field(
+        default=None,
+        description="An optional widget shown before the title (e.g. a menu or back "
+        "button); omitted when ``None``.",
+    )
+    actions: list[Widget] = Field(
+        description="Trailing action widgets laid out at the end of the bar.",
+        default_factory=_no_widgets,
+    )
 
     def render(self) -> Widget:
         """Lower the app bar into a horizontal primitive row.
@@ -97,8 +104,11 @@ class Header(Component):
         subtitle: An optional secondary line shown muted under the title.
     """
 
-    title: str = ""
-    subtitle: str | None = None
+    title: str = Field(default="", description="The header's primary line.")
+    subtitle: str | None = Field(
+        default=None,
+        description="An optional secondary line shown muted under the title.",
+    )
 
     def render(self) -> Widget:
         """Lower the header into a stacked primitive column.
@@ -140,7 +150,10 @@ class Footer(Component):
         children: The widgets laid out in the footer (e.g. links or labels).
     """
 
-    children: list[Widget] = Field(default_factory=_no_widgets)
+    children: list[Widget] = Field(
+        description="The widgets laid out in the footer (e.g. links or labels).",
+        default_factory=_no_widgets,
+    )
 
     def render(self) -> Widget:
         """Lower the footer into a centered primitive row.
@@ -184,11 +197,23 @@ class CollapsingAppBar(Component):
         style: An optional style overlaid on the bar's derived default.
     """
 
-    title: str = ""
-    expanded_height: float = 200.0
-    collapsed_height: float = 56.0
-    scroll_offset: float = 0.0
-    background: Color | None = None
+    title: str = Field(default="", description="The bar's title text.")
+    expanded_height: float = Field(
+        default=200.0,
+        description="The bar height at the top of the scroll (offset ``0``).",
+    )
+    collapsed_height: float = Field(
+        default=56.0, description="The minimum bar height once fully collapsed."
+    )
+    scroll_offset: float = Field(
+        default=0.0,
+        description="The current scroll offset (logical pixels) driven by the "
+        "application from the scrollable's ``on_scroll`` handler.",
+    )
+    background: Color | None = Field(
+        default=None,
+        description="An optional background color (defaults to the surface token).",
+    )
     style: Style | None = None
 
     def _height(self) -> float:

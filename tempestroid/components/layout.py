@@ -34,8 +34,13 @@ class Sidebar(Component):
         width: The sidebar's fixed width in logical pixels.
     """
 
-    children: list[Widget] = Field(default_factory=_no_widgets)
-    width: float = 240.0
+    children: list[Widget] = Field(
+        description="The widgets stacked top-to-bottom in the sidebar.",
+        default_factory=_no_widgets,
+    )
+    width: float = Field(
+        default=240.0, description="The sidebar's fixed width in logical pixels."
+    )
 
     def render(self) -> Widget:
         """Lower the sidebar into a fixed-width primitive column.
@@ -70,10 +75,25 @@ class Scaffold(Component):
             convenience; the Compose renderer scrolls natively post-Trilho-B).
     """
 
-    app_bar: Widget | None = None
-    body: Widget | None = None
-    bottom_bar: Widget | None = None
-    scroll: bool = False
+    app_bar: Widget | None = Field(
+        default=None,
+        description="The top bar widget (commonly an :class:`AppBar`); omitted when "
+        "``None``.",
+    )
+    body: Widget | None = Field(
+        default=None,
+        description="The main content; defaults to an empty column when ``None``.",
+    )
+    bottom_bar: Widget | None = Field(
+        default=None,
+        description="A bottom bar widget (e.g. a :class:`NavBar` or ``Footer``); "
+        "omitted when ``None``.",
+    )
+    scroll: bool = Field(
+        default=False,
+        description="When ``True``, the body is wrapped in a ``ScrollView`` (a Qt "
+        "convenience; the Compose renderer scrolls natively post-Trilho-B).",
+    )
 
     def render(self) -> Widget:
         """Lower the scaffold into a stacked primitive column.
@@ -112,9 +132,17 @@ class Grid(Component):
         gap: The spacing between cells, both horizontally and vertically.
     """
 
-    children: list[Widget] = Field(default_factory=_no_widgets)
-    columns: int = 2
-    gap: float = 8.0
+    children: list[Widget] = Field(
+        description="The cell widgets, filled left-to-right then top-to-bottom.",
+        default_factory=_no_widgets,
+    )
+    columns: int = Field(
+        default=2, description="The number of columns per row (clamped to at least 1)."
+    )
+    gap: float = Field(
+        default=8.0,
+        description="The spacing between cells, both horizontally and vertically.",
+    )
 
     def render(self) -> Widget:
         """Lower the grid into a primitive column of rows.

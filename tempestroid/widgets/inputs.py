@@ -12,6 +12,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import ClassVar
 
+from pydantic import Field
+
 from tempestroid.widgets.base import (
     DateChangeHandler,
     FileSelectHandler,
@@ -90,14 +92,37 @@ class Input(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": TextChangeEvent}
 
-    value: str = ""
-    placeholder: str = ""
-    secure: bool = False
-    pattern: str | None = None
-    error: str = ""
-    keyboard: KeyboardType = KeyboardType.TEXT
-    max_length: int | None = None
-    on_change: TextChangeHandler | None = None
+    value: str = Field(default="", description="The current text value.")
+    placeholder: str = Field(
+        default="", description="The hint shown when the field is empty."
+    )
+    secure: bool = Field(
+        default=False,
+        description="Whether the text is masked (password field). When set, the "
+        'renderer also offers a visibility toggle ("eye") that reveals the text '
+        "locally without a round-trip to Python.",
+    )
+    pattern: str | None = Field(
+        default=None,
+        description="An optional regular expression the value must fully match to be "
+        "considered valid. The renderer evaluates it and reports the result via "
+        ":attr:`TextChangeEvent.valid`.",
+    )
+    error: str = Field(
+        default="",
+        description="An optional validation message shown when the value is invalid.",
+    )
+    keyboard: KeyboardType = Field(
+        default=KeyboardType.TEXT,
+        description="The soft-keyboard variant the field requests.",
+    )
+    max_length: int | None = Field(
+        default=None, description="An optional cap on the number of characters."
+    )
+    on_change: TextChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`TextChangeEvent` on each edit.",
+    )
 
 
 class TextArea(Widget):
@@ -113,11 +138,20 @@ class TextArea(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": TextChangeEvent}
 
-    value: str = ""
-    placeholder: str = ""
-    rows: int = 3
-    max_length: int | None = None
-    on_change: TextChangeHandler | None = None
+    value: str = Field(default="", description="The current text value.")
+    placeholder: str = Field(
+        default="", description="The hint shown when the field is empty."
+    )
+    rows: int = Field(
+        default=3, description="The number of visible text rows (initial height hint)."
+    )
+    max_length: int | None = Field(
+        default=None, description="An optional cap on the number of characters."
+    )
+    on_change: TextChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`TextChangeEvent` on each edit.",
+    )
 
 
 class Checkbox(Widget):
@@ -131,9 +165,14 @@ class Checkbox(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": ToggleEvent}
 
-    label: str = ""
-    checked: bool = False
-    on_change: ToggleHandler | None = None
+    label: str = Field(default="", description="The text shown beside the control.")
+    checked: bool = Field(
+        default=False, description="Whether the box is currently checked."
+    )
+    on_change: ToggleHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`ToggleEvent` on toggle.",
+    )
 
 
 class Switch(Widget):
@@ -150,9 +189,14 @@ class Switch(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": ToggleEvent}
 
-    label: str = ""
-    checked: bool = False
-    on_change: ToggleHandler | None = None
+    label: str = Field(default="", description="The text shown beside the control.")
+    checked: bool = Field(
+        default=False, description="Whether the switch is currently on."
+    )
+    on_change: ToggleHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`ToggleEvent` on toggle.",
+    )
 
 
 class Slider(Widget):
@@ -168,11 +212,19 @@ class Slider(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": SlideEvent}
 
-    value: float = 0.0
-    min_value: float = 0.0
-    max_value: float = 100.0
-    step: float = 1.0
-    on_change: SlideHandler | None = None
+    value: float = Field(
+        default=0.0,
+        description="The current value, clamped to ``[min_value, max_value]``.",
+    )
+    min_value: float = Field(default=0.0, description="The lowest selectable value.")
+    max_value: float = Field(default=100.0, description="The highest selectable value.")
+    step: float = Field(
+        default=1.0, description="The increment between selectable values."
+    )
+    on_change: SlideHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`SlideEvent` as the value moves.",
+    )
 
 
 class DatePicker(Widget):
@@ -186,9 +238,18 @@ class DatePicker(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": DateChangeEvent}
 
-    value: str = ""
-    label: str = ""
-    on_change: DateChangeHandler | None = None
+    value: str = Field(
+        default="",
+        description='The selected date as an ISO ``yyyy-mm-dd`` string (``""`` if '
+        "unset).",
+    )
+    label: str = Field(
+        default="", description="An optional label shown with the field."
+    )
+    on_change: DateChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`DateChangeEvent` on selection.",
+    )
 
 
 class FilePicker(Widget):
@@ -202,9 +263,16 @@ class FilePicker(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_select": FileSelectEvent}
 
-    label: str = "Choose file"
-    value: str = ""
-    on_select: FileSelectHandler | None = None
+    label: str = Field(default="Choose file", description="The button text.")
+    value: str = Field(
+        default="",
+        description='The selected file\'s display name/URI (``""`` until one is '
+        "chosen).",
+    )
+    on_select: FileSelectHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`FileSelectEvent` on selection.",
+    )
 
 
 class Dropdown(Widget):
@@ -220,10 +288,22 @@ class Dropdown(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_select": SelectEvent}
 
-    options: list[str] = []
-    value: str | None = None
-    placeholder: str = "Select…"
-    on_select: SelectHandler | None = None
+    options: list[str] = Field(
+        default=[], description="The selectable option strings, in display order."
+    )
+    value: str | None = Field(
+        default=None,
+        description="The currently selected option, or ``None`` when nothing is "
+        "chosen.",
+    )
+    placeholder: str = Field(
+        default="Select…", description="The hint shown while no option is selected."
+    )
+    on_select: SelectHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`SelectEvent` (carrying the option "
+        "``value`` and its 0-based ``index``) on selection.",
+    )
 
 
 class TimePicker(Widget):
@@ -237,9 +317,18 @@ class TimePicker(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": TimeChangeEvent}
 
-    value: str = ""
-    label: str = ""
-    on_change: TimeChangeHandler | None = None
+    value: str = Field(
+        default="",
+        description='The selected time as a 24-hour ``"HH:MM"`` string (``""`` if '
+        "unset).",
+    )
+    label: str = Field(
+        default="", description="An optional label shown with the field."
+    )
+    on_change: TimeChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`TimeChangeEvent` on selection.",
+    )
 
 
 class RangeSlider(Widget):
@@ -257,12 +346,24 @@ class RangeSlider(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": RangeChangeEvent}
 
-    low: float = 0.0
-    high: float = 100.0
-    min_value: float = 0.0
-    max_value: float = 100.0
-    step: float = 1.0
-    on_change: RangeChangeHandler | None = None
+    low: float = Field(
+        default=0.0,
+        description="The current lower bound, clamped to ``[min_value, high]``.",
+    )
+    high: float = Field(
+        default=100.0,
+        description="The current upper bound, clamped to ``[low, max_value]``.",
+    )
+    min_value: float = Field(default=0.0, description="The lowest selectable value.")
+    max_value: float = Field(default=100.0, description="The highest selectable value.")
+    step: float = Field(
+        default=1.0, description="The increment between selectable values."
+    )
+    on_change: RangeChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`RangeChangeEvent` carrying both "
+        "bounds as the range moves.",
+    )
 
 
 class Autocomplete(Widget):
@@ -286,11 +387,23 @@ class Autocomplete(Widget):
         "on_select": SelectEvent,
     }
 
-    options: list[str] = []
-    value: str = ""
-    placeholder: str = ""
-    on_change: TextChangeHandler | None = None
-    on_select: SelectHandler | None = None
+    options: list[str] = Field(
+        default=[],
+        description="The candidate suggestions, filtered against the typed text.",
+    )
+    value: str = Field(default="", description="The current text value.")
+    placeholder: str = Field(
+        default="", description="The hint shown when the field is empty."
+    )
+    on_change: TextChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`TextChangeEvent` on each edit.",
+    )
+    on_select: SelectHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`SelectEvent` when a suggestion is "
+        "selected.",
+    )
 
 
 class PinInput(Widget):
@@ -313,11 +426,21 @@ class PinInput(Widget):
         "on_complete": SubmitEvent,
     }
 
-    length: int = 6
-    value: str = ""
-    secure: bool = False
-    on_change: TextChangeHandler | None = None
-    on_complete: SubmitHandler | None = None
+    length: int = Field(default=6, description="The number of single-character cells.")
+    value: str = Field(default="", description="The current concatenated value.")
+    secure: bool = Field(
+        default=False,
+        description="Whether each cell masks its character (PIN rather than OTP).",
+    )
+    on_change: TextChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`TextChangeEvent` on each edit.",
+    )
+    on_complete: SubmitHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`SubmitEvent` when all cells are "
+        "filled.",
+    )
 
 
 class MaskedInput(Widget):
@@ -337,8 +460,19 @@ class MaskedInput(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": TextChangeEvent}
 
-    mask: str = ""
-    value: str = ""
-    placeholder: str = ""
-    keyboard: KeyboardType = KeyboardType.TEXT
-    on_change: TextChangeHandler | None = None
+    mask: str = Field(
+        default="",
+        description="The input mask pattern (``9`` digit, ``A`` letter, else literal).",
+    )
+    value: str = Field(default="", description="The current text value.")
+    placeholder: str = Field(
+        default="", description="The hint shown when the field is empty."
+    )
+    keyboard: KeyboardType = Field(
+        default=KeyboardType.TEXT,
+        description="The soft-keyboard variant the field requests.",
+    )
+    on_change: TextChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`TextChangeEvent` on each edit.",
+    )

@@ -24,8 +24,18 @@ class ProgressBar(Widget):
             (work of unknown duration).
     """
 
-    value: float = Field(default=0.0, ge=0.0, le=1.0)
-    indeterminate: bool = False
+    value: float = Field(
+        description="The completed fraction in ``[0.0, 1.0]`` (ignored when "
+        "``indeterminate`` is set).",
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+    indeterminate: bool = Field(
+        default=False,
+        description="When ``True``, render a looping bar with no fixed value (work of "
+        "unknown duration).",
+    )
 
 
 class Spinner(Widget):
@@ -36,4 +46,8 @@ class Spinner(Widget):
             renderer default.
     """
 
-    size: float | None = None
+    size: float | None = Field(
+        default=None,
+        description="The indicator's diameter in logical pixels, or ``None`` for the "
+        "renderer default.",
+    )

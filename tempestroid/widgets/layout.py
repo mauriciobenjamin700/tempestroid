@@ -65,7 +65,9 @@ class Column(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    children: list[Widget] = Field(default_factory=_empty_children)
+    children: list[Widget] = Field(
+        description="The ordered child widgets.", default_factory=_empty_children
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the column's children.
@@ -84,7 +86,9 @@ class Row(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    children: list[Widget] = Field(default_factory=_empty_children)
+    children: list[Widget] = Field(
+        description="The ordered child widgets.", default_factory=_empty_children
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the row's children.
@@ -103,7 +107,9 @@ class Container(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
-    child: Widget | None = None
+    child: Widget | None = Field(
+        default=None, description="The optional wrapped widget."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -124,8 +130,14 @@ class ScrollView(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    horizontal: bool = False
-    children: list[Widget] = Field(default_factory=_empty_children)
+    horizontal: bool = Field(
+        default=False,
+        description="When ``True``, children lay out and scroll left-to-right; "
+        "otherwise they stack and scroll top-to-bottom.",
+    )
+    children: list[Widget] = Field(
+        description="The ordered child widgets.", default_factory=_empty_children
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the scroll view's children.
@@ -153,8 +165,13 @@ class SafeArea(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
-    child: Widget | None = None
-    edges: list[SafeAreaEdge] = Field(default_factory=_all_safe_area_edges)
+    child: Widget | None = Field(
+        default=None, description="The optional wrapped widget."
+    )
+    edges: list[SafeAreaEdge] = Field(
+        description="The edges to inset against (defaults to all four).",
+        default_factory=_all_safe_area_edges,
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -187,7 +204,10 @@ class Stack(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    children: list[Widget] = Field(default_factory=_empty_children)
+    children: list[Widget] = Field(
+        description="The ordered child widgets, bottom layer first.",
+        default_factory=_empty_children,
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the stack's children in z-order (bottom layer first).
@@ -215,7 +235,10 @@ class Wrap(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    children: list[Widget] = Field(default_factory=_empty_children)
+    children: list[Widget] = Field(
+        description="The ordered child widgets, flowed and wrapped in order.",
+        default_factory=_empty_children,
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrap's children in flow order.
@@ -248,9 +271,18 @@ class PageView(Widget):
         "on_page_change": PageChangeEvent
     }
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    children: list[Widget] = Field(default_factory=_empty_children)
-    page: int = 0
-    on_page_change: PageChangeHandler | None = None
+    children: list[Widget] = Field(
+        description="The ordered page widgets.", default_factory=_empty_children
+    )
+    page: int = Field(
+        default=0,
+        description="The active page index (0-based), driven by the application state.",
+    )
+    on_page_change: PageChangeHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`PageChangeEvent` when the active "
+        "page changes.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the carousel's pages in order.
@@ -278,8 +310,13 @@ class AspectRatio(Widget):
     """
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
-    ratio: float = Field(gt=0.0)
-    child: Widget | None = None
+    ratio: float = Field(
+        description="The ``width / height`` ratio to enforce (must be positive).",
+        gt=0.0,
+    )
+    child: Widget | None = Field(
+        default=None, description="The optional wrapped widget."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -308,7 +345,10 @@ class KeyboardAvoidingView(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
-    children: list[Widget] = Field(default_factory=_empty_children)
+    children: list[Widget] = Field(
+        description="The ordered child widgets the view insets.",
+        default_factory=_empty_children,
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the view's children.
