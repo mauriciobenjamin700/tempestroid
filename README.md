@@ -167,7 +167,7 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 **Both renderers** — the Qt simulator and Compose on the device — support the
 full Track E widget set (~70 types): layout, text & action, the value-bearing
 inputs (`Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider`
-/ `Select` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` /
+/ `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` /
 `MaskedInput` / `Autocomplete` / `Form`) with their typed change events,
 virtualized lists, navigation, overlays, animation, gestures, and media. Parity
 is pinned by the conformance suite (golden snapshots of both `Style` translators)

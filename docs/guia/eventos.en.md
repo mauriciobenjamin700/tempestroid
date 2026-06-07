@@ -21,8 +21,9 @@ All inherit from `Event` (frozen Pydantic).
     The table above shows the most common ones. Track E added many more —
     navigation (`RouteChangeEvent`/`PageChangeEvent`), lists (`ScrollEvent`/
     `EndReachedEvent`/`RefreshEvent`), gestures (`PanEvent`/`ScaleEvent`/
-    `SwipeEvent`/`ReorderEvent`/`LongPressEvent`), forms (`SubmitEvent`/
-    `ValidationEvent`/`RangeChangeEvent`/`TimeChangeEvent`), overlays
+    `SwipeEvent`/`ReorderEvent`/`LongPressEvent`/`DragEvent`), forms
+    (`SubmitEvent`/`ValidationEvent`/`RangeChangeEvent`/`TimeChangeEvent`/
+    `SelectEvent`), overlays
     (`DismissEvent`/`MenuSelectEvent`) and platform (`SensorEvent`/
     `LifecycleEvent`/`ConnectivityEvent`/`DeepLinkEvent`/`QrScanEvent`/
     `ThemeChangeEvent`/`LocaleChangeEvent`). List the full contract with

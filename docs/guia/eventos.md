@@ -21,8 +21,9 @@ Todos herdam de `Event` (Pydantic frozen).
     A tabela acima mostra os mais comuns. O Trilho E acrescentou muitos outros —
     navegação (`RouteChangeEvent`/`PageChangeEvent`), listas (`ScrollEvent`/
     `EndReachedEvent`/`RefreshEvent`), gestos (`PanEvent`/`ScaleEvent`/
-    `SwipeEvent`/`ReorderEvent`/`LongPressEvent`), formulários (`SubmitEvent`/
-    `ValidationEvent`/`RangeChangeEvent`/`TimeChangeEvent`), overlays
+    `SwipeEvent`/`ReorderEvent`/`LongPressEvent`/`DragEvent`), formulários
+    (`SubmitEvent`/`ValidationEvent`/`RangeChangeEvent`/`TimeChangeEvent`/
+    `SelectEvent`), overlays
     (`DismissEvent`/`MenuSelectEvent`) e plataforma (`SensorEvent`/
     `LifecycleEvent`/`ConnectivityEvent`/`DeepLinkEvent`/`QrScanEvent`/
     `ThemeChangeEvent`/`LocaleChangeEvent`). Liste o contrato completo com

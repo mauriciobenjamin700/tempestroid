@@ -17,9 +17,9 @@ Frozen Pydantic value objects, diffed by value.
 - **`Gradient`** + **`GradientStop`** — linear gradient.
 - **`Transition`** — implicit animation (`duration_ms`, `curve`, `delay_ms`).
 - Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
-  **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
-  **`TextOverflow`**, **`GradientDirection`**, **`Curve`**, **`ImageFit`**,
-  **`KeyboardType`**.
+  **`FlexWrap`**, **`StackAlign`**, **`Position`**, **`TextAlign`**,
+  **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**, **`TextOverflow`**,
+  **`GradientDirection`**, **`Curve`**, **`ImageFit`**, **`KeyboardType`**.
 
 See the [styles guide](../guia/estilos.md).
 
@@ -39,6 +39,24 @@ The declarative IR — bare-noun widgets.
 - Media: **`Image`**, **`Icon`**.
 - Indicators: **`ProgressBar`**, **`Spinner`**.
 - **`EventHandler`** — typed handler-prop wrapper.
+
+Those are the **primitives**. On top of them, Track E (Flutter/RN parity) adds
+~70 more widgets — navigation (**`Navigator`**/**`TabView`**/**`TabBar`**/
+**`RouteDrawer`**), virtualized lists (**`LazyColumn`**/**`LazyRow`**/
+**`LazyGrid`**/**`SectionList`**), overlays (**`Dialog`**/**`BottomSheet`**/
+**`Menu`**/**`Popover`**/**`Toast`**/**`Tooltip`**/**`ActionSheet`**), animation
+(**`Animated`**/**`AnimatedList`**/**`Hero`**/**`Shimmer`**/**`Skeleton`**),
+gestures (**`GestureDetector`**/**`Draggable`**/**`Dismissible`**/
+**`ReorderableList`**/**`InteractiveViewer`**/…), advanced inputs
+(**`Dropdown`**/**`TimePicker`**/**`RangeSlider`**/**`Autocomplete`**/
+**`PinInput`**/**`MaskedInput`**/**`Form`**/**`FormField`**), refined layout
+(**`Wrap`**/**`PageView`**/**`AspectRatio`**/**`KeyboardAvoidingView`**) and media
+(**`Canvas`**/**`Svg`**/**`VideoPlayer`**/**`WebView`**/**`Blur`**/
+**`BackdropFilter`**/**`ClipPath`** plus the device-only **`CameraPreview`**/
+**`QrScanner`**/**`MapView`**). All supported by **both** renderers (except the
+device-only ones, which show a placeholder in Qt). The full catalog, by family,
+lives in the [widgets guide](../guia/widgets.md); the live list comes from
+`tempest spec`.
 
 See the [widgets guide](../guia/widgets.md).
 
@@ -85,7 +103,16 @@ default via **`merge_style`**.
 ## Events (`tempestroid.widgets`) — typed boundary contract
 
 - **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`**, **`ToggleEvent`**,
-  **`SlideEvent`**, **`DateChangeEvent`**, **`FileSelectEvent`**.
+  **`SlideEvent`**, **`DateChangeEvent`**, **`FileSelectEvent`** plus the Track E
+  events — navigation (**`RouteChangeEvent`**/**`PageChangeEvent`**), lists
+  (**`ScrollEvent`**/**`EndReachedEvent`**/**`RefreshEvent`**), gestures
+  (**`PanEvent`**/**`ScaleEvent`**/**`SwipeEvent`**/**`ReorderEvent`**/
+  **`LongPressEvent`**/**`DragEvent`**), forms (**`SubmitEvent`**/
+  **`ValidationEvent`**/**`RangeChangeEvent`**/**`TimeChangeEvent`**/
+  **`SelectEvent`**), overlays (**`DismissEvent`**/**`MenuSelectEvent`**) and
+  platform (**`SensorEvent`**/**`LifecycleEvent`**/**`ConnectivityEvent`**/
+  **`DeepLinkEvent`**/**`QrScanEvent`**/**`ThemeChangeEvent`**/
+  **`LocaleChangeEvent`**) — 31 in total.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload into
   a typed event or raises **`EventValidationError`** with structured per-field
   errors. This is the Python↔Kotlin contract for the device bridge.

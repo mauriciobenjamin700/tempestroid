@@ -65,7 +65,7 @@ uv run tempest serve examples/<name>/app.py
 **Both renderers** — the Qt simulator (desktop) and Compose (device) — support
 the full Track E set. The old "Compose only renders five widgets" gap is gone:
 the value-bearing inputs (`Input` / `TextArea` / `Checkbox` / `Switch` /
-`Slider` / `Select` / `DatePicker` / `FilePicker` / …) render **natively on the
+`Slider` / `Dropdown` / `DatePicker` / `FilePicker` / …) render **natively on the
 device** via Jetpack Compose and fold their typed events back into state. Parity
 is pinned by the conformance suite (golden snapshots of both `Style → Qt` and
 `Style → Compose` translators) and was verified on a device across E0–E9.
@@ -76,7 +76,7 @@ Coverage (both renderers, unless noted):
 |---|---|
 | Layout | `Column` / `Row` / `Container` / `Stack` / `Wrap` / `ScrollView` / `SafeArea` / `AspectRatio` / `PageView` / `KeyboardAvoidingView` |
 | Text & action | `Text` / `Button` / `Icon` / `Image` (`on_click`) |
-| Value inputs | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Select` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
+| Value inputs | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
 | Virtualized lists | `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` (+ pull-to-refresh, infinite scroll) |
 | Navigation | `Navigator` / `TabView` / `TabBar` / `RouteDrawer` |
 | Overlays | `Dialog` / `BottomSheet` / `Menu` / `Popover` / `Toast` / `Tooltip` / `ActionSheet` |

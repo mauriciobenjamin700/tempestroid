@@ -17,9 +17,9 @@ Objetos de valor Pydantic frozen, diferenciados por valor.
 - **`Gradient`** + **`GradientStop`** — gradiente linear.
 - **`Transition`** — animação implícita (`duration_ms`, `curve`, `delay_ms`).
 - Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
-  **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
-  **`TextOverflow`**, **`GradientDirection`**, **`Curve`**, **`ImageFit`**,
-  **`KeyboardType`**.
+  **`FlexWrap`**, **`StackAlign`**, **`Position`**, **`TextAlign`**,
+  **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**, **`TextOverflow`**,
+  **`GradientDirection`**, **`Curve`**, **`ImageFit`**, **`KeyboardType`**.
 
 Veja o [guia de estilos](../guia/estilos.md).
 
@@ -39,6 +39,24 @@ A IR declarativa — widgets como substantivos.
 - Mídia: **`Image`**, **`Icon`**.
 - Indicadores: **`ProgressBar`**, **`Spinner`**.
 - **`EventHandler`** — wrapper tipado de prop de *handler*.
+
+Acima estão os **primitivos**. Em cima deles, o Trilho E (paridade Flutter/RN)
+acrescenta ~70 widgets a mais — navegação (**`Navigator`**/**`TabView`**/
+**`TabBar`**/**`RouteDrawer`**), listas virtualizadas (**`LazyColumn`**/
+**`LazyRow`**/**`LazyGrid`**/**`SectionList`**), overlays (**`Dialog`**/
+**`BottomSheet`**/**`Menu`**/**`Popover`**/**`Toast`**/**`Tooltip`**/
+**`ActionSheet`**), animação (**`Animated`**/**`AnimatedList`**/**`Hero`**/
+**`Shimmer`**/**`Skeleton`**), gestos (**`GestureDetector`**/**`Draggable`**/
+**`Dismissible`**/**`ReorderableList`**/**`InteractiveViewer`**/…), inputs
+avançados (**`Dropdown`**/**`TimePicker`**/**`RangeSlider`**/**`Autocomplete`**/
+**`PinInput`**/**`MaskedInput`**/**`Form`**/**`FormField`**), layout refinado
+(**`Wrap`**/**`PageView`**/**`AspectRatio`**/**`KeyboardAvoidingView`**) e mídia
+(**`Canvas`**/**`Svg`**/**`VideoPlayer`**/**`WebView`**/**`Blur`**/
+**`BackdropFilter`**/**`ClipPath`** + os device-only **`CameraPreview`**/
+**`QrScanner`**/**`MapView`**). Todos suportados pelos **dois** renderizadores
+(salvo os device-only, que aparecem como *placeholder* no Qt). O catálogo
+completo, por família, está no [guia de widgets](../guia/widgets.md); a lista
+viva sai de `tempest spec`.
 
 Veja o [guia de widgets](../guia/widgets.md).
 
@@ -84,7 +102,16 @@ aceita um `style` opcional mesclado sobre o padrão via **`merge_style`**.
 ## Eventos (`tempestroid.widgets`) — contrato de fronteira tipado
 
 - **`Event`** (base), **`TapEvent`**, **`TextChangeEvent`**, **`ToggleEvent`**,
-  **`SlideEvent`**, **`DateChangeEvent`**, **`FileSelectEvent`**.
+  **`SlideEvent`**, **`DateChangeEvent`**, **`FileSelectEvent`** e os eventos do
+  Trilho E — navegação (**`RouteChangeEvent`**/**`PageChangeEvent`**), listas
+  (**`ScrollEvent`**/**`EndReachedEvent`**/**`RefreshEvent`**), gestos
+  (**`PanEvent`**/**`ScaleEvent`**/**`SwipeEvent`**/**`ReorderEvent`**/
+  **`LongPressEvent`**/**`DragEvent`**), formulários (**`SubmitEvent`**/
+  **`ValidationEvent`**/**`RangeChangeEvent`**/**`TimeChangeEvent`**/
+  **`SelectEvent`**), overlays (**`DismissEvent`**/**`MenuSelectEvent`**) e
+  plataforma (**`SensorEvent`**/**`LifecycleEvent`**/**`ConnectivityEvent`**/
+  **`DeepLinkEvent`**/**`QrScanEvent`**/**`ThemeChangeEvent`**/
+  **`LocaleChangeEvent`**) — 31 no total.
 - **`parse_event(event_type, raw)`** — portão de fronteira: valida um *payload*
   cru em um evento tipado ou levanta **`EventValidationError`** com os erros
   estruturados por campo. É o contrato Python↔Kotlin para a ponte do dispositivo.
