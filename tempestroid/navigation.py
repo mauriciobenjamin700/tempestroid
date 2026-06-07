@@ -57,6 +57,10 @@ class NavStack(BaseModel):
     Attributes:
         stack: The route stack. Defaults to a single root route ``"/"`` so an app
             always has a screen to render.
+
+    Properties:
+        top: The route on top of the stack (the visible screen).
+        can_pop: Whether the stack can be popped without emptying it.
     """
 
     stack: list[Route] = Field(default_factory=lambda: [Route(name="/")])

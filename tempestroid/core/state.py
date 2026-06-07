@@ -68,6 +68,22 @@ class App(Generic[S]):
 
     Type Args:
         S: The application state type.
+
+    Methods:
+        start: Build the initial scene and record it as the current tree.
+        set_state: Mutate state (optionally) and request a coalesced rebuild.
+        swap_view: Swap the ``view`` function and rebuild against live state.
+        request_rebuild: Schedule a single coalesced rebuild on the event loop.
+        push / pop / replace / reset: Navigation-stack mutations (each rebuilds).
+        show_dialog / show_sheet / show_menu / toast: Push an overlay layer entry.
+        dismiss: Remove an overlay by id and request a rebuild.
+        set_theme / set_locale: Swap the active theme/locale and rebuild.
+        slide_window / slide_section_window: Set a virtualized list's visible window.
+        register_animation / unregister_animation: Manage the frame-clock controllers.
+
+    Properties:
+        current_tree: The most recently built scene (``None`` before ``start``).
+        has_animations: Whether any animation controller is active on the clock.
     """
 
     def __init__(
