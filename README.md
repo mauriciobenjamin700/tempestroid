@@ -63,13 +63,29 @@ in the Qt simulator and LAN code-push to a device over QR — both shipping toda
 
 ## Install
 
+**Building an app?** Install from PyPI — the **core** needs only `pydantic`:
+
 ```bash
-uv sync        # core + dev tooling + the Qt simulator
+pip install tempestroid            # core
+pip install "tempestroid[qt]"      # + desktop simulator (PySide6 + qasync)
+pip install "tempestroid[icons]"   # + tempest icon (Pillow)
 ```
 
-End users embedding the framework who want the simulator:
-`pip install tempestroid[qt]`. The framework **core** needs only `pydantic` —
-Qt is an optional extra.
+Building the Android **APK** (`tempest build apk`) needs only a **JDK + Android
+SDK** (no NDK, no CPython toolchain, no repo clone — the `android-host` ships in
+the package). Run `tempest setup --install` to get the SDK and `tempest doctor`
+to check what's missing.
+
+**Contributing to the framework?** Clone this repo and use `uv` — one command
+installs the core + dev tooling + Qt simulator + docs:
+
+```bash
+uv sync
+```
+
+See the [installation guide](https://mauriciobenjamin700.github.io/tempestroid/instalacao/)
+([EN](https://mauriciobenjamin700.github.io/tempestroid/en/instalacao/)) for the
+full breakdown.
 
 ---
 
