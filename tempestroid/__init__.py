@@ -92,6 +92,7 @@ from tempestroid.core import (
 from tempestroid.devices import (
     DEFAULT_DEVICE,
     Device,
+    resolve_device,
 )
 from tempestroid.devserver import (
     DevServer,
@@ -602,6 +603,7 @@ __all__ = [
     # Device presets (simulator viewport sizing)
     "Device",
     "DEFAULT_DEVICE",
+    "resolve_device",
     # Dev server (LAN code-push, phase B5)
     "DevServer",
     "run_dev_client",

@@ -70,6 +70,44 @@ Cada renderizador-folha aplica os mesmos *patches* aos seus widgets vivos:
   para `@Composable`s e `Style` para `Modifier`/`Arrangement`/`Alignment`. É o
   renderizador do dispositivo.
 
+## Fidelidade do simulador (o que ele reflete — e o que não)
+
+O simulador Qt é um **proxy semântico fiel**, não um espelho pixel-a-pixel do
+aparelho. Vale saber a fronteira para confiar nele no lugar certo.
+
+**O que é idêntico** (a espinha dorsal): a mesma árvore IR, o mesmo reconciliador,
+o mesmo fluxo `view → diff → patch`, os mesmos eventos tipados e o mesmo estado
+coalescido. Layout, navegação, lógica, estado e eventos comportam-se igual. A
+maioria dos campos de `Style` é honrada nos dois (alinhamento, espaçamento
+`SPACE_*`, `STRETCH`, `text_align`, tamanho fixo, padding/margin, cor, fonte). Os
+tamanhos do simulador são em **dp**, o mesmo espaço de layout que o Compose usa —
+por isso o que cabe na janela cabe no aparelho (veja
+[escolher o tamanho de tela](inicio-rapido.md#escolha-o-tamanho-de-tela-presets-de-aparelho)).
+
+!!! check "Garantia de paridade"
+    A suíte de **conformância** (`tests/conformance/`) fixa os **dois tradutores
+    `Style` lado a lado** (golden snapshots de `to_qss` e `to_compose`) + uma
+    tabela de cobertura por-campo. Eles **não podem divergir em silêncio** — uma
+    mudança que regride a paridade quebra o *gate*.
+
+**O que só o aparelho mostra fielmente** (divergências esperadas):
+
+- **Aparência dos widgets** — o Qt usa QWidget/QSS; o device usa **Material 3**.
+  Diálogos, menus, bottom sheets, pickers e campos têm o visual nativo de cada um.
+- **Animações** — Qt usa `QPropertyAnimation`; o device dirige o motor nativo do
+  Compose (`animate*AsState`/`AnimatedContent`).
+- **Overlays e safe-area** — o Compose gerencia `WindowInsets.safeDrawing`/scrim
+  próprios; o Qt aproxima com um scrim manual.
+- **Fontes e densidade do SO** mudam métricas finas de layout.
+- **Widgets de hardware** — `CameraPreview`/`QrScanner`/`MapView` são
+  **device-only**; no simulador aparecem como *placeholder* sinalizado.
+
+!!! warning "Regra: verificação dual"
+    Por isso, ao mexer em superfície de UI, valide **nos dois**: o simulador Qt
+    **e** o aparelho físico (Compose) quando houver um conectado — `make
+    dual-verify`. O simulador acelera o desenvolvimento; o aparelho confirma a
+    aparência final, animações e overlays.
+
 ## Estado: `App[S]`
 
 `App[S]` é o container de estado agnóstico de renderizador. Ele:

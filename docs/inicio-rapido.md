@@ -55,6 +55,35 @@ interativo:
 | `s` | Traz a janela do simulador à frente. |
 | `q` | Encerra. |
 
+### Escolha o tamanho de tela (presets de aparelho)
+
+O simulador abre num tamanho de telefone genérico, mas você deve **testar nos
+tamanhos dos aparelhos-alvo**. Passe `--device` (ou `-d`) com um preset:
+
+```bash
+uv run tempest dev --device pixel-7        # 412×915 dp
+uv run tempest dev -d galaxy-s24           # 384×824 dp
+uv run tempest dev -d redmi-note-12        # 393×873 dp (padrão)
+```
+
+Os tamanhos são em **dp** (pixels independentes de densidade) — exatamente o
+espaço de layout que o Compose usa no aparelho, então o que cabe no simulador
+cabe no device. Os nomes são tolerantes (`pixel-7`, `PIXEL_7`, `pixel 7`,
+`Google Pixel 7` resolvem o mesmo). O catálogo completo são 33 presets (Pixel,
+Galaxy S/A, Redmi/Poco/Xiaomi, Moto, OnePlus) no enum `Device` — use
+programaticamente com `run_qt(state, view, device=Device.PIXEL_7)`.
+
+!!! tip "Quais testar"
+    Cubra um **telefone pequeno/estreito** (ex.: `galaxy-s8`, 360×740) e um
+    **grande** (ex.: `pixel-8-pro`, 448×998) — se o layout se comporta nos dois
+    extremos, os tamanhos intermediários seguem bem.
+
+!!! info "Até onde o simulador é fiel?"
+    O simulador reflete fielmente estrutura, estado, eventos e a maior parte do
+    `Style`, mas **não** a aparência nativa (Material 3), animações, overlays e
+    fontes — esses só são 100% fiéis no aparelho. Veja
+    [fidelidade do simulador](arquitetura.md#fidelidade-do-simulador-o-que-ele-reflete-e-o-que-nao).
+
 ## Passo 3 — Edite e veja ao vivo
 
 Com o simulador aberto, abra `app.py` no editor e mude algum texto — por

@@ -240,8 +240,24 @@ _SAMPLES: dict[str, Any] = {
 #:                ``Wrap`` flow-layout widget (reflowing children on resize), not via
 #:                QSS, so the ``Style → Qt`` translator does not react to it.
 #:   margin     — not wired on the Qt side yet (post-v1).
-#:   text_align — Qt would express this via a widget property, not QSS (post-v1).
-#:   width/height (fixed) — Qt fixed-size not wired yet (A3 notes).
+#:   text_align — honored in the renderer (a leaf ``Text``'s ``_TextLabel`` gets
+#:                the alignment flag via ``_text_alignment`` →
+#:                ``QLabel.setAlignment``; LEFT/CENTER/RIGHT/JUSTIFY), not via QSS,
+#:                so the ``Style → Qt`` translator does not react while the
+#:                simulator *does* render it matching Compose. No longer a gap.
+#:   width/height (fixed) — honored in the renderer (``_apply_sizing`` →
+#:                ``setFixedWidth``/``setFixedHeight``; only ``min``/``max`` map
+#:                cleanly to QSS), so the translator does not react while the
+#:                simulator pins the fixed size. No longer a gap.
+#:   justify/align — the START/CENTER/END subset maps to a single Qt alignment
+#:                flag in ``layout_alignment``, so both translators react. The
+#:                ``SPACE_BETWEEN``/``SPACE_AROUND``/``SPACE_EVENLY`` justify
+#:                values (stretch spacers around children in ``_sync_main_axis``)
+#:                and ``AlignItems.STRETCH`` (children fill the cross axis via
+#:                Qt's default packing when no flag is emitted) have no single
+#:                flag, so they are realized imperatively in the renderer — no
+#:                longer a gap, matching Compose ``Arrangement.Space*`` /
+#:                ``Alignment.Stretch``.
 #:   direction  — structural (picks Row vs Column at the widget); neither
 #:                translator emits it into QSS/spec.
 #:   transition — Compose maps it to ``animate*AsState``; Qt animation is

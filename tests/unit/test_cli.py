@@ -51,7 +51,7 @@ def test_dev_reads_configured_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.chdir(tmp_path)
     seen: dict[str, str] = {}
 
-    def fake_run_dev(app: str, verbose: bool) -> int:
+    def fake_run_dev(app: str, verbose: bool, device: str | None = None) -> int:
         seen["app"] = app
         return 0
 
@@ -517,3 +517,45 @@ def test_clean_command_handles_unremovable_cache(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(release_build, "clean_cache", boom)
     assert main(["clean"]) == 1
+
+
+def test_dev_device_flag_resolves_and_passes_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest dev --device` resolves the preset and threads it to the loop."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "myapp.py"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    seen: dict[str, object] = {}
+
+    def fake_run_dev(app: str, verbose: bool, device: object = None) -> int:
+        seen["device"] = device
+        return 0
+
+    import sys
+
+    main_module = sys.modules["tempestroid.cli.main"]
+    monkeypatch.setattr(main_module, "_run_dev", fake_run_dev)
+    assert main(["dev", "--device", "pixel-7"]) == 0
+    # _run_dev receives the raw name; resolution happens inside it.
+    assert seen["device"] == "pixel-7"
+
+
+def test_dev_unknown_device_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """An unknown --device name exits non-zero with a helpful message."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "myapp.py"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main(["dev", "--device", "bananaphone"]) != 0
+
+
+def test_resolve_device_forgiving_names() -> None:
+    """resolve_device matches member name and label, normalizing separators."""
+    from tempestroid import Device, resolve_device
+
+    assert resolve_device("pixel-7") is Device.PIXEL_7
+    assert resolve_device("PIXEL_7") is Device.PIXEL_7
+    assert resolve_device("Google Pixel 7") is Device.PIXEL_7
+    assert resolve_device("nope") is None

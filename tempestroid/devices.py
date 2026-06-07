@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-__all__ = ["Device", "DEFAULT_DEVICE"]
+__all__ = ["Device", "DEFAULT_DEVICE", "resolve_device"]
 
 
 class Device(Enum):
@@ -117,3 +117,28 @@ class Device(Enum):
 
 # The simulator's default when no device is chosen — a generic mid-size phone.
 DEFAULT_DEVICE: Device = Device.REDMI_NOTE_12
+
+
+def resolve_device(name: str) -> Device | None:
+    """Resolve a user-supplied device name to a :class:`Device` preset.
+
+    Matching is forgiving: the enum member name or its human label, compared
+    case-insensitively with ``-``/``_``/spaces normalized away. So ``"pixel-7"``,
+    ``"PIXEL_7"``, ``"pixel 7"`` and ``"Google Pixel 7"`` all resolve to
+    :attr:`Device.PIXEL_7`.
+
+    Args:
+        name: The device identifier to resolve.
+
+    Returns:
+        The matching :class:`Device`, or ``None`` when no preset matches.
+    """
+
+    def _norm(value: str) -> str:
+        return value.lower().replace("-", "").replace("_", "").replace(" ", "")
+
+    target = _norm(name)
+    for member in Device:
+        if _norm(member.name) == target or _norm(member.label) == target:
+            return member
+    return None

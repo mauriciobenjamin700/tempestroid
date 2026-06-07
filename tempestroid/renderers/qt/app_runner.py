@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QApplication
 
 from tempestroid.core.ir import Patch
 from tempestroid.core.state import App
-from tempestroid.devices import DEFAULT_DEVICE
+from tempestroid.devices import DEFAULT_DEVICE, Device
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
 from tempestroid.renderers.qt.renderer import QtRenderer
 from tempestroid.widgets import AppState, Widget
@@ -160,6 +160,7 @@ def run_qt(
     *,
     title: str = "tempestroid",
     size: tuple[int, int] = DEFAULT_DEVICE.size,
+    device: Device | None = None,
 ) -> int:
     """Mount an app in a Qt window and run the fused Qt/asyncio loop.
 
@@ -168,11 +169,17 @@ def run_qt(
         view: Builds the widget tree from the app (reads ``app.state``, wires
             handlers that call ``app.set_state``).
         title: The window title.
-        size: The initial window size as ``(width, height)``.
+        size: The initial window size as ``(width, height)``. Used when no
+            ``device`` is given (kept for backward compatibility).
+        device: An optional :class:`~tempestroid.devices.Device` preset to size
+            the simulator window to that device's logical viewport. When given it
+            **wins over** ``size`` (the window resizes to ``device.size``), so a
+            caller pinning a real device's viewport overrides the raw tuple.
 
     Returns:
         The process exit code (``0`` on a clean loop shutdown).
     """
+    window_size = device.size if device is not None else size
     qt_app = QApplication.instance() or QApplication(sys.argv)
     if isinstance(qt_app, QApplication):
         connect_lifecycle(qt_app)
@@ -208,7 +215,7 @@ def run_qt(
     host.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     host._tempest_back_filter = back_filter  # type: ignore[attr-defined]
     host.setWindowTitle(title)
-    host.resize(*size)
+    host.resize(*window_size)
     host.show()
 
     with loop:
