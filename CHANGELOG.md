@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-06-06
+
+### Documentation
+
+- **Example gallery links to every project's source.** Each app in the gallery is
+  now a link to its `app.py` on GitHub (read the code + its explanatory
+  docstring), the list grew from 9 to all 22 examples + the multi-file project
+  (grouped by theme), and each row's one-line explanation is sourced from the
+  example's real module docstring. Fixed the stale `todo` description (it has a
+  real text `Input`, not a fixed pool). PT + EN.
+
 ## [0.9.2] — 2026-06-06
 
 ### Documentation
