@@ -70,9 +70,15 @@ class Image(Widget):
         alt: Alternative text shown if the image cannot be loaded.
     """
 
-    src: str
-    fit: ImageFit = ImageFit.CONTAIN
-    alt: str = ""
+    src: str = Field(
+        description="The image source — an ``http(s)`` URL or a bundled asset path."
+    )
+    fit: ImageFit = Field(
+        default=ImageFit.CONTAIN, description="How the image scales within its box."
+    )
+    alt: str = Field(
+        default="", description="Alternative text shown if the image cannot be loaded."
+    )
 
 
 class Icon(Widget):
@@ -84,8 +90,14 @@ class Icon(Widget):
             renderer default.
     """
 
-    name: str
-    size: float | None = None
+    name: str = Field(
+        description='The icon identifier (e.g. a Material Icons name like ``"home"``).'
+    )
+    size: float | None = Field(
+        default=None,
+        description="The icon's edge length in logical pixels, or ``None`` for the "
+        "renderer default.",
+    )
 
 
 class MoveTo(BaseModel):
@@ -99,9 +111,11 @@ class MoveTo(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["move_to"] = "move_to"
-    x: float
-    y: float
+    kind: Literal["move_to"] = Field(
+        default="move_to", description='The command discriminator (``"move_to"``).'
+    )
+    x: float = Field(description="Target x coordinate, in logical pixels.")
+    y: float = Field(description="Target y coordinate, in logical pixels.")
 
 
 class LineTo(BaseModel):
@@ -115,9 +129,11 @@ class LineTo(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["line_to"] = "line_to"
-    x: float
-    y: float
+    kind: Literal["line_to"] = Field(
+        default="line_to", description='The command discriminator (``"line_to"``).'
+    )
+    x: float = Field(description="Target x coordinate, in logical pixels.")
+    y: float = Field(description="Target y coordinate, in logical pixels.")
 
 
 class ArcTo(BaseModel):
@@ -135,13 +151,15 @@ class ArcTo(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["arc_to"] = "arc_to"
-    x: float
-    y: float
-    width: float
-    height: float
-    start_angle: float
-    sweep_angle: float
+    kind: Literal["arc_to"] = Field(
+        default="arc_to", description='The command discriminator (``"arc_to"``).'
+    )
+    x: float = Field(description="Bounding box left, in logical pixels.")
+    y: float = Field(description="Bounding box top, in logical pixels.")
+    width: float = Field(description="Bounding box width, in logical pixels.")
+    height: float = Field(description="Bounding box height, in logical pixels.")
+    start_angle: float = Field(description="Start angle, in degrees.")
+    sweep_angle: float = Field(description="Sweep angle, in degrees.")
 
 
 class Close(BaseModel):
@@ -153,7 +171,9 @@ class Close(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["close"] = "close"
+    kind: Literal["close"] = Field(
+        default="close", description='The command discriminator (``"close"``).'
+    )
 
 
 class FillCmd(BaseModel):
@@ -167,8 +187,13 @@ class FillCmd(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["fill"] = "fill"
-    color: list[float]
+    kind: Literal["fill"] = Field(
+        default="fill", description='The command discriminator (``"fill"``).'
+    )
+    color: list[float] = Field(
+        description="The fill color as an ``[r, g, b, a]`` list of floats in ``[0, "
+        "1]`` (a list, never a tuple, so the command is JSON-serializable directly).",
+    )
 
 
 class StrokeCmd(BaseModel):
@@ -183,9 +208,16 @@ class StrokeCmd(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["stroke"] = "stroke"
-    color: list[float]
-    width: float = 1.0
+    kind: Literal["stroke"] = Field(
+        default="stroke", description='The command discriminator (``"stroke"``).'
+    )
+    color: list[float] = Field(
+        description="The stroke color as an ``[r, g, b, a]`` list of floats in ``[0, "
+        "1]`` (a list, never a tuple).",
+    )
+    width: float = Field(
+        default=1.0, description="The stroke width, in logical pixels."
+    )
 
 
 class DrawText(BaseModel):
@@ -203,12 +235,18 @@ class DrawText(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["draw_text"] = "draw_text"
-    text: str
-    x: float
-    y: float
-    size: float = 14.0
-    color: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0, 1.0])
+    kind: Literal["draw_text"] = Field(
+        default="draw_text", description='The command discriminator (``"draw_text"``).'
+    )
+    text: str = Field(description="The text to draw.")
+    x: float = Field(description="Baseline x coordinate, in logical pixels.")
+    y: float = Field(description="Baseline y coordinate, in logical pixels.")
+    size: float = Field(default=14.0, description="The font size, in logical pixels.")
+    color: list[float] = Field(
+        description="The text color as an ``[r, g, b, a]`` list of floats in ``[0, "
+        "1]`` (a list, never a tuple).",
+        default_factory=lambda: [0.0, 0.0, 0.0, 1.0],
+    )
 
 
 class DrawRect(BaseModel):
@@ -224,11 +262,13 @@ class DrawRect(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["draw_rect"] = "draw_rect"
-    x: float
-    y: float
-    width: float
-    height: float
+    kind: Literal["draw_rect"] = Field(
+        default="draw_rect", description='The command discriminator (``"draw_rect"``).'
+    )
+    x: float = Field(description="Rectangle left, in logical pixels.")
+    y: float = Field(description="Rectangle top, in logical pixels.")
+    width: float = Field(description="Rectangle width, in logical pixels.")
+    height: float = Field(description="Rectangle height, in logical pixels.")
 
 
 class DrawOval(BaseModel):
@@ -244,11 +284,13 @@ class DrawOval(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["draw_oval"] = "draw_oval"
-    x: float
-    y: float
-    width: float
-    height: float
+    kind: Literal["draw_oval"] = Field(
+        default="draw_oval", description='The command discriminator (``"draw_oval"``).'
+    )
+    x: float = Field(description="Bounding box left, in logical pixels.")
+    y: float = Field(description="Bounding box top, in logical pixels.")
+    width: float = Field(description="Bounding box width, in logical pixels.")
+    height: float = Field(description="Bounding box height, in logical pixels.")
 
 
 #: A single drawing instruction for :class:`Canvas`. A frozen, discriminated
@@ -310,9 +352,16 @@ class Canvas(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    commands: list[DrawCommand] = Field(default_factory=_empty_commands)
-    width: float | None = None
-    height: float | None = None
+    commands: list[DrawCommand] = Field(
+        description="The ordered draw commands to replay each paint.",
+        default_factory=_empty_commands,
+    )
+    width: float | None = Field(
+        default=None, description="Optional fixed canvas width, in logical pixels."
+    )
+    height: float | None = Field(
+        default=None, description="Optional fixed canvas height, in logical pixels."
+    )
 
 
 class VideoPlayer(Widget):
@@ -327,11 +376,21 @@ class VideoPlayer(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    src: str
-    autoplay: bool = False
-    loop: bool = False
-    controls: bool = True
-    muted: bool = False
+    src: str = Field(
+        description="The video source — an ``http(s)`` URL or a bundled asset path."
+    )
+    autoplay: bool = Field(
+        default=False, description="Whether playback starts automatically when mounted."
+    )
+    loop: bool = Field(
+        default=False, description="Whether playback restarts when it reaches the end."
+    )
+    controls: bool = Field(
+        default=True, description="Whether the platform transport controls are shown."
+    )
+    muted: bool = Field(
+        default=False, description="Whether the audio track starts muted."
+    )
 
 
 class WebView(Widget):
@@ -343,8 +402,10 @@ class WebView(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    url: str
-    javascript_enabled: bool = True
+    url: str = Field(description="The page URL to load.")
+    javascript_enabled: bool = Field(
+        default=True, description="Whether JavaScript execution is allowed."
+    )
 
 
 class Svg(Widget):
@@ -356,8 +417,12 @@ class Svg(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    src: str
-    fit: ImageFit = ImageFit.CONTAIN
+    src: str = Field(
+        description="The SVG source — an ``http(s)`` URL or a bundled asset path."
+    )
+    fit: ImageFit = Field(
+        default=ImageFit.CONTAIN, description="How the vector scales within its box."
+    )
 
 
 class CameraPreview(Widget):
@@ -368,7 +433,9 @@ class CameraPreview(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    facing: str = "back"
+    facing: str = Field(
+        default="back", description='Which camera to use (``"front"`` or ``"back"``).'
+    )
 
 
 class QrScanner(Widget):
@@ -381,7 +448,12 @@ class QrScanner(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_scan": QrScanEvent}
-    on_scan: EventHandler | None = None
+    on_scan: EventHandler | None = Field(
+        default=None,
+        description="Handler invoked with a :class:`QrScanEvent` for each decoded code "
+        "(the typed event is the widget's contract; the device wires the scanner "
+        "directly to this handler's token).",
+    )
 
 
 class MapView(Widget):
@@ -397,10 +469,19 @@ class MapView(Widget):
     """
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    latitude: float = 0.0
-    longitude: float = 0.0
-    zoom: float = 12.0
-    markers: list[dict[str, Any]] = Field(default_factory=_empty_markers)
+    latitude: float = Field(
+        default=0.0, description="The map center latitude, in degrees."
+    )
+    longitude: float = Field(
+        default=0.0, description="The map center longitude, in degrees."
+    )
+    zoom: float = Field(default=12.0, description="The map zoom level.")
+    markers: list[dict[str, Any]] = Field(
+        description="Plain JSON-serializable marker descriptors (each a dict, e.g. "
+        '``{"lat": ..., "lng": ..., "title": ...}``); the list crosses the boundary '
+        "as-is.",
+        default_factory=_empty_markers,
+    )
 
 
 class Blur(Widget):
@@ -413,8 +494,12 @@ class Blur(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    radius: float = 8.0
-    child: Widget | None = None
+    radius: float = Field(
+        default=8.0, description="The blur radius, in logical pixels."
+    )
+    child: Widget | None = Field(
+        default=None, description="The optional wrapped widget."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -435,8 +520,12 @@ class BackdropFilter(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    radius: float = 8.0
-    child: Widget | None = None
+    radius: float = Field(
+        default=8.0, description="The blur radius, in logical pixels."
+    )
+    child: Widget | None = Field(
+        default=None, description="The optional wrapped widget."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -466,9 +555,16 @@ class ClipPath(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
-    shape: ClipShape = ClipShape.ROUNDED_RECT
-    radius: float = 8.0
-    child: Widget | None = None
+    shape: ClipShape = Field(
+        default=ClipShape.ROUNDED_RECT, description="The clipping shape."
+    )
+    radius: float = Field(
+        default=8.0,
+        description="The corner radius for ``ROUNDED_RECT``, in logical pixels.",
+    )
+    child: Widget | None = Field(
+        default=None, description="The optional wrapped widget."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.

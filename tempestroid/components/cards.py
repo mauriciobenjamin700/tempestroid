@@ -40,7 +40,10 @@ class Card(Component):
         children: The widgets stacked vertically inside the card.
     """
 
-    children: list[Widget] = Field(default_factory=_no_widgets)
+    children: list[Widget] = Field(
+        description="The widgets stacked vertically inside the card.",
+        default_factory=_no_widgets,
+    )
 
     def render(self) -> Widget:
         """Lower the card into a padded, rounded, elevated container.
@@ -71,10 +74,19 @@ class ListTile(Component):
         trailing: An optional widget shown after the text (e.g. a ``Button``).
     """
 
-    title: str = ""
-    subtitle: str | None = None
-    leading: Widget | None = None
-    trailing: Widget | None = None
+    title: str = Field(default="", description="The row's primary text.")
+    subtitle: str | None = Field(
+        default=None,
+        description="An optional secondary line shown muted under the title.",
+    )
+    leading: Widget | None = Field(
+        default=None,
+        description="An optional widget shown before the text (e.g. an ``Avatar``).",
+    )
+    trailing: Widget | None = Field(
+        default=None,
+        description="An optional widget shown after the text (e.g. a ``Button``).",
+    )
 
     def render(self) -> Widget:
         """Lower the list tile into a primitive row.
@@ -128,8 +140,13 @@ class Avatar(Component):
         size: The circle's diameter in logical pixels.
     """
 
-    initials: str = ""
-    size: float = 40.0
+    initials: str = Field(
+        default="",
+        description='The short text shown inside the circle (e.g. ``"MB"``).',
+    )
+    size: float = Field(
+        default=40.0, description="The circle's diameter in logical pixels."
+    )
 
     def render(self) -> Widget:
         """Lower the avatar into a circular container with centered initials.
@@ -166,7 +183,9 @@ class Divider(Component):
         thickness: The line's height in logical pixels.
     """
 
-    thickness: float = 1.0
+    thickness: float = Field(
+        default=1.0, description="The line's height in logical pixels."
+    )
 
     def render(self) -> Widget:
         """Lower the divider into a thin, full-width container.

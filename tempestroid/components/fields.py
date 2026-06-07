@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import Field
+
 from tempestroid.components.base import (
     BACKGROUND,
     MUTED,
@@ -41,11 +43,17 @@ class Stepper(Component):
         on_change: Called with the new (clamped) value when a button is tapped.
     """
 
-    value: int = 0
-    step: int = 1
-    min_value: int | None = None
-    max_value: int | None = None
-    on_change: Callable[[int], Any]
+    value: int = Field(default=0, description="The current value.")
+    step: int = Field(default=1, description="The amount added/removed per tap.")
+    min_value: int | None = Field(
+        default=None, description="The lower bound, or ``None`` for unbounded."
+    )
+    max_value: int | None = Field(
+        default=None, description="The upper bound, or ``None`` for unbounded."
+    )
+    on_change: Callable[[int], Any] = Field(
+        description="Called with the new (clamped) value when a button is tapped."
+    )
 
     def _clamped(self, candidate: int) -> int:
         """Clamp ``candidate`` to the configured bounds.
@@ -136,10 +144,16 @@ class SearchBar(Component):
             when set and the field is non-empty.
     """
 
-    value: str = ""
-    placeholder: str = "Search"
-    on_change: Callable[[TextChangeEvent], Any]
-    on_clear: Callable[[], Any] | None = None
+    value: str = Field(default="", description="The current query text (controlled).")
+    placeholder: str = Field(default="Search", description="The empty-field hint.")
+    on_change: Callable[[TextChangeEvent], Any] = Field(
+        description="Called with the validated ``TextChangeEvent`` on each edit."
+    )
+    on_clear: Callable[[], Any] | None = Field(
+        default=None,
+        description="Optional handler for the clear button; the button shows only when "
+        "set and the field is non-empty.",
+    )
 
     def render(self) -> Widget:
         """Lower the search bar into a primitive row.

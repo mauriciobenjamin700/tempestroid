@@ -38,10 +38,14 @@ class Accordion(Component):
         on_toggle: Called when the header is tapped (flip ``open`` in state).
     """
 
-    title: str = ""
-    open: bool = False
-    children: list[Widget] = Field(default_factory=_no_widgets)
-    on_toggle: Callable[[], Any]
+    title: str = Field(default="", description="The header text.")
+    open: bool = Field(default=False, description="Whether the body is expanded.")
+    children: list[Widget] = Field(
+        description="The widgets revealed when open.", default_factory=_no_widgets
+    )
+    on_toggle: Callable[[], Any] = Field(
+        description="Called when the header is tapped (flip ``open`` in state)."
+    )
 
     def render(self) -> Widget:
         """Lower the accordion into a primitive column.

@@ -77,9 +77,15 @@ class TableCell(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    content: str
-    colspan: int = 1
-    rowspan: int = 1
+    content: str = Field(description="The cell's text content.")
+    colspan: int = Field(
+        default=1,
+        description="How many columns the cell spans (currently informational; the "
+        "primitive lowering renders one cell per entry).",
+    )
+    rowspan: int = Field(
+        default=1, description="How many rows the cell spans (currently informational)."
+    )
     style: Style | None = None
 
 
@@ -93,7 +99,9 @@ class TableRow(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    cells: list[TableCell] = Field(default_factory=_no_cells)
+    cells: list[TableCell] = Field(
+        description="The ordered cells of the row.", default_factory=_no_cells
+    )
     style: Style | None = None
 
 
@@ -106,8 +114,14 @@ class Table(Component):
         style: An optional style overlaid on the table's default surface.
     """
 
-    rows: list[TableRow] = Field(default_factory=_no_rows)
-    headers: list[str] = Field(default_factory=_no_str)
+    rows: list[TableRow] = Field(
+        description="The body rows, each a :class:`TableRow` of :class:`TableCell`\\s.",
+        default_factory=_no_rows,
+    )
+    headers: list[str] = Field(
+        description="Optional header labels rendered as an emphasised first row.",
+        default_factory=_no_str,
+    )
     style: Style | None = None
 
     def _cell(self, content: str, *, header: bool, key: str) -> Widget:
@@ -189,9 +203,17 @@ class DataTable(Component):
         style: An optional style overlaid on the table's default surface.
     """
 
-    columns: list[str] = Field(default_factory=_no_str)
-    rows: list[list[str]] = Field(default_factory=_no_str_rows)
-    sortable: bool = False
+    columns: list[str] = Field(
+        description="The column header labels.", default_factory=_no_str
+    )
+    rows: list[list[str]] = Field(
+        description="The body rows as a matrix of string cells.",
+        default_factory=_no_str_rows,
+    )
+    sortable: bool = Field(
+        default=False,
+        description="Whether to mark headers as sortable with an indicator glyph.",
+    )
     style: Style | None = None
 
     def render(self) -> Widget:
@@ -200,9 +222,7 @@ class DataTable(Component):
         Returns:
             A :class:`Table` built from the column headers and string matrix.
         """
-        headers = [
-            f"{label} ▾" if self.sortable else label for label in self.columns
-        ]
+        headers = [f"{label} ▾" if self.sortable else label for label in self.columns]
         table_rows = [
             TableRow(cells=[TableCell(content=value) for value in row])
             for row in self.rows

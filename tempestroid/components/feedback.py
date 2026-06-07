@@ -7,6 +7,8 @@ until the renderer grows one.
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from tempestroid.components.base import ON_SURFACE, merge_style
 from tempestroid.style import AlignItems, Color, Edge, FontWeight, Style, TextAlign
 from tempestroid.widgets import Column, Component, Row, Text, Widget
@@ -44,9 +46,16 @@ class Banner(Component):
         action: An optional trailing widget (e.g. a dismiss ``Button``).
     """
 
-    message: str = ""
-    tone: str = "info"
-    action: Widget | None = None
+    message: str = Field(default="", description="The banner text.")
+    tone: str = Field(
+        default="info",
+        description='The status tone (``"info"`` / ``"success"`` / ``"warning"`` / '
+        '``"error"``) selecting the background color.',
+    )
+    action: Widget | None = Field(
+        default=None,
+        description="An optional trailing widget (e.g. a dismiss ``Button``).",
+    )
 
     def render(self) -> Widget:
         """Lower the banner into a primitive row.
@@ -87,10 +96,18 @@ class EmptyState(Component):
         action: An optional call-to-action widget (e.g. a ``Button``).
     """
 
-    title: str = ""
-    subtitle: str | None = None
-    glyph: str = "○"
-    action: Widget | None = None
+    title: str = Field(default="", description="The primary message.")
+    subtitle: str | None = Field(
+        default=None, description="An optional secondary line."
+    )
+    glyph: str = Field(
+        default="○",
+        description="A large text glyph shown above the title (no icon font needed).",
+    )
+    action: Widget | None = Field(
+        default=None,
+        description="An optional call-to-action widget (e.g. a ``Button``).",
+    )
 
     def render(self) -> Widget:
         """Lower the empty state into a centered primitive column.
@@ -131,9 +148,7 @@ class EmptyState(Component):
             )
         if self.action is not None:
             children.append(self.action)
-        default = Style(
-            gap=10.0, align=AlignItems.CENTER, padding=Edge.all(24.0)
-        )
+        default = Style(gap=10.0, align=AlignItems.CENTER, padding=Edge.all(24.0))
         return Column(
             key=self.key or "emptystate",
             style=merge_style(default, self.style),
@@ -149,8 +164,13 @@ class Badge(Component):
         tone: The status tone selecting the background color.
     """
 
-    label: str = ""
-    tone: str = "error"
+    label: str = Field(
+        default="",
+        description='The badge text (e.g. a count like ``"3"`` or ``"NEW"``).',
+    )
+    tone: str = Field(
+        default="error", description="The status tone selecting the background color."
+    )
 
     def render(self) -> Widget:
         """Lower the badge into a primitive pill.

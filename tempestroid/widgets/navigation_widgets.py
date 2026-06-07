@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from pydantic import Field
+
 from tempestroid.widgets.base import RouteChangeHandler, Widget
 from tempestroid.widgets.events import Event, RouteChangeEvent
 
@@ -53,9 +55,17 @@ class Navigator(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget
-    transition: str = "slide"
-    depth: int = 0
+    child: Widget = Field(description="The screen currently on top of the stack.")
+    transition: str = Field(
+        default="slide",
+        description='Animation hint for a screen swap (``"slide"``, ``"fade"`` or '
+        '``"none"``). Defaults to ``"slide"``.',
+    )
+    depth: int = Field(
+        default=0,
+        description="The current navigation stack depth. The renderer compares it "
+        "against the previous depth to slide forward (push) or back (pop).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the top screen as this navigator's single child.
@@ -81,9 +91,16 @@ class TabBar(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": RouteChangeEvent}
 
-    tabs: list[str]
-    active: int = 0
-    on_change: RouteChangeHandler | None = None
+    tabs: list[str] = Field(
+        description="The ordered tab labels (paired by index across Qt/Compose)."
+    )
+    active: int = Field(
+        default=0, description="The index of the currently selected tab."
+    )
+    on_change: RouteChangeHandler | None = Field(
+        default=None,
+        description="Optional handler invoked with a ``RouteChangeEvent`` on a tap.",
+    )
 
 
 class TabView(Widget):
@@ -104,10 +121,15 @@ class TabView(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": RouteChangeEvent}
 
-    tabs: list[str]
-    active: int = 0
-    child: Widget
-    on_change: RouteChangeHandler | None = None
+    tabs: list[str] = Field(description="The ordered tab labels.")
+    active: int = Field(
+        default=0, description="The index of the currently selected tab."
+    )
+    child: Widget = Field(description="The content widget for the active tab.")
+    on_change: RouteChangeHandler | None = Field(
+        default=None,
+        description="Optional handler invoked with a ``RouteChangeEvent`` on a tap.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the active tab's content as the single child.
@@ -138,10 +160,18 @@ class RouteDrawer(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child", "drawer"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_change": RouteChangeEvent}
 
-    child: Widget
-    drawer: Widget
-    open: bool = False
-    on_change: RouteChangeHandler | None = None
+    child: Widget = Field(description="The main content shown under the drawer.")
+    drawer: Widget = Field(
+        description="The panel that slides over the content when open."
+    )
+    open: bool = Field(
+        default=False, description="Whether the drawer panel is currently shown."
+    )
+    on_change: RouteChangeHandler | None = Field(
+        default=None,
+        description="Optional handler invoked with a ``RouteChangeEvent`` when the "
+        "drawer toggles.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the content and the drawer panel, in that order.

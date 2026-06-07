@@ -13,7 +13,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, ClassVar, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, WithJsonSchema
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
 
 from tempestroid.style import Style
 from tempestroid.widgets.events import (
@@ -104,6 +104,7 @@ def handler_accepts_event(handler: Callable[..., Any]) -> bool:
         return False
     return any(p.kind in _POSITIONAL_KINDS for p in params.values())
 
+
 _RawHandler: TypeAlias = Callable[[], Any] | Callable[[], Awaitable[Any]]
 
 #: A zero-argument event callback. Async-first: handlers may be plain functions
@@ -145,9 +146,7 @@ ToggleHandler: TypeAlias = Annotated[
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 SlideHandler: TypeAlias = Annotated[
-    Callable[[SlideEvent], Any]
-    | Callable[[SlideEvent], Awaitable[Any]]
-    | _RawHandler,
+    Callable[[SlideEvent], Any] | Callable[[SlideEvent], Awaitable[Any]] | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 DateChangeHandler: TypeAlias = Annotated[
@@ -163,9 +162,7 @@ FileSelectHandler: TypeAlias = Annotated[
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 TapHandler: TypeAlias = Annotated[
-    Callable[[TapEvent], Any]
-    | Callable[[TapEvent], Awaitable[Any]]
-    | _RawHandler,
+    Callable[[TapEvent], Any] | Callable[[TapEvent], Awaitable[Any]] | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 LongPressHandler: TypeAlias = Annotated[
@@ -175,9 +172,7 @@ LongPressHandler: TypeAlias = Annotated[
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 SwipeHandler: TypeAlias = Annotated[
-    Callable[[SwipeEvent], Any]
-    | Callable[[SwipeEvent], Awaitable[Any]]
-    | _RawHandler,
+    Callable[[SwipeEvent], Any] | Callable[[SwipeEvent], Awaitable[Any]] | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 RouteChangeHandler: TypeAlias = Annotated[
@@ -217,21 +212,15 @@ MenuSelectHandler: TypeAlias = Annotated[
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 PanHandler: TypeAlias = Annotated[
-    Callable[[PanEvent], Any]
-    | Callable[[PanEvent], Awaitable[Any]]
-    | _RawHandler,
+    Callable[[PanEvent], Any] | Callable[[PanEvent], Awaitable[Any]] | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 ScaleHandler: TypeAlias = Annotated[
-    Callable[[ScaleEvent], Any]
-    | Callable[[ScaleEvent], Awaitable[Any]]
-    | _RawHandler,
+    Callable[[ScaleEvent], Any] | Callable[[ScaleEvent], Awaitable[Any]] | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 DragHandler: TypeAlias = Annotated[
-    Callable[[DragEvent], Any]
-    | Callable[[DragEvent], Awaitable[Any]]
-    | _RawHandler,
+    Callable[[DragEvent], Any] | Callable[[DragEvent], Awaitable[Any]] | _RawHandler,
     WithJsonSchema(_HANDLER_SCHEMA),
 ]
 ReorderHandler: TypeAlias = Annotated[
@@ -296,9 +285,19 @@ class Semantics(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    label: str | None = None
-    role: str | None = None
-    hint: str | None = None
+    label: str | None = Field(
+        default=None,
+        description="The accessible label (``contentDescription`` / accessible name).",
+    )
+    role: str | None = Field(
+        default=None,
+        description='The accessible role hint (e.g. ``"button"``, ``"image"``, '
+        '``"heading"``); the renderer maps it to its native role enum.',
+    )
+    hint: str | None = Field(
+        default=None,
+        description="An accessibility hint / tooltip describing what the node does.",
+    )
 
 
 class Widget(BaseModel):
@@ -384,6 +383,4 @@ class Component(Widget):
         Raises:
             NotImplementedError: If a subclass does not implement it.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} must implement render()"
-        )
+        raise NotImplementedError(f"{type(self).__name__} must implement render()")

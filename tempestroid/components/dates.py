@@ -13,6 +13,8 @@ import datetime as _datetime
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import Field
+
 from tempestroid.components.base import (
     ACCENT,
     MUTED,
@@ -40,9 +42,19 @@ class Calendar(Component):
         on_select: Called with the tapped day's ISO ``"YYYY-MM-DD"`` string.
     """
 
-    month: str = ""
-    selected: str = ""
-    on_select: Callable[[str], Any]
+    month: str = Field(
+        default="",
+        description='The displayed month as ``"YYYY-MM"``; empty means the current '
+        "month.",
+    )
+    selected: str = Field(
+        default="",
+        description='The selected day as ``"YYYY-MM-DD"`` (highlighted when it falls '
+        "in the displayed month); empty means no selection.",
+    )
+    on_select: Callable[[str], Any] = Field(
+        description='Called with the tapped day\'s ISO ``"YYYY-MM-DD"`` string.'
+    )
 
     def _year_month(self) -> tuple[int, int]:
         """Resolve the displayed ``(year, month)``.
@@ -159,8 +171,14 @@ class Clock(Component):
         label: An optional caption shown muted under the time.
     """
 
-    time: str = ""
-    label: str | None = None
+    time: str = Field(
+        default="",
+        description='The time text to display (e.g. ``"12:34:56"``); the app formats '
+        "and ticks it from state.",
+    )
+    label: str | None = Field(
+        default=None, description="An optional caption shown muted under the time."
+    )
 
     def render(self) -> Widget:
         """Lower the clock into a centered primitive column.
