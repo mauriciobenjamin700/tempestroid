@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-06-07
+
+### Added
+
+- **Curated icon set (`tempestroid.icons`).** A DIY, dependency-free set of 28
+  common line icons (Lucide-style), each a normalized 24×24 SVG path. Public:
+  `Icons` (StrEnum), `ICON_PATHS`, `icon_path(name)`, `icon_names()`. Both
+  renderers draw the same stroked vector glyph; `Icon(name=…)` now renders a real
+  vector instead of the bare name. **Device-verified.**
+- **Input icons.** `Input` / `Autocomplete` / `Dropdown` gain
+  `leading_icon` / `trailing_icon` — an icon shown inside the field on the
+  start/end edge. **Device-verified.**
+- **Modern secure reveal.** A `secure` `Input` now shows a modern eye / eye-off
+  reveal toggle (the curated icons, not an emoji); Compose grew the toggle it
+  was missing. A `lock` leading icon composes the standard password pattern.
+  **Device-verified** (bidirectional mask/reveal on a Xiaomi device).
+- **`tempest dev --device <preset>`** sizes the simulator window to an Android
+  device preset (e.g. `pixel-7`, `galaxy-s24`); `resolve_device(name)` resolves a
+  forgiving name to a `Device`. Sizes are in dp — the same layout space Compose
+  uses on the device.
+- **`tempest new` ships a ruff config** (line length 79) in the scaffolded
+  project, plus `ruff` in a dev group.
+
+### Changed
+
+- **Field-level documentation.** Every widget/component field (and the typed
+  event payloads) now carries a `Field(description=…)` (423 fields), so
+  `introspect()`, the API reference and IDE hover show per-field help.
+
+### Documentation
+
+- New **enum reference** (every enum's members + meanings) and a dedicated
+  **navigation guide**; full **widget tutorials** (10 per-family pages) and a
+  **simulator-fidelity** section (what the Qt sim reflects vs what only the
+  device shows). The example gallery links every app to its source. Installation
+  split by audience (end user vs contributor); `tempest new` taught as an
+  in-place scaffold. Corrected stale "Compose renders only 5 widgets" claims and
+  marked Track E done. Added a `docs-doctor` maintenance agent.
+
 ## [0.9.4] — 2026-06-06
 
 ### Documentation
