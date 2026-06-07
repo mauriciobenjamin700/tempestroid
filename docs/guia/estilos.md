@@ -78,6 +78,9 @@ Style(
 
 ## Enums
 
+Resumo dos mais usados em `Style`. A **[referência de enums](../referencia/enums.md)**
+documenta os 27 enums com cada membro, valor e significado.
+
 | Enum | Valores |
 |---|---|
 | `FlexDirection` | `ROW`, `COLUMN`. |
