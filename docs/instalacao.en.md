@@ -47,7 +47,8 @@ The `android-host` project that builds the APK **ships inside the pip package**.
 pip install tempestroid          # already bundles the android-host
 tempest setup --install          # install the Android SDK (if missing)
 tempest doctor                   # diagnose what's missing (JDK, SDK, adb, device)
-tempest new myapp && cd myapp
+mkdir my-app && cd my-app        # your project folder (with its venv)
+tempest new                      # scaffold HERE; id = folder name ("my-app")
 tempest build apk                # its own APK (installs side by side with others)
 ```
 

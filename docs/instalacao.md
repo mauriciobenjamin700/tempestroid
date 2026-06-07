@@ -48,7 +48,8 @@ do pacote** instalado pelo `pip`.
 pip install tempestroid          # já traz o android-host embarcado
 tempest setup --install          # instala o Android SDK (se faltar)
 tempest doctor                   # diagnostica o que falta (JDK, SDK, adb, device)
-tempest new meuapp && cd meuapp
+mkdir meu-app && cd meu-app      # sua pasta de projeto (com seu venv)
+tempest new                      # scaffold AQUI; id = nome da pasta ("meu-app")
 tempest build apk                # APK próprio (instala lado a lado com outros)
 ```
 

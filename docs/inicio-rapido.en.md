@@ -15,14 +15,20 @@ the change live.
 
 ## Step 1 — Create a project
 
-The `tempest new` command generates a minimal, already-runnable project: an
-`app.py` (an example counter) and a `README.md` with the day-to-day commands.
+You are already inside your project folder (and its virtualenv). Run
+`tempest new` with **no arguments** to generate the starter files **right here** —
+an `app.py` (example counter), `pyproject.toml`, `README.md` and `.gitignore` —
+using the **current folder name as the app id**. No extra wrapping directory.
 
 ```bash
-uv run tempest new MyApp        # creates MyApp/ with app.py + README.md
+mkdir my-app && cd my-app            # your project folder (with its venv)
+uv run tempest new                   # scaffold HERE; id = "my-app"
 ```
 
-> Installed via `pip`? The binary is available as `tempest new MyApp` (without
+> Want a subdirectory? Pass a name: `uv run tempest new OtherApp` creates
+> `OtherApp/`. But the recommended flow is the in-place one above.
+>
+> Installed via `pip`? The binary is available as `tempest new` (without
 > `uv run`). Throughout this guide we use `uv run tempest …` because it is the
 > repository flow; drop the `uv run ` if you installed via `pip`.
 
@@ -33,10 +39,12 @@ so the **same file** runs in the desktop simulator, ships to the device via
 ## Step 2 — Run it in the simulator
 
 ```bash
-uv run tempest dev MyApp/app.py        # opens the Qt simulator + hot reload
+uv run tempest dev                     # opens the Qt simulator + hot reload
 ```
 
-A window opens with the counter (`-`, the value, `+`). The terminal becomes an
+`tempest dev` (with no argument) reads the app path from `[tool.tempest] app` in
+`pyproject.toml`, so you run it from the project root without pointing at the
+file. A window opens with the counter (`-`, the value, `+`). The terminal becomes an
 interactive *cockpit*:
 
 | Key | Action |
@@ -48,7 +56,7 @@ interactive *cockpit*:
 
 ## Step 3 — Edit and see it live
 
-With the simulator open, open `MyApp/app.py` in your editor and change some text
+With the simulator open, open `app.py` in your editor and change some text
 — for example the title inside `Text`. **Save the file.** `tempest dev` detects
 the write and hot-reloads automatically: the window updates without losing the
 counter.

@@ -4,7 +4,7 @@ The `tempest` entry point covers the app lifecycle: create, develop in the
 simulator, push to the device, package, and inspect the contract.
 
 ```bash
-uv run tempest new MyApp                        # scaffold a new app project
+uv run tempest new                              # scaffold in the current dir (id = folder name)
 uv run python examples/counter/app.py           # run an app directly in the Qt simulator
 uv run tempest dev examples/counter/app.py       # dev loop: edit + save → hot reload
 uv run tempest deploy examples/multifile/main.py # offline push to a device (no SDK/NDK)
@@ -19,7 +19,7 @@ uv run tempest --help
 
 | Command | Status | Description |
 |---|---|---|
-| `tempest new <name>` | ✅ | Scaffolds a runnable app project. |
+| `tempest new` | ✅ | Scaffolds a runnable app project **in the current directory** (id = folder name). Pass a name only to create a subdirectory. |
 | `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs the `qt` extra). |
 | `tempest deploy <app>` | ✅ | **Offline** push of the whole project to a device (no SDK/NDK): install the bundled host + push + launch. |
 | `tempest serve <app>` | ✅ | LAN code-push + hot reload of the whole project (phase B5). |
