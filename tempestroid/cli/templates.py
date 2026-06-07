@@ -182,7 +182,10 @@ class Card(Component):
                 ),
                 Text(
                     content=self.body,
-                    style=Style(color=Color.from_hex(\"#9ca3af\"), font_size=14.0),
+                    style=Style(
+                        color=Color.from_hex(\"#9ca3af\"),
+                        font_size=14.0,
+                    ),
                 ),
             ],
         )
@@ -321,8 +324,8 @@ Push it to a device over LAN (no APK rebuild)::
 The contract every tempestroid app honors: a ``make_state()`` factory and a
 ``view(app)`` builder. This module stays free of Qt imports so it runs on both
 the desktop simulator and the Android device; ``run_qt`` is imported lazily in
-``__main__`` only. Screens live in ``screens/`` (one ``view`` function each) and
-reusable widgets in ``components/``.
+``__main__`` only. Screens live in ``screens/`` (one ``view`` function each)
+and reusable widgets in ``components/``.
 \"\"\"
 
 from __future__ import annotations
@@ -345,8 +348,8 @@ def make_state() -> AppState:
 def view(app: App[AppState]) -> Widget:
     \"\"\"Route to the current screen and wrap it for animated transitions.
 
-    The active route is ``app.nav.top.name`` (the framework's navigation stack);
-    ``app.push(Route(...))`` and ``app.pop`` move between screens.
+    The active route is ``app.nav.top.name`` (the framework's navigation
+    stack); ``app.push(Route(...))`` and ``app.pop`` move between screens.
 
     Args:
         app: The running app.
@@ -357,11 +360,16 @@ def view(app: App[AppState]) -> Widget:
     name = app.nav.top.name
 {routes}
     screen = screen.model_copy(update={{\"key\": name}})
-    return Navigator(child=screen, transition=\"slide\", depth=len(app.nav.stack))
+    return Navigator(
+        child=screen,
+        transition=\"slide\",
+        depth=len(app.nav.stack),
+    )
 
 
 if __name__ == \"__main__\":
-    # Lazy Qt import — keep this module renderer-agnostic (see the module docstring).
+    # Lazy Qt import — keep this module renderer-agnostic
+    # (see the module docstring).
     from tempestroid.renderers.qt import run_qt
 
     raise SystemExit(run_qt(make_state(), view, title=\"%APP_NAME%\"))
@@ -489,9 +497,9 @@ _NATIVE_SCREEN_PY = """\
 Shows the two shapes of native calls:
 
 * **fire-and-forget** — ``notify(...)`` returns immediately.
-* **request/response** — ``await get_position()`` resolves a typed ``Position``;
-  guard with ``on_device()`` (the Qt simulator has no GPS) and catch
-  ``NativeError`` for a denied permission or a missing sensor.
+* **request/response** — ``await get_position()`` resolves a typed
+  ``Position``; guard with ``on_device()`` (the Qt simulator has no GPS) and
+  catch ``NativeError`` for a denied permission or a missing sensor.
 \"\"\"
 
 from __future__ import annotations
@@ -538,7 +546,8 @@ def native_screen(app: App[AppState]) -> Widget:
                 )
             )
         except NativeError as exc:
-            app.set_state(lambda s: setattr(s, \"location\", f\"error: {exc}\"))
+            message = f\"error: {exc}\"
+            app.set_state(lambda s: setattr(s, \"location\", message))
 
     return Column(
         style=Style(
@@ -557,7 +566,11 @@ def native_screen(app: App[AppState]) -> Widget:
                 on_click=send_notification,
                 key=\"notify\",
             ),
-            Button(label=\"Fetch location\", on_click=fetch_location, key=\"locate\"),
+            Button(
+                label=\"Fetch location\",
+                on_click=fetch_location,
+                key=\"locate\",
+            ),
             Text(
                 content=f\"Location: {app.state.location}\",
                 style=Style(color=Color.from_hex(\"#9ca3af\"), font_size=14.0),
