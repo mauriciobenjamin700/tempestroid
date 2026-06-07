@@ -114,11 +114,16 @@ Guardas de saúde do framework, encadeadas pelos *gates*:
 
 ## Próximos passos abertos
 
-- **Validar as capacidades nativas expandidas no device:** os módulos Kotlin de
-  geo/share/câmera/storage/clipboard/bluetooth precisam ser exercitados num
-  device real (rodar `make doctor` → `make apk-install` → `dual-verify`).
-- **Inputs no dispositivo (Compose):** o renderizador Kotlin ainda cai para uma
-  caixa vazia em alguns widgets de entrada; falta crescer os casos no host. No
-  simulador Qt esses widgets já funcionam.
-- **Iniciar o Trilho E por E0 (navegação):** pré-requisito de quase tudo;
-  começar pela sub-tarefa de núcleo (`E0a`) com `make parity PHASE=E0`.
+Trilhos A–D, B (B0–B6) e E (E0–E9) estão **concluídos** e verificados em device:
+os **dois renderizadores** (Qt + Compose) suportam o conjunto completo de
+widgets, incluindo os inputs com valor no aparelho. O que resta é estabilização
+para distribuição (Trilho F — ver [`docs/plan-stable.md`](plan-stable.md)):
+
+- **F2 — validar as capacidades nativas restantes no device** (1 PR por grupo):
+  geolocation, câmera+áudio, share, bluetooth, connectivity+permissões,
+  biometria plena (digital cadastrada) e push FCM real (precisa
+  `google-services.json`). A metade Python já é testada off-device; falta o
+  exercício em hardware (`make doctor` → `make apk-install` → `dual-verify`).
+- **F4 — distribuição profissional:** APK release-assinado standalone (keystore
+  própria), ícone adaptativo (`tempest icon --adaptive`) e matriz de cobertura
+  device dos widgets/nativas restantes.

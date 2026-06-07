@@ -30,17 +30,39 @@ uv run tempest serve examples/<nome>/app.py
 
 ## Conjunto de widgets atual
 
-O framework e o **simulador Qt** suportam o conjunto completo — `Text` / `Button`
-/ `Column` / `Row` / `Container` mais os inputs com valor `Input` / `Checkbox` /
-`DatePicker` / `FilePicker` (veja o exemplo `form`) — com `on_click` e os eventos
-de mudança tipados.
+Os **dois renderizadores** — simulador Qt (desktop) e Compose (dispositivo) —
+suportam o conjunto completo do Trilho E. Não há mais o gap antigo de "o Compose
+só renderiza cinco widgets": os inputs com valor (`Input` / `TextArea` /
+`Checkbox` / `Switch` / `Slider` / `Select` / `DatePicker` / `FilePicker` / …)
+renderizam **nativamente no aparelho** via Jetpack Compose e dobram seus eventos
+tipados de volta no estado. A paridade é fixada pela suíte de conformância
+(*golden snapshots* dos dois tradutores `Style → Qt` e `Style → Compose`) e foi
+verificada em device ao longo de E0–E9.
 
-O **renderizador do dispositivo (Compose)** hoje renderiza `Text` / `Button` /
-`Column` / `Row` / `Container` e `on_click`; os inputs com valor caem para uma
-caixa vazia até o host Kotlin crescer os casos correspondentes (continuação do
-Trilho B). Por isso os apps voltados ao dispositivo permanecem **dirigidos por
-botão**: o `todo` adiciona de um pool predefinido em vez de texto digitado, e o
-`calculator` usa o teclado numérico como superfície de entrada.
+Cobertura (ambos os renderizadores, salvo nota):
+
+| Categoria | Widgets |
+|---|---|
+| Layout | `Column` / `Row` / `Container` / `Stack` / `Wrap` / `ScrollView` / `SafeArea` / `AspectRatio` / `PageView` / `KeyboardAvoidingView` |
+| Texto e ação | `Text` / `Button` / `Icon` / `Image` (`on_click`) |
+| Inputs com valor | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Select` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
+| Listas virtualizadas | `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` (+ pull-to-refresh, scroll infinito) |
+| Navegação | `Navigator` / `TabView` / `TabBar` / `RouteDrawer` |
+| Overlays | `Dialog` / `BottomSheet` / `Menu` / `Popover` / `Toast` / `Tooltip` / `ActionSheet` |
+| Animação | `Animated` / `AnimatedList` / `Hero` / `Shimmer` / `Skeleton` |
+| Gestos | `GestureDetector` / `PanHandler` / `ScaleHandler` / `DoubleTapHandler` / `Draggable` / `DragTarget` / `Dismissible` / `ReorderableList` / `InteractiveViewer` |
+| Mídia e gráficos | `Canvas` / `Svg` / `VideoPlayer` / `WebView` / `Blur` / `BackdropFilter` / `ClipPath` |
+| Indicadores | `ProgressBar` / `Spinner` |
+
+!!! note "Divergência de mídia/câmera (device-only)"
+    Alguns widgets de hardware — `CameraPreview` / `QrScanner` / `MapView` —
+    renderizam só no aparelho (Compose) e aparecem como **placeholder sinalizado
+    no Qt**, não o contrário. As divergências por campo entre os dois tradutores
+    estão documentadas na suíte de conformância (`tests/conformance/`).
+
+Os exemplos `form` e `gallery` exercitam os inputs com valor de verdade — no
+simulador **e** no aparelho. Exemplos como `calculator` continuam dirigidos por
+teclado numérico por *design* do app, não por limite do renderizador.
 
 !!! tip "Handlers estáveis"
     Rebuilds comparam props de *handler* por identidade, então um `lambda` novo a

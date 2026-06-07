@@ -28,9 +28,11 @@ render** (per-platform leaf renderers), tied together by a **pure reconciler**.
 
 `view(app)` returns a `Widget` tree — Pydantic models, frozen where they
 represent immutable values. Each widget is a declarative node: `Text`, `Button`,
-`Column`, `Row`, `Container`, `ScrollView`, and the value-bearing inputs (`Input`,
-`TextArea`, `Checkbox`, `Switch`, `Slider`, `DatePicker`, `FilePicker`), plus
-media (`Image`, `Icon`) and indicators (`ProgressBar`, `Spinner`).
+`Column`, `Row`, `Container`, `ScrollView`, the value-bearing inputs (`Input`,
+`TextArea`, `Checkbox`, `Switch`, `Slider`, `DatePicker`, `FilePicker`, …), plus
+media, indicators, and dozens more (virtualized lists, navigation, overlays,
+animation, gestures) — all supported by **both renderers**. The full list is in
+the [examples guide](guia/exemplos.md#current-widget-set).
 
 ### 2. build → Node
 
