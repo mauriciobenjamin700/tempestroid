@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-06-06
+
+### Documentation
+
+- **`tempest new` taught as an in-place scaffold.** The CLI already defaulted to
+  scaffolding in the current directory with the folder name as the app id; the
+  help text and docs now teach that flow (you are already inside your project +
+  venv) instead of the subfolder-first `tempest new MyApp && cd MyApp`.
+- **Documentation-accuracy sweep + a dedicated `docs-doctor` agent.** Added a
+  `.claude/agents/docs-doctor.md` auditor that grounds doc claims in the source
+  (`introspect()`, `tempest --help`, examples on disk, the device renderer, the
+  phase tables). Its first sweep fixed: a non-existent `Select` widget referenced
+  in the gallery/README (the public widget is `Dropdown`); the `Style` fields
+  table missing `flex_wrap`/`stack_align`/`position`/`font_asset`/`text_scale`
+  and the `FlexWrap`/`StackAlign`/`Position` enums; the API-reference and event
+  catalogs that listed only the A1 primitives (now the full Track-E widget
+  families + all 31 events).
+
 ## [0.9.3] — 2026-06-06
 
 ### Documentation
