@@ -587,8 +587,9 @@ def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
     if renderer_cls is None:
         return None
     # Inline the d string in a minimal stroke-only SVG; escape the path data so a
-    # stray ``<``/``&`` can never break the document (curated paths have none).
-    safe_d = saxutils.escape(d)
+    # stray ``<``/``&``/``"`` can never break the document or the quoted attribute
+    # (curated paths have none, but a custom name's path is escaped defensively).
+    safe_d = saxutils.escape(d, {'"': "&quot;"})
     stroke = color.name(QColor.NameFormat.HexRgb)
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
