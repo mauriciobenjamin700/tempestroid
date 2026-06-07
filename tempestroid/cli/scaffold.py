@@ -147,6 +147,10 @@ description = "A tempestroid app — native Android in typed Python."
 requires-python = ">=3.11"
 dependencies = ["tempestroid[qt]>=0.2"]
 
+[dependency-groups]
+# The linter/formatter. Run `uv run ruff check .` and `uv run ruff format .`.
+dev = ["ruff>=0.6"]
+
 # `tempest dev`/`serve`/`build`/`run` read this, so inside the project you run
 # the commands with no arguments. `tempest build apk` reads the keys below to
 # stamp the APK — set `id` to your own reverse-domain before publishing (the
@@ -159,6 +163,22 @@ app = "app.py"
 # splash = "splash.png"              # boot splash shown while Python starts
 # splash_bg = "#0b0f14"              # splash background colour
 # version = "1.0.0"                  # versionName
+
+# Ruff keeps the project tidy and caps line length at 79 (the convention shared
+# with tempest-fastapi-sdk). Tweak to taste.
+[tool.ruff]
+line-length = 79
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "Q", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 """
 
 README_TEMPLATE = """\
@@ -177,6 +197,8 @@ uv sync                                 # install tempestroid + the Qt simulator
 
 ```bash
 uv run tempest dev                      # Qt simulator + hot reload (edit & save)
+uv run ruff check .                     # lint (line length capped at 79)
+uv run ruff format .                    # auto-format
 ```
 
 In the `tempest dev` cockpit: `r` hot-reloads (state preserved), `R` restarts

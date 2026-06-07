@@ -38,8 +38,12 @@ class Burger(Component):
         glyph: The icon character to display (defaults to ``☰``).
     """
 
-    on_click: Callable[[], Any]
-    glyph: str = "☰"
+    on_click: Callable[[], Any] = Field(
+        description="Invoked when the button is tapped (e.g. to toggle a ``Drawer``)."
+    )
+    glyph: str = Field(
+        default="☰", description="The icon character to display (defaults to ``☰``)."
+    )
 
     def render(self) -> Widget:
         """Lower the burger into a primitive button.
@@ -72,9 +76,18 @@ class Drawer(Component):
         width: The panel width in logical pixels when open.
     """
 
-    open: bool = False
-    children: list[Widget] = Field(default_factory=_no_widgets)
-    width: float = 260.0
+    open: bool = Field(
+        default=False,
+        description="Whether the drawer is expanded; when ``False`` it collapses to an "
+        "empty box.",
+    )
+    children: list[Widget] = Field(
+        description="The widgets stacked inside the open drawer.",
+        default_factory=_no_widgets,
+    )
+    width: float = Field(
+        default=260.0, description="The panel width in logical pixels when open."
+    )
 
     def render(self) -> Widget:
         """Lower the drawer into a primitive panel or an empty box.

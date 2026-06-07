@@ -134,6 +134,7 @@ def _materialize_items(
         for index in range(start, end)
     ]
 
+
 #: An ``item_builder(index) -> Widget`` factory. Like an event handler, it is a
 #: live Python callable that never crosses the native boundary, so it carries a
 #: ``WithJsonSchema`` placeholder for introspection (a bare ``Callable`` has no
@@ -182,12 +183,27 @@ class SectionHeader(BaseModel):
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    title: str
-    item_count: int
-    item_builder: ItemBuilder
-    header_builder: HeaderBuilder
-    window_size: int = DEFAULT_WINDOW_SIZE
-    window: tuple[int, int] | None = None
+    title: str = Field(
+        description="A stable label for the section (used as a key and for the header)."
+    )
+    item_count: int = Field(description="The number of items in this section.")
+    item_builder: ItemBuilder = Field(
+        description="Factory building the item widget at a section-local index."
+    )
+    header_builder: HeaderBuilder = Field(
+        description="Factory building this section's sticky header widget."
+    )
+    window_size: int = Field(
+        default=DEFAULT_WINDOW_SIZE,
+        description="The number of items materialized into this section's initial "
+        "window when :attr:`window` is unset.",
+    )
+    window: tuple[int, int] | None = Field(
+        default=None,
+        description="The current visible ``[start, end)`` window for this section, or "
+        "``None`` to use the initial default. The application slides it on a scroll "
+        "event by replacing the (frozen) section via ``model_copy``.",
+    )
 
     def materialize(self) -> list[Widget]:
         """Materialize this section's header plus its visible item window.
@@ -243,15 +259,38 @@ class LazyColumn(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset()
 
-    item_count: int
-    item_builder: ItemBuilder
-    window_size: int = DEFAULT_WINDOW_SIZE
-    window: tuple[int, int] | None = None
-    end_reached_threshold: float = 0.8
-    refreshing: bool = False
-    on_scroll: ScrollHandler | None = None
-    on_refresh: RefreshHandler | None = None
-    on_end_reached: EndReachedHandler | None = None
+    item_count: int = Field(description="The total number of items in the list.")
+    item_builder: ItemBuilder = Field(
+        description="Factory building the item widget at a given index. Lives only on "
+        "the Python side; never serialized over the boundary.",
+    )
+    window_size: int = Field(
+        default=DEFAULT_WINDOW_SIZE,
+        description="The number of items materialized into the initial window when "
+        ":attr:`window` is unset (so the first mount has content).",
+    )
+    window: tuple[int, int] | None = Field(
+        default=None,
+        description="The current visible ``[start, end)`` window, or ``None`` to use "
+        "the initial default. The application slides this on a scroll event.",
+    )
+    end_reached_threshold: float = Field(
+        default=0.8,
+        description="The fraction ``0..1`` of total scroll at which "
+        ":attr:`on_end_reached` fires.",
+    )
+    refreshing: bool = Field(
+        default=False, description="Whether the pull-to-refresh spinner is active."
+    )
+    on_scroll: ScrollHandler | None = Field(
+        default=None, description="Optional handler for scroll events."
+    )
+    on_refresh: RefreshHandler | None = Field(
+        default=None, description="Optional handler for pull-to-refresh."
+    )
+    on_end_reached: EndReachedHandler | None = Field(
+        default=None, description="Optional handler fired near the end of the list."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Materialize the current visible window into keyed item widgets.
@@ -293,15 +332,38 @@ class LazyRow(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset()
 
-    item_count: int
-    item_builder: ItemBuilder
-    window_size: int = DEFAULT_WINDOW_SIZE
-    window: tuple[int, int] | None = None
-    end_reached_threshold: float = 0.8
-    refreshing: bool = False
-    on_scroll: ScrollHandler | None = None
-    on_refresh: RefreshHandler | None = None
-    on_end_reached: EndReachedHandler | None = None
+    item_count: int = Field(description="The total number of items in the list.")
+    item_builder: ItemBuilder = Field(
+        description="Factory building the item widget at a given index. Lives only on "
+        "the Python side; never serialized over the boundary.",
+    )
+    window_size: int = Field(
+        default=DEFAULT_WINDOW_SIZE,
+        description="The number of items materialized into the initial window when "
+        ":attr:`window` is unset (so the first mount has content).",
+    )
+    window: tuple[int, int] | None = Field(
+        default=None,
+        description="The current visible ``[start, end)`` window, or ``None`` to use "
+        "the initial default. The application slides this on a scroll event.",
+    )
+    end_reached_threshold: float = Field(
+        default=0.8,
+        description="The fraction ``0..1`` of total scroll at which "
+        ":attr:`on_end_reached` fires.",
+    )
+    refreshing: bool = Field(
+        default=False, description="Whether the pull-to-refresh spinner is active."
+    )
+    on_scroll: ScrollHandler | None = Field(
+        default=None, description="Optional handler for scroll events."
+    )
+    on_refresh: RefreshHandler | None = Field(
+        default=None, description="Optional handler for pull-to-refresh."
+    )
+    on_end_reached: EndReachedHandler | None = Field(
+        default=None, description="Optional handler fired near the end of the list."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Materialize the current visible window into keyed item widgets.
@@ -341,14 +403,33 @@ class LazyGrid(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset()
 
-    item_count: int
-    item_builder: ItemBuilder
-    columns: int = 2
-    window_size: int = DEFAULT_WINDOW_SIZE
-    window: tuple[int, int] | None = None
-    end_reached_threshold: float = 0.8
-    on_scroll: ScrollHandler | None = None
-    on_end_reached: EndReachedHandler | None = None
+    item_count: int = Field(description="The total number of items in the grid.")
+    item_builder: ItemBuilder = Field(
+        description="Factory building the item widget at a given index. Lives only on "
+        "the Python side; never serialized over the boundary.",
+    )
+    columns: int = Field(default=2, description="The number of grid columns.")
+    window_size: int = Field(
+        default=DEFAULT_WINDOW_SIZE,
+        description="The number of items materialized into the initial window when "
+        ":attr:`window` is unset (so the first mount has content).",
+    )
+    window: tuple[int, int] | None = Field(
+        default=None,
+        description="The current visible ``[start, end)`` window, or ``None`` to use "
+        "the initial default. The application slides this on a scroll event.",
+    )
+    end_reached_threshold: float = Field(
+        default=0.8,
+        description="The fraction ``0..1`` of total scroll at which "
+        ":attr:`on_end_reached` fires.",
+    )
+    on_scroll: ScrollHandler | None = Field(
+        default=None, description="Optional handler for scroll events."
+    )
+    on_end_reached: EndReachedHandler | None = Field(
+        default=None, description="Optional handler fired near the end of the grid."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Materialize the current visible window into keyed item widgets.
@@ -382,10 +463,20 @@ class SectionList(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset()
 
-    sections: list[SectionHeader] = Field(default_factory=_empty_sections)
-    end_reached_threshold: float = 0.8
-    on_scroll: ScrollHandler | None = None
-    on_end_reached: EndReachedHandler | None = None
+    sections: list[SectionHeader] = Field(
+        description="The ordered sections to render.", default_factory=_empty_sections
+    )
+    end_reached_threshold: float = Field(
+        default=0.8,
+        description="The fraction ``0..1`` of total scroll at which "
+        ":attr:`on_end_reached` fires.",
+    )
+    on_scroll: ScrollHandler | None = Field(
+        default=None, description="Optional handler for scroll events."
+    )
+    on_end_reached: EndReachedHandler | None = Field(
+        default=None, description="Optional handler fired near the end of the list."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Materialize each section's header and visible item window in order.
@@ -419,5 +510,9 @@ class RefreshControl(Widget):
 
     child_field_names: ClassVar[frozenset[str]] = frozenset()
 
-    refreshing: bool = False
-    on_refresh: RefreshHandler | None = None
+    refreshing: bool = Field(
+        default=False, description="Whether the pull-to-refresh spinner is active."
+    )
+    on_refresh: RefreshHandler | None = Field(
+        default=None, description="Optional handler for pull-to-refresh."
+    )

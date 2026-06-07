@@ -218,8 +218,20 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
 
 - `Style → Qt`: padding is QSS for leaves, `contentsMargins` for containers (no
   double-count). `justify`/`align` `START/CENTER/END` → Qt alignment flags;
-  `SPACE_*` and `AlignItems.STRETCH` fall through to Qt defaults (post-v1).
-  `grow` → layout stretch factor; `width/height` fixed-size is not wired yet.
+  `grow` → layout stretch factor. **Fidelity gaps closed (`feat/qt-fidelity`):**
+  `text_align` (LEFT/CENTER/RIGHT/JUSTIFY) is now honored on a leaf `Text` via
+  `QLabel.setAlignment` (`_text_alignment`/`_apply_text_flow`); fixed
+  `width`/`height` via `setFixedWidth`/`setFixedHeight` (`_apply_sizing`, idempotent
+  reset to flexible `[0, QWIDGETSIZE_MAX]` when unset, so `grow`/stretch is
+  untouched); `SPACE_BETWEEN`/`SPACE_AROUND`/`SPACE_EVENLY` realized with stretch
+  spacers around children in `_sync_main_axis` (between-only, ends-doubled for
+  AROUND, ends-equal for EVENLY); `AlignItems.STRETCH` fills the cross axis via
+  Qt's default packing (no alignment flag emitted). All realized **imperatively in
+  the renderer**, not the `Style` translator — so the conformance `_COVERAGE`
+  table keeps `qt_reacts=False` for `text_align`/`width`/`height` (the translator
+  is inert; the simulator still renders them, matching Compose). The simulator can
+  also be sized to a `Device` preset: `run_qt`/`run_dev` accept an optional
+  `device: Device | None` (wins over `size` when both given).
 - `QtRenderer` owns a *host* widget so a root `Replace` is a uniform child swap.
   Updates re-apply the full merged visual idempotently. Headless tests run under
   `QT_QPA_PLATFORM=offscreen` (see `tests/conftest.py`).

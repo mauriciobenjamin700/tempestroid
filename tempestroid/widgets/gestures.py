@@ -112,11 +112,27 @@ class GestureDetector(Widget):
     }
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    on_tap: TapHandler | None = None
-    on_double_tap: TapHandler | None = None
-    on_long_press: LongPressHandler | None = None
-    on_swipe: SwipeHandler | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget the gestures are detected over."
+    )
+    on_tap: TapHandler | None = Field(
+        default=None,
+        description="Optional handler for a single tap (receives a ``TapEvent``).",
+    )
+    on_double_tap: TapHandler | None = Field(
+        default=None,
+        description="Optional handler for a double tap (receives a ``TapEvent``).",
+    )
+    on_long_press: LongPressHandler | None = Field(
+        default=None,
+        description="Optional handler for a held press past the long-press threshold "
+        "(receives a ``LongPressEvent``).",
+    )
+    on_swipe: SwipeHandler | None = Field(
+        default=None,
+        description="Optional handler for a directional swipe (receives a "
+        "``SwipeEvent``).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -141,8 +157,13 @@ class PanHandler(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_pan": PanEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    on_pan: PanHandler_T | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget the pan is detected over."
+    )
+    on_pan: PanHandler_T | None = Field(
+        default=None,
+        description="Optional handler for the pan gesture (receives a ``PanEvent``).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -170,9 +191,19 @@ class ScaleHandler(Widget):
     }
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    on_scale: ScaleHandler_T | None = None
-    on_double_tap: TapHandler | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget the gestures are detected over."
+    )
+    on_scale: ScaleHandler_T | None = Field(
+        default=None,
+        description="Optional handler for a pinch (receives a ``ScaleEvent`` with the "
+        "cumulative scale, focal point and rotation).",
+    )
+    on_double_tap: TapHandler | None = Field(
+        default=None,
+        description="Optional handler for a double tap (receives a ``TapEvent``; a "
+        "common pairing with pinch to reset the zoom).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -194,8 +225,13 @@ class DoubleTapHandler(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_double_tap": TapEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    on_double_tap: TapHandler | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget the double tap is detected over."
+    )
+    on_double_tap: TapHandler | None = Field(
+        default=None,
+        description="Optional handler for a double tap (receives a ``TapEvent``).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -221,9 +257,19 @@ class Draggable(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_drag": DragEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    drag_data: str = ""
-    on_drag: DragHandler | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget the user drags."
+    )
+    drag_data: str = Field(
+        default="",
+        description="An opaque label carried to the drop target via the "
+        "``DragEvent.data`` field, so the target can identify what landed on it.",
+    )
+    on_drag: DragHandler | None = Field(
+        default=None,
+        description="Optional handler fired when the drag finishes (receives a "
+        "``DragEvent`` with the carried data and the release position).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -246,8 +292,14 @@ class DragTarget(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_drop": DragEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    on_drop: DragHandler | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget that acts as the drop region."
+    )
+    on_drop: DragHandler | None = Field(
+        default=None,
+        description="Optional handler fired when a draggable is released over this "
+        "target (receives a ``DragEvent`` carrying the dropped item's data).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -273,9 +325,21 @@ class Dismissible(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_dismiss": DismissEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    direction: SwipeDirection = SwipeDirection.LEFT
-    on_dismiss: DismissHandler | None = None
+    child: Widget | None = Field(
+        default=None,
+        description="The wrapped widget the dismiss gesture is detected over.",
+    )
+    direction: SwipeDirection = Field(
+        default=SwipeDirection.LEFT,
+        description="The swipe direction that triggers the dismiss (defaults to "
+        ":attr:`~tempestroid.widgets.events.SwipeDirection.LEFT`).",
+    )
+    on_dismiss: DismissHandler | None = Field(
+        default=None,
+        description="Optional handler fired once the swipe passes the dismiss "
+        "threshold (receives a ``DismissEvent``; reuses the overlay-dismiss event "
+        "type).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.
@@ -304,8 +368,16 @@ class ReorderableList(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_reorder": ReorderEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
 
-    children: list[Widget] = Field(default_factory=_empty_children)
-    on_reorder: ReorderHandler | None = None
+    children: list[Widget] = Field(
+        description="The ordered list items. Prefer stable ``key``s so the keyed diff "
+        "emits a ``Reorder`` rather than positional updates.",
+        default_factory=_empty_children,
+    )
+    on_reorder: ReorderHandler | None = Field(
+        default=None,
+        description="Optional handler fired when an item is dragged to a new slot "
+        "(receives a ``ReorderEvent`` with the source and destination index).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the list items in order.
@@ -330,10 +402,20 @@ class InteractiveViewer(Widget):
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_interaction": ScaleEvent}
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
 
-    child: Widget | None = None
-    min_scale: float = 0.5
-    max_scale: float = 4.0
-    on_interaction: ScaleHandler_T | None = None
+    child: Widget | None = Field(
+        default=None, description="The wrapped widget that is panned and zoomed."
+    )
+    min_scale: float = Field(
+        default=0.5, description="The minimum allowed zoom factor."
+    )
+    max_scale: float = Field(
+        default=4.0, description="The maximum allowed zoom factor."
+    )
+    on_interaction: ScaleHandler_T | None = Field(
+        default=None,
+        description="Optional handler fired as the view transforms (receives a "
+        "``ScaleEvent`` with the current scale, focal point and rotation).",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the wrapped child, if any.

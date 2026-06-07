@@ -130,6 +130,7 @@ nav:
           - Gestos: guia/widgets/gestures.md
           - Mídia e gráficos: guia/widgets/media.md
           - Componentes compostos: guia/widgets/components.md
+      - Navegação entre telas: guia/navegacao.md
       - Estilos: guia/estilos.md
       - Eventos: guia/eventos.md
       - CLI (tempest): guia/cli.md
@@ -138,6 +139,7 @@ nav:
       - Rodar no dispositivo (WSL): guia/dispositivo-wsl.md
   - Referência:
       - API pública: referencia/api.md
+      - Enums: referencia/enums.md
       - Lado do dispositivo (ponte): referencia/dispositivo.md
   - Projeto:
       - Roadmap e fases: roadmap.md

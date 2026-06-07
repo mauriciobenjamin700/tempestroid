@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from tempestroid.widgets.base import Widget
 
 __all__ = ["Text"]
@@ -14,4 +16,4 @@ class Text(Widget):
         content: The string to display.
     """
 
-    content: str
+    content: str = Field(description="The string to display.")

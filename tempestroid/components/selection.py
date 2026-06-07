@@ -37,9 +37,13 @@ class SegmentedControl(Component):
         on_select: Called with the tapped segment's index.
     """
 
-    options: list[str] = Field(default_factory=_no_labels)
-    selected: int = 0
-    on_select: Callable[[int], Any]
+    options: list[str] = Field(
+        description="The visible segment labels, in order.", default_factory=_no_labels
+    )
+    selected: int = Field(default=0, description="The index of the active segment.")
+    on_select: Callable[[int], Any] = Field(
+        description="Called with the tapped segment's index."
+    )
 
     def _handler(self, index: int) -> Callable[[], None]:
         """Build a zero-argument handler selecting ``index``.
@@ -62,9 +66,7 @@ class SegmentedControl(Component):
         Returns:
             A ``Row`` of segment buttons with the active one highlighted.
         """
-        default = Style(
-            gap=4.0, padding=Edge.all(4.0), radius=10.0, background=SURFACE
-        )
+        default = Style(gap=4.0, padding=Edge.all(4.0), radius=10.0, background=SURFACE)
         return Row(
             key=self.key or "segmented",
             style=merge_style(default, self.style),
@@ -100,9 +102,13 @@ class RadioGroup(Component):
         on_select: Called with the tapped option's index.
     """
 
-    options: list[str] = Field(default_factory=_no_labels)
-    selected: int = 0
-    on_select: Callable[[int], Any]
+    options: list[str] = Field(
+        description="The choice labels, in order.", default_factory=_no_labels
+    )
+    selected: int = Field(default=0, description="The index of the chosen option.")
+    on_select: Callable[[int], Any] = Field(
+        description="Called with the tapped option's index."
+    )
 
     def _handler(self, index: int) -> Callable[[], None]:
         """Build a zero-argument handler selecting ``index``.
@@ -156,9 +162,16 @@ class Chip(Component):
         on_click: Optional tap handler; when ``None`` the chip is presentational.
     """
 
-    label: str = ""
-    selected: bool = False
-    on_click: Callable[[], Any] | None = None
+    label: str = Field(default="", description="The chip text.")
+    selected: bool = Field(
+        default=False,
+        description="Whether the chip reads as active (only meaningful with "
+        "``on_click``).",
+    )
+    on_click: Callable[[], Any] | None = Field(
+        default=None,
+        description="Optional tap handler; when ``None`` the chip is presentational.",
+    )
 
     def render(self) -> Widget:
         """Lower the chip into a primitive button or a static pill.
@@ -198,9 +211,13 @@ class Rating(Component):
             when ``None`` the rating is presentational.
     """
 
-    value: int = 0
-    max_stars: int = 5
-    on_rate: Callable[[int], Any] | None = None
+    value: int = Field(default=0, description="The number of filled stars.")
+    max_stars: int = Field(default=5, description="The total number of stars shown.")
+    on_rate: Callable[[int], Any] | None = Field(
+        default=None,
+        description="Optional handler called with the tapped star's 1-based value; "
+        "when ``None`` the rating is presentational.",
+    )
 
     def _handler(self, rating: int) -> Callable[[], None]:
         """Build a zero-argument handler reporting ``rating``.

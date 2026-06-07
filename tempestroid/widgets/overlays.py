@@ -62,9 +62,13 @@ class MenuItem(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    label: str
-    value: str
-    icon: str | None = None
+    label: str = Field(description="The display label.")
+    value: str = Field(
+        description="The stable value reported by :class:`MenuSelectEvent` on select."
+    )
+    icon: str | None = Field(
+        default=None, description="Optional icon name to render alongside the label."
+    )
 
 
 def _empty_items() -> list[MenuItem]:
@@ -89,9 +93,15 @@ class Dialog(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_dismiss": DismissEvent}
 
-    title: str | None = None
-    children: list[Widget] = Field(default_factory=_empty_children)
-    on_dismiss: DismissHandler | None = None
+    title: str | None = Field(default=None, description="Optional dialog title.")
+    children: list[Widget] = Field(
+        description="The dialog body widgets.", default_factory=_empty_children
+    )
+    on_dismiss: DismissHandler | None = Field(
+        default=None,
+        description="Handler invoked when the user dismisses the dialog (barrier tap "
+        "or system back), validated against :class:`DismissEvent`.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the dialog's body widgets.
@@ -114,8 +124,14 @@ class BottomSheet(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_dismiss": DismissEvent}
 
-    children: list[Widget] = Field(default_factory=_empty_children)
-    on_dismiss: DismissHandler | None = None
+    children: list[Widget] = Field(
+        description="The sheet body widgets.", default_factory=_empty_children
+    )
+    on_dismiss: DismissHandler | None = Field(
+        default=None,
+        description="Handler invoked when the user dismisses the sheet (barrier tap or "
+        "swipe-down), validated against :class:`DismissEvent`.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the sheet's body widgets.
@@ -140,8 +156,10 @@ class Toast(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    message: str
-    duration_s: float = 2.5
+    message: str = Field(description="The text to display.")
+    duration_s: float = Field(
+        default=2.5, description="How long the toast stays visible, in seconds."
+    )
 
 
 class Tooltip(Widget):
@@ -155,8 +173,10 @@ class Tooltip(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    message: str
-    child: Widget | None = None
+    message: str = Field(description="The hint text.")
+    child: Widget | None = Field(
+        default=None, description="Optional widget the tooltip annotates."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the annotated child, if any.
@@ -179,9 +199,17 @@ class Menu(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_select": MenuSelectEvent}
 
-    items: list[MenuItem] = Field(default_factory=_empty_items)
-    anchor: str | None = None
-    on_select: MenuSelectHandler | None = None
+    items: list[MenuItem] = Field(
+        description="The selectable entries.", default_factory=_empty_items
+    )
+    anchor: str | None = Field(
+        default=None, description="Optional ``key`` of the widget the menu anchors to."
+    )
+    on_select: MenuSelectHandler | None = Field(
+        default=None,
+        description="Handler invoked on item selection, validated against "
+        ":class:`MenuSelectEvent`.",
+    )
 
 
 class Popover(Widget):
@@ -197,9 +225,18 @@ class Popover(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_dismiss": DismissEvent}
 
-    child: Widget | None = None
-    anchor: str | None = None
-    on_dismiss: DismissHandler | None = None
+    child: Widget | None = Field(
+        default=None, description="Optional widget shown inside the popover."
+    )
+    anchor: str | None = Field(
+        default=None,
+        description="Optional ``key`` of the widget the popover anchors to.",
+    )
+    on_dismiss: DismissHandler | None = Field(
+        default=None,
+        description="Handler invoked on dismiss, validated against "
+        ":class:`DismissEvent`.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the popover's child, if any.
@@ -222,6 +259,12 @@ class ActionSheet(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {"on_select": MenuSelectEvent}
 
-    title: str | None = None
-    items: list[MenuItem] = Field(default_factory=_empty_items)
-    on_select: MenuSelectHandler | None = None
+    title: str | None = Field(default=None, description="Optional sheet title.")
+    items: list[MenuItem] = Field(
+        description="The selectable actions.", default_factory=_empty_items
+    )
+    on_select: MenuSelectHandler | None = Field(
+        default=None,
+        description="Handler invoked on action selection, validated against "
+        ":class:`MenuSelectEvent`.",
+    )

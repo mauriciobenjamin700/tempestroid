@@ -89,10 +89,24 @@ class Animated(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    child: Widget
-    controller: Any = None
-    style_begin: Any = None
-    style_end: Any = None
+    child: Widget = Field(
+        description="The wrapped widget (mounted with its per-frame interpolated "
+        "style).",
+    )
+    controller: Any = Field(
+        default=None,
+        description="The :class:`~tempestroid.animation.AnimationController` driving "
+        "the interpolation (typed ``Any`` to avoid an import cycle through the core "
+        "animation module).",
+    )
+    style_begin: Any = Field(
+        default=None,
+        description="The style at ``value == 0.0`` (or ``None`` to use the child's own "
+        "style as the start).",
+    )
+    style_end: Any = Field(
+        default=None, description="The style at ``value == 1.0`` (or ``None``)."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the single wrapped child.
@@ -125,12 +139,27 @@ class AnimatedList(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"children"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    direction: FlexDirection = FlexDirection.COLUMN
-    children: list[Widget] = Field(default_factory=_empty_children)
-    enter_duration_ms: int = 300
-    exit_duration_ms: int = 300
-    enter_curve: Curve = Curve.EASE_OUT
-    exit_curve: Curve = Curve.EASE_IN
+    direction: FlexDirection = Field(
+        default=FlexDirection.COLUMN,
+        description="The main-axis direction (column or row).",
+    )
+    children: list[Widget] = Field(
+        description="The ordered child widgets.", default_factory=_empty_children
+    )
+    enter_duration_ms: int = Field(
+        default=300, description="Enter-animation duration in milliseconds."
+    )
+    exit_duration_ms: int = Field(
+        default=300, description="Exit-animation duration in milliseconds."
+    )
+    enter_curve: Curve = Field(
+        default=Curve.EASE_OUT,
+        description="The easing curve applied to the enter animation.",
+    )
+    exit_curve: Curve = Field(
+        default=Curve.EASE_IN,
+        description="The easing curve applied to the exit animation.",
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the list's children in order.
@@ -158,8 +187,12 @@ class Hero(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    hero_tag: str
-    child: Widget
+    hero_tag: str = Field(
+        description="The shared-element identity (must match across screens)."
+    )
+    child: Widget = Field(
+        description="The wrapped widget that participates in the transition."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the single wrapped child.
@@ -189,10 +222,16 @@ class Shimmer(Widget):
     child_field_names: ClassVar[frozenset[str]] = frozenset({"child"})
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    child: Widget
-    base_color: Color = Field(default_factory=_shimmer_base)
-    highlight_color: Color = Field(default_factory=_shimmer_highlight)
-    duration_ms: int = 1200
+    child: Widget = Field(description="The wrapped widget the shimmer paints over.")
+    base_color: Color = Field(
+        description="The resting tone of the gradient.", default_factory=_shimmer_base
+    )
+    highlight_color: Color = Field(
+        description="The moving highlight tone.", default_factory=_shimmer_highlight
+    )
+    duration_ms: int = Field(
+        default=1200, description="The duration of one full sweep, in milliseconds."
+    )
 
     def child_nodes(self) -> list[Widget]:
         """Return the single wrapped child.
@@ -222,9 +261,23 @@ class Skeleton(Widget):
 
     event_schemas: ClassVar[dict[str, type[Event]]] = {}
 
-    width: float | None = None
-    height: float | None = None
-    radius: float = 4.0
-    base_color: Color = Field(default_factory=_shimmer_base)
-    highlight_color: Color = Field(default_factory=_shimmer_highlight)
-    duration_ms: int = 1200
+    width: float | None = Field(
+        default=None,
+        description="The fixed width in logical pixels, or ``None`` to flex.",
+    )
+    height: float | None = Field(
+        default=None,
+        description="The fixed height in logical pixels, or ``None`` to flex.",
+    )
+    radius: float = Field(
+        default=4.0, description="The corner radius in logical pixels."
+    )
+    base_color: Color = Field(
+        description="The resting tone of the gradient.", default_factory=_shimmer_base
+    )
+    highlight_color: Color = Field(
+        description="The moving highlight tone.", default_factory=_shimmer_highlight
+    )
+    duration_ms: int = Field(
+        default=1200, description="The duration of one full sweep, in milliseconds."
+    )

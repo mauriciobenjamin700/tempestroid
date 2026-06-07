@@ -20,7 +20,7 @@ uv run tempest --help
 | Comando | Status | Descrição |
 |---|---|---|
 | `tempest new` | ✅ | Cria um projeto de app executável **na pasta atual** (id = nome da pasta). Passe um nome só para criar uma subpasta. |
-| `tempest dev <app>` | ✅ | Simulador + hot reload / hot restart (precisa do extra `qt`). |
+| `tempest dev <app>` | ✅ | Simulador + hot reload / hot restart (precisa do extra `qt`). `--device`/`-d` dimensiona a janela a um preset de aparelho (ex.: `pixel-7`, `galaxy-s24`). |
 | `tempest deploy <app>` | ✅ | Push **offline** do projeto inteiro no aparelho (sem SDK/NDK): instala o host empacotado + empurra + abre. |
 | `tempest serve <app>` | ✅ | Code-push por LAN + hot reload do projeto inteiro (fase B5). |
 | `tempest install [src]` | ✅ | adb-instala o host pré-compilado (sem SDK/NDK). |

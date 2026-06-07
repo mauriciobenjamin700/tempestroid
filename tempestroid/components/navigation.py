@@ -46,9 +46,15 @@ class NavBar(Component):
         on_select: Called with the tapped item's index when an item is pressed.
     """
 
-    items: list[str] = Field(default_factory=_no_labels)
-    active: int = 0
-    on_select: Callable[[int], Any]
+    items: list[str] = Field(
+        description="The visible item labels, in order.", default_factory=_no_labels
+    )
+    active: int = Field(
+        default=0, description="The index of the currently selected item."
+    )
+    on_select: Callable[[int], Any] = Field(
+        description="Called with the tapped item's index when an item is pressed."
+    )
 
     def _make_handler(self, index: int) -> Callable[[], None]:
         """Build a zero-argument handler that selects ``index``.
@@ -122,9 +128,17 @@ class Breadcrumb(Component):
             never tappable.
     """
 
-    items: list[str] = Field(default_factory=_no_labels)
-    separator: str = "/"
-    on_select: Callable[[int], Any] | None = None
+    items: list[str] = Field(
+        description="The crumb labels from root to current, in order.",
+        default_factory=_no_labels,
+    )
+    separator: str = Field(default="/", description="The text drawn between crumbs.")
+    on_select: Callable[[int], Any] | None = Field(
+        default=None,
+        description="Optional handler called with a crumb's index when tapped; when "
+        "``None`` the crumbs are presentational. The last crumb (current) is never "
+        "tappable.",
+    )
 
     def _handler(self, index: int) -> Callable[[], None]:
         """Build a zero-argument handler selecting crumb ``index``.

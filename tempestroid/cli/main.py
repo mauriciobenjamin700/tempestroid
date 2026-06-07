@@ -83,6 +83,15 @@ def dev_cmd(
             help="Path to the app file. Omitted → read [tool.tempest] app.",
         ),
     ] = None,
+    device: Annotated[
+        str | None,
+        typer.Option(
+            "--device",
+            "-d",
+            help="Size the simulator to a device preset (e.g. pixel-7, "
+            "galaxy-s24, redmi-note-12). Defaults to a generic mid-size phone.",
+        ),
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option(
@@ -94,7 +103,7 @@ def dev_cmd(
 ) -> None:
     """Run the simulator dev loop."""
     resolved = _resolve_app_or_exit(app_path)
-    raise typer.Exit(_run_dev(resolved, verbose))
+    raise typer.Exit(_run_dev(resolved, verbose, device))
 
 
 @app.command("serve", rich_help_panel="Create & develop")
@@ -575,16 +584,28 @@ def _resolve_app_or_exit(app_path: str | None) -> str:
         raise typer.Exit(1) from exc
 
 
-def _run_dev(app: str, verbose: bool) -> int:
+def _run_dev(app: str, verbose: bool, device: str | None = None) -> int:
     """Dispatch to the Qt dev cockpit, importing Qt lazily.
 
     Args:
         app: Path to the app file.
         verbose: Print full tracebacks when a save fails to reload.
+        device: Optional device-preset name sizing the simulator viewport.
 
     Returns:
         The process exit code.
     """
+    resolved_device = None
+    if device is not None:
+        from tempestroid.devices import resolve_device
+
+        resolved_device = resolve_device(device)
+        if resolved_device is None:
+            print(
+                f"unknown device {device!r}. Try one like: pixel-7, galaxy-s24, "
+                "redmi-note-12 (see the docs for the full list)."
+            )
+            return 1
     try:
         from tempestroid.renderers.qt import run_dev
     except ImportError:
@@ -593,7 +614,7 @@ def _run_dev(app: str, verbose: bool) -> int:
             'uv sync --extra qt  (or  pip install "tempestroid[qt]").'
         )
         return 1
-    return run_dev(app, verbose=verbose)
+    return run_dev(app, verbose=verbose, device=resolved_device)
 
 
 def _lan_ip() -> str:
