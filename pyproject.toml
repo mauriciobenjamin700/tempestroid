@@ -1,6 +1,6 @@
 [project]
 name = "tempestroid"
-version = "0.9.0"
+version = "0.9.1"
 description = "Framework for building native Android apps in typed Python — declarative typed UI tree, Qt simulator + Compose device renderers."
 readme = "README.md"
 requires-python = ">=3.11"

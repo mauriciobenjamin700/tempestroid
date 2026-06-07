@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-06-06
+
+### Documentation
+
+- **Installation page split by audience.** `docs/instalacao.md` (+ EN) now leads
+  with **End users** (`pip install` + an extras table + a JDK/SDK-only Android
+  build flow) and keeps **Contributors** (`uv sync` + gates + docs) as a clearly
+  separated second section, instead of opening on contributor setup. The
+  README install section is now end-user-first (the PyPI/GitHub face) and links
+  to the guide. Fixed the stale Android prerequisites table (it claimed NDK +
+  CPython toolchain were required; `tempest build apk` needs only JDK + SDK since
+  the `android-host` ships in the wheel).
+- **Class docstrings list their public methods.** The user-facing API classes —
+  `Color`, `Edge`, `Style`, `App`, `Form`, `NavStack`, `AnimationController`,
+  `Tween`, `Theme`, `Locale` — gained a `Methods:`/`Properties:` section, so the
+  method surface is visible on IDE hover and in the source, not only in the
+  generated API reference.
+
 ## [0.9.0] — 2026-06-06
 
 ### Added
