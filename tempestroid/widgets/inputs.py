@@ -14,6 +14,7 @@ from typing import ClassVar
 
 from pydantic import Field
 
+from tempestroid.icons import Icons
 from tempestroid.widgets.base import (
     DateChangeHandler,
     FileSelectHandler,
@@ -126,14 +127,14 @@ class Input(Widget):
     max_length: int | None = Field(
         default=None, description="An optional cap on the number of characters."
     )
-    leading_icon: str | None = Field(
+    leading_icon: Icons | str | None = Field(
         default=None,
         description=(
             "Optional icon name shown inside the field on the start (leading) "
             "edge — a curated Icons value or an arbitrary platform icon name."
         ),
     )
-    trailing_icon: str | None = Field(
+    trailing_icon: Icons | str | None = Field(
         default=None,
         description=(
             "Optional icon name shown inside the field on the end (trailing) "
@@ -325,14 +326,14 @@ class Dropdown(Widget):
     placeholder: str = Field(
         default="Select…", description="The hint shown while no option is selected."
     )
-    leading_icon: str | None = Field(
+    leading_icon: Icons | str | None = Field(
         default=None,
         description=(
             "Optional icon name shown inside the control on the start (leading) "
             "edge — a curated Icons value or an arbitrary platform icon name."
         ),
     )
-    trailing_icon: str | None = Field(
+    trailing_icon: Icons | str | None = Field(
         default=None,
         description=(
             "Optional icon name shown inside the control on the end (trailing) "
@@ -440,14 +441,14 @@ class Autocomplete(Widget):
     placeholder: str = Field(
         default="", description="The hint shown when the field is empty."
     )
-    leading_icon: str | None = Field(
+    leading_icon: Icons | str | None = Field(
         default=None,
         description=(
             "Optional icon name shown inside the field on the start (leading) "
             "edge — a curated Icons value or an arbitrary platform icon name."
         ),
     )
-    trailing_icon: str | None = Field(
+    trailing_icon: Icons | str | None = Field(
         default=None,
         description=(
             "Optional icon name shown inside the field on the end (trailing) "

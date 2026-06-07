@@ -553,10 +553,21 @@ name to `Icon(name=…)` or to an input's `leading_icon`/`trailing_icon`.
   `Icons.SEARCH`, … `Icons.EYE == "eye"`), so you get autocomplete and may also
   pass the raw string.
 - **`ICON_PATHS`** — `dict[str, str]` mapping each name to its SVG path `d` data.
-- **`icon_path(name)`** — resolve an `Icons` member or raw string to its `d`
-  string, or `None` when unknown (renderers fall back to the platform set / the
-  raw name).
-- **`icon_names()`** — the sorted list of available names.
+- **`icon_path(name)`** — resolve an `Icons` member or raw string (curated or
+  custom) to its `d` string, or `None` when unknown (renderers fall back to the
+  platform set / the raw name).
+- **`icon_names()`** — the sorted list of available names (curated + custom).
+- **`svg_to_path(source)`** — convert an SVG image (a file path or raw markup) to
+  one normalized `d` string, flattening `path`/`circle`/`line`/`rect`/`polyline`/
+  `polygon` shapes — so a project SVG becomes a tempestroid icon.
+- **`register_icon(name, source=…)` / `register_icon(name, path=…)`** — register
+  a custom icon (from an SVG file/markup, or a ready `d`) under a name, so
+  `Icon(name=…)`, an input's `leading_icon`/`trailing_icon` and `icon_path` all
+  resolve it like a built-in.
+
+Input icon slots are typed **`Icons | str | None`**: pass an `Icons` member for
+autocomplete on the curated set, or any string for a registered custom / platform
+icon.
 
 ### Components (`tempestroid.components`)
 
