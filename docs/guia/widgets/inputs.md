@@ -61,6 +61,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Input](../../assets/components/input.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `value` | `str` | `""` | Conteúdo atual do campo. |
@@ -113,6 +115,8 @@ def make_state() -> State:
     return State()
 ```
 
+![TextArea](../../assets/components/text_area.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `value` | `str` | `""` | Conteúdo atual. |
@@ -160,6 +164,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Checkbox](../../assets/components/checkbox.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `label` | `str` | `""` | Rótulo exibido ao lado da caixa. |
@@ -204,6 +210,8 @@ def view(app: App) -> Column:
 def make_state() -> State:
     return State()
 ```
+
+![Switch](../../assets/components/switch.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -251,6 +259,8 @@ def view(app: App) -> Column:
 def make_state() -> State:
     return State()
 ```
+
+![Slider](../../assets/components/slider.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -309,6 +319,8 @@ def make_state() -> State:
     return State()
 ```
 
+![RangeSlider](../../assets/components/range_slider.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `low` | `float` | `0.0` | Valor do identificador inferior. |
@@ -361,6 +373,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Dropdown](../../assets/components/dropdown.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `options` | `list[str]` | `[]` | Lista de opções disponíveis. |
@@ -407,6 +421,8 @@ def make_state() -> State:
     return State()
 ```
 
+![DatePicker](../../assets/components/date_picker.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `value` | `str` | `""` | Data selecionada em formato ISO (`yyyy-mm-dd`). |
@@ -451,6 +467,8 @@ def view(app: App) -> Column:
 def make_state() -> State:
     return State()
 ```
+
+![TimePicker](../../assets/components/time_picker.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -497,6 +515,8 @@ def view(app: App) -> Column:
 def make_state() -> State:
     return State()
 ```
+
+![FilePicker](../../assets/components/file_picker.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -558,6 +578,8 @@ def make_state() -> State:
     return State()
 ```
 
+![PinInput](../../assets/components/pin_input.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `length` | `int` | `6` | Número de células (dígitos). |
@@ -613,6 +635,8 @@ def view(app: App) -> Column:
 def make_state() -> State:
     return State()
 ```
+
+![MaskedInput](../../assets/components/masked_input.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -674,6 +698,8 @@ def view(app: App) -> Column:
 def make_state() -> State:
     return State()
 ```
+
+![Autocomplete](../../assets/components/autocomplete.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|

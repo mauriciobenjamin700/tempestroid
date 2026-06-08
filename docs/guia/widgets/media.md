@@ -39,6 +39,8 @@ Column(
 )
 ```
 
+![Image](../../assets/components/image.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `src` | `str` | *(obrigatório)* | URL ou caminho do asset da imagem. |
@@ -61,6 +63,8 @@ Row(
     ],
 )
 ```
+
+![Icon](../../assets/components/icon.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -85,6 +89,8 @@ Container(
     ),
 )
 ```
+
+![Svg](../../assets/components/svg.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -115,6 +121,8 @@ Canvas(
     key="chart",
 )
 ```
+
+![Canvas](../../assets/components/canvas.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -147,6 +155,8 @@ VideoPlayer(
 )
 ```
 
+![VideoPlayer](../../assets/components/video_player.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `src` | `str` | *(obrigatório)* | URL ou caminho do vídeo. |
@@ -171,6 +181,8 @@ WebView(
 )
 ```
 
+![WebView](../../assets/components/web_view.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `url` | `str` | *(obrigatório)* | URL da página a carregar. |
@@ -191,6 +203,8 @@ Blur(
     key="blurred",
 )
 ```
+
+![Blur](../../assets/components/blur.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -230,6 +244,8 @@ Stack(
 )
 ```
 
+![BackdropFilter](../../assets/components/backdrop_filter.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `radius` | `float` | `8.0` | Raio do desfoque nas camadas de trás. |
@@ -258,6 +274,8 @@ ClipPath(
 )
 ```
 
+![ClipPath](../../assets/components/clip_path.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `shape` | `ClipShape` | `ClipShape.ROUNDED_RECT` | Forma do recorte: `ROUNDED_RECT`, `CIRCLE`, `OVAL`. |
@@ -279,6 +297,8 @@ CameraPreview(
     key="cam",
 )
 ```
+
+![CameraPreview](../../assets/components/camera_preview.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -309,6 +329,8 @@ QrScanner(
 )
 ```
 
+![QrScanner](../../assets/components/qr_scanner.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `on_scan` | `handler → QrScanEvent` | `None` | Chamado a cada código detectado. O handler recebe um `QrScanEvent` com o campo `value` (string do código). |
@@ -338,6 +360,8 @@ MapView(
     key="map",
 )
 ```
+
+![MapView](../../assets/components/map_view.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|

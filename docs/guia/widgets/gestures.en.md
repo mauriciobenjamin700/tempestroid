@@ -53,6 +53,8 @@ GestureDetector(
 )
 ```
 
+![GestureDetector](../../assets/components/gesture_detector.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Single child over which gestures are detected. |
@@ -89,6 +91,8 @@ PanHandler(
 )
 ```
 
+![PanHandler](../../assets/components/pan_handler.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Single child to monitor. |
@@ -124,6 +128,8 @@ ScaleHandler(
 )
 ```
 
+![ScaleHandler](../../assets/components/scale_handler.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Single child to monitor. |
@@ -155,6 +161,8 @@ DoubleTapHandler(
 )
 ```
 
+![DoubleTapHandler](../../assets/components/double_tap_handler.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Single child to monitor. |
@@ -185,6 +193,8 @@ Draggable(
     key="drag",
 )
 ```
+
+![Draggable](../../assets/components/draggable.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -219,6 +229,8 @@ DragTarget(
     key="target",
 )
 ```
+
+![DragTarget](../../assets/components/drag_target.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -258,6 +270,8 @@ Dismissible(
     key=f"item-{item_id}",
 )
 ```
+
+![Dismissible](../../assets/components/dismissible.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -300,6 +314,8 @@ ReorderableList(
 )
 ```
 
+![ReorderableList](../../assets/components/reorderable_list.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | List items. Use a stable `key` on each child so the reconciler emits a `Reorder` patch instead of recreating widgets. |
@@ -337,6 +353,8 @@ InteractiveViewer(
     key="viewer",
 )
 ```
+
+![InteractiveViewer](../../assets/components/interactive_viewer.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|

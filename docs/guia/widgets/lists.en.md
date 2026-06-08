@@ -89,6 +89,8 @@ def view(app: App[State]) -> Column:
     )
 ```
 
+![LazyColumn](../../assets/components/lazy_column.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `item_count` | `int` | — *required* — | Total number of items in the collection. |
@@ -169,6 +171,8 @@ def view(app: App[State]) -> Column:
         ],
     )
 ```
+
+![LazyRow](../../assets/components/lazy_row.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -254,6 +258,8 @@ def view(app: App[State]) -> Column:
     )
 ```
 
+![LazyGrid](../../assets/components/lazy_grid.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `item_count` | `int` | — *required* — | Total number of items in the grid. |
@@ -333,6 +339,8 @@ def view(app: App[State]) -> Column:
     )
 ```
 
+![SectionList](../../assets/components/section_list.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `sections` | `list[SectionHeader]` | `[]` | List sections; each has `title: str` and `items: list[Widget]`. |
@@ -387,6 +395,8 @@ def view(app: App[State]) -> RefreshControl:
         key="pull",
     )
 ```
+
+![RefreshControl](../../assets/components/refresh_control.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|

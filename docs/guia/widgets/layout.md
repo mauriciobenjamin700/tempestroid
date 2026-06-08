@@ -26,6 +26,8 @@ Column(
 )
 ```
 
+![Column](../../assets/components/column.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Filhos empilhados de cima para baixo. |
@@ -58,6 +60,8 @@ Row(
 )
 ```
 
+![Row](../../assets/components/row.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Filhos posicionados da esquerda para a direita. |
@@ -77,6 +81,8 @@ Container(
     child=Text(content="Olá!"),
 )
 ```
+
+![Container](../../assets/components/container.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -108,6 +114,8 @@ Stack(
 )
 ```
 
+![Stack](../../assets/components/stack.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Filhos sobrepostos em ordem de z. |
@@ -132,6 +140,8 @@ Wrap(
 )
 ```
 
+![Wrap](../../assets/components/wrap.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Filhos que quebram de linha ao atingir a largura máxima. |
@@ -153,6 +163,8 @@ ScrollView(
     ],
 )
 ```
+
+![ScrollView](../../assets/components/scroll_view.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -183,6 +195,8 @@ SafeArea(
 )
 ```
 
+![SafeArea](../../assets/components/safe_area.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Filho a ser inserido nas bordas seguras. |
@@ -208,6 +222,8 @@ AspectRatio(
     child=Image(src="https://example.com/banner.jpg", alt="Banner"),
 )
 ```
+
+![AspectRatio](../../assets/components/aspect_ratio.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -251,6 +267,8 @@ PageView(
 )
 ```
 
+![PageView](../../assets/components/page_view.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Páginas do carrossel; cada uma ocupa a largura total. |
@@ -281,6 +299,8 @@ KeyboardAvoidingView(
     ],
 )
 ```
+
+![KeyboardAvoidingView](../../assets/components/keyboard_avoiding_view.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
