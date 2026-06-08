@@ -79,6 +79,8 @@ def view(app):
     )
 ```
 
+![Animated](../../assets/components/animated.png)
+
 ### Props
 
 | Prop | Tipo | Padrão | Descrição |
@@ -138,6 +140,8 @@ def view(app):
         key="root",
     )
 ```
+
+![AnimatedList](../../assets/components/animated_list.png)
 
 ### Props
 
@@ -214,6 +218,8 @@ def view(app):
     )
 ```
 
+![Hero](../../assets/components/hero.png)
+
 ### Props
 
 | Prop | Tipo | Padrão | Descrição |
@@ -263,6 +269,8 @@ def view(app):
     )
 ```
 
+![Shimmer](../../assets/components/shimmer.png)
+
 ### Props
 
 | Prop | Tipo | Padrão | Descrição |
@@ -308,6 +316,8 @@ def view(app):
         key="root",
     )
 ```
+
+![Skeleton](../../assets/components/skeleton.png)
 
 ### Props
 

@@ -39,6 +39,8 @@ Column(
 )
 ```
 
+![Image](../../assets/components/image.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `src` | `str` | *(required)* | URL or asset path of the image. |
@@ -61,6 +63,8 @@ Row(
     ],
 )
 ```
+
+![Icon](../../assets/components/icon.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -85,6 +89,8 @@ Container(
     ),
 )
 ```
+
+![Svg](../../assets/components/svg.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -115,6 +121,8 @@ Canvas(
     key="chart",
 )
 ```
+
+![Canvas](../../assets/components/canvas.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -147,6 +155,8 @@ VideoPlayer(
 )
 ```
 
+![VideoPlayer](../../assets/components/video_player.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `src` | `str` | *(required)* | URL or file path of the video. |
@@ -171,6 +181,8 @@ WebView(
 )
 ```
 
+![WebView](../../assets/components/web_view.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `url` | `str` | *(required)* | URL of the page to load. |
@@ -191,6 +203,8 @@ Blur(
     key="blurred",
 )
 ```
+
+![Blur](../../assets/components/blur.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -230,6 +244,8 @@ Stack(
 )
 ```
 
+![BackdropFilter](../../assets/components/backdrop_filter.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `radius` | `float` | `8.0` | Blur radius applied to the layers behind the child. |
@@ -258,6 +274,8 @@ ClipPath(
 )
 ```
 
+![ClipPath](../../assets/components/clip_path.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `shape` | `ClipShape` | `ClipShape.ROUNDED_RECT` | Clip shape: `ROUNDED_RECT`, `CIRCLE`, `OVAL`. |
@@ -279,6 +297,8 @@ CameraPreview(
     key="cam",
 )
 ```
+
+![CameraPreview](../../assets/components/camera_preview.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -309,6 +329,8 @@ QrScanner(
 )
 ```
 
+![QrScanner](../../assets/components/qr_scanner.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `on_scan` | `handler → QrScanEvent` | `None` | Called for each detected code. The handler receives a `QrScanEvent` with the `value` field (the decoded string). |
@@ -337,6 +359,8 @@ MapView(
     key="map",
 )
 ```
+
+![MapView](../../assets/components/map_view.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|

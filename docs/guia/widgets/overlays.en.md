@@ -64,6 +64,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Dialog](../../assets/components/dialog.png)
+
 !!! warning "Barrier (scrim)"
     `app.show_dialog(widget, barrier=True)` (default) places a
     semi-transparent scrim behind the dialog. Tapping the scrim dismisses
@@ -122,6 +124,8 @@ def make_state() -> State:
     return State()
 ```
 
+![BottomSheet](../../assets/components/bottom_sheet.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Content displayed inside the sheet. |
@@ -177,6 +181,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Menu](../../assets/components/menu.png)
+
 !!! tip "Anchor"
     Pass the `key` of the reference widget in `anchor` so the renderer can
     position the menu close to it. The `barrier` parameter of `show_menu`
@@ -227,6 +233,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Popover](../../assets/components/popover.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Content of the floating panel. |
@@ -265,6 +273,8 @@ def view(app):
 def make_state() -> State:
     return State()
 ```
+
+![Toast](../../assets/components/toast.png)
 
 !!! info "Auto-dismiss"
     `app.toast(widget)` schedules `dismiss` on the event loop after
@@ -312,6 +322,8 @@ def view(app):
 def make_state() -> State:
     return State()
 ```
+
+![Tooltip](../../assets/components/tooltip.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -364,6 +376,8 @@ def view(app):
 def make_state() -> State:
     return State()
 ```
+
+![ActionSheet](../../assets/components/action_sheet.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|

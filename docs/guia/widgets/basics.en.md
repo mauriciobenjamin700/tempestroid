@@ -28,6 +28,8 @@ Column(
 )
 ```
 
+![Text](../../assets/components/text.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `content` | `str` | *(required)* | The text to display. |
@@ -66,6 +68,8 @@ def view(app) -> Column:
         ],
     )
 ```
+
+![Button](../../assets/components/button.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -122,6 +126,8 @@ def view(app) -> Column:
     )
 ```
 
+![ProgressBar](../../assets/components/progress_bar.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `value` | `float` | `0.0` | Progress from `0.0` (empty) to `1.0` (complete). Ignored when `indeterminate=True`. |
@@ -154,6 +160,8 @@ def view(app) -> Column:
         ],
     )
 ```
+
+![Spinner](../../assets/components/spinner.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|

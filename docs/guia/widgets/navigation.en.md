@@ -82,6 +82,8 @@ def view(app: App[State]) -> Navigator:
     return home_screen(app)
 ```
 
+![Navigator](../../assets/components/navigator.png)
+
 ### Props
 
 | Prop | Type | Default | Description |
@@ -141,6 +143,8 @@ def view(app: App[State]) -> TabView:
     )
 ```
 
+![TabView](../../assets/components/tab_view.png)
+
 ### Props
 
 | Prop | Type | Default | Description |
@@ -199,6 +203,8 @@ def view(app: App[State]) -> Column:
         ],
     )
 ```
+
+![TabBar](../../assets/components/tab_bar.png)
 
 ### Props
 
@@ -271,6 +277,8 @@ def view(app: App[State]) -> RouteDrawer:
         on_change=on_drawer_change,
     )
 ```
+
+![RouteDrawer](../../assets/components/route_drawer.png)
 
 ### Props
 

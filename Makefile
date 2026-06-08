@@ -91,6 +91,10 @@ docs-build: ## Build MkDocs site (--strict)
 docs-serve: ## Serve MkDocs site locally
 	uv run mkdocs serve
 
+.PHONY: docs-shots
+docs-shots: ## Render a PNG of every widget/component into docs/assets/components
+	QT_QPA_PLATFORM=offscreen uv run python tools/shoot_docs.py
+
 # ---- python package build ---------------------------------------------------
 .PHONY: build
 build: ## Build sdist + wheel into dist/ (bundles the host APK if staged)

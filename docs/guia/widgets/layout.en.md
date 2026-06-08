@@ -26,6 +26,8 @@ Column(
 )
 ```
 
+![Column](../../assets/components/column.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Children stacked from top to bottom. |
@@ -58,6 +60,8 @@ Row(
 )
 ```
 
+![Row](../../assets/components/row.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Children placed from left to right. |
@@ -77,6 +81,8 @@ Container(
     child=Text(content="Hello!"),
 )
 ```
+
+![Container](../../assets/components/container.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -108,6 +114,8 @@ Stack(
 )
 ```
 
+![Stack](../../assets/components/stack.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Children overlaid in z-order. |
@@ -132,6 +140,8 @@ Wrap(
 )
 ```
 
+![Wrap](../../assets/components/wrap.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Children that wrap to the next line when the row is full. |
@@ -153,6 +163,8 @@ ScrollView(
     ],
 )
 ```
+
+![ScrollView](../../assets/components/scroll_view.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -183,6 +195,8 @@ SafeArea(
 )
 ```
 
+![SafeArea](../../assets/components/safe_area.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Child to be inset from safe edges. |
@@ -207,6 +221,8 @@ AspectRatio(
     child=Image(src="https://example.com/banner.jpg", alt="Banner"),
 )
 ```
+
+![AspectRatio](../../assets/components/aspect_ratio.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -250,6 +266,8 @@ PageView(
 )
 ```
 
+![PageView](../../assets/components/page_view.png)
+
 | Prop | Type | Default | Description |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Carousel pages; each occupies the full width. |
@@ -280,6 +298,8 @@ KeyboardAvoidingView(
     ],
 )
 ```
+
+![KeyboardAvoidingView](../../assets/components/keyboard_avoiding_view.png)
 
 | Prop | Type | Default | Description |
 |---|---|---|---|

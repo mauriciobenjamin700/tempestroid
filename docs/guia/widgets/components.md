@@ -39,6 +39,8 @@ Card(
 )
 ```
 
+![Card](../../assets/components/card.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Widgets empilhados verticalmente dentro do cartão. |
@@ -65,6 +67,8 @@ ListTile(
 )
 ```
 
+![ListTile](../../assets/components/list_tile.png)
+
 !!! note "Toque na linha inteira"
     `ListTile` é apresentacional (sem `on_click` próprio). Para ações use um
     `Button` no slot `trailing`, ou envolva o tile num `Button` sem rótulo.
@@ -88,6 +92,8 @@ from tempestroid import Avatar
 Avatar(initials="MB", size=48.0, key="profile-av")
 ```
 
+![Avatar](../../assets/components/avatar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `initials` | `str` | `""` | Texto curto mostrado dentro do círculo (ex.: `"MB"`). |
@@ -110,6 +116,8 @@ Column(
     ],
 )
 ```
+
+![Divider](../../assets/components/divider.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -137,6 +145,8 @@ AppBar(
 )
 ```
 
+![AppBar](../../assets/components/app_bar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `title` | `str` | `""` | Texto do título. |
@@ -154,6 +164,8 @@ from tempestroid import Header
 
 Header(title="Dashboard", subtitle="Visão geral do dia", key="page-header")
 ```
+
+![Header](../../assets/components/header.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -176,6 +188,8 @@ Footer(
     key="footer",
 )
 ```
+
+![Footer](../../assets/components/footer.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -213,6 +227,8 @@ def view(app):
     ])
 ```
 
+![CollapsingAppBar](../../assets/components/collapsing_app_bar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `title` | `str` | `""` | Texto do título. |
@@ -239,6 +255,8 @@ NavBar(
 )
 ```
 
+![NavBar](../../assets/components/nav_bar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `items` | `list[str]` | `[]` | Rótulos dos itens, em ordem. |
@@ -263,6 +281,8 @@ Breadcrumb(
 )
 ```
 
+![Breadcrumb](../../assets/components/breadcrumb.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `items` | `list[str]` | `[]` | Rótulos da raiz até a página atual. |
@@ -286,6 +306,8 @@ AppBar(
     ),
 )
 ```
+
+![Burger](../../assets/components/burger.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -317,6 +339,8 @@ Row(
     ],
 )
 ```
+
+![Drawer](../../assets/components/drawer.png)
 
 !!! warning "Posicionamento do Drawer"
     O `Drawer` usa o modelo flex: quando aberto ele ocupa espaço na linha/coluna
@@ -350,6 +374,8 @@ Scaffold(
 )
 ```
 
+![Scaffold](../../assets/components/scaffold.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `app_bar` | `Widget \| None` | `None` | Widget da barra superior (normalmente `AppBar`). |
@@ -381,6 +407,8 @@ Row(
 )
 ```
 
+![Sidebar](../../assets/components/sidebar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Widgets empilhados de cima para baixo na barra lateral. |
@@ -408,6 +436,8 @@ Grid(
 )
 ```
 
+![Grid](../../assets/components/grid.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Células preenchidas da esquerda para a direita. |
@@ -433,6 +463,8 @@ SegmentedControl(
 )
 ```
 
+![SegmentedControl](../../assets/components/segmented_control.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `options` | `list[str]` | `[]` | Rótulos dos segmentos, em ordem. |
@@ -455,6 +487,8 @@ RadioGroup(
     key="payment",
 )
 ```
+
+![RadioGroup](../../assets/components/radio_group.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -485,6 +519,8 @@ Row(
 )
 ```
 
+![Chip](../../assets/components/chip.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `label` | `str` | `""` | Texto exibido no chip. |
@@ -508,6 +544,8 @@ Rating(
     key="rating",
 )
 ```
+
+![Rating](../../assets/components/rating.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -533,6 +571,8 @@ Stepper(
     key="qty-stepper",
 )
 ```
+
+![Stepper](../../assets/components/stepper.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -564,6 +604,8 @@ SearchBar(
 )
 ```
 
+![SearchBar](../../assets/components/search_bar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `value` | `str` | `""` | Texto atual do campo (controlado). |
@@ -594,6 +636,8 @@ Banner(
 )
 ```
 
+![Banner](../../assets/components/banner.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `message` | `str` | `""` | Texto da mensagem. |
@@ -618,6 +662,8 @@ EmptyState(
 )
 ```
 
+![EmptyState](../../assets/components/empty_state.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `title` | `str` | `""` | Mensagem principal. |
@@ -641,6 +687,8 @@ Row(
     ],
 )
 ```
+
+![Badge](../../assets/components/badge.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -669,6 +717,8 @@ Accordion(
 )
 ```
 
+![Accordion](../../assets/components/accordion.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `title` | `str` | `""` | Texto do cabeçalho. |
@@ -696,6 +746,8 @@ Calendar(
 )
 ```
 
+![Calendar](../../assets/components/calendar.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `month` | `str` | `""` | Mês exibido no formato `"AAAA-MM"` (vazio = mês atual). |
@@ -718,6 +770,8 @@ Clock(
     key="clock",
 )
 ```
+
+![Clock](../../assets/components/clock.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -755,6 +809,8 @@ Table(
 )
 ```
 
+![Table](../../assets/components/table.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `rows` | `list[TableRow]` | `[]` | Linhas do corpo, cada uma com células `TableCell`. |
@@ -781,6 +837,8 @@ DataTable(
     key="products-dt",
 )
 ```
+
+![DataTable](../../assets/components/data_table.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -829,6 +887,8 @@ FormField(
 )
 ```
 
+![EmailInput](../../assets/components/email_input.png)
+
 Teclado `EMAIL`; valida com `validate_email`.
 
 ### PasswordInput
@@ -848,6 +908,8 @@ FormField(
     key="password-field",
 )
 ```
+
+![PasswordInput](../../assets/components/password_input.png)
 
 Campo seguro (`secure=True`); sem máscara — combine com seu próprio validador
 de força, se quiser.
@@ -871,6 +933,8 @@ FormField(
 )
 ```
 
+![PhoneInput](../../assets/components/phone_input.png)
+
 Máscara `(99) 99999-9999`, teclado `PHONE`; valida com `validate_phone`
 (aceita 10 ou 11 dígitos).
 
@@ -893,6 +957,8 @@ FormField(
 )
 ```
 
+![CPFInput](../../assets/components/cpf_input.png)
+
 Máscara `999.999.999-99`, teclado `NUMBER`; valida com `validate_cpf`
 (11 dígitos + dígitos verificadores).
 
@@ -914,6 +980,8 @@ FormField(
     key="cnpj-field",
 )
 ```
+
+![CNPJInput](../../assets/components/cnpj_input.png)
 
 Máscara `99.999.999/9999-99`, teclado `NUMBER`; valida com `validate_cnpj`
 (14 dígitos + dígitos verificadores).
@@ -939,6 +1007,8 @@ AddressInput(
     key="address",
 )
 ```
+
+![AddressInput](../../assets/components/address_input.png)
 
 CEP mascarado `99999-999` (teclado `NUMBER`); os demais campos são `Input`
 livres. Sem validador embutido — valide cada campo no app conforme necessário.
@@ -967,6 +1037,8 @@ ImagePicker(
 )
 ```
 
+![ImagePicker](../../assets/components/image_picker.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `value` | `str` | `""` | URI da imagem escolhida (vazio = sem prévia). |
@@ -987,6 +1059,8 @@ DocumentPicker(
     key="doc-picker",
 )
 ```
+
+![DocumentPicker](../../assets/components/document_picker.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -1010,6 +1084,8 @@ ImagePicture(
     key="profile-photo",
 )
 ```
+
+![ImagePicture](../../assets/components/image_picture.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|

@@ -64,6 +64,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Dialog](../../assets/components/dialog.png)
+
 !!! warning "Barreira (scrim)"
     `app.show_dialog(widget, barrier=True)` (padrão) coloca um scrim
     semitransparente atrás do diálogo. Tocar no scrim dispensa o overlay
@@ -122,6 +124,8 @@ def make_state() -> State:
     return State()
 ```
 
+![BottomSheet](../../assets/components/bottom_sheet.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Conteúdo exibido dentro da folha. |
@@ -177,6 +181,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Menu](../../assets/components/menu.png)
+
 !!! tip "Âncora"
     Passe o `key` do widget de referência em `anchor` para que o
     renderizador posicione o menu próximo a ele. O parâmetro `barrier`
@@ -228,6 +234,8 @@ def make_state() -> State:
     return State()
 ```
 
+![Popover](../../assets/components/popover.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Conteúdo do painel flutuante. |
@@ -266,6 +274,8 @@ def view(app):
 def make_state() -> State:
     return State()
 ```
+
+![Toast](../../assets/components/toast.png)
 
 !!! info "Auto-dispensa"
     `app.toast(widget)` agenda `dismiss` no loop de eventos após
@@ -313,6 +323,8 @@ def view(app):
 def make_state() -> State:
     return State()
 ```
+
+![Tooltip](../../assets/components/tooltip.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -365,6 +377,8 @@ def view(app):
 def make_state() -> State:
     return State()
 ```
+
+![ActionSheet](../../assets/components/action_sheet.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|

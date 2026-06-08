@@ -55,6 +55,8 @@ GestureDetector(
 )
 ```
 
+![GestureDetector](../../assets/components/gesture_detector.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Filho único sobre o qual os gestos são detectados. |
@@ -89,6 +91,8 @@ PanHandler(
     key="pan",
 )
 ```
+
+![PanHandler](../../assets/components/pan_handler.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -125,6 +129,8 @@ ScaleHandler(
 )
 ```
 
+![ScaleHandler](../../assets/components/scale_handler.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Filho único monitorado. |
@@ -156,6 +162,8 @@ DoubleTapHandler(
 )
 ```
 
+![DoubleTapHandler](../../assets/components/double_tap_handler.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `child` | `Widget \| None` | `None` | Filho único monitorado. |
@@ -186,6 +194,8 @@ Draggable(
     key="drag",
 )
 ```
+
+![Draggable](../../assets/components/draggable.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -220,6 +230,8 @@ DragTarget(
     key="target",
 )
 ```
+
+![DragTarget](../../assets/components/drag_target.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -259,6 +271,8 @@ Dismissible(
     key=f"item-{item_id}",
 )
 ```
+
+![Dismissible](../../assets/components/dismissible.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -300,6 +314,8 @@ ReorderableList(
 )
 ```
 
+![ReorderableList](../../assets/components/reorderable_list.png)
+
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `children` | `list[Widget]` | `[]` | Itens da lista; use `key` estável em cada filho para que o reconciliador emita `Reorder` em vez de recriar os widgets. |
@@ -337,6 +353,8 @@ InteractiveViewer(
     key="viewer",
 )
 ```
+
+![InteractiveViewer](../../assets/components/interactive_viewer.png)
 
 | Prop | Tipo | Padrão | Descrição |
 |---|---|---|---|
