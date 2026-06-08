@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-06-08
+
+### Documentation
+
+- **Component screenshots in the tutorials.** Added `tools/shoot_docs.py` (and a
+  `make docs-shots` target) that renders every widget/component in the offscreen
+  Qt simulator to `docs/assets/components/*.png` (109 images), and embedded each
+  one next to its code block across the widget tutorial pages (PT + EN) — so each
+  component shows its code **and** a preview. Images are the Qt-simulator render.
+
 ## [0.11.0] — 2026-06-08
 
 ### Added
