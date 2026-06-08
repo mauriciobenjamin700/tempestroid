@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-06-08
+
+### Added
+
+- **Brazilian form components + media pickers** (`tempestroid.components`):
+  `EmailInput`, `PasswordInput`, `PhoneInput`, `CPFInput`, `CNPJInput`,
+  `AddressInput`, plus `ImagePicker`, `DocumentPicker` and `ImagePicture` (a
+  circular profile photo). They lower to existing primitives via
+  `Component.render`, so both renderers handle them with no renderer change.
+- **`tempestroid.validators`** — `validate_cpf` / `validate_cnpj` (real mod-11
+  check digits, reject all-same), `validate_email`, `validate_phone` (BR
+  10/11 digits), shaped as `Form` validators (`Callable[[Any], str | None]`).
+- **Quality-gate CLI** (mirrors tempest-fastapi-sdk): `tempest lint` / `fix`
+  (`ruff check --fix` + `ruff format`, `--unsafe`) / `format` / `fmt-check` /
+  `type` (pyright) / `test` (pytest) / `check` (the full gate). Each tool is
+  resolved on `PATH` or via `uv run`.
+- **Custom icons:** `svg_to_path(source)` converts an SVG (file or markup) into
+  one normalized path `d`; `register_icon(name, source=… | path=…)` registers a
+  custom icon so `Icon(name=…)` / input icon slots / `icon_path` resolve it.
+
+### Changed
+
+- Input icon slots (`Input` / `Autocomplete` / `Dropdown`
+  `leading_icon`/`trailing_icon`) are now typed **`Icons | str | None`** — an
+  `Icons` member for autocomplete over the curated set, or any string for a
+  custom/platform icon.
+
 ## [0.10.0] — 2026-06-07
 
 ### Added
