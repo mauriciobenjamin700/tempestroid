@@ -23,14 +23,24 @@ Public surface:
 
 from __future__ import annotations
 
+import re
+import xml.etree.ElementTree as ET
 from enum import StrEnum
+from pathlib import Path
 
 __all__ = [
     "ICON_PATHS",
     "Icons",
     "icon_path",
     "icon_names",
+    "svg_to_path",
+    "register_icon",
 ]
+
+#: Custom icons registered at runtime (``register_icon``): name -> ``d`` string.
+#: Consulted by :func:`icon_path` after the curated :data:`ICON_PATHS`, so an app
+#: can use its own SVG glyphs through the same ``Icon`` / input-slot machinery.
+_CUSTOM_PATHS: dict[str, str] = {}
 
 
 #: Curated icon name -> normalized single-path ``d`` string (24x24 viewBox,
@@ -198,16 +208,168 @@ def icon_path(name: str) -> str | None:
             transparently.
 
     Returns:
-        The icon's ``d`` string, or ``None`` if the name is not in the curated
-        set (the renderer falls back to a platform icon / the name itself).
+        The icon's ``d`` string — from the curated set, else a custom icon
+        registered via :func:`register_icon` — or ``None`` when the name is
+        unknown (the renderer then falls back to a platform icon / the name).
     """
-    return ICON_PATHS.get(str(name))
+    key = str(name)
+    curated = ICON_PATHS.get(key)
+    if curated is not None:
+        return curated
+    return _CUSTOM_PATHS.get(key)
 
 
 def icon_names() -> list[str]:
-    """Return the names of every curated icon, sorted alphabetically.
+    """Return the names of every available icon, sorted alphabetically.
+
+    Includes both the curated set and any custom icons registered via
+    :func:`register_icon`.
 
     Returns:
         A sorted list of available icon names (always a list, never raises).
     """
-    return sorted(ICON_PATHS)
+    return sorted({*ICON_PATHS, *_CUSTOM_PATHS})
+
+
+# SVG element names appear namespaced (``{http://www.w3.org/2000/svg}path``);
+# this strips the namespace so we can match on the local tag.
+def _local_tag(tag: str) -> str:
+    """Return an XML element's local name, dropping any ``{ns}`` prefix.
+
+    Args:
+        tag: The (possibly namespaced) element tag.
+
+    Returns:
+        The local tag name.
+    """
+    return tag.rsplit("}", 1)[-1]
+
+
+def _shape_to_path(tag: str, attrib: dict[str, str]) -> str:
+    """Convert a single SVG shape element into path ``d`` commands.
+
+    Handles the element kinds the curated icons (and most line-icon SVGs) use:
+    ``path`` (verbatim ``d``), ``circle``, ``ellipse``, ``line``, ``rect``
+    (square corners), ``polyline`` and ``polygon``. Unknown elements yield an
+    empty string and are skipped.
+
+    Args:
+        tag: The element's local tag name.
+        attrib: The element's attributes.
+
+    Returns:
+        A ``d`` fragment for this shape, or ``""`` when unsupported.
+    """
+
+    def num(key: str, default: float = 0.0) -> float:
+        try:
+            return float(attrib.get(key, default))
+        except ValueError:
+            return default
+
+    if tag == "path":
+        return attrib.get("d", "").strip()
+    if tag in ("circle", "ellipse"):
+        cx, cy = num("cx"), num("cy")
+        rx = num("r") if tag == "circle" else num("rx")
+        ry = num("r") if tag == "circle" else num("ry")
+        if rx <= 0 or ry <= 0:
+            return ""
+        # Two arcs trace the full ellipse, starting at the left-most point.
+        return (
+            f"M{cx - rx},{cy} "
+            f"a{rx},{ry} 0 1,0 {rx * 2},0 "
+            f"a{rx},{ry} 0 1,0 {-rx * 2},0"
+        )
+    if tag == "line":
+        x1, y1, x2, y2 = num("x1"), num("y1"), num("x2"), num("y2")
+        return f"M{x1},{y1} L{x2},{y2}"
+    if tag == "rect":
+        x, y, w, h = num("x"), num("y"), num("width"), num("height")
+        if w <= 0 or h <= 0:
+            return ""
+        return f"M{x},{y} h{w} v{h} h{-w} Z"
+    if tag in ("polyline", "polygon"):
+        raw = attrib.get("points", "").strip()
+        coords = [c for c in re.split(r"[\s,]+", raw) if c]
+        if len(coords) < 4:
+            return ""
+        pairs = [f"{coords[i]},{coords[i + 1]}" for i in range(0, len(coords) - 1, 2)]
+        d = "M" + " L".join(pairs)
+        return d + " Z" if tag == "polygon" else d
+    return ""
+
+
+def svg_to_path(source: str | Path) -> str:
+    """Convert an SVG image (file path or raw markup) into one ``d`` string.
+
+    Extracts every drawable shape (``path``/``circle``/``ellipse``/``line``/
+    ``rect``/``polyline``/``polygon``) and flattens them into a single
+    space-joined ``d`` string in the same shape the renderers stroke — so a
+    project SVG becomes a tempestroid icon. The SVG should already be on a 24x24
+    viewBox (or a similar small grid) for the stroke width to look right.
+
+    Args:
+        source: A path to an ``.svg`` file, or a raw SVG markup string.
+
+    Returns:
+        The combined path ``d`` string.
+
+    Raises:
+        ValueError: When the source has no usable shapes, or the markup / file
+            cannot be parsed as XML.
+    """
+    if isinstance(source, Path):
+        markup = source.read_text(encoding="utf-8")
+    elif "<" not in source:
+        markup = Path(source).read_text(encoding="utf-8")
+    else:
+        markup = source
+    try:
+        root = ET.fromstring(markup)
+    except ET.ParseError as exc:
+        raise ValueError(f"could not parse SVG: {exc}") from exc
+
+    fragments: list[str] = []
+    for element in root.iter():
+        fragment = _shape_to_path(_local_tag(element.tag), dict(element.attrib))
+        if fragment:
+            fragments.append(fragment)
+    if not fragments:
+        raise ValueError("SVG has no drawable shapes to convert into a path")
+    return " ".join(fragments)
+
+
+def register_icon(
+    name: str, source: str | Path | None = None, *, path: str | None = None
+) -> str:
+    """Register a custom icon so it resolves like a curated one.
+
+    Provide either a raw path ``d`` string (``path=``) or an ``source`` SVG
+    (file path or markup) that is converted via :func:`svg_to_path`. After
+    registering, ``Icon(name=…)`` / an input's ``leading_icon``/``trailing_icon``
+    / :func:`icon_path` all resolve the name to this glyph. Re-registering the
+    same name overwrites it.
+
+    Args:
+        name: The icon name to register (used as ``Icon(name=…)``).
+        source: An SVG file path or markup to convert. Mutually exclusive with
+            ``path``.
+        path: A ready normalized ``d`` string to register verbatim.
+
+    Returns:
+        The registered ``d`` string.
+
+    Raises:
+        ValueError: If neither or both of ``source``/``path`` are given, if the
+            name collides with a curated icon, or the SVG has no shapes.
+    """
+    if (source is None) == (path is None):
+        raise ValueError("pass exactly one of source= or path=")
+    if name in ICON_PATHS:
+        raise ValueError(
+            f"{name!r} is a curated icon name; choose a different custom name"
+        )
+    resolved = path if path is not None else svg_to_path(source)  # type: ignore[arg-type]
+    _CUSTOM_PATHS[name] = resolved
+    return resolved

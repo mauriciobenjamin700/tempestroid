@@ -101,7 +101,14 @@ from tempestroid.devserver import (
     serve_device,
 )
 from tempestroid.i18n import Locale, t, translate
-from tempestroid.icons import ICON_PATHS, Icons, icon_names, icon_path
+from tempestroid.icons import (
+    ICON_PATHS,
+    Icons,
+    icon_names,
+    icon_path,
+    register_icon,
+    svg_to_path,
+)
 from tempestroid.native import (
     BiometricResult,
     ConnectivityCallback,
@@ -375,6 +382,8 @@ __all__ = [
     "ICON_PATHS",
     "icon_path",
     "icon_names",
+    "svg_to_path",
+    "register_icon",
     # Widgets
     "Widget",
     "Component",
