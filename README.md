@@ -616,6 +616,17 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`Stepper`** — numeric `-`/`+` around a value with optional `min_value` /
   `max_value` clamping; `on_change(value)`.
 - **`SearchBar`** — controlled text `Input` with an optional clear button.
+- **Brazilian form inputs** — labelled fields that lower to `Input` /
+  `MaskedInput`, each calling `on_change(value)` with the new string: **`EmailInput`**
+  (e-mail keyboard + `mail` icon), **`PasswordInput`** (secure, `lock` icon),
+  **`PhoneInput`** (mask `(99) 99999-9999`), **`CPFInput`** (mask `999.999.999-99`),
+  **`CNPJInput`** (mask `99.999.999/9999-99`) and the grouped **`AddressInput`**
+  (CEP + street/number/complement/neighborhood/city/UF, `on_change(field, value)`).
+  Pair them with the `validators` below in a `FormField`.
+- **Media pickers** — **`ImagePicker`** (`FilePicker` + inline `Image` preview,
+  `on_pick(uri)`), **`DocumentPicker`** (`FilePicker` for documents) and
+  **`ImagePicture`** (circular profile-photo picker — `ClipPath`-clipped `Image`
+  with a `user`-icon placeholder, `on_pick(uri)`).
 - **`Accordion`** — controlled expand/collapse section (`open` in state,
   `on_toggle`).
 - **`Banner`** — inline status bar (`tone`: info/success/warning/error) with an
@@ -623,6 +634,21 @@ renderer changes and are fully device-ready. Every component takes an optional
   glyph + title + subtitle + action placeholder.
 - **`Breadcrumb`** — path trail (`items` + `separator`, optional `on_select`).
 - **`Grid`** — equal-width `columns` grid of `children`.
+
+### Validators (`tempestroid.validators`)
+
+Pure, dependency-free field validators matching the `Form` validator shape
+`Callable[[Any], str | None]` — they return a PT-BR error message when invalid or
+`None` when valid, after stripping mask characters. Plug them into a `FormField`
+(e.g. `FormField(validators=[validate_cpf], child=CPFInput(...))`):
+
+- **`validate_cpf`** — 11 digits + the two mod-11 check digits (rejects
+  all-same-digit).
+- **`validate_cnpj`** — 14 digits + the two check digits with the standard CNPJ
+  weights (rejects all-same-digit).
+- **`validate_email`** — a pragmatic email regex; **`EMAIL_PATTERN`** is the
+  reusable pattern string (also used as `EmailInput`'s `Input.pattern`).
+- **`validate_phone`** — Brazilian phone: 10 (landline) or 11 (mobile) digits.
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 
