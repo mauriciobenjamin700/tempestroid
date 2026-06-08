@@ -559,3 +559,56 @@ def test_resolve_device_forgiving_names() -> None:
     assert resolve_device("PIXEL_7") is Device.PIXEL_7
     assert resolve_device("Google Pixel 7") is Device.PIXEL_7
     assert resolve_device("nope") is None
+
+
+def test_lint_command_dispatches_to_ruff_check(monkeypatch: pytest.MonkeyPatch):
+    """`tempest lint` calls run_ruff_check with the target and returns its code."""
+    from tempestroid.cli import lint as lint_module
+
+    seen: dict[str, object] = {}
+
+    def fake_check(target: str) -> int:
+        seen["target"] = target
+        return 0
+
+    monkeypatch.setattr(lint_module, "run_ruff_check", fake_check)
+    assert main(["lint", "somewhere"]) == 0
+    assert seen["target"] == "somewhere"
+
+
+def test_fix_command_forwards_unsafe_flag(monkeypatch: pytest.MonkeyPatch):
+    """`tempest fix --unsafe` forwards unsafe=True to run_ruff_fix."""
+    from tempestroid.cli import lint as lint_module
+
+    seen: dict[str, object] = {}
+
+    def fake_fix(target: str, *, unsafe: bool = False) -> int:
+        seen["target"] = target
+        seen["unsafe"] = unsafe
+        return 0
+
+    monkeypatch.setattr(lint_module, "run_ruff_fix", fake_fix)
+    assert main(["fix", ".", "--unsafe"]) == 0
+    assert seen == {"target": ".", "unsafe": True}
+
+
+def test_check_command_runs_full_gate(monkeypatch: pytest.MonkeyPatch):
+    """`tempest check` dispatches to run_full_check and surfaces its exit code."""
+    from tempestroid.cli import lint as lint_module
+
+    def fake_full_check(target: str) -> int:
+        return 3
+
+    monkeypatch.setattr(lint_module, "run_full_check", fake_full_check)
+    assert main(["check"]) == 3
+
+
+def test_lint_runner_reports_missing_tool(monkeypatch: pytest.MonkeyPatch):
+    """A runner returns 127 (not a crash) when neither the tool nor uv exists."""
+    from tempestroid.cli import lint as lint_module
+
+    def no_tool(_name: str) -> str | None:
+        return None
+
+    monkeypatch.setattr(lint_module.shutil, "which", no_tool)
+    assert lint_module.run_ruff_check(".") == 127

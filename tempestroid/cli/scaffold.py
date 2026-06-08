@@ -148,7 +148,7 @@ requires-python = ">=3.11"
 dependencies = ["tempestroid[qt]>=0.2"]
 
 [dependency-groups]
-# The linter/formatter. Run `uv run ruff check .` and `uv run ruff format .`.
+# The linter/formatter, behind `uv run tempest lint` / `fix` / `format`.
 dev = ["ruff>=0.6"]
 
 # `tempest dev`/`serve`/`build`/`run` read this, so inside the project you run
@@ -197,9 +197,13 @@ uv sync                                 # install tempestroid + the Qt simulator
 
 ```bash
 uv run tempest dev                      # Qt simulator + hot reload (edit & save)
-uv run ruff check .                     # lint (line length capped at 79)
-uv run ruff format .                    # auto-format
+uv run tempest lint                     # ruff check (line length capped at 79)
+uv run tempest fix                      # ruff --fix + format in one pass
+uv run tempest format                   # ruff format (writes files)
 ```
+
+(`tempest check` also runs `pyright` + `pytest` — add them to the `dev` group
+above if you want the full gate.)
 
 In the `tempest dev` cockpit: `r` hot-reloads (state preserved), `R` restarts
 clean, `s` raises the window, `q` quits. (`tempest dev`/`serve`/`build` read the

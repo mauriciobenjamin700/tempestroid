@@ -323,6 +323,13 @@ surfaced and the happy path stays quiet.
 | `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 | `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore |
+| `tempest lint [path]` | ✅ | `ruff check` on the target (lint only) |
+| `tempest fix [path]` | ✅ | `ruff check --fix` + `ruff format` in one pass; `--unsafe` also applies ruff's unsafe autofixes |
+| `tempest format [path]` | ✅ | `ruff format` (writes files) |
+| `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only) |
+| `tempest type [path]` | ✅ | `pyright` on the target (strict type check) |
+| `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter) |
+| `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test (stops at the first failure). Each tool is resolved on `PATH` or via `uv run` |
 
 ### Running on a device from WSL
 

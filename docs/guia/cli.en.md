@@ -32,6 +32,13 @@ uv run tempest --help
 | `tempest build [apk\|prd]` | ✅ | `apk`: a **per-app** APK (own id → N apps side by side) via Gradle reusing the prebuilt natives (**JDK + SDK only**, no NDK/toolchain). `prd`: a release AAB. Reads `[tool.tempest]`. |
 | `tempest run` | ✅ | `build apk` + install on a device + stream logs. |
 | `tempest icon <img>` | ✅ | Generate `icon.png` + `splash.png` from one image (Pillow). |
+| `tempest lint [path]` | ✅ | `ruff check` on the target (lint only). |
+| `tempest fix [path]` | ✅ | `ruff check --fix` + `ruff format` in one pass (`--unsafe` for unsafe autofixes). |
+| `tempest format [path]` | ✅ | `ruff format` (writes files). |
+| `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only). |
+| `tempest type [path]` | ✅ | `pyright` on the target (strict type check). |
+| `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter). |
+| `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test. |
 
 Apps are **multi-file**: the project tree ships with them (on `sys.path`) in both
 the simulator and the device. See [Build, deploy and ship](build.md) for the

@@ -535,6 +535,113 @@ def setup_cmd(
     raise typer.Exit(_run_setup(install, sdk_dir, verbose))
 
 
+_QUALITY = "Quality (ruff / pyright / pytest)"
+
+
+@app.command("lint", rich_help_panel=_QUALITY)
+def lint_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Path to lint. Defaults to the current directory."),
+    ] = ".",
+) -> None:
+    """Run `ruff check` on the target (lint only, no changes)."""
+    from tempestroid.cli.lint import run_ruff_check
+
+    raise typer.Exit(run_ruff_check(target))
+
+
+@app.command("fix", rich_help_panel=_QUALITY)
+def fix_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Path to fix. Defaults to the current directory."),
+    ] = ".",
+    unsafe: Annotated[
+        bool,
+        typer.Option(
+            "--unsafe",
+            help="Also apply ruff's unsafe autofixes (possible behavior "
+            "changes); review the diff after.",
+        ),
+    ] = False,
+) -> None:
+    """Apply every ruff autofix + format the target in one pass.
+
+    Equivalent to `ruff check --fix` then `ruff format`: sorts/dedupes imports,
+    drops unused imports, normalizes quotes/whitespace, indentation, line length
+    and blank lines.
+    """
+    from tempestroid.cli.lint import run_ruff_fix
+
+    raise typer.Exit(run_ruff_fix(target, unsafe=unsafe))
+
+
+@app.command("format", rich_help_panel=_QUALITY)
+def format_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Path to format. Defaults to the current directory."),
+    ] = ".",
+) -> None:
+    """Run `ruff format` on the target (writes files)."""
+    from tempestroid.cli.lint import run_ruff_format
+
+    raise typer.Exit(run_ruff_format(target, check=False))
+
+
+@app.command("fmt-check", rich_help_panel=_QUALITY)
+def fmt_check_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Path to inspect. Defaults to the current directory."),
+    ] = ".",
+) -> None:
+    """Run `ruff format --check` on the target (read-only)."""
+    from tempestroid.cli.lint import run_ruff_format
+
+    raise typer.Exit(run_ruff_format(target, check=True))
+
+
+@app.command("type", rich_help_panel=_QUALITY)
+def type_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Package/path to type-check."),
+    ] = ".",
+) -> None:
+    """Run `pyright` against the target (strict type check)."""
+    from tempestroid.cli.lint import run_pyright
+
+    raise typer.Exit(run_pyright(target))
+
+
+@app.command("test", rich_help_panel=_QUALITY)
+def test_cmd(
+    target: Annotated[
+        str | None,
+        typer.Argument(help="Optional pytest path filter."),
+    ] = None,
+) -> None:
+    """Run `pytest` (forwarding the optional path argument)."""
+    from tempestroid.cli.lint import run_pytest
+
+    raise typer.Exit(run_pytest(target))
+
+
+@app.command("check", rich_help_panel=_QUALITY)
+def check_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Path to inspect. Defaults to the current directory."),
+    ] = ".",
+) -> None:
+    """Run the full quality gate: lint + fmt-check + type + test."""
+    from tempestroid.cli.lint import run_full_check
+
+    raise typer.Exit(run_full_check(target))
+
+
 @app.command("version", rich_help_panel="Diagnose & inspect")
 def version_cmd() -> None:
     """Show the framework version (same as --version)."""
