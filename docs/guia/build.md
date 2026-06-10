@@ -186,6 +186,31 @@ tempest build --icon icone.png \
 - `--splash splash.png` — a imagem mostrada centralizada enquanto o Python sobe.
 - `--splash-bg "#rrggbb"` — a cor de fundo da splash (default `#0b0f14`).
 
+### Ícone adaptativo (a máscara do launcher)
+
+Um PNG quadrado simples não recebe a máscara do launcher (cantos arredondados /
+squircle). Para um **ícone adaptativo** de verdade — duas camadas, frente +
+fundo, que o launcher mascara como um app nativo — gere a camada de frente e
+passe-a no build:
+
+```bash
+tempest icon logo.png --adaptive --out assets
+# → também escreve assets/ic_launcher_foreground.png (a marca centrada na zona segura)
+tempest build --adaptive-icon assets/ic_launcher_foreground.png --icon-bg "#0b0f14"
+```
+
+- `--adaptive-icon fg.png` — a camada de **frente** (a marca, com margem da zona
+  segura). **Só no build Gradle** (recurso compilado; `--fast` mantém o ícone
+  padrão e avisa).
+- `--icon-bg "#rrggbb"` — a cor de **fundo** do ícone adaptativo (default branco).
+
+!!! info "O que o build gera"
+    Emite um adaptive icon Android real: `res/drawable/ic_launcher_foreground.png`
+    + `res/values/ic_launcher_background.xml` (a cor) + os
+    `res/mipmap-anydpi-v26/ic_launcher{,_round}.xml` que redirecionam o
+    `@mipmap/ic_launcher` para eles no Android 8+ (API 26). Em versões antigas o
+    PNG quadrado (`--icon`) continua valendo.
+
 !!! tip "A splash cobre o boot do CPython"
     O interpretador leva alguns segundos para iniciar. A splash é desenhada pela
     Activity a partir de **assets** e fica na tela **até o primeiro `mount`** do

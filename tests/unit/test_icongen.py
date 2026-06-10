@@ -38,6 +38,48 @@ def test_generate_assets_sizes(tmp_path: Path) -> None:
         assert corner[3] == 0
 
 
+def test_generate_assets_adaptive_foreground(tmp_path: Path) -> None:
+    """`adaptive=True` writes a foreground PNG sized to the canvas, mark centered."""
+    from PIL import Image
+
+    src = _source(tmp_path / "logo.png")
+    out = tmp_path / "assets"
+    assets = generate_assets(
+        src, out, adaptive=True, foreground_size=432, foreground_scale=0.66
+    )
+    assert assets.foreground == out / "ic_launcher_foreground.png"
+    assert assets.foreground is not None
+    with Image.open(assets.foreground) as fg:
+        assert fg.size == (432, 432)
+        # Safe-zone margin → the corner pixel is transparent (mark stays centered).
+        corner = fg.convert("RGBA").getpixel((0, 0))
+        assert isinstance(corner, tuple)
+        assert corner[3] == 0
+    # Without adaptive, no foreground is produced.
+    plain = generate_assets(src, tmp_path / "plain")
+    assert plain.foreground is None
+
+
+def test_generate_assets_bad_foreground_scale(tmp_path: Path) -> None:
+    """An out-of-range foreground scale raises ValueError."""
+    src = _source(tmp_path / "logo.png")
+    with pytest.raises(ValueError, match="foreground_scale"):
+        generate_assets(src, tmp_path / "out", adaptive=True, foreground_scale=1.5)
+
+
+def test_icon_cmd_adaptive_reports_foreground(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`tempest icon --adaptive` writes the foreground and prints the build hint."""
+    from tempestroid.cli import main
+
+    src = _source(tmp_path / "logo.png")
+    out = tmp_path / "assets"
+    assert main(["icon", str(src), "--out", str(out), "--adaptive"]) == 0
+    assert (out / "ic_launcher_foreground.png").is_file()
+    assert "--adaptive-icon" in capsys.readouterr().out
+
+
 def test_generate_assets_missing_source(tmp_path: Path) -> None:
     """A missing source raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError):

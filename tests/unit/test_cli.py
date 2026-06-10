@@ -382,6 +382,34 @@ def test_build_apk_reads_id_from_tool_tempest(
     assert seen["app_name"] == "Todo"
 
 
+def test_build_apk_passes_adaptive_icon_branding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--adaptive-icon` + `--icon-bg` reach the build as branding."""
+    from tempestroid.cli import release_build
+    from tempestroid.cli.branding import Branding
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    fg = tmp_path / "fg.png"
+    fg.write_bytes(b"FG")
+
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(_app: object, *, branding: Branding, **_kw: object) -> Path:
+        seen["adaptive_icon"] = branding.adaptive_icon
+        seen["icon_bg"] = branding.icon_bg
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    rc = main(
+        ["build", "apk", "--app", str(app), "--adaptive-icon", str(fg),
+         "--icon-bg", "#0b0f14"]
+    )
+    assert rc == 0
+    assert seen == {"adaptive_icon": fg, "icon_bg": "#0b0f14"}
+
+
 def test_build_release_dispatches_to_aab(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
