@@ -48,6 +48,7 @@ __all__ = [
     "ensure_toolchain",
     "build_aab",
     "build_apk",
+    "build_release_apk",
     "clean_cache",
 ]
 
@@ -478,6 +479,33 @@ def _prepare_gradle_build(
     return host, prebuilt_dir
 
 
+def _signing_props(config: ReleaseConfig, keystore: Path) -> list[str]:
+    """Build the Gradle ``-P`` properties that wire release signing.
+
+    Shared by the store AAB (:func:`build_aab`) and the standalone release APK
+    (:func:`build_release_apk`) — both stamp the publisher identity and feed the
+    keystore into the ``release`` ``signingConfig`` declared in
+    ``android-host/app/build.gradle.kts``.
+
+    Args:
+        config: The publisher identity + signing config.
+        keystore: The resolved release keystore path.
+
+    Returns:
+        The ``-Ptempest.*`` Gradle property arguments.
+    """
+    return [
+        f"-Ptempest.applicationId={config.app_id}",
+        f"-Ptempest.appLabel={config.app_name}",
+        f"-Ptempest.versionName={config.version_name}",
+        f"-Ptempest.versionCode={config.version_code}",
+        f"-Ptempest.keystore={keystore}",
+        f"-Ptempest.keyAlias={config.key_alias}",
+        f"-Ptempest.storePassword={config.store_password}",
+        f"-Ptempest.keyPassword={config.key_password}",
+    ]
+
+
 def build_aab(
     app: str | Path,
     config: ReleaseConfig,
@@ -520,16 +548,7 @@ def build_aab(
 
     # gradlew bundleRelease with the publisher identity + signing.
     env = dict(os.environ)
-    props = [
-        f"-Ptempest.applicationId={config.app_id}",
-        f"-Ptempest.appLabel={config.app_name}",
-        f"-Ptempest.versionName={config.version_name}",
-        f"-Ptempest.versionCode={config.version_code}",
-        f"-Ptempest.keystore={keystore}",
-        f"-Ptempest.keyAlias={config.key_alias}",
-        f"-Ptempest.storePassword={config.store_password}",
-        f"-Ptempest.keyPassword={config.key_password}",
-    ]
+    props = _signing_props(config, keystore)
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
     with staged_into_host(host, branding or Branding()), con.step(
@@ -623,4 +642,74 @@ def build_apk(
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(built, out)
     con.info(f"APK ({app_id}): {out}")
+    return out
+
+
+def build_release_apk(
+    app: str | Path,
+    config: ReleaseConfig,
+    *,
+    console: Console | None = None,
+    output: Path | None = None,
+    branding: Branding | None = None,
+    prebuilt: bool = True,
+) -> Path:
+    """Build a standalone, **release-signed** ``.apk`` for ``app``.
+
+    The professional-distribution counterpart of :func:`build_apk` (debug-signed,
+    for sharing) and :func:`build_aab` (a store bundle). It drives
+    ``gradlew assembleRelease`` with the publisher's keystore, so the resulting
+    ``.apk`` is signed with the publisher's own key and installs outside the Play
+    Store (a website, an alternative store, a direct link) with a real identity —
+    verifiable with ``apksigner verify``.
+
+    Prepares the environment (SDK, source checkout, prebuilt host natives or the
+    CPython toolchain, keystore) as needed, then runs the build with the app
+    bundled and the identity/signing applied.
+
+    Args:
+        app: Path to the app's entry Python file.
+        config: The publisher identity + signing config.
+        console: Step reporter.
+        output: Output ``.apk`` path; defaults to ``dist/<project>-release.apk``.
+        branding: Optional per-app branding (icon + splash) staged into the host
+            for the build.
+        prebuilt: Reuse the prebuilt host natives (``True``, default; no NDK /
+            CPython toolchain) instead of staging the toolchain from source.
+
+    Returns:
+        The release-signed ``.apk`` path.
+
+    Raises:
+        StepError: If a prepare step or the build fails.
+        subprocess.CalledProcessError: If Gradle fails.
+    """
+    con = console or Console()
+    from tempestroid.cli.branding import Branding, staged_into_host
+    from tempestroid.cli.bundle import resolve_project
+
+    layout = resolve_project(app)
+    host, prebuilt_dir = _prepare_gradle_build(app, con, prebuilt=prebuilt)
+    keystore = ensure_release_keystore(config, con)
+
+    env = dict(os.environ)
+    props = _signing_props(config, keystore)
+    if prebuilt_dir is not None:
+        props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
+    with staged_into_host(host, branding or Branding()), con.step(
+        f"Gradle assembleRelease (applicationId={config.app_id})"
+    ):
+        con.run_command(
+            ["./gradlew", "assembleRelease", *props], cwd=host, env=env
+        )
+
+    built = (
+        host / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
+    )
+    if not built.is_file():
+        raise StepError(f"build succeeded but no release APK at {built}")
+    out = output or (Path.cwd() / "dist" / f"{layout.root.name}-release.apk")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(built, out)
+    con.info(f"release APK ({config.app_id}): {out}")
     return out

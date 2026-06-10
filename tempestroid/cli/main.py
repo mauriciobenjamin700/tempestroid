@@ -271,8 +271,9 @@ def build_cmd(
         typer.Argument(
             metavar="[TARGET]",
             help="What to build: apk (default — a debug, per-app APK to share / "
-            "sideload) or prd (a store-ready release AAB). A path to an app file "
-            "is also accepted (builds an apk).",
+            "sideload), release-apk (a release-signed standalone APK to "
+            "distribute outside the Play Store) or prd (a store-ready release "
+            "AAB). A path to an app file is also accepted (builds an apk).",
         ),
     ] = "apk",
     app: Annotated[
@@ -314,7 +315,8 @@ def build_cmd(
     keystore: Annotated[
         str | None,
         typer.Option(
-            "--keystore", help="Release keystore (prd; default: auto-generated)."
+            "--keystore",
+            help="Release keystore (prd / release-apk; default: auto-generated)."
         ),
     ] = None,
     icon: Annotated[
@@ -382,6 +384,11 @@ def build_cmd(
     (`id` / `name` / `icon` / `splash` / `splash_bg` / `version`), so the command
     stays short; flags override per build.
 
+    `tempest build release-apk` → a standalone, **release-signed APK** for
+    distributing outside the Play Store (a website, an alternative store, a
+    direct link) with the publisher's own key (`--keystore`, else an
+    auto-generated one). Verify with `apksigner verify`.
+
     `tempest build prd` → a store-ready, release-signed **AAB** for the Play
     Store (`--keystore`, else an auto-generated one).
 
@@ -396,7 +403,8 @@ def build_cmd(
     # app file (so `tempest build app.py` still works).
     target_norm = target.lower()
     app_arg = app
-    if app_arg is None and target_norm not in {"apk", "prd", "aab", "release"}:
+    _targets = {"apk", "prd", "aab", "release", "release-apk", "apk-release"}
+    if app_arg is None and target_norm not in _targets:
         app_arg, target_norm = target, "apk"
     resolved = _resolve_app_or_exit(app_arg)
 
@@ -419,6 +427,7 @@ def build_cmd(
         raise typer.Exit(1) from exc
 
     is_release = target_norm in {"prd", "aab", "release"}
+    is_release_apk = target_norm in {"release-apk", "apk-release"}
     if fast and (branding.icon is not None or branding.adaptive_icon is not None):
         print(
             "warning: --icon/--adaptive-icon are ignored with --fast (the launcher "
@@ -428,6 +437,11 @@ def build_cmd(
         raise typer.Exit(
             _run_release(resolved, eff_id, eff_name, eff_version, eff_code,
                          keystore, output, verbose, branding, from_source)
+        )
+    if is_release_apk:
+        raise typer.Exit(
+            _run_release_apk(resolved, eff_id, eff_name, eff_version, eff_code,
+                             keystore, output, verbose, branding, from_source)
         )
     if fast:
         raise typer.Exit(_run_build_fast(resolved, output, verbose, branding))
@@ -1171,6 +1185,91 @@ def _run_release(
         return 1
     except subprocess.CalledProcessError as exc:
         console.fail(f"gradle bundleRelease failed (exit {exc.returncode}).")
+        return exc.returncode or 1
+    return 0
+
+
+def _run_release_apk(
+    app: str,
+    app_id: str | None,
+    app_name: str | None,
+    app_version: str,
+    version_code: int,
+    keystore: str | None,
+    output: str | None,
+    verbose: bool,
+    branding: Branding,
+    from_source: bool = False,
+) -> int:
+    """Build a standalone release-signed APK, preparing the env, reporting outcome.
+
+    The professional-distribution path: ``gradlew assembleRelease`` with the
+    publisher's keystore, producing an APK installable outside the Play Store.
+    Unlike the debug ``tempest build`` it does **not** fall back to the
+    toolchain-free repackage on a Gradle failure — a release-signed APK requires
+    the real build, so a missing toolchain is a hard error the user must resolve.
+    See :func:`tempestroid.cli.release_build.build_release_apk`.
+
+    Args:
+        app: Path to the app's entry file.
+        app_id: The applicationId, or ``None`` to derive one (with a warning).
+        app_name: The launcher label, or ``None`` to derive it from the project.
+        app_version: The release versionName.
+        version_code: The release versionCode.
+        keystore: Path to a release keystore, or ``None`` to auto-generate.
+        output: Output ``.apk`` path, or ``None`` for the default.
+        verbose: Echo raw commands and stream full subprocess output.
+        branding: Per-app branding (icon + splash) applied to the build.
+        from_source: Stage the CPython toolchain from source instead of reusing
+            the prebuilt host natives.
+
+    Returns:
+        The process exit code.
+    """
+    import subprocess
+    from pathlib import Path
+
+    from tempestroid.cli.bundle import resolve_project
+    from tempestroid.cli.console import Console, StepError
+    from tempestroid.cli.release_build import (
+        ReleaseConfig,
+        build_release_apk,
+        derive_app_id,
+        derive_app_name,
+    )
+
+    console = Console(verbose=verbose)
+    project_name = resolve_project(app).root.name
+    resolved_id = app_id
+    if resolved_id is None:
+        resolved_id = derive_app_id(project_name)
+        console.info(
+            f"no --app-id given; using placeholder {resolved_id!r}. Set --app-id "
+            "to your own (e.g. com.yourcompany.app) before distributing."
+        )
+    config = ReleaseConfig(
+        app_id=resolved_id,
+        app_name=app_name or derive_app_name(project_name),
+        version_name=app_version,
+        version_code=version_code,
+        keystore=Path(keystore) if keystore else None,
+    )
+    try:
+        build_release_apk(
+            app,
+            config,
+            console=console,
+            output=Path(output) if output else None,
+            branding=branding,
+            prebuilt=not from_source,
+        )
+    except StepError:
+        return 1
+    except FileNotFoundError as exc:
+        console.fail(f"release APK build failed: {exc}")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        console.fail(f"gradle assembleRelease failed (exit {exc.returncode}).")
         return exc.returncode or 1
     return 0
 

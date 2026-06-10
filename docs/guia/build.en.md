@@ -54,6 +54,7 @@ no path argument inside the project.
 | Run quickly on **my** device | `tempest deploy` | nothing (just adb) | App running on the device (ephemeral) |
 | Edit + see live (hot reload) | `tempest serve` | nothing (just adb) | LAN code-push loop |
 | **Ship an APK** to someone | `tempest build apk` | JDK + Android SDK | `.apk` with its own `applicationId` (**N apps side by side**) |
+| Distribute **off the Play Store** (site, link) | `tempest build release-apk` | JDK + SDK + keystore | Release-signed `.apk` with **your** key |
 | Build + install + logs | `tempest run` | JDK + SDK + adb | Installs the APK and tails logs |
 | Publish to the Play Store | `tempest build prd` | JDK + SDK + keystore | Release-signed `.aab` |
 | Iterate on one app, **no SDK install** | `tempest build --fast` | SDK build-tools only | `.apk` (shared id, one app) |
@@ -215,6 +216,37 @@ tempest build --adaptive-icon assets/ic_launcher_foreground.png --icon-bg "#0b0f
     `mount`** — so the user sees your brand, not a blank screen. Because it lives
     in assets (a stable path), `--splash`/`--splash-bg` work on **every** build
     path, including `--fast`.
+
+## Distribute off the Play Store (`tempest build release-apk` → signed APK)
+
+To ship the app through a **website, an alternative store, or a direct link** —
+without going through the Play Store — you want a **release-signed APK signed with
+your own key** (not the debug-signed `tempest build apk`, which is for testing
+only). That's `tempest build release-apk`: it runs Gradle `assembleRelease` with
+your keystore.
+
+```bash
+tempest build release-apk                          # uses [tool.tempest] id/name/version
+tempest build release-apk --keystore release.jks   # your keystore (else ~/.tempestroid/release.jks)
+tempest build release-apk --app-id com.acme.app --app-version 1.2.0
+# → dist/<project>-release.apk
+```
+
+Verify the signature with the SDK's `apksigner`:
+
+```bash
+apksigner verify --print-certs dist/<project>-release.apk
+```
+
+!!! warning "Real build required (no `--fast` fallback)"
+    Unlike `tempest build apk`, `release-apk` does **not** fall back to the
+    `--fast` repackage when the toolchain is missing — a release-signed APK
+    requires the real Gradle build. Without JDK + SDK it fails with an error
+    (resolve the toolchain with `tempest setup --install`).
+
+!!! note "Same keystore as `prd`"
+    Reuses `prd`'s keystore and its warning below: **back up the key** and **set
+    your own `id`** before distributing.
 
 ## Publish to the Play Store (`tempest build prd` → AAB)
 
