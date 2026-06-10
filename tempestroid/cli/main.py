@@ -400,6 +400,16 @@ def build_cmd(
 
     is_release = target_norm in {"prd", "aab", "release"}
     is_release_apk = target_norm in {"release-apk", "apk-release"}
+    if fast and (is_release or is_release_apk):
+        # `--fast` repackages the debug-signed prebuilt host; it can neither
+        # produce an AAB nor apply release signing. Refuse rather than silently
+        # ignore the flag and hand back a debug artifact the user didn't ask for.
+        print(
+            f"cannot build: --fast is not supported for the '{target_norm}' "
+            "target (it only produces a debug-signed APK). Drop --fast for a "
+            "release build."
+        )
+        raise typer.Exit(1)
     if fast and branding.icon is not None:
         print(
             "warning: --icon is ignored with --fast (the launcher icon is a "
