@@ -115,6 +115,60 @@ def test_staged_into_host_empty_is_noop(tmp_path: Path) -> None:
     assert splash.read_bytes() == b"DEFAULT-SPLASH"
 
 
+def test_load_branding_adaptive(tmp_path: Path) -> None:
+    """`--adaptive-icon` + `--icon-bg` validate like the other branding inputs."""
+    fg = _png(tmp_path / "fg.png")
+    branding = load_branding(None, None, None, str(fg), "#0b0f14")
+    assert branding.adaptive_icon == fg
+    assert branding.icon_bg == "#0b0f14"
+    assert not branding.is_empty()
+
+    with pytest.raises(ValueError, match="file not found"):
+        load_branding(None, None, None, str(tmp_path / "missing.png"), None)
+    with pytest.raises(ValueError, match="#rrggbb"):
+        load_branding(None, None, None, str(fg), "teal")
+
+
+def test_staged_into_host_adaptive_icon_creates_then_cleans(tmp_path: Path) -> None:
+    """Adaptive staging writes the v26 resources, then removes them + their dirs."""
+    host = _fake_host(tmp_path / "host")
+    res = host / "app" / "src" / "main" / "res"
+    fg = _png(tmp_path / "fg.png", b"MY-FG")
+    branding = Branding(adaptive_icon=fg, icon_bg="#0b0f14")
+
+    fg_drawable = res / "drawable" / "ic_launcher_foreground.png"
+    bg_color = res / "values" / "ic_launcher_background.xml"
+    xml = res / "mipmap-anydpi-v26" / "ic_launcher.xml"
+    xml_round = res / "mipmap-anydpi-v26" / "ic_launcher_round.xml"
+
+    with staged_into_host(host, branding):
+        assert fg_drawable.read_bytes() == b"MY-FG"
+        assert "#0b0f14" in bg_color.read_text(encoding="utf-8")
+        assert "adaptive-icon" in xml.read_text(encoding="utf-8")
+        assert "@drawable/ic_launcher_foreground" in xml.read_text(encoding="utf-8")
+        assert xml_round.is_file()
+
+    # Every created file AND its created dir is gone — host left as found.
+    for path in (fg_drawable, bg_color, xml, xml_round):
+        assert not path.exists()
+    assert not (res / "drawable").exists()
+    assert not (res / "values").exists()
+    assert not (res / "mipmap-anydpi-v26").exists()
+
+
+def test_staged_into_host_adaptive_default_bg(tmp_path: Path) -> None:
+    """Omitting `icon_bg` falls back to the default white background."""
+    host = _fake_host(tmp_path / "host")
+    res = host / "app" / "src" / "main" / "res"
+    fg = _png(tmp_path / "fg.png", b"MY-FG")
+
+    with staged_into_host(host, Branding(adaptive_icon=fg)):
+        bg = (res / "values" / "ic_launcher_background.xml").read_text(
+            encoding="utf-8"
+        )
+        assert "#FFFFFF" in bg
+
+
 def test_inject_bundle_replaces_asset_entries(tmp_path: Path) -> None:
     """The repackage rewrites named asset entries while keeping the rest."""
     from tempestroid.cli.apk_repack import inject_bundle

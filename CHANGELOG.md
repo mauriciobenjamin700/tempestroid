@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Adaptive launcher icons** (Trilho F4, sub-task 2). `tempest icon <src>
+  --adaptive` also writes `ic_launcher_foreground.png` (the mark centered with
+  the adaptive safe-zone margin), and `tempest build --adaptive-icon <fg.png>
+  --icon-bg <#rrggbb>` emits a real Android adaptive icon — staging
+  `res/drawable/ic_launcher_foreground.png` + `res/values/ic_launcher_background.xml`
+  + `res/mipmap-anydpi-v26/ic_launcher{,_round}.xml` so the launcher applies its
+  mask (rounded/squircle) on API 26+, with the square PNG (`--icon`) as the
+  pre-26 fallback. Reads `adaptive_icon`/`icon_bg` from `[tool.tempest]` too. Like
+  `--icon`, it is Gradle-only (a compiled resource) and `--fast` warns + keeps the
+  default. The branding stager now tracks and removes the files/dirs it creates so
+  the host tree is left untouched.
+
 ## [0.11.1] — 2026-06-08
 
 ### Documentation

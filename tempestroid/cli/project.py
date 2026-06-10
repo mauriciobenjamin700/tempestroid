@@ -35,6 +35,9 @@ class TempestConfig:
         splash: Path to a boot-splash image (``splash`` key), or ``None``.
         splash_bg: Splash background ``#rrggbb`` (``splash_bg`` key), or ``None``.
         version: The versionName (``version`` key), or ``None`` (default 1.0.0).
+        adaptive_icon: Path to an adaptive-icon foreground image
+            (``adaptive_icon`` key), or ``None``.
+        icon_bg: Adaptive-icon background ``#rrggbb`` (``icon_bg`` key), or ``None``.
     """
 
     app_id: str | None = None
@@ -43,14 +46,17 @@ class TempestConfig:
     splash: str | None = None
     splash_bg: str | None = None
     version: str | None = None
+    adaptive_icon: str | None = None
+    icon_bg: str | None = None
 
 
 def read_config(app_path: str | Path) -> TempestConfig:
     """Read the ``[tool.tempest]`` build config for the project containing ``app``.
 
     Walks up from the app file to the nearest ``pyproject.toml`` and reads the
-    build keys (``id``/``name``/``icon``/``splash``/``splash_bg``/``version``).
-    ``icon``/``splash`` paths are resolved against that pyproject's directory.
+    build keys (``id``/``name``/``icon``/``splash``/``splash_bg``/``version``/
+    ``adaptive_icon``/``icon_bg``). ``icon``/``splash``/``adaptive_icon`` paths
+    are resolved against that pyproject's directory.
 
     Args:
         app_path: Path to the app's entry file.
@@ -89,6 +95,8 @@ def read_config(app_path: str | Path) -> TempestConfig:
         splash=_path("splash"),
         splash_bg=_str("splash_bg"),
         version=_str("version"),
+        adaptive_icon=_path("adaptive_icon"),
+        icon_bg=_str("icon_bg"),
     )
 
 

@@ -242,15 +242,25 @@ def icon_cmd(
             help="Fraction of the splash canvas the mark occupies (0–1).",
         ),
     ] = 0.5,
+    adaptive: Annotated[
+        bool,
+        typer.Option(
+            "--adaptive",
+            help="Also generate ic_launcher_foreground.png for an adaptive icon "
+            "(feed it to `tempest build --adaptive-icon`).",
+        ),
+    ] = False,
 ) -> None:
     """Generate the launcher icon + boot splash from one source image.
 
     Writes ``icon.png`` + ``splash.png`` ready for
-    ``tempest build --icon … --splash …``. Needs Pillow
-    (``pip install tempestroid[icons]``).
+    ``tempest build --icon … --splash …``. With ``--adaptive`` it also writes
+    ``ic_launcher_foreground.png`` for an Android adaptive icon (the launcher
+    applies its mask) — feed it to ``tempest build --adaptive-icon … --icon-bg …``.
+    Needs Pillow (``pip install tempestroid[icons]``).
     """
     raise typer.Exit(
-        _run_icon(source, out, icon_size, splash_size, splash_scale)
+        _run_icon(source, out, icon_size, splash_size, splash_scale, adaptive)
     )
 
 
@@ -326,6 +336,20 @@ def build_cmd(
             help="Splash bg #rrggbb override (else config / #0b0f14).",
         ),
     ] = None,
+    adaptive_icon: Annotated[
+        str | None,
+        typer.Option(
+            "--adaptive-icon",
+            help="Adaptive-icon foreground PNG (Gradle only; launcher masks it).",
+        ),
+    ] = None,
+    icon_bg: Annotated[
+        str | None,
+        typer.Option(
+            "--icon-bg",
+            help="Adaptive-icon background #rrggbb (with --adaptive-icon).",
+        ),
+    ] = None,
     fast: Annotated[
         bool,
         typer.Option(
@@ -384,17 +408,21 @@ def build_cmd(
     eff_code = version_code if version_code is not None else 1
     try:
         branding = load_branding(
-            icon or cfg.icon, splash or cfg.splash, splash_bg or cfg.splash_bg
+            icon or cfg.icon,
+            splash or cfg.splash,
+            splash_bg or cfg.splash_bg,
+            adaptive_icon or cfg.adaptive_icon,
+            icon_bg or cfg.icon_bg,
         )
     except ValueError as exc:
         print(f"cannot build: {exc}")
         raise typer.Exit(1) from exc
 
     is_release = target_norm in {"prd", "aab", "release"}
-    if fast and branding.icon is not None:
+    if fast and (branding.icon is not None or branding.adaptive_icon is not None):
         print(
-            "warning: --icon is ignored with --fast (the launcher icon is a "
-            "compiled resource); the APK keeps the default icon."
+            "warning: --icon/--adaptive-icon are ignored with --fast (the launcher "
+            "icon is a compiled resource); the APK keeps the default icon."
         )
     if is_release:
         raise typer.Exit(
@@ -886,6 +914,7 @@ def _run_icon(
     icon_size: int,
     splash_size: int,
     splash_scale: float,
+    adaptive: bool = False,
 ) -> int:
     """Generate icon.png + splash.png from a source image, reporting the outcome.
 
@@ -895,6 +924,7 @@ def _run_icon(
         icon_size: Launcher-icon square edge in px.
         splash_size: Splash canvas square edge in px.
         splash_scale: Fraction of the splash canvas the mark occupies.
+        adaptive: Also generate ``ic_launcher_foreground.png`` for an adaptive icon.
 
     Returns:
         The process exit code.
@@ -908,17 +938,26 @@ def _run_icon(
             icon_size=icon_size,
             splash_size=splash_size,
             splash_scale=splash_scale,
+            adaptive=adaptive,
         )
     except (RuntimeError, FileNotFoundError, ValueError) as exc:
         print(f"cannot generate assets: {exc}")
         return 1
-    print(
-        f"wrote {assets.icon}\n"
-        f"wrote {assets.splash}\n"
-        "Use them with:\n"
-        f'  tempest build --icon {assets.icon} --splash {assets.splash} '
+    lines = [f"wrote {assets.icon}", f"wrote {assets.splash}"]
+    if assets.foreground is not None:
+        lines.append(f"wrote {assets.foreground}")
+    lines.append("Use them with:")
+    build = (
+        f"  tempest build --icon {assets.icon} --splash {assets.splash} "
         '--splash-bg "#0b0f14"'
     )
+    if assets.foreground is not None:
+        build += (
+            f" \\\n    --adaptive-icon {assets.foreground} "
+            '--icon-bg "#0b0f14"'
+        )
+    lines.append(build)
+    print("\n".join(lines))
     return 0
 
 
