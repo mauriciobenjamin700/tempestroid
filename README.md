@@ -189,6 +189,7 @@ uv run tempest deploy               # push the whole project to a device — off
 uv run tempest serve                # LAN code-push + hot reload (whole project) in dev mode
 uv run tempest doctor               # check the Android build/run prerequisites
 uv run tempest build apk            # per-app APK (own id, installs side by side); reads [tool.tempest]; JDK+SDK
+uv run tempest build release-apk    # release-signed standalone APK (distribute off-Play); --keystore
 uv run tempest build prd            # store-ready release AAB (Play); reads [tool.tempest] + keystore
 uv run tempest run                  # build + install on a device + stream logs (needs SDK/NDK)
 uv run tempest icon logo.png        # generate icon.png + splash.png from one image (needs [icons])
@@ -283,8 +284,12 @@ The build runs Gradle but **reuses the prebuilt host natives** (libpython / the
 JNI shim / stdlib that ship in the package) and bundles the `android-host`
 project **inside the wheel**, so it needs only a **JDK + the Android SDK** — **no
 NDK, no CPython toolchain, no `git clone`** (`tempest setup --install` bootstraps
-the SDK). Output: `dist/<project>.apk` (debug-signed). `tempest build prd` is the
-store-ready release **AAB**; `tempest run` = build + install + launch + logs.
+the SDK). Output: `dist/<project>.apk` (debug-signed). `tempest build release-apk`
+is the **release-signed standalone** APK for distributing off the Play Store
+(signed with your own `--keystore`, else an auto-generated one; output
+`dist/<project>-release.apk`, verify with `apksigner verify`); `tempest build
+prd` is the store-ready release **AAB**; `tempest run` = build + install + launch
++ logs.
 
 Without a JDK/SDK, `tempest build` falls back to **`--fast`** (repackage the
 prebuilt host, no SDK at all) with a warning — that APK keeps the shared
@@ -319,7 +324,7 @@ surfaced and the happy path stays quiet.
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (JDK, android-host, SDK, adb, device); build readiness sets the exit code, a missing device is informational (only `run`/`install` need one) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [apk\|prd]` | ✅ | `apk` (default): a debug, **per-app** APK — its own `applicationId` + launcher label so **any number of tempestroid apps install side by side** (never overwriting). Reuses the prebuilt host natives → needs only **JDK + Android SDK** (no NDK, no CPython toolchain). `prd`: a store-ready release **AAB**. Identity + branding come from **`[tool.tempest]`** (`id`/`name`/`icon`/`splash`/`splash_bg`/`version`/`adaptive_icon`/`icon_bg`) so the command stays short; flags (`--app-id`/`--app-name`/`--icon`/`--adaptive-icon`/`--icon-bg`/…) override. `--adaptive-icon <fg.png> --icon-bg <#rrggbb>` emits a real Android adaptive icon (the launcher masks it). Advanced: `--fast` (repackage, no SDK, shared id, one app), `--from-source` (stage the CPython toolchain). `-o`, `-v` |
+| `tempest build [apk\|release-apk\|prd]` | ✅ | `apk` (default): a debug, **per-app** APK — its own `applicationId` + launcher label so **any number of tempestroid apps install side by side** (never overwriting). Reuses the prebuilt host natives → needs only **JDK + Android SDK** (no NDK, no CPython toolchain). `release-apk`: a **release-signed standalone** APK to distribute outside the Play Store (`--keystore`, else auto-generated; verify with `apksigner verify`). `prd`: a store-ready release **AAB**. Identity + branding come from **`[tool.tempest]`** (`id`/`name`/`icon`/`splash`/`splash_bg`/`version`/`adaptive_icon`/`icon_bg`) so the command stays short; flags (`--app-id`/`--app-name`/`--icon`/`--adaptive-icon`/`--icon-bg`/…) override. `--adaptive-icon <fg.png> --icon-bg <#rrggbb>` emits a real Android adaptive icon (the launcher masks it). Advanced: `--fast` (repackage, no SDK, shared id, one app), `--from-source` (stage the CPython toolchain). `-o`, `-v` |
 | `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 | `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore |

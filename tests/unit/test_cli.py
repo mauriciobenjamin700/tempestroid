@@ -460,6 +460,80 @@ def test_build_release_uses_given_app_id(
     assert captured == {"app_id": "com.acme.todo", "version": "2.1.0"}
 
 
+def test_build_release_apk_dispatches_to_release_apk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest build release-apk` builds a release APK via build_release_apk."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "myapp"
+    app.mkdir()
+    (app / "pyproject.toml").write_text('[tool.tempest]\napp = "main.py"\n')
+    (app / "main.py").write_text(
+        "def make_state():\n    ...\ndef view(app):\n    ...\n"
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_build_release_apk(
+        app_arg: object, config: object, **_kw: object
+    ) -> Path:
+        seen["app"] = app_arg
+        seen["app_id"] = config.app_id  # type: ignore[attr-defined]
+        return tmp_path / "out-release.apk"
+
+    monkeypatch.setattr(release_build, "build_release_apk", fake_build_release_apk)
+    assert main(["build", "release-apk", "--app", str(app / "main.py")]) == 0
+    # No id (flag or [tool.tempest]) → a derived placeholder from the project dir.
+    assert seen["app_id"] == "com.example.myapp"
+
+
+def test_build_release_apk_passes_app_id_and_keystore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An explicit --app-id + --keystore reach the release APK config."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    keystore = tmp_path / "my.jks"
+    keystore.write_text("")
+    captured: dict[str, object] = {}
+
+    def fake_build_release_apk(
+        _app: object, config: object, **_kw: object
+    ) -> Path:
+        captured["app_id"] = config.app_id  # type: ignore[attr-defined]
+        captured["keystore"] = config.keystore  # type: ignore[attr-defined]
+        return tmp_path / "out-release.apk"
+
+    monkeypatch.setattr(release_build, "build_release_apk", fake_build_release_apk)
+    rc = main(
+        ["build", "release-apk", "--app", str(app), "--app-id", "com.acme.todo",
+         "--keystore", str(keystore)]
+    )
+    assert rc == 0
+    assert captured == {"app_id": "com.acme.todo", "keystore": keystore}
+
+
+def test_build_fast_rejected_for_release_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--fast` with a release target errors instead of silently degrading."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+
+    def must_not_run(*_a: object, **_k: object) -> Path:
+        raise AssertionError("--fast must not start a release build")
+
+    monkeypatch.setattr(release_build, "build_aab", must_not_run)
+    monkeypatch.setattr(release_build, "build_release_apk", must_not_run)
+    assert main(["build", "prd", "--app", str(app), "--fast"]) == 1
+    assert main(["build", "release-apk", "--app", str(app), "--fast"]) == 1
+
+
 def test_clean_cache_removes_dirs_keeps_keystore(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

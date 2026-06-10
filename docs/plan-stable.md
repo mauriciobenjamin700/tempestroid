@@ -35,7 +35,7 @@ testes verdes). Acrescenta uma regra própria:
 | F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | 🅿️ adiada (futuro) — grupo no-config ✅ (clipboard/storage/database/secure_storage/system); resto parkeado | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
 | F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ✅ done (v0.7.0, PR #43) | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
 | F-branding | Ícone + splash no `tempest build` + `tempest icon` (gera de uma imagem) | ✅ done (v0.8.0, PR #47) | ícone default + splash de assets cobrem o boot; `--icon/--splash/--splash-bg` + `tempest icon` device-verificados |
-| F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); (1) APK release-signed em PR separado; (3) matriz device, (4) fechar F2, (5) trim pendentes | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
+| F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(1) APK release-signed ✅** (`tempest build release-apk`); **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); (3) matriz device, (4) fechar F2, (5) trim de tamanho pendentes | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
 
 ---
 
@@ -233,12 +233,17 @@ cobertura device fechada. Hoje (v0.8.0) já dá pra mandar um APK pros amigos
 sideload); F4 cobre o salto para "profissional".
 
 ### Sub-tarefas
-1. **APK release-signed standalone** — `tempest build --release-apk --keystore
-   minha.jks --app-id … --app-version …`: hoje só existe APK **debug-signed**
-   (`tempest build`) ou **AAB** de loja (`--release`); falta um **APK** assinado
+1. ✅ **APK release-signed standalone** — `tempest build release-apk --keystore
+   minha.jks --app-id … --app-version …`: antes só existia APK **debug-signed**
+   (`tempest build`) ou **AAB** de loja (`prd`); agora há um **APK** assinado
    com a keystore do publisher para distribuir **fora da Play** (site, loja
    alternativa, link direto) com identidade real. Gradle `assembleRelease` +
-   signing config (reaproveitar `ensure_release_keystore`).
+   signing config (reaproveita `ensure_release_keystore`/`ReleaseConfig`/
+   `_signing_props`; `build_release_apk` em `cli/release_build.py`, target
+   `release-apk` em `cli/main.py` → `_run_release_apk`). Saída
+   `dist/<project>-release.apk`; verificável por `apksigner verify`.
+   **Não cai no fallback `--fast`** — um APK release exige o build real.
+   Device-verificação (instalar + abrir) pendente do toolchain Android.
 2. **Ícone adaptativo** — `tempest icon --adaptive` gera as camadas
    foreground/background + o `mipmap-anydpi-v26/ic_launcher.xml` (adaptive icon),
    para o launcher aplicar a máscara (arredondado/squircle) como um app nativo.

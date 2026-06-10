@@ -19,6 +19,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--icon`, it is Gradle-only (a compiled resource) and `--fast` warns + keeps the
   default. The branding stager now tracks and removes the files/dirs it creates so
   the host tree is left untouched.
+- **`tempest build release-apk` — release-signed standalone APK** (Trilho F4,
+  sub-task 1). The professional-distribution counterpart of `tempest build apk`
+  (debug-signed) and `tempest build prd` (store AAB): drives Gradle
+  `assembleRelease` with the publisher's keystore (`--keystore`, else an
+  auto-generated cached one), producing `dist/<project>-release.apk` installable
+  outside the Play Store (a website, an alternative store, a direct link) and
+  verifiable with `apksigner verify`. Unlike the debug `apk`, it does **not** fall
+  back to the toolchain-free `--fast` repackage — a release-signed APK requires
+  the real build. New `build_release_apk` in `cli/release_build.py` (sharing
+  `ReleaseConfig` / `ensure_release_keystore` / the new `_signing_props` helper
+  with `build_aab`) + the `release-apk` target in `cli/main.py`.
 
 ## [0.11.1] — 2026-06-08
 
