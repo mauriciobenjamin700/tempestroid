@@ -10,6 +10,7 @@ uv run tempest dev examples/counter/app.py       # dev loop: edit + save → hot
 uv run tempest deploy examples/multifile/main.py # offline push to a device (no SDK/NDK)
 uv run tempest serve examples/device_counter/app.py  # LAN code-push, no APK rebuild
 uv run tempest build apk                        # per-app APK, side by side (JDK + SDK)
+uv run tempest build release-apk                # release-signed APK (distribute off the Play Store)
 uv run tempest run                              # build + install on a device + logs
 uv run tempest spec                             # print the typed contract (widgets/events) as JSON
 uv run tempest --help
@@ -29,7 +30,7 @@ uv run tempest --help
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/build-tools; `--install` installs the Android SDK. |
 | `tempest version` | ✅ | Print the framework version (same as `--version`). |
 | `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore. |
-| `tempest build [apk\|prd]` | ✅ | `apk`: a **per-app** APK (own id → N apps side by side) via Gradle reusing the prebuilt natives (**JDK + SDK only**, no NDK/toolchain). `prd`: a release AAB. Reads `[tool.tempest]`. |
+| `tempest build [apk\|release-apk\|prd]` | ✅ | `apk`: a **per-app** APK (own id → N apps side by side) via Gradle reusing the prebuilt natives (**JDK + SDK only**, no NDK/toolchain). `release-apk`: a release-signed APK with your keystore to distribute **off the Play Store** (`--keystore`; verify with `apksigner verify`). `prd`: a release AAB. Reads `[tool.tempest]`. |
 | `tempest run` | ✅ | `build apk` + install on a device + stream logs. |
 | `tempest icon <img>` | ✅ | Generate `icon.png` + `splash.png` from one image (Pillow). |
 | `tempest lint [path]` | ✅ | `ruff check` on the target (lint only). |
