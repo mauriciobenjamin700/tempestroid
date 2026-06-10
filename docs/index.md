@@ -1,4 +1,4 @@
-# tempestroid
+# Tempestroid
 
 Construa **apps Android nativos** em **Python tipado**.
 
