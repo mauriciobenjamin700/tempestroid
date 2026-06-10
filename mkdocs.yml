@@ -78,6 +78,7 @@ plugins:
             Rodar no dispositivo (WSL): Running on a device (WSL)
             Referência: Reference
             API pública: Public API
+            Cobertura de renderizadores: Renderer coverage
             Lado do dispositivo (ponte): Device side (bridge)
             Projeto: Project
             Roadmap e fases: Roadmap and phases
@@ -140,6 +141,7 @@ nav:
   - Referência:
       - API pública: referencia/api.md
       - Enums: referencia/enums.md
+      - Cobertura de renderizadores: referencia/cobertura.md
       - Lado do dispositivo (ponte): referencia/dispositivo.md
   - Projeto:
       - Roadmap e fases: roadmap.md
