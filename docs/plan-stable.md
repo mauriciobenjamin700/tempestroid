@@ -35,7 +35,7 @@ testes verdes). Acrescenta uma regra própria:
 | F2 | Validação on-device das capacidades nativas Kotlin (uma PR de verificação por capacidade/grupo) | 🅿️ adiada (futuro) — grupo no-config ✅ (clipboard/storage/database/secure_storage/system); resto parkeado | cada capacidade exercida no device com evidência (screenshot/dumpsys/log) e resultado tipado; matriz de status verde |
 | F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ✅ done (v0.7.0, PR #43) | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
 | F-branding | Ícone + splash no `tempest build` + `tempest icon` (gera de uma imagem) | ✅ done (v0.8.0, PR #47) | ícone default + splash de assets cobrem o boot; `--icon/--splash/--splash-bg` + `tempest icon` device-verificados |
-| F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(1) APK release-signed ✅** (`tempest build release-apk`); **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); (3) matriz device, (4) fechar F2, (5) trim de tamanho pendentes | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
+| F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(1) APK release-signed ✅** (`tempest build release-apk`); **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); **(3) matriz de cobertura de widgets publicada ✅** (`docs/referencia/cobertura.md`, PT+EN); (4) fechar F2 + (5) trim pendentes (device/investigação) | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
 
 ---
 
@@ -248,8 +248,14 @@ sideload); F4 cobre o salto para "profissional".
    foreground/background + o `mipmap-anydpi-v26/ic_launcher.xml` (adaptive icon),
    para o launcher aplicar a máscara (arredondado/squircle) como um app nativo.
    Hoje o ícone é um PNG quadrado simples (sem máscara do launcher).
-3. **Cobertura device dos widgets** — matriz de quais widgets do Trilho E
-   renderizam no Compose vs. só no Qt; fechar os gaps prioritários.
+3. ✅ **Cobertura device dos widgets** — matriz publicada em
+   `docs/referencia/cobertura.md` (PT+EN, na nav MkDocs): todo widget primitivo
+   exportado tem case nos DOIS renderizadores (Compose: 62 cases primitivos + 7
+   de overlay; sem case → `Box`/`Popup` forward-compat); componentes são lowered
+   no Python e nunca chegam ao Kotlin. Gaps de wiring = zero; o que resta é
+   device-verificação por widget (rodadas de device-verify das fases E, contínuo)
+   e os placeholders device-only sinalizados (`CameraPreview`/`QrScanner`/`MapView`).
+   Coluna Compose derivada do `when (node.type)` em `TempestRenderer.kt`.
 4. **Fechar a F2** (capacidades nativas restantes no device) — pré-requisito para
    um app "profissional" que use câmera/geo/etc.
 5. **Trim de tamanho** (opcional) — investigar reduzir o ~58MB do CPython

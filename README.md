@@ -173,7 +173,8 @@ virtualized lists, navigation, overlays, animation, gestures, and media. Parity
 is pinned by the conformance suite (golden snapshots of both `Style` translators)
 and device-verified across E0–E9. A few hardware widgets (`CameraPreview` /
 `QrScanner` / `MapView`) are device-only and show a signalled placeholder on Qt.
-See the [widget set](https://mauriciobenjamin700.github.io/tempestroid/guia/exemplos/#conjunto-de-widgets-atual)
+See the per-widget [renderer-coverage matrix](https://mauriciobenjamin700.github.io/tempestroid/referencia/cobertura/)
+(Qt vs Compose), the [widget set](https://mauriciobenjamin700.github.io/tempestroid/guia/exemplos/#conjunto-de-widgets-atual)
 and [`examples/README.md`](examples/README.md).
 
 ---

@@ -31,6 +31,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ReleaseConfig` / `ensure_release_keystore` / the new `_signing_props` helper
   with `build_aab`) + the `release-apk` target in `cli/main.py`.
 
+### Documentation
+
+- **Renderer-coverage matrix** (Trilho F4, sub-task 3). New bilingual reference
+  page `docs/referencia/cobertura.md` (PT + EN, in the MkDocs nav) mapping every
+  widget to its Qt-simulator and Compose-device handler. Grounded in the Kotlin
+  `when (node.type)` dispatch (`TempestRenderer.kt`): every exported primitive has
+  a handler in both renderers (Compose: 62 primitive + 7 overlay cases; composites
+  are lowered to primitives in Python and never reach Kotlin), with the device-only
+  placeholders (`CameraPreview`/`QrScanner`/`MapView`) and the documented Qt↔Compose
+  divergences flagged. README links the matrix from the coverage paragraph.
+
 ## [0.11.1] — 2026-06-08
 
 ### Documentation
