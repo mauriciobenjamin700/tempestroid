@@ -1,4 +1,4 @@
-# tempestroid
+# Tempestroid
 
 > 📖 **Documentação / Docs:** site MkDocs bilíngue em [`docs/`](docs/index.md)
 > com seletor **PT-BR / EN-US** no header — rode `uv run mkdocs serve` e abra
