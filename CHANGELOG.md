@@ -6,7 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.12.0] — 2026-06-10
+### Added
+
+- **Opt-in native features (APK trim, Trilho F4 sub-task 5).** The heavy Android
+  capabilities (CameraX, ML Kit barcode, Firebase/FCM, media3 video, maps) are now
+  **gated at build time** — the lean default APK ships none of them, cutting the
+  debug APK from **~58 MB to ~47 MB (−11.4 MB)** and the uncompressed DEX by
+  ~11.9 MB (verified: the lean DEX has 0 classes from camera/mlkit/media3/
+  firebase, the full DEX has 4,913). An app opts back in per feature via
+  `[tool.tempest] features = ["camera", "qr"]` or `tempest build --feature camera`
+  (repeatable); `qr` transitively pulls in `camera`. Each opt-in builds from source
+  (SDK/NDK); the lean default keeps the toolchain-free prebuilt-host path. A
+  gated-off widget (`CameraPreview`/`QrScanner`/`VideoPlayer`/`MapView`) renders a
+  labeled placeholder and a gated-off native capability returns a typed
+  `NativeError("feature_not_built")`. New `FEATURES`/`resolve_features` in
+  `cli/project.py`; the `-Ptempest.features` Gradle property gates the deps +
+  source sets + a configuration-time manifest generator in `android-host`. Mirror
+  PyPI extras (`tempestroid[camera]` …) document intent. Further trim (the
+  ~9 MB `material-icons-extended`, R8 minification) is future work. Design:
+  `docs/research/feature-gating.md`. **On-device verification pending (no device).**
 
 ### Added
 

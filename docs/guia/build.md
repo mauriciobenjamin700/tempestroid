@@ -219,6 +219,49 @@ tempest build --adaptive-icon assets/ic_launcher_foreground.png --icon-bg "#0b0f
     assets (caminho estável), `--splash`/`--splash-bg` funcionam em **todos** os
     caminhos de build, inclusive `--fast`.
 
+## Capacidades nativas pesadas são opt-in (APK enxuto)
+
+O peso do APK não vem do Python (a stdlib do CPython já é enxugada no build) e sim
+das **dependências Android pesadas**: câmera, leitor de QR (ML Kit), push (Firebase),
+vídeo (media3) e mapas. Por isso elas são **opcionais** — o build **default não
+embute nenhuma**, cortando o APK debug de **~58 MB para ~47 MB (−11,4 MB)**. Você
+reativa só o que o app usa:
+
+```toml
+# pyproject.toml
+[tool.tempest]
+features = ["camera", "qr"]   # embute só câmera + leitor de QR
+```
+
+ou na linha de comando (repetível):
+
+```bash
+tempest build --feature camera --feature qr
+```
+
+| Feature | Habilita |
+| --- | --- |
+| `camera` | widget `CameraPreview` + `take_photo`/`record_video` |
+| `qr` | widget `QrScanner` (puxa `camera` junto automaticamente) |
+| `push` | notificações push via FCM |
+| `video` | widget `VideoPlayer` |
+| `maps` | widget `MapView` |
+
+!!! info "Cada feature exige build from-source (SDK/NDK)"
+    Um APK pré-compilado não tem como receber dependências Gradle novas, então
+    qualquer `--feature` liga automaticamente o caminho `--from-source` (precisa do
+    Android SDK + NDK). O **default enxuto** (sem features) continua usando o host
+    pré-compilado — zero toolchain.
+
+!!! tip "Sem a feature, o widget vira um placeholder"
+    Se o app usa um `CameraPreview`/`QrScanner`/`VideoPlayer`/`MapView` mas a
+    feature não foi embutida, ele renderiza um marcador rotulado em vez de quebrar;
+    uma chamada nativa não-embutida levanta `NativeError("feature_not_built")`.
+
+Os extras PyPI espelham as features (`pip install tempestroid[camera]`) apenas como
+**documentação de intenção** — o que de fato corta o APK é a flag de build acima,
+não o pip.
+
 ## Distribuir fora da Play (`tempest build release-apk` → APK assinado)
 
 Para mandar o app por um **site, loja alternativa ou link direto** — sem passar

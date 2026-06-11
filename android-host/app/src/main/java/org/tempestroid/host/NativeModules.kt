@@ -59,9 +59,6 @@ import androidx.work.Worker
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.google.firebase.messaging.FirebaseMessagingService
-import com.google.firebase.messaging.RemoteMessage
-import com.google.firebase.messaging.FirebaseMessaging
 import java.util.concurrent.TimeUnit
 import java.io.File
 import org.json.JSONArray
@@ -86,6 +83,9 @@ import org.json.JSONObject
  *   activity-result launchers.
  */
 class NativeModules(private val activity: ComponentActivity) {
+
+    /** The host activity, exposed for feature source sets (camera/push). */
+    internal val hostActivity: ComponentActivity get() = activity
 
     /** A native command awaiting an async device result, pinned by request id. */
     private data class Pending(val requestId: String, val command: JSONObject)
@@ -133,7 +133,9 @@ class NativeModules(private val activity: ComponentActivity) {
             "clipboard" -> handleClipboard(action, args, requestId)
             "storage" -> handleStorage(action, args, requestId)
             "geolocation" -> handleGeolocation(args, requestId)
-            "camera" -> handleCamera(command, requestId)
+            // Gated by the `camera` feature: real impl in src/feat_camera, stub
+            // (replies feature_not_built) in src/stub_camera. Same signature.
+            "camera" -> handleCamera(this, command, requestId)
             "audio" -> handleAudio(command, action, args, requestId)
             "bluetooth" -> handleBluetooth(args, requestId)
             "haptics" -> handleHaptics(action, args)
@@ -146,7 +148,9 @@ class NativeModules(private val activity: ComponentActivity) {
             "prefs" -> handlePrefs(action, args, requestId)
             "database" -> handleDatabase(action, args, requestId)
             "connectivity" -> handleConnectivity(action, args, requestId)
-            "push" -> handlePush(action, args, requestId)
+            // Gated by the `push` feature: real impl (FirebaseMessaging) in
+            // src/feat_push, stub (replies feature_not_built) in src/stub_push.
+            "push" -> handlePush(this, action, args, requestId)
             "background" -> handleBackground(action, args)
             else -> {
                 Log.w(TAG, "unknown native module: $module")
@@ -161,7 +165,7 @@ class NativeModules(private val activity: ComponentActivity) {
      * Send a request/response result back to Python over the reserved token.
      * No-op for fire-and-forget commands (null [requestId]).
      */
-    private fun reply(
+    internal fun reply(
         requestId: String?,
         ok: Boolean,
         data: JSONObject? = null,
@@ -185,7 +189,7 @@ class NativeModules(private val activity: ComponentActivity) {
      * Run [command] now if all [permissions] are granted, else request them and
      * resume once the user responds. The resume re-enters [handle].
      */
-    private fun withPermissions(
+    internal fun withPermissions(
         permissions: Array<String>,
         requestId: String?,
         command: JSONObject,
@@ -368,24 +372,13 @@ class NativeModules(private val activity: ComponentActivity) {
         }
     }
 
-    // --- camera --------------------------------------------------------------
+    // --- camera capture plumbing ---------------------------------------------
+    // The dispatch entry `handleCamera` is feature-gated (src/feat_camera vs
+    // src/stub_camera); the capture plumbing below stays in src/main since it
+    // references no heavy dependency (system camera intent + FileProvider from
+    // androidx.core), and is only ever reached via the real feat_camera path.
 
-    private fun handleCamera(command: JSONObject, requestId: String?) {
-        val action = command.optString("action")
-        val args = command.optJSONObject("args") ?: JSONObject()
-        // Video also records audio, so it needs the microphone permission too.
-        val permissions =
-            if (action == "record_video") {
-                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-            } else {
-                arrayOf(Manifest.permission.CAMERA)
-            }
-        withPermissions(permissions, requestId, command) {
-            launchCapture(action, args, requestId)
-        }
-    }
-
-    private fun launchCapture(action: String, args: JSONObject, requestId: String?) {
+    internal fun launchCapture(action: String, args: JSONObject, requestId: String?) {
         if (requestId == null) return
         val video = action == "record_video"
         val dir = File(activity.filesDir, if (video) "videos" else "photos")
@@ -1230,47 +1223,9 @@ class NativeModules(private val activity: ComponentActivity) {
         }
     }
 
-    // --- push (FCM register + scheduled notification) -----------------------
-
-    /**
-     * `register` reads the FCM registration token (request/response);
-     * `schedule_notification` posts a local notification after a delay
-     * (fire-and-forget, via the existing [NotificationModule]).
-     *
-     * FCM is device-configuration-gated: without a `google-services.json` +
-     * FirebaseApp init the token read throws, and we reply
-     * `error="not_configured"` (documented pendency).
-     */
-    private fun handlePush(action: String, args: JSONObject, requestId: String?) {
-        when (action) {
-            "register" -> {
-                try {
-                    FirebaseMessaging.getInstance().token
-                        .addOnSuccessListener { token ->
-                            reply(requestId, true, data = JSONObject().put("token", token))
-                        }
-                        .addOnFailureListener { e ->
-                            reply(
-                                requestId, false,
-                                error = "not_configured", message = e.message ?: "",
-                            )
-                        }
-                } catch (e: Exception) {
-                    // FirebaseApp not initialised (no google-services.json).
-                    reply(requestId, false, error = "not_configured", message = e.message ?: "")
-                }
-            }
-            "schedule_notification" -> {
-                // v1: post immediately (no exact-alarm scheduling); the title/body
-                // route through the existing notification channel.
-                val notifyArgs = JSONObject()
-                    .put("title", args.optString("title"))
-                    .put("body", args.optString("body"))
-                NotificationModule.handle(activity, "notify", notifyArgs)
-            }
-            else -> reply(requestId, false, error = "unavailable", message = "no $action")
-        }
-    }
+    // The `push` dispatch entry `handlePush` is feature-gated (src/feat_push vs
+    // src/stub_push). Both call back into the shared NotificationModule for the
+    // fire-and-forget `schedule_notification` action.
 
     // --- background (WorkManager) -------------------------------------------
 
@@ -1346,7 +1301,7 @@ class NativeModules(private val activity: ComponentActivity) {
 }
 
 /** Native notifications: posts a system notification via NotificationManager. */
-private object NotificationModule {
+internal object NotificationModule {
 
     private const val CHANNEL_ID = "tempestroid"
     private var nextId = 1
@@ -1419,19 +1374,3 @@ class TempestBackgroundWorker(context: Context, params: WorkerParameters) :
     }
 }
 
-/**
- * FCM receiver service (E8 PushModule). Declared in the manifest so the app can
- * receive pushes once Firebase is configured. Device-gated: without a
- * `google-services.json` FirebaseApp never initialises and this service is never
- * instantiated. A delivered message is logged; routing it into Python (over the
- * event channel) is a documented pendency tied to the same Firebase config.
- */
-class TempestMessagingService : FirebaseMessagingService() {
-    override fun onNewToken(token: String) {
-        Log.i("tempestroid", "FCM new token: $token")
-    }
-
-    override fun onMessageReceived(message: RemoteMessage) {
-        Log.i("tempestroid", "FCM message: ${message.data}")
-    }
-}

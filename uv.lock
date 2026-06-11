@@ -1031,7 +1031,7 @@ wheels = [
 
 [[package]]
 name = "tempestroid"
-version = "0.11.1"
+version = "0.12.0"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
@@ -1068,7 +1068,7 @@ requires-dist = [
     { name = "qasync", marker = "extra == 'qt'", specifier = ">=0.27" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
-provides-extras = ["qt", "icons"]
+provides-extras = ["qt", "icons", "camera", "qr", "push", "video", "maps", "features"]
 
 [package.metadata.requires-dev]
 dev = [

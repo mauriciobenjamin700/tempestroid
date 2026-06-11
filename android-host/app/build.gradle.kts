@@ -50,6 +50,24 @@ val prebuiltHostDir: File? =
     (project.findProperty("tempest.prebuiltHost")?.toString())?.let { rootProject.file(it) }
 val isPrebuilt = prebuiltHostDir != null
 
+// --- Feature gating (F4) ----------------------------------------------------
+// `-Ptempest.features=camera,qr,push,video` (CSV; empty = lean default) selects
+// which heavy optional Android dependencies + the code/manifest that uses them
+// are built in. Without it the APK ships lean (~25-30 MB) and the gated widgets
+// render a "<feature> not built" placeholder; gated native handlers reply
+// `feature_not_built`. `qr` requires `camera` (ML Kit runs on the camera preview),
+// resolved transitively below (and defensively even if the CLI didn't).
+val rawFeatures: Set<String> = (project.findProperty("tempest.features") as String?)
+    ?.split(",")?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }?.toSet()
+    .orEmpty()
+val features: Set<String> = buildSet {
+    addAll(rawFeatures)
+    if ("qr" in rawFeatures) add("camera")  // ML Kit decodes the CameraX preview.
+}
+// Whether the camera dependency stack + manifest are needed (camera or qr).
+val needsCamera = "camera" in features
+logger.lifecycle("tempest.features = ${features.sorted().joinToString(",").ifEmpty { "(lean)" }}")
+
 android {
     namespace = "org.tempestroid.host"
     compileSdk = 35
@@ -73,6 +91,12 @@ android {
             (project.findProperty("tempest.versionCode") ?: "1").toString().toInt()
         versionName =
             (project.findProperty("tempest.versionName") ?: "0.0.1").toString()
+        // Expose the active feature CSV to Kotlin for runtime checks if useful.
+        buildConfigField(
+            "String",
+            "TEMPEST_FEATURES",
+            "\"${features.sorted().joinToString(",")}\"",
+        )
         ndk { abiFilters += abi }
         // In prebuilt mode nothing is compiled from C — the prebuilt
         // libtempest_host.so is reused — so the CMake configuration is skipped
@@ -145,8 +169,88 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    // --- Feature source-set selection (F4) ----------------------------------
+    // Each gated piece exists twice with an IDENTICAL signature: the real impl in
+    // src/feat_<f>/java and a placeholder in src/stub_<f>/java. src/main's `when`
+    // / module router call them by name, so it compiles against whichever set is
+    // active. We add the real srcDir when the feature is on, else the stub.
+    fun selectFeature(name: String, active: Boolean) {
+        val dir = if (active) "src/feat_$name/java" else "src/stub_$name/java"
+        sourceSets.getByName("main").java.srcDir(dir)
+    }
+    selectFeature("camera", needsCamera)
+    selectFeature("qr", "qr" in features)
+    selectFeature("video", "video" in features)
+    selectFeature("push", "push" in features)
+
+    // The generated, feature-composed manifest replaces the lean base for `main`.
+    sourceSets.getByName("main").manifest.srcFile(
+        layout.buildDirectory.file("generated/tempest/AndroidManifest.xml").get().asFile
+    )
+}
+
+// --- Feature manifest generator (F4) ----------------------------------------
+// AGP auto-merges manifests only for build types / flavors, not for arbitrary
+// added java srcDirs, so a per-source-set AndroidManifest.xml is NOT picked up.
+// Instead we compose the final `main` manifest at configuration time from the
+// lean base (src/main/AndroidManifest.xml) + per-feature XML fragments, injecting
+// them at marker points, and point sourceSets["main"].manifest at the result.
+// This keeps the lean APK from referencing any class/service of an absent dep
+// (the FCM <service> is only present when `push` is built).
+val baseManifestFile = file("src/main/AndroidManifest.xml")
+val generatedManifest =
+    layout.buildDirectory.file("generated/tempest/AndroidManifest.xml")
+
+val generateFeatureManifest by tasks.registering {
+    inputs.file(baseManifestFile)
+    inputs.property("features", features.sorted().joinToString(","))
+    val cameraPerms = file("src/feat_camera/manifest/permissions.xml")
+    val cameraApp = file("src/feat_camera/manifest/application.xml")
+    val pushApp = file("src/feat_push/manifest/application.xml")
+    if (needsCamera) { inputs.file(cameraPerms); inputs.file(cameraApp) }
+    if ("push" in features) inputs.file(pushApp)
+    val outFile = generatedManifest
+    outputs.file(outFile)
+    doLast {
+        var xml = baseManifestFile.readText()
+        // Inject the camera/qr permissions just before the <application> tag.
+        if (needsCamera) {
+            val perms = cameraPerms.readText().trimEnd()
+            xml = xml.replaceFirst(
+                "    <application",
+                "    $perms\n\n    <application",
+            )
+        }
+        // Inject the per-feature <application> children at the marker comment.
+        val appEntries = buildString {
+            if (needsCamera) appendLine(cameraApp.readText().trimEnd())
+            if ("push" in features) appendLine(pushApp.readText().trimEnd())
+        }.trimEnd()
+        val marker =
+            "        <!-- TEMPEST_FEATURE_APPLICATION_ENTRIES:"
+        if (appEntries.isNotEmpty()) {
+            val indented = appEntries.lines().joinToString("\n") { "        $it" }
+            // Replace the marker comment line (and continuation) wholesale, keeping
+            // it simple: insert the entries right before the marker.
+            xml = xml.replaceFirst(marker, "$indented\n\n$marker")
+        }
+        val out = outFile.get().asFile
+        out.parentFile.mkdirs()
+        out.writeText(xml)
     }
 }
+
+// Make every variant's manifest-processing depend on the generator so the file
+// exists before AGP reads sourceSets["main"].manifest.
+tasks.matching {
+    it.name.startsWith("process") && it.name.contains("Manifest")
+}.configureEach { dependsOn(generateFeatureManifest) }
+// Also gate compile/package on it (defensive: the manifest path is consumed early).
+tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }
+    .configureEach { dependsOn(generateFeatureManifest) }
 
 // --- Staging tasks: expose a DirectoryProperty output so AGP's -------------
 // `addGeneratedSourceDirectory` can wire them as generated jniLibs/assets dirs
@@ -438,23 +542,32 @@ dependencies {
     // Async image loading for the `Image`/`Svg` widgets (URL/asset src).
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // E7 media + graphics ------------------------------------------------------
-    // Media3/ExoPlayer — Google's official Android video playback stack (replaces
-    // the standalone ExoPlayer); backs the `VideoPlayer` widget via PlayerView.
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
-    // CameraX — AndroidX camera; PreviewView + lifecycle binding back the
-    // `CameraPreview` and `QrScanner` widgets (CAMERA perm already in manifest).
-    implementation("androidx.camera:camera-core:1.4.0")
-    implementation("androidx.camera:camera-camera2:1.4.0")
-    implementation("androidx.camera:camera-view:1.4.0")
-    implementation("androidx.camera:camera-lifecycle:1.4.0")
-    // ML Kit barcode scanning — decodes QR/barcodes off the CameraX ImageAnalysis
-    // frames for the `QrScanner` widget (no DIY alternative; Google's standard lib).
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    // androidx.lifecycle.compose.LocalLifecycleOwner — needed to bind CameraX to
-    // the composition's lifecycle (CameraPreview/QrScanner).
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+    // E7 media + graphics — FEATURE-GATED (F4). These are the heavy DEX blocks the
+    // lean APK drops; only added when their feature is in -Ptempest.features. The
+    // matching src/feat_<f> source set provides the real renderer/handler, else
+    // src/stub_<f> provides a placeholder, so src/main compiles either way.
+    if ("video" in features) {
+        // Media3/ExoPlayer — Google's official Android video playback stack; backs
+        // the `VideoPlayer` widget via PlayerView (src/feat_video).
+        implementation("androidx.media3:media3-exoplayer:1.4.1")
+        implementation("androidx.media3:media3-ui:1.4.1")
+    }
+    if (needsCamera) {
+        // CameraX — PreviewView + lifecycle binding back the `CameraPreview`
+        // (src/feat_camera) and `QrScanner` (src/feat_qr) widgets.
+        implementation("androidx.camera:camera-core:1.4.0")
+        implementation("androidx.camera:camera-camera2:1.4.0")
+        implementation("androidx.camera:camera-view:1.4.0")
+        implementation("androidx.camera:camera-lifecycle:1.4.0")
+        // androidx.lifecycle.compose.LocalLifecycleOwner — bind CameraX to the
+        // composition's lifecycle (CameraPreview/QrScanner).
+        implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+    }
+    if ("qr" in features) {
+        // ML Kit barcode scanning — decodes QR/barcodes off the CameraX
+        // ImageAnalysis frames for the `QrScanner` widget (src/feat_qr).
+        implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    }
 
     // E8 platform + system native --------------------------------------------
     // ProcessLifecycleOwner — app-wide foreground/background lifecycle for the
@@ -472,12 +585,16 @@ dependencies {
     // tasks (enqueueUniquePeriodicWork / cancelUniqueWork).
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Firebase Cloud Messaging — the PushModule reads the FCM registration token.
-    // The google-services Gradle plugin is applied CONDITIONALLY at the top of
-    // this file when a `google-services.json` is present, so the host builds
-    // without a Firebase project; drop the JSON into android-host/app/ to enable
-    // real FCM tokens. Without it FirebaseApp never initialises and PushModule
-    // replies `error="not_configured"` — see NativeModules.handlePush.
-    implementation("com.google.firebase:firebase-messaging:24.0.1")
+    // FEATURE-GATED (F4): only added when `push` is in -Ptempest.features (the real
+    // handler + TempestMessagingService live in src/feat_push; src/stub_push replies
+    // feature_not_built). The google-services Gradle plugin is applied CONDITIONALLY
+    // at the top of this file when a `google-services.json` is present, so even the
+    // push build works without a Firebase project; drop the JSON into
+    // android-host/app/ to enable real FCM tokens. Without it FirebaseApp never
+    // initialises and PushModule replies `error="not_configured"`.
+    if ("push" in features) {
+        implementation("com.google.firebase:firebase-messaging:24.0.1")
+    }
     // MapView is a documented PLACEHOLDER on both leaves: Google Maps Compose would
     // require google-services.json + a Maps API key (APK won't build without it),
     // which is out of scope for the host skeleton. Wiring it is a post-phase task:

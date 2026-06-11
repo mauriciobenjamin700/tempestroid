@@ -1,0 +1,13 @@
+<!-- E8 FCM service (PushModule). Only merged when the `push` feature is built,
+     so the lean APK never references TempestMessagingService (whose superclass
+     FirebaseMessagingService comes from the gated firebase-messaging dep).
+     Device-gated further: receiving pushes needs a Firebase project +
+     google-services.json + the google-services Gradle plugin (none wired here),
+     so FirebaseApp init fails and PushModule replies error="not_configured". -->
+<service
+    android:name=".TempestMessagingService"
+    android:exported="false">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+    </intent-filter>
+</service>

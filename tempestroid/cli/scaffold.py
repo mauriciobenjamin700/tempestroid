@@ -163,6 +163,9 @@ app = "app.py"
 # splash = "splash.png"              # boot splash shown while Python starts
 # splash_bg = "#0b0f14"              # splash background colour
 # version = "1.0.0"                  # versionName
+# features = ["camera", "qr"]        # bundle heavy native caps (camera/qr/push/
+#                                    # video/maps); each opt-in needs a from-source
+#                                    # build (SDK/NDK). The lean default ships none.
 
 # Ruff keeps the project tidy and caps line length at 79 (the convention shared
 # with tempest-fastapi-sdk). Tweak to taste.
