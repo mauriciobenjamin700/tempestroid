@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The renderer-agnostic engine — style, widgets, components, the core
+  IR/reconciler/state, animation, navigation, theme, i18n, icons, devices and
+  validators — was extracted into the standalone **`tempest-core`** package, and
+  tempestroid now **depends on it** (`tempest-core>=0.1.0`) and consumes it as the
+  single source of truth instead of vendoring those modules. The public API is
+  unchanged: `from tempestroid import App, Column, Color` and the historical
+  `from tempestroid.style import Color` / `from tempestroid.core import App`
+  submodule paths keep working (the latter via a thin `sys.modules` alias in
+  `tempestroid/_adopt.py`). tempestroid's own source imports `tempest_core`
+  directly; the renderer/native/bridge/cli layers are untouched. No behaviour
+  change — pyright at baseline, 1119 tests green.
+
 ## [0.12.1] — 2026-06-11
 
 ### Documentation

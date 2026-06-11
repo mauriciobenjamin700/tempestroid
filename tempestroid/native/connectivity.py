@@ -15,8 +15,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from tempest_core.widgets.events import ConnectivityEvent, ConnectivityState
+
 from tempestroid.native.dispatch import send_native, send_native_request
-from tempestroid.widgets.events import ConnectivityEvent, ConnectivityState
 
 __all__ = [
     "ConnectivityCallback",

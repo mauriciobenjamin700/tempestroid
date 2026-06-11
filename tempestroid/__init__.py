@@ -8,34 +8,12 @@ extra) and is imported on demand.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from tempestroid.animation import (
+from tempest_core.animation import (
     AnimationController,
     Spring,
     Tween,
 )
-from tempestroid.bridge import (
-    BACK_TOKEN,
-    DISMISS_TOKEN_PREFIX,
-    FRAME_TOKEN,
-    Bridge,
-    DeviceApp,
-    EventMessage,
-    JniBridge,
-    LoopbackBridge,
-    MountMessage,
-    PatchMessage,
-    run_device,
-    serialize_node,
-    serialize_patch,
-)
-from tempestroid.bridge.protocol import (
-    CONNECTIVITY_TOKEN_PREFIX,
-    LIFECYCLE_TOKEN,
-    LOCALE_TOKEN,
-    SENSOR_TOKEN_PREFIX,
-    THEME_TOKEN,
-)
-from tempestroid.components import (
+from tempest_core.components import (
     Accordion,
     AddressInput,
     AppBar,
@@ -78,7 +56,7 @@ from tempestroid.components import (
     TableRow,
     merge_style,
 )
-from tempestroid.core import (
+from tempest_core.core import (
     App,
     Insert,
     Node,
@@ -98,19 +76,13 @@ from tempestroid.core import (
     introspect,
     widget_catalog,
 )
-from tempestroid.devices import (
+from tempest_core.devices import (
     DEFAULT_DEVICE,
     Device,
     resolve_device,
 )
-from tempestroid.devserver import (
-    DevServer,
-    render_qr,
-    run_dev_client,
-    serve_device,
-)
-from tempestroid.i18n import Locale, t, translate
-from tempestroid.icons import (
+from tempest_core.i18n import Locale, t, translate
+from tempest_core.icons import (
     ICON_PATHS,
     Icons,
     icon_names,
@@ -118,54 +90,8 @@ from tempestroid.icons import (
     register_icon,
     svg_to_path,
 )
-from tempestroid.native import (
-    BiometricResult,
-    ConnectivityCallback,
-    ImpactStyle,
-    LifecycleCallback,
-    NativeError,
-    Orientation,
-    PermissionResult,
-    PermissionStatus,
-    PushToken,
-    QueryResult,
-    SensorCallback,
-    StatusBarStyle,
-    authenticate,
-    cancel_task,
-    check_permission,
-    delete_pref,
-    delete_secret,
-    execute,
-    execute_many,
-    get_all_prefs,
-    get_brightness,
-    get_connectivity,
-    get_pref,
-    get_secret,
-    impact,
-    keep_awake,
-    notify,
-    on_app_state_change,
-    on_background_task,
-    on_connectivity_change,
-    on_device,
-    register_push,
-    request_permission,
-    schedule_notification,
-    schedule_task,
-    set_brightness,
-    set_orientation,
-    set_pref,
-    set_secret,
-    set_status_bar,
-    start_sensor,
-    stop_sensor,
-    vibrate,
-)
-from tempestroid.navigation import NavStack, Route, routes_from_path
-from tempestroid.renderers.compose import to_compose
-from tempestroid.style import (
+from tempest_core.navigation import NavStack, Route, routes_from_path
+from tempest_core.style import (
     AlignItems,
     Border,
     Color,
@@ -190,15 +116,15 @@ from tempestroid.style import (
     TextOverflow,
     Transition,
 )
-from tempestroid.theme import MediaQueryData, Theme, ThemeMode
-from tempestroid.validators import (
+from tempest_core.theme import MediaQueryData, Theme, ThemeMode
+from tempest_core.validators import (
     EMAIL_PATTERN,
     validate_cnpj,
     validate_cpf,
     validate_email,
     validate_phone,
 )
-from tempestroid.widgets import (
+from tempest_core.widgets import (
     DEFAULT_WINDOW_SIZE,
     ActionSheet,
     Animated,
@@ -349,6 +275,87 @@ from tempestroid.widgets import (
     Wrap,
     parse_event,
 )
+
+# Back-compat: importing this aliases every shared ``tempest_core`` submodule
+# under its historical ``tempestroid.<name>`` path in sys.modules, so downstream
+# code (and the test suite) can still ``from tempestroid.style import Color``
+# even though tempestroid's own source now imports from ``tempest_core`` directly.
+# See _adopt.py. (Redundant alias form marks it as an intentional re-export.)
+from tempestroid import _adopt as _adopt  # noqa: F401  (import-time side effect)
+from tempestroid.bridge import (
+    BACK_TOKEN,
+    DISMISS_TOKEN_PREFIX,
+    FRAME_TOKEN,
+    Bridge,
+    DeviceApp,
+    EventMessage,
+    JniBridge,
+    LoopbackBridge,
+    MountMessage,
+    PatchMessage,
+    run_device,
+    serialize_node,
+    serialize_patch,
+)
+from tempestroid.bridge.protocol import (
+    CONNECTIVITY_TOKEN_PREFIX,
+    LIFECYCLE_TOKEN,
+    LOCALE_TOKEN,
+    SENSOR_TOKEN_PREFIX,
+    THEME_TOKEN,
+)
+from tempestroid.devserver import (
+    DevServer,
+    render_qr,
+    run_dev_client,
+    serve_device,
+)
+from tempestroid.native import (
+    BiometricResult,
+    ConnectivityCallback,
+    ImpactStyle,
+    LifecycleCallback,
+    NativeError,
+    Orientation,
+    PermissionResult,
+    PermissionStatus,
+    PushToken,
+    QueryResult,
+    SensorCallback,
+    StatusBarStyle,
+    authenticate,
+    cancel_task,
+    check_permission,
+    delete_pref,
+    delete_secret,
+    execute,
+    execute_many,
+    get_all_prefs,
+    get_brightness,
+    get_connectivity,
+    get_pref,
+    get_secret,
+    impact,
+    keep_awake,
+    notify,
+    on_app_state_change,
+    on_background_task,
+    on_connectivity_change,
+    on_device,
+    register_push,
+    request_permission,
+    schedule_notification,
+    schedule_task,
+    set_brightness,
+    set_orientation,
+    set_pref,
+    set_secret,
+    set_status_bar,
+    start_sensor,
+    stop_sensor,
+    vibrate,
+)
+from tempestroid.renderers.compose import to_compose
 
 try:
     __version__ = version("tempestroid")

@@ -20,8 +20,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from tempest_core.widgets.events import SensorEvent, SensorType
+
 from tempestroid.native.dispatch import send_native
-from tempestroid.widgets.events import SensorEvent, SensorType
 
 __all__ = [
     "SensorCallback",

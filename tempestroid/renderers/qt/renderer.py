@@ -106,8 +106,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from tempestroid.core.ir import (
+from tempest_core.core.ir import (
     Insert,
     Node,
     Patch,
@@ -118,13 +117,8 @@ from tempestroid.core.ir import (
     Scene,
     Update,
 )
-from tempestroid.icons import Icons, icon_path
-from tempestroid.renderers.qt.style_translator import (
-    layout_alignment,
-    self_alignment,
-    to_qss,
-)
-from tempestroid.style import (
+from tempest_core.icons import Icons, icon_path
+from tempest_core.style import (
     Edge,
     JustifyContent,
     Position,
@@ -134,8 +128,8 @@ from tempestroid.style import (
     TextAlign,
     TextOverflow,
 )
-from tempestroid.theme import MediaQueryData, ThemeMode
-from tempestroid.widgets import (
+from tempest_core.theme import MediaQueryData, ThemeMode
+from tempest_core.widgets import (
     DateChangeEvent,
     DismissEvent,
     EndReachedEvent,
@@ -164,8 +158,14 @@ from tempestroid.widgets import (
     handler_accepts_event,
 )
 
+from tempestroid.renderers.qt.style_translator import (
+    layout_alignment,
+    self_alignment,
+    to_qss,
+)
+
 if TYPE_CHECKING:
-    from tempestroid.core.state import App
+    from tempest_core.core.state import App
 
 __all__ = ["QtRenderer"]
 

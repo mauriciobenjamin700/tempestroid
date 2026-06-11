@@ -14,8 +14,8 @@ analogue of the desktop dev loop printing a caught exception.
 
 from __future__ import annotations
 
-from tempestroid.style import Color, Edge, FlexDirection, FontWeight, Style
-from tempestroid.widgets import Column, Text, Widget
+from tempest_core.style import Color, Edge, FlexDirection, FontWeight, Style
+from tempest_core.widgets import Column, Text, Widget
 
 __all__ = ["error_screen"]
 

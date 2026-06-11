@@ -13,9 +13,10 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from tempest_core.core.ir import Node, Path, Scene
+from tempest_core.widgets import Event, handler_accepts_event, parse_event
+
 from tempestroid.bridge.protocol import event_type_for, handler_token
-from tempestroid.core.ir import Node, Path, Scene
-from tempestroid.widgets import Event, handler_accepts_event, parse_event
 
 __all__ = ["HandlerRegistry"]
 

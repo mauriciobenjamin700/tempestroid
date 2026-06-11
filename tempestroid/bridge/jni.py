@@ -20,6 +20,16 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
+from tempest_core.core.state import App
+from tempest_core.i18n import Locale
+from tempest_core.navigation import NavStack, routes_from_path
+from tempest_core.widgets import Widget
+from tempest_core.widgets.events import (
+    LocaleChangeEvent,
+    ThemeChangeEvent,
+    parse_event,
+)
+
 from tempestroid.bridge.device import Bridge, DeviceApp
 from tempestroid.bridge.protocol import (
     BACK_TOKEN,
@@ -32,20 +42,11 @@ from tempestroid.bridge.protocol import (
     SENSOR_TOKEN_PREFIX,
     THEME_TOKEN,
 )
-from tempestroid.core.state import App
-from tempestroid.i18n import Locale
 from tempestroid.native.background import dispatch_background_task
 from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
 from tempestroid.native.sensors import dispatch_sensor_event
-from tempestroid.navigation import NavStack, routes_from_path
-from tempestroid.widgets import Widget
-from tempestroid.widgets.events import (
-    LocaleChangeEvent,
-    ThemeChangeEvent,
-    parse_event,
-)
 
 __all__ = [
     "JniBridge",

@@ -23,11 +23,11 @@ from typing import cast
 import qasync  # pyright: ignore[reportMissingTypeStubs]
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
+from tempest_core.core.state import App
+from tempest_core.devices import DEFAULT_DEVICE, Device
 
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
-from tempestroid.core.state import App
-from tempestroid.devices import DEFAULT_DEVICE, Device
 from tempestroid.renderers.qt.app_runner import BackKeyFilter, connect_lifecycle
 from tempestroid.renderers.qt.simulator import Simulator
 
