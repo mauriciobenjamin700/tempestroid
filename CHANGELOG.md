@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-06-11
+
+### Documentation
+
+- Every core enum member (layout/style/event/native) and the `Border` class now
+  carries a Google-style `Attributes:` docstring that explains what the member
+  means and when it applies — replacing absent or circular descriptions.
+
+### Changed
+
+- Ran `ruff format` + autofix across the package to clear pre-existing formatting
+  debt; no behaviour change (pyright clean, 1119 tests green).
+- `tempest build --fast` rejection message uses backticks around the target name
+  instead of single quotes (avoids a convention-guard false positive).
+
 ## [0.12.0] — 2026-06-10
 
 ### Added
