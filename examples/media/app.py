@@ -77,9 +77,7 @@ def _chart() -> Canvas:
     commands: list[object] = []
     for index, height in enumerate(_BARS):
         x = 10.0 + index * 44.0
-        commands.append(
-            DrawRect(x=x, y=140.0 - height, width=32.0, height=height)
-        )
+        commands.append(DrawRect(x=x, y=140.0 - height, width=32.0, height=height))
         commands.append(FillCmd(color=_COLORS[index]))
     commands.append(DrawText(text="Canvas chart", x=10.0, y=158.0, size=12.0))
     return Canvas(width=240.0, height=170.0, commands=commands)  # type: ignore[arg-type]

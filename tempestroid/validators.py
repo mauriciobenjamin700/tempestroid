@@ -122,9 +122,7 @@ def validate_cnpj(value: Any) -> str | None:  # noqa: ANN401 — an opaque field
     first_weights = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
     second_weights = [6, *first_weights]
     for weights, position in ((first_weights, 12), (second_weights, 13)):
-        weighted = sum(
-            numbers[index] * weights[index] for index in range(position)
-        )
+        weighted = sum(numbers[index] * weights[index] for index in range(position))
         remainder = weighted % 11
         check = 0 if remainder < 2 else 11 - remainder
         if check != numbers[position]:

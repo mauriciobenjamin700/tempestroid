@@ -291,8 +291,7 @@ def view(app: App[TabsState]) -> Widget:
             Row(
                 style=Style(gap=8.0, justify=JustifyContent.CENTER),
                 children=[
-                    _tab_button(app, index, label)
-                    for index, label in enumerate(_TABS)
+                    _tab_button(app, index, label) for index, label in enumerate(_TABS)
                 ],
                 key="tabbar",
             ),

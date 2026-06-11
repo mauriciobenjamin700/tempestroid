@@ -23,9 +23,7 @@ def test_generate_assets_sizes(tmp_path: Path) -> None:
 
     src = _source(tmp_path / "logo.png")
     out = tmp_path / "assets"
-    assets = generate_assets(
-        src, out, icon_size=256, splash_size=512, splash_scale=0.5
-    )
+    assets = generate_assets(src, out, icon_size=256, splash_size=512, splash_scale=0.5)
     assert assets.icon == out / "icon.png"
     assert assets.splash == out / "splash.png"
     with Image.open(assets.icon) as icon:

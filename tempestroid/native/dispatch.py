@@ -54,6 +54,7 @@ def on_device() -> bool:
         return False
     return True
 
+
 #: Reserved token prefix the host uses (over the event channel) to deliver a
 #: native request/response result back to the matching pending future.
 NATIVE_RESULT_PREFIX = "__native_result__:"

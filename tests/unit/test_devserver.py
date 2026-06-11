@@ -29,6 +29,7 @@ def _bundle_bytes(source: str, entry: str = "main.py") -> bytes:
         archive.writestr(entry, source)
     return buffer.getvalue()
 
+
 _APP_SRC = """
 from dataclasses import dataclass
 from tempestroid import App, Button, Column, Text, Widget

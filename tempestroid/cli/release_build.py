@@ -185,12 +185,24 @@ def ensure_release_keystore(config: ReleaseConfig, console: Console) -> Path:
     with console.step("Generating release keystore"):
         console.run_command(
             [
-                keytool, "-genkeypair", "-keystore", str(keystore),
-                "-storepass", config.store_password,
-                "-keypass", config.key_password,
-                "-alias", config.key_alias,
-                "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
-                "-dname", f"CN={config.app_id},O=tempestroid,C=US",
+                keytool,
+                "-genkeypair",
+                "-keystore",
+                str(keystore),
+                "-storepass",
+                config.store_password,
+                "-keypass",
+                config.key_password,
+                "-alias",
+                config.key_alias,
+                "-keyalg",
+                "RSA",
+                "-keysize",
+                "2048",
+                "-validity",
+                "10000",
+                "-dname",
+                f"CN={config.app_id},O=tempestroid,C=US",
             ]
         )
     console.info(
@@ -237,7 +249,9 @@ def ensure_source_checkout(version: str, console: Console) -> Path:
     with console.step(f"Cloning source ({_REPO_URL} @ {tag})"):
         result = subprocess.run(  # noqa: S603
             [git, "clone", "--depth", "1", "--branch", tag, _REPO_URL, str(dest)],
-            check=False, capture_output=True, text=True,
+            check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             # Fall back to the default branch when the tag is absent.
@@ -274,9 +288,12 @@ def ensure_toolchain(checkout: Path, console: Console) -> None:
     console.info("staging the CPython toolchain (heavy: downloads + wheel build)…")
     with console.step("make toolchain (fetch CPython + build wheels + stage)"):
         console.run_command(
-            ["bash", "-lc",
-             "cd toolchain && source env.sh && ./00_fetch_cpython.sh && "
-             "./01_build_wheels.sh && ./02_stage_deps.sh"],
+            [
+                "bash",
+                "-lc",
+                "cd toolchain && source env.sh && ./00_fetch_cpython.sh && "
+                "./01_build_wheels.sh && ./02_stage_deps.sh",
+            ],
             cwd=checkout,
         )
 
@@ -349,9 +366,10 @@ def _extract_prebuilt_host(con: Console) -> Path:
             dest.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(host_apk) as zf:
                 for info in zf.infolist():
-                    if info.filename.startswith(
-                        ("lib/", "assets/python/")
-                    ) and not info.is_dir():
+                    if (
+                        info.filename.startswith(("lib/", "assets/python/"))
+                        and not info.is_dir()
+                    ):
                         zf.extract(info, dest)
     return dest
 
@@ -413,7 +431,9 @@ def _resolve_host_checkout(con: Console, version: str, *, prebuilt: bool) -> Pat
                                 pkg_src,
                                 framework,
                                 ignore=shutil.ignore_patterns(
-                                    "_android_host", "_assets", "__pycache__",
+                                    "_android_host",
+                                    "_assets",
+                                    "__pycache__",
                                     "*.pyc",
                                 ),
                             )
@@ -551,8 +571,9 @@ def build_aab(
     props = _signing_props(config, keystore)
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
-    with staged_into_host(host, branding or Branding()), con.step(
-        "Gradle bundleRelease (store AAB)"
+    with (
+        staged_into_host(host, branding or Branding()),
+        con.step("Gradle bundleRelease (store AAB)"),
     ):
         con.run_command(["./gradlew", "bundleRelease", *props], cwd=host, env=env)
 
@@ -630,8 +651,9 @@ def build_apk(
     ]
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
-    with staged_into_host(host, branding or Branding()), con.step(
-        f"Gradle assembleDebug (applicationId={app_id})"
+    with (
+        staged_into_host(host, branding or Branding()),
+        con.step(f"Gradle assembleDebug (applicationId={app_id})"),
     ):
         con.run_command(["./gradlew", "assembleDebug", *props], cwd=host, env=env)
 
@@ -696,16 +718,13 @@ def build_release_apk(
     props = _signing_props(config, keystore)
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
-    with staged_into_host(host, branding or Branding()), con.step(
-        f"Gradle assembleRelease (applicationId={config.app_id})"
+    with (
+        staged_into_host(host, branding or Branding()),
+        con.step(f"Gradle assembleRelease (applicationId={config.app_id})"),
     ):
-        con.run_command(
-            ["./gradlew", "assembleRelease", *props], cwd=host, env=env
-        )
+        con.run_command(["./gradlew", "assembleRelease", *props], cwd=host, env=env)
 
-    built = (
-        host / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
-    )
+    built = host / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
     if not built.is_file():
         raise StepError(f"build succeeded but no release APK at {built}")
     out = output or (Path.cwd() / "dist" / f"{layout.root.name}-release.apk")

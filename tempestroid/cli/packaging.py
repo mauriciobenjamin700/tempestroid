@@ -432,9 +432,7 @@ def build_apk(
         # Use the bundled wrapper (8.11.1) — the global Gradle 9.5 is too new
         # for AGP 8.7 (see CLAUDE.md). Run from the host root so ./gradlew
         # resolves.
-        con.run_command(
-            ["./gradlew", f"assemble{variant}"], cwd=host_dir, env=env
-        )
+        con.run_command(["./gradlew", f"assemble{variant}"], cwd=host_dir, env=env)
 
     apk_dir = host_dir / "app" / "build" / "outputs" / "apk" / variant.lower()
     apks = sorted(apk_dir.glob("*.apk"))

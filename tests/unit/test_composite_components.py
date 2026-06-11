@@ -135,9 +135,7 @@ def test_appbar_orders_leading_title_actions() -> None:
     assert "Title" in labels
     keys = [n.key for n in _walk(node)]
     assert (
-        keys.index("lead")
-        < keys.index("appbar-title")
-        < keys.index("appbar-actions")
+        keys.index("lead") < keys.index("appbar-title") < keys.index("appbar-actions")
     )
 
 

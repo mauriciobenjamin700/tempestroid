@@ -476,9 +476,9 @@ def _on_end_reached_handler() -> None:
 
 def test_handler_serialized_as_token_with_event_name():
     """on_scroll handler → {"$handler": token, "event": "ScrollEvent"}."""
-    node = build(LazyColumn(
-        item_count=5, item_builder=_item, on_scroll=_on_scroll_handler
-    ))
+    node = build(
+        LazyColumn(item_count=5, item_builder=_item, on_scroll=_on_scroll_handler)
+    )
     serialized = serialize_node(node)
     on_scroll_val = serialized["props"].get("on_scroll")
     assert on_scroll_val is not None, "on_scroll should be present in serialized props"
@@ -488,9 +488,9 @@ def test_handler_serialized_as_token_with_event_name():
 
 
 def test_on_refresh_handler_serialized_with_event_name():
-    node = build(LazyColumn(
-        item_count=5, item_builder=_item, on_refresh=_on_refresh_handler
-    ))
+    node = build(
+        LazyColumn(item_count=5, item_builder=_item, on_refresh=_on_refresh_handler)
+    )
     serialized = serialize_node(node)
     on_refresh_val = serialized["props"].get("on_refresh")
     assert on_refresh_val is not None
@@ -498,9 +498,11 @@ def test_on_refresh_handler_serialized_with_event_name():
 
 
 def test_on_end_reached_handler_serialized_with_event_name():
-    node = build(LazyGrid(
-        item_count=10, item_builder=_item, on_end_reached=_on_end_reached_handler
-    ))
+    node = build(
+        LazyGrid(
+            item_count=10, item_builder=_item, on_end_reached=_on_end_reached_handler
+        )
+    )
     serialized = serialize_node(node)
     val = serialized["props"].get("on_end_reached")
     assert val is not None

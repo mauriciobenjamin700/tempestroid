@@ -274,7 +274,9 @@ def on_post_build(config: Any, **kwargs: Any) -> None:  # noqa: ANN401
     """
     site_dir = pathlib.Path(config["site_dir"])
     docs_dir = pathlib.Path(config["docs_dir"])
-    site_url = config.get("site_url") or "https://mauriciobenjamin700.github.io/tempestroid/"
+    site_url = (
+        config.get("site_url") or "https://mauriciobenjamin700.github.io/tempestroid/"
+    )
 
     site_dir.mkdir(parents=True, exist_ok=True)
     index = _build_index(site_url, docs_dir)

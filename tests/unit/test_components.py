@@ -170,8 +170,16 @@ def test_serialize_input_styling_scalars_pass_through() -> None:
 
 def test_catalogs_list_new_surface() -> None:
     widgets = set(widget_catalog())
-    assert {"Slider", "Switch", "TextArea", "ScrollView", "Image", "Icon",
-            "ProgressBar", "Spinner"} <= widgets
+    assert {
+        "Slider",
+        "Switch",
+        "TextArea",
+        "ScrollView",
+        "Image",
+        "Icon",
+        "ProgressBar",
+        "Spinner",
+    } <= widgets
     assert "SlideEvent" in event_catalog()
 
 

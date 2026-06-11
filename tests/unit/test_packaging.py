@@ -293,9 +293,7 @@ def test_install_host_installs_and_launches(
 
 
 def test_host_installed_true_when_pm_lists_package(monkeypatch: pytest.MonkeyPatch):
-    def fake_run(
-        cmd: Sequence[str], **_kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: Sequence[str], **_kw: object) -> subprocess.CompletedProcess[str]:
         assert "pm" in cmd and "list" in cmd
         out = "package:org.tempestroid.host\n"
         return subprocess.CompletedProcess(list(cmd), 0, stdout=out, stderr="")
@@ -305,9 +303,7 @@ def test_host_installed_true_when_pm_lists_package(monkeypatch: pytest.MonkeyPat
 
 
 def test_host_installed_false_when_absent(monkeypatch: pytest.MonkeyPatch):
-    def fake_run(
-        *_a: object, **_k: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess([], 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -380,13 +376,9 @@ def test_deploy_offline_requires_device(
     app = tmp_path / "app.py"
     app.write_text("view = make_state = None\n", encoding="utf-8")
     monkeypatch.setattr("shutil.which", _which_adb)
-    monkeypatch.setattr(
-        "tempestroid.cli.packaging.connected_devices", _no_devices
-    )
+    monkeypatch.setattr("tempestroid.cli.packaging.connected_devices", _no_devices)
     with pytest.raises(StepError):
-        deploy_offline(
-            str(app), version="0.0.0", console=Console(stream=io.StringIO())
-        )
+        deploy_offline(str(app), version="0.0.0", console=Console(stream=io.StringIO()))
 
 
 def test_deploy_offline_missing_app_raises(monkeypatch: pytest.MonkeyPatch):
@@ -407,9 +399,7 @@ def test_deploy_offline_pushes_when_host_present(
     monkeypatch.setattr("tempestroid.devserver.DevServer", _FakeDevServer)
     reversed_ports: list[int] = []
     launched_ports: list[int] = []
-    monkeypatch.setattr(
-        "tempestroid.cli.packaging.adb_reverse", reversed_ports.append
-    )
+    monkeypatch.setattr("tempestroid.cli.packaging.adb_reverse", reversed_ports.append)
     monkeypatch.setattr(
         "tempestroid.cli.packaging.launch_host_dev", launched_ports.append
     )

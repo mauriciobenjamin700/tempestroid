@@ -115,10 +115,24 @@ def ensure_debug_keystore(console: Console | None = None) -> Path:
     with con.step("Generating debug keystore"):
         con.run_command(
             [
-                keytool, "-genkeypair", "-keystore", str(keystore),
-                "-storepass", "android", "-keypass", "android",
-                "-alias", "androiddebugkey", "-keyalg", "RSA", "-keysize", "2048",
-                "-validity", "10000", "-dname", "CN=Android Debug,O=Android,C=US",
+                keytool,
+                "-genkeypair",
+                "-keystore",
+                str(keystore),
+                "-storepass",
+                "android",
+                "-keypass",
+                "android",
+                "-alias",
+                "androiddebugkey",
+                "-keyalg",
+                "RSA",
+                "-keysize",
+                "2048",
+                "-validity",
+                "10000",
+                "-dname",
+                "CN=Android Debug,O=Android,C=US",
             ]
         )
     return keystore
@@ -152,7 +166,11 @@ def inject_bundle(
         for info in src.infolist():
             name = info.filename
             if name.startswith("META-INF/") and name.rsplit(".", 1)[-1] in {
-                "SF", "RSA", "DSA", "EC", "MF",
+                "SF",
+                "RSA",
+                "DSA",
+                "EC",
+                "MF",
             }:
                 continue  # drop the old signature — we re-sign
             if name == _BUNDLE_ASSET:
@@ -221,12 +239,18 @@ def repackage_host_apk(
     with con.step("Signing (apksigner, debug key)"):
         con.run_command(
             [
-                str(apksigner), "sign",
-                "--ks", str(keystore),
-                "--ks-pass", "pass:android",
-                "--ks-key-alias", "androiddebugkey",
-                "--key-pass", "pass:android",
-                "--out", str(out_apk),
+                str(apksigner),
+                "sign",
+                "--ks",
+                str(keystore),
+                "--ks-pass",
+                "pass:android",
+                "--ks-key-alias",
+                "androiddebugkey",
+                "--key-pass",
+                "pass:android",
+                "--out",
+                str(out_apk),
                 str(aligned),
             ]
         )

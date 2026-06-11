@@ -126,9 +126,7 @@ def generate_assets(
     if not 0.0 < splash_scale <= 1.0:
         raise ValueError(f"splash_scale must be in (0, 1], got {splash_scale}")
     if not 0.0 < foreground_scale <= 1.0:
-        raise ValueError(
-            f"foreground_scale must be in (0, 1], got {foreground_scale}"
-        )
+        raise ValueError(f"foreground_scale must be in (0, 1], got {foreground_scale}")
     src = Path(source).expanduser()
     if not src.is_file():
         raise FileNotFoundError(f"source image not found: {src}")

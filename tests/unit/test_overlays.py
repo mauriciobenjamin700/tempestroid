@@ -80,9 +80,7 @@ def test_diff_scene_diffs_root_with_unchanged_paths() -> None:
 def test_diff_scene_overlay_add_emits_namespaced_insert() -> None:
     """Adding an overlay emits an Insert under the ('overlay',) prefix."""
     old = build_scene(Text(content="root"), [])
-    new = build_scene(
-        Text(content="root"), [("dlg", Dialog(title="t"), True)]
-    )
+    new = build_scene(Text(content="root"), [("dlg", Dialog(title="t"), True)])
     patches = diff_scene(old, new)
     inserts = [p for p in patches if isinstance(p, Insert)]
     assert len(inserts) == 1
@@ -94,9 +92,7 @@ def test_diff_scene_overlay_add_emits_namespaced_insert() -> None:
 
 def test_diff_scene_overlay_remove_emits_namespaced_remove() -> None:
     """Removing an overlay emits a Remove under the ('overlay',) prefix."""
-    old = build_scene(
-        Text(content="root"), [("dlg", Dialog(title="t"), True)]
-    )
+    old = build_scene(Text(content="root"), [("dlg", Dialog(title="t"), True)])
     new = build_scene(Text(content="root"), [])
     patches = diff_scene(old, new)
     removes = [p for p in patches if p.__class__.__name__ == "Remove"]
@@ -119,12 +115,8 @@ def test_diff_scene_overlay_reorder_keyed() -> None:
 
 def test_diff_scene_matched_overlay_recurses_with_namespaced_update() -> None:
     """A matched overlay key recurses, emitting an Update at ('overlay', i)."""
-    old = build_scene(
-        Text(content="root"), [("dlg", Dialog(title="old"), True)]
-    )
-    new = build_scene(
-        Text(content="root"), [("dlg", Dialog(title="new"), True)]
-    )
+    old = build_scene(Text(content="root"), [("dlg", Dialog(title="old"), True)])
+    new = build_scene(Text(content="root"), [("dlg", Dialog(title="new"), True)])
     patches = diff_scene(old, new)
     updates = [p for p in patches if isinstance(p, Update) and p.path]
     assert len(updates) == 1

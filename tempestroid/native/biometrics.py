@@ -45,8 +45,6 @@ async def authenticate(reason: str = "") -> BiometricResult:
             real hardware.
     """
     if not on_device():
-        raise NativeError(
-            "device_only", "biometrics not supported on Qt simulator"
-        )
+        raise NativeError("device_only", "biometrics not supported on Qt simulator")
     data = await send_native_request("biometrics", "authenticate", {"reason": reason})
     return BiometricResult.model_validate(data)

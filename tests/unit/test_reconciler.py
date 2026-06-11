@@ -397,9 +397,7 @@ def test_diff_scene_overlay_add_remove_reorder_mix():
     )
     patches = diff_scene(old, new)
     # Every overlay-layer patch is addressed under the reserved prefix.
-    overlay_patches = [
-        p for p in patches if p.path and p.path[0] == "overlay"
-    ]
+    overlay_patches = [p for p in patches if p.path and p.path[0] == "overlay"]
     assert overlay_patches  # the overlay layer changed
     removes = [p for p in overlay_patches if isinstance(p, Remove)]
     reorders = [p for p in overlay_patches if isinstance(p, Reorder)]
@@ -412,12 +410,8 @@ def test_diff_scene_overlay_add_remove_reorder_mix():
 def test_diff_scene_matched_overlay_update_path_is_indexed():
     from tempestroid import Dialog, build_scene, diff_scene
 
-    old = build_scene(
-        Text(content="root"), [("dlg", Dialog(title="old"), True)]
-    )
-    new = build_scene(
-        Text(content="root"), [("dlg", Dialog(title="new"), True)]
-    )
+    old = build_scene(Text(content="root"), [("dlg", Dialog(title="old"), True)])
+    new = build_scene(Text(content="root"), [("dlg", Dialog(title="new"), True)])
     patches = diff_scene(old, new)
     updates = [p for p in patches if isinstance(p, Update) and p.path]
     assert len(updates) == 1

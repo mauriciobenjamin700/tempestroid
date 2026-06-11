@@ -213,9 +213,7 @@ def test_serialize_dropdown_carries_options_and_token():
 
 
 def test_serialize_range_slider_carries_float_bounds():
-    node = build(
-        RangeSlider(low=10.0, high=80.0, on_change=lambda e: e, key="r")
-    )
+    node = build(RangeSlider(low=10.0, high=80.0, on_change=lambda e: e, key="r"))
     payload = serialize_node(node)
     assert payload["props"]["low"] == 10.0
     assert payload["props"]["high"] == 80.0
@@ -251,9 +249,7 @@ def test_serialize_pin_input_carries_change_and_complete_tokens():
 
 
 def test_serialize_masked_input_carries_mask():
-    node = build(
-        MaskedInput(mask="999.999.999-99", on_change=lambda e: e, key="m")
-    )
+    node = build(MaskedInput(mask="999.999.999-99", on_change=lambda e: e, key="m"))
     payload = serialize_node(node)
     assert payload["props"]["mask"] == "999.999.999-99"
     assert payload["props"]["on_change"]["event"] == "TextChangeEvent"
@@ -382,8 +378,6 @@ def test_qt_renders_datepicker_and_emits_iso_date():
 def test_qt_zero_arg_handler_still_called():
     calls: list[int] = []
     renderer = QtRenderer()
-    host = renderer.mount(
-        build(Checkbox(label="x", on_change=lambda: calls.append(1)))
-    )
+    host = renderer.mount(build(Checkbox(label="x", on_change=lambda: calls.append(1))))
     host.findChildren(QCheckBox)[0].setChecked(True)
     assert calls == [1]

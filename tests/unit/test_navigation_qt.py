@@ -146,9 +146,7 @@ async def test_push_three_screens_keeps_stack_host_alive() -> None:
 def test_tab_bar_tap_dispatches_typed_route_change_event() -> None:
     received: list[RouteChangeEvent] = []
     renderer = QtRenderer()
-    node = build(
-        TabBar(tabs=["Home", "Settings"], active=0, on_change=received.append)
-    )
+    node = build(TabBar(tabs=["Home", "Settings"], active=0, on_change=received.append))
     renderer.mount(node)
     bar = renderer.root_widget
     assert isinstance(bar, _TabBarWidget)
