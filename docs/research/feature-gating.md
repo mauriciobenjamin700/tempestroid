@@ -9,9 +9,11 @@
 > **Resultado medido (compile-only, sem device):** lean **46,8 MB** × full
 > **58,2 MB** = **−11,4 MB** (DEX descompactado −11,9 MB; 0 classes das libs
 > gateadas no lean × 4.913 no full). A meta inicial de ~25–30 MB **não foi
-> atingida**: as libs gateadas eram só ~11,9 MB do DEX de 72 MB — o resto é
-> `material-icons-extended` (~9 MB) + Compose/coil + os ~25 MB de CPython, fora do
-> escopo deste corte (ver "Próximos cortes" abaixo).
+> atingida** neste corte: as libs gateadas eram só ~11,9 MB do DEX de 72 MB — o
+> resto é `material-icons-extended` + Compose/coil + os ~25 MB de CPython, fora do
+> escopo deste corte (ver "Próximos cortes" abaixo). O corte #1 seguinte
+> (drop do `-extended`) **fechou boa parte do gap**: −31,7 MB no DEX descompactado
+> (−2,71 MB no APK comprimido) — medido A/B, ver "Próximos cortes" #1.
 
 ## Diagnóstico (medido em `tempest-host-0.11.1.apk`)
 
@@ -142,8 +144,14 @@ Para chegar perto dos ~25–30 MB seria preciso atacar o que sobra no DEX/assets
    o `else -> null` cai pra texto, sem lookup reflexivo. Logo o corte foi um **swap
    de 1 linha** no `build.gradle.kts` (`material-icons-extended` →
    `material-icons-core`), não o port DIY que este doc supunha. Comportamento
-   inalterado. Medição de DEX/APK + verificação on-device **pendentes do toolchain
-   Android** (sem aparelho neste host).
+   inalterado. **Medido A/B (mesmo host, lean `assembleDebug`):** APK
+   **49,5 MB → 46,8 MB (−2,71 MB)**; DEX descompactado **60,7 MB → 29,0 MB
+   (−31,7 MB)**; **−11.106 classes** (27.625 → 16.519), das quais **−10.130 glifos
+   de ícone** (10.375 → 245, o resíduo 245 sendo o core curado que o renderer usa).
+   A estimativa ~9 MB acima **subestimava** — o DEX cai 31,7 MB descompactado
+   (−2,71 MB no APK comprimido, pois bytecode de vetor comprime muito).
+   Verificação on-device (ícones ainda renderizam) **pendente — sem aparelho neste
+   host**.
 2. **R8 minify + `shrinkResources`** no build release — hoje `isMinifyEnabled=false`
    (R8 stripa classes refletidas pelo Python). Com `proguard-rules.pro` de `-keep`
    da superfície JNI/refletida, derruba o DEX não-usado de Compose/coil. Exige

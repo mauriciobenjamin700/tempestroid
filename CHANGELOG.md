@@ -14,11 +14,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   maps 22 names to `Icons.Filled.*` glyphs that **all ship in the core set**
   (transitive via `material3`), and the real source of truth for an icon is the
   SVG `iconPath` prop inlined by `tempestroid/icons.py` — so no `-extended`-only
-  glyph was ever referenced and the swap is behavior-neutral. This removes the
-  largest non-CPython block left in the lean DEX after feature-gating (~9 MB
-  uncompressed; the compressed-APK delta is smaller). **DEX class count + APK-size
-  measurement and on-device verification are pending the Android toolchain** (none
-  on this host). Design: `docs/research/feature-gating.md` ("Próximos cortes" #1).
+  glyph was ever referenced and the swap is behavior-neutral. **Measured A/B
+  (same host, lean `assembleDebug`):** the debug APK drops **49.5 MB → 46.8 MB
+  (−2.71 MB)** and the uncompressed DEX **60.7 MB → 29.0 MB (−31.7 MB)** —
+  **11,106 fewer classes** (27,625 → 16,519), of which **10,130 are icon glyphs**
+  (10,375 → 245, the residual 245 being the curated core set the renderer maps to).
+  This was the largest non-CPython block left in the lean build after
+  feature-gating; the earlier ~9 MB estimate in the design doc understated it. The
+  compressed-APK win (−2.71 MB) is smaller than the uncompressed-DEX win because
+  icon-vector bytecode compresses heavily. **On-device verification (icons still
+  render) pending — no device on this host.** Design:
+  `docs/research/feature-gating.md` ("Próximos cortes" #1).
 
 ### Added
 
