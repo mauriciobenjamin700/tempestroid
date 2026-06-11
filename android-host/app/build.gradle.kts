@@ -538,7 +538,12 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
     // Named Material icons for the `Icon` widget (string name -> vector glyph).
-    implementation("androidx.compose.material:material-icons-extended")
+    // Only the curated core set is needed: `iconFor()` in TempestRenderer.kt maps
+    // 22 names to `Icons.Filled.*` glyphs that all ship in `material-icons-core`
+    // (transitive via material3), and the real source of truth is the inlined SVG
+    // `iconPath` prop from `tempestroid/icons.py`. Dropping `-extended` (~9 MB DEX)
+    // costs nothing — no extended glyph is referenced (F4 trim, cut #1).
+    implementation("androidx.compose.material:material-icons-core")
     // Async image loading for the `Image`/`Svg` widgets (URL/asset src).
     implementation("io.coil-kt:coil-compose:2.7.0")
 

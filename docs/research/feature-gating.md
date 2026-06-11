@@ -31,7 +31,8 @@
 | `video` | `androidx.media3:media3-{exoplayer,ui}` | `VideoPlayer` | — |
 | `maps` | maps-compose + play-services-maps (hoje comentado) | `MapView` | — |
 
-**Core (sempre presente):** Compose UI/Material3, `material-icons-extended`,
+**Core (sempre presente):** Compose UI/Material3, `material-icons-core` (curado;
+o `-extended` foi dropado — ver "Próximos cortes" #1),
 `coil-compose` (Image), lifecycle, activity-compose, work-runtime, biometric,
 security-crypto, e o grupo nativo sem-config (clipboard/storage/database/
 secure_storage/system/haptics/sensors/lifecycle/connectivity/prefs/share/geo).
@@ -133,9 +134,16 @@ nenhuma classe/serviço da dep ausente referenciado, e o merge valide.
 
 Para chegar perto dos ~25–30 MB seria preciso atacar o que sobra no DEX/assets:
 
-1. **`material-icons-extended` (~9 MB)** — hoje core (o widget `Icon` importa
-   ícones Material por nome em `TempestRenderer.kt`). Substituir pelo conjunto DIY
-   já existente (`tempestroid.icons`, vetores próprios) dropa a dep inteira.
+1. ✅ **`material-icons-extended` (~9 MB) — feito.** Achado ao implementar: o
+   widget `Icon` **não usa** nenhum glifo *extended*. O único consumidor,
+   `iconFor()` em `TempestRenderer.kt`, mapeia 22 nomes para `Icons.Filled.*` que
+   **vivem todos no `material-icons-core`** (transitivo via `material3`), e a fonte
+   de verdade real do ícone é o `iconPath` (SVG inline de `tempestroid/icons.py`) —
+   o `else -> null` cai pra texto, sem lookup reflexivo. Logo o corte foi um **swap
+   de 1 linha** no `build.gradle.kts` (`material-icons-extended` →
+   `material-icons-core`), não o port DIY que este doc supunha. Comportamento
+   inalterado. Medição de DEX/APK + verificação on-device **pendentes do toolchain
+   Android** (sem aparelho neste host).
 2. **R8 minify + `shrinkResources`** no build release — hoje `isMinifyEnabled=false`
    (R8 stripa classes refletidas pelo Python). Com `proguard-rules.pro` de `-keep`
    da superfície JNI/refletida, derruba o DEX não-usado de Compose/coil. Exige

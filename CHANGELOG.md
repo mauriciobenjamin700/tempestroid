@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Dropped `material-icons-extended` (~9 MB DEX, Trilho F4 trim sub-task 5,
+  cut #1).** The Compose host now depends on `androidx.compose.material:material-icons-core`
+  instead of `…-extended`. The only consumer, `iconFor()` in `TempestRenderer.kt`,
+  maps 22 names to `Icons.Filled.*` glyphs that **all ship in the core set**
+  (transitive via `material3`), and the real source of truth for an icon is the
+  SVG `iconPath` prop inlined by `tempestroid/icons.py` — so no `-extended`-only
+  glyph was ever referenced and the swap is behavior-neutral. This removes the
+  largest non-CPython block left in the lean DEX after feature-gating (~9 MB
+  uncompressed; the compressed-APK delta is smaller). **DEX class count + APK-size
+  measurement and on-device verification are pending the Android toolchain** (none
+  on this host). Design: `docs/research/feature-gating.md` ("Próximos cortes" #1).
+
 ### Added
 
 - **Opt-in native features (APK trim, Trilho F4 sub-task 5).** The heavy Android
