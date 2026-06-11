@@ -316,7 +316,7 @@ def build_cmd(
         str | None,
         typer.Option(
             "--keystore",
-            help="Release keystore (prd / release-apk; default: auto-generated)."
+            help="Release keystore (prd / release-apk; default: auto-generated).",
         ),
     ] = None,
     icon: Annotated[
@@ -433,7 +433,7 @@ def build_cmd(
         # produce an AAB nor apply release signing. Refuse rather than silently
         # ignore the flag and hand back a debug artifact the user didn't ask for.
         print(
-            f"cannot build: --fast is not supported for the '{target_norm}' "
+            f"cannot build: --fast is not supported for the `{target_norm}` "
             "target (it only produces a debug-signed APK). Drop --fast for a "
             "release build."
         )
@@ -445,19 +445,48 @@ def build_cmd(
         )
     if is_release:
         raise typer.Exit(
-            _run_release(resolved, eff_id, eff_name, eff_version, eff_code,
-                         keystore, output, verbose, branding, from_source)
+            _run_release(
+                resolved,
+                eff_id,
+                eff_name,
+                eff_version,
+                eff_code,
+                keystore,
+                output,
+                verbose,
+                branding,
+                from_source,
+            )
         )
     if is_release_apk:
         raise typer.Exit(
-            _run_release_apk(resolved, eff_id, eff_name, eff_version, eff_code,
-                             keystore, output, verbose, branding, from_source)
+            _run_release_apk(
+                resolved,
+                eff_id,
+                eff_name,
+                eff_version,
+                eff_code,
+                keystore,
+                output,
+                verbose,
+                branding,
+                from_source,
+            )
         )
     if fast:
         raise typer.Exit(_run_build_fast(resolved, output, verbose, branding))
     raise typer.Exit(
-        _run_build(resolved, eff_id, eff_name, eff_version, eff_code, output,
-                   verbose, branding, from_source)
+        _run_build(
+            resolved,
+            eff_id,
+            eff_name,
+            eff_version,
+            eff_code,
+            output,
+            verbose,
+            branding,
+            from_source,
+        )
     )
 
 
@@ -888,9 +917,7 @@ def _run_install(source: str | None, *, launch: bool, verbose: bool) -> int:
 
     console = Console(verbose=verbose)
     try:
-        return install_host(
-            source, version=__version__, launch=launch, console=console
-        )
+        return install_host(source, version=__version__, launch=launch, console=console)
     except StepError:
         return 1
     except (ToolchainError, FileNotFoundError) as exc:
@@ -976,10 +1003,7 @@ def _run_icon(
         '--splash-bg "#0b0f14"'
     )
     if assets.foreground is not None:
-        build += (
-            f" \\\n    --adaptive-icon {assets.foreground} "
-            '--icon-bg "#0b0f14"'
-        )
+        build += f' \\\n    --adaptive-icon {assets.foreground} --icon-bg "#0b0f14"'
     lines.append(build)
     print("\n".join(lines))
     return 0
