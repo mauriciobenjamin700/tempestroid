@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 from pydantic import ValidationError
+from tempest_core.widgets.events import EventValidationError
 
 from tempestroid import (
     App,
@@ -22,7 +23,6 @@ from tempestroid import (
     t,
     translate,
 )
-from tempestroid.widgets.events import EventValidationError
 
 
 @dataclass

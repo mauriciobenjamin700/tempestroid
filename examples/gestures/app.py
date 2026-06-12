@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from tempestroid import (
+    App,
     Color,
     Column,
     Dismissible,
@@ -33,7 +34,6 @@ from tempestroid import (
     Text,
     Widget,
 )
-from tempestroid.core.state import App
 
 
 @dataclass

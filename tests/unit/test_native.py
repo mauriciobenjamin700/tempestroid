@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tempest_core.widgets.events import (
+    AppState,
+    ConnectivityState,
+    SensorType,
+)
 
 from tempestroid import notify
 from tempestroid.native import (
@@ -75,11 +80,6 @@ from tempestroid.native import (
     take_photo,
     vibrate,
     write_file,
-)
-from tempestroid.widgets.events import (
-    AppState,
-    ConnectivityState,
-    SensorType,
 )
 
 

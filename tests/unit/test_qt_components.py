@@ -128,7 +128,7 @@ def test_input_leading_and_trailing_icon_slots() -> None:
 
 
 def test_input_icon_slots_update_without_stacking() -> None:
-    from tempestroid.core.reconciler import diff
+    from tempest_core.core.reconciler import diff
 
     renderer = QtRenderer()
     first = build(Input(value="x", leading_icon="search"))

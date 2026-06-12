@@ -21,6 +21,8 @@ from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
+from tempest_core.core.introspection import introspect
+from tempest_core.widgets.events import EventValidationError
 
 from tempestroid import (
     DEFAULT_WINDOW_SIZE,
@@ -48,8 +50,6 @@ from tempestroid import (
     serialize_node,
 )
 from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
-from tempestroid.core.introspection import introspect
-from tempestroid.widgets.events import EventValidationError
 
 _LIST_WIDGETS = ("LazyColumn", "LazyRow", "LazyGrid", "SectionList", "RefreshControl")
 _LIST_EVENTS = ("ScrollEvent", "RefreshEvent", "EndReachedEvent")

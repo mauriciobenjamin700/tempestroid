@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from tempest_core.core.state import App
+from tempest_core.navigation import Route
+from tempest_core.widgets import Text, Widget
 
 from tempestroid.bridge.device import DeviceApp, LoopbackBridge
 from tempestroid.bridge.jni import JniBridge, make_event_sink, run_device
 from tempestroid.bridge.protocol import BACK_TOKEN, FRAME_TOKEN
-from tempestroid.core.state import App
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX
-from tempestroid.navigation import Route
-from tempestroid.widgets import Text, Widget
 
 
 def _fake_host() -> types.ModuleType:
@@ -352,9 +352,10 @@ async def test_sensor_token_routes_to_sensor_registry(monkeypatch: Any) -> None:
 
 async def test_lifecycle_token_routes_to_lifecycle_registry() -> None:
     """``__lifecycle__`` reaches the lifecycle callback, not handle_event."""
+    from tempest_core.widgets.events import AppState, LifecycleEvent
+
     from tempestroid.bridge.protocol import LIFECYCLE_TOKEN
     from tempestroid.native.lifecycle import on_app_state_change
-    from tempestroid.widgets.events import AppState, LifecycleEvent
 
     device, _ = _device_with_stack("/")
     states: list[AppState] = []
@@ -409,8 +410,9 @@ async def test_connectivity_token_routes_to_connectivity_registry(
 
 async def test_theme_token_routes_to_set_theme() -> None:
     """``__theme__`` validates its payload and swaps the app's theme mode."""
+    from tempest_core.theme import ThemeMode
+
     from tempestroid.bridge.protocol import THEME_TOKEN
-    from tempestroid.theme import ThemeMode
 
     device, _ = _device_with_stack("/")
     seen: list[dict[str, Any]] = []

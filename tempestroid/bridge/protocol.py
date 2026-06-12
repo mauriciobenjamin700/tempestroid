@@ -18,9 +18,8 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-
-from tempestroid.core.ir import Path
-from tempestroid.widgets import (
+from tempest_core.core.ir import Path
+from tempest_core.widgets import (
     ActionSheet,
     Animated,
     AnimatedList,

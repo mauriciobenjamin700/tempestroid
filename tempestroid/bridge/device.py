@@ -17,6 +17,11 @@ import asyncio
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
+from tempest_core.core.ir import Patch
+from tempest_core.core.state import App
+from tempest_core.navigation import NavStack
+from tempest_core.widgets import Widget
+
 from tempestroid.bridge.handlers import HandlerRegistry
 from tempestroid.bridge.protocol import (
     DISMISS_TOKEN_PREFIX,
@@ -25,10 +30,6 @@ from tempestroid.bridge.protocol import (
     PatchMessage,
 )
 from tempestroid.bridge.serializer import serialize_node, serialize_patch
-from tempestroid.core.ir import Patch
-from tempestroid.core.state import App
-from tempestroid.navigation import NavStack
-from tempestroid.widgets import Widget
 
 __all__ = ["Bridge", "LoopbackBridge", "DeviceApp"]
 

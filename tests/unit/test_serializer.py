@@ -1,6 +1,8 @@
 import json
 from typing import Any
 
+from tempest_core.core.ir import Insert, Remove, Reorder, Replace, Update
+
 from tempestroid import (
     Button,
     Checkbox,
@@ -15,7 +17,6 @@ from tempestroid import (
     serialize_node,
     serialize_patch,
 )
-from tempestroid.core.ir import Insert, Remove, Reorder, Replace, Update
 
 
 def test_serialize_text_node():
@@ -210,8 +211,9 @@ def test_serialize_semantics_omits_none_fields():
 
 def test_serialize_icon_inlines_curated_path():
     """A curated `Icon` name gains an `iconPath` carrying its SVG `d` string."""
+    from tempest_core.icons import icon_path
+
     from tempestroid import Icon
-    from tempestroid.icons import icon_path
 
     node = serialize_node(build(Icon(name="search")))
     assert node["type"] == "Icon"
@@ -231,7 +233,7 @@ def test_serialize_icon_unknown_name_has_no_path():
 
 def test_serialize_input_inlines_leading_and_trailing_icon_paths():
     """`Input` leading/trailing icon names resolve to `*Path` siblings."""
-    from tempestroid.icons import Icons, icon_path
+    from tempest_core.icons import Icons, icon_path
 
     node = serialize_node(
         build(
@@ -252,8 +254,9 @@ def test_serialize_input_inlines_leading_and_trailing_icon_paths():
 
 def test_serialize_dropdown_and_autocomplete_icon_paths():
     """`Dropdown`/`Autocomplete` resolve curated icon names like `Input`."""
+    from tempest_core.icons import icon_path
+
     from tempestroid import Autocomplete, Dropdown
-    from tempestroid.icons import icon_path
 
     dropdown = serialize_node(build(Dropdown(options=["a", "b"], leading_icon="user")))
     assert dropdown["props"]["leadingIconPath"] == icon_path("user")

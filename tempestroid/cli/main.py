@@ -825,7 +825,7 @@ def _run_dev(app: str, verbose: bool, device: str | None = None) -> int:
     """
     resolved_device = None
     if device is not None:
-        from tempestroid.devices import resolve_device
+        from tempest_core.devices import resolve_device
 
         resolved_device = resolve_device(device)
         if resolved_device is None:

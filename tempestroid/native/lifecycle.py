@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from tempestroid.widgets.events import LifecycleEvent
+from tempest_core.widgets.events import LifecycleEvent
 
 __all__ = [
     "LifecycleCallback",

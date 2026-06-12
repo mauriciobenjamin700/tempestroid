@@ -1030,11 +1030,24 @@ wheels = [
 ]
 
 [[package]]
+name = "tempest-core"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/9a/1b5be903256f285d47a712a8928eb0dd2d73361375905969868a74bb8adc/tempest_core-0.1.0.tar.gz", hash = "sha256:d04cfbce515f75478d0eefa233693efb3cc22bc3862296fb1279f80c03f106a1", size = 104532, upload-time = "2026-06-12T13:00:41.635Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/fb/7ef61bd963f0f1a0a540c05143df33ea8b338eac7239bf3127c157bd28b1/tempest_core-0.1.0-py3-none-any.whl", hash = "sha256:e3c547881e33ce8abee100e84c88f070c80253320b0d0146aaf596d48b8bc963", size = 124176, upload-time = "2026-06-12T13:00:40.094Z" },
+]
+
+[[package]]
 name = "tempestroid"
 version = "0.12.1"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
+    { name = "tempest-core" },
     { name = "typer" },
 ]
 
@@ -1066,6 +1079,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyside6", marker = "extra == 'qt'", specifier = ">=6.7" },
     { name = "qasync", marker = "extra == 'qt'", specifier = ">=0.27" },
+    { name = "tempest-core", specifier = ">=0.1.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 provides-extras = ["qt", "icons", "camera", "qr", "push", "video", "maps", "features"]

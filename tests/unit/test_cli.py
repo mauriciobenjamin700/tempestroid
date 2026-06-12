@@ -171,8 +171,9 @@ def _assert_scaffold_loads(root: Path) -> None:
     """
     import sys
 
+    from tempest_core.core.state import App
+
     from tempestroid.cli.app_loader import spec_from_project
-    from tempestroid.core.state import App
 
     spec = spec_from_project(root, "app.py")
     try:
@@ -822,9 +823,7 @@ def test_build_feature_qr_pulls_in_camera(
     assert seen["features"] == ("camera", "qr")
 
 
-def test_build_unknown_feature_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_build_unknown_feature_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """An unknown --feature is a clean exit 1, not a crash."""
     app = tmp_path / "app.py"
     app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")

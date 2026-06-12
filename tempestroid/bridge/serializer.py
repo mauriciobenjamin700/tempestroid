@@ -16,8 +16,7 @@ from __future__ import annotations
 
 from typing import Any, TypeGuard, cast
 
-from tempestroid.bridge.protocol import event_type_for, handler_token
-from tempestroid.core.ir import (
+from tempest_core.core.ir import (
     Insert,
     Node,
     Patch,
@@ -26,10 +25,12 @@ from tempestroid.core.ir import (
     Replace,
     Update,
 )
-from tempestroid.icons import icon_path
+from tempest_core.icons import icon_path
+from tempest_core.style import Style
+from tempest_core.widgets import MenuItem
+
+from tempestroid.bridge.protocol import event_type_for, handler_token
 from tempestroid.renderers.compose import to_compose
-from tempestroid.style import Style
-from tempestroid.widgets import MenuItem
 
 __all__ = ["serialize_node", "serialize_patch"]
 

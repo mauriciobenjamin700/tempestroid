@@ -18,13 +18,13 @@ import qasync  # pyright: ignore[reportMissingTypeStubs]
 from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
+from tempest_core.core.ir import Patch
+from tempest_core.core.state import App
+from tempest_core.devices import DEFAULT_DEVICE, Device
+from tempest_core.widgets import AppState, Widget
 
-from tempestroid.core.ir import Patch
-from tempestroid.core.state import App
-from tempestroid.devices import DEFAULT_DEVICE, Device
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
 from tempestroid.renderers.qt.renderer import QtRenderer
-from tempestroid.widgets import AppState, Widget
 
 __all__ = ["run_qt", "BackKeyFilter", "connect_lifecycle"]
 

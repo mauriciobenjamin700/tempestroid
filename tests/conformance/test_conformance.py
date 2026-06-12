@@ -35,10 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from tempestroid import to_compose
-from tempestroid.renderers.qt.style_translator import layout_alignment, to_qss
-from tempestroid.style import (
+from tempest_core.style import (
     AlignItems,
     Border,
     Color,
@@ -63,6 +60,9 @@ from tempestroid.style import (
     TextOverflow,
     Transition,
 )
+
+from tempestroid import to_compose
+from tempestroid.renderers.qt.style_translator import layout_alignment, to_qss
 
 _GOLDEN_DIR = Path(__file__).parent / "golden"
 
@@ -1727,8 +1727,7 @@ def test_e5_event_type_for_resolves_all_bindings() -> None:
     type swaps for the eight new widgets.  The per-pair assertions mirror the
     architect contract exactly.
     """
-    from tempestroid.bridge.protocol import event_type_for
-    from tempestroid.widgets.events import (
+    from tempest_core.widgets.events import (
         RangeChangeEvent,
         SelectEvent,
         SubmitEvent,
@@ -1736,6 +1735,8 @@ def test_e5_event_type_for_resolves_all_bindings() -> None:
         TimeChangeEvent,
         ValidationEvent,
     )
+
+    from tempestroid.bridge.protocol import event_type_for
 
     # Dropdown — single handler
     assert event_type_for("Dropdown", "on_select") is SelectEvent, (
@@ -1790,10 +1791,11 @@ def test_e5_form_validation_not_in_renderer() -> None:
     3. Both renderers receive ``FormField.error`` as a plain string prop —
        they display it but cannot compute it themselves.
     """
+    from tempest_core.widgets.forms import Form, FormField
+    from tempest_core.widgets.inputs import Input
+
     from tempestroid import build
     from tempestroid.bridge import serialize_node
-    from tempestroid.widgets.forms import Form, FormField
-    from tempestroid.widgets.inputs import Input
 
     def _any_validator(v: object) -> str | None:
         return None
@@ -1859,8 +1861,9 @@ def test_e5_form_and_field_event_schemas() -> None:
     against accidental renames: ``Form.on_submit`` -> ``SubmitEvent``,
     ``FormField.on_validate`` -> ``ValidationEvent``.
     """
+    from tempest_core.widgets.events import SubmitEvent, ValidationEvent
+
     from tempestroid.bridge.protocol import EVENT_SCHEMAS
-    from tempestroid.widgets.events import SubmitEvent, ValidationEvent
 
     form_schemas = EVENT_SCHEMAS.get("Form", {})
     assert "on_submit" in form_schemas, "Form must declare on_submit in event_schemas"
@@ -2059,8 +2062,9 @@ def test_e6_page_change_event_in_event_schemas() -> None:
     Pins the bridge contract so the device round-trip validates a page-change
     payload against the right event type.
     """
+    from tempest_core.widgets.events import PageChangeEvent
+
     from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
-    from tempestroid.widgets.events import PageChangeEvent
 
     assert "PageView" in EVENT_SCHEMAS, (
         "PageView missing from EVENT_SCHEMAS; add it to bridge/protocol.py"
@@ -2252,6 +2256,8 @@ def test_e7_canvas_commands_are_json_serializable() -> None:
     never tuples), so ``serialize_node`` → ``json.dumps`` round-trips with no
     custom encoder. This pins the contract both renderers consume.
     """
+    from tempest_core.core.reconciler import build
+
     from tempestroid import (
         ArcTo,
         Canvas,
@@ -2265,7 +2271,6 @@ def test_e7_canvas_commands_are_json_serializable() -> None:
         StrokeCmd,
     )
     from tempestroid.bridge import serialize_node
-    from tempestroid.core.reconciler import build
 
     canvas = Canvas(
         commands=[
@@ -2304,8 +2309,9 @@ def test_e7_new_widgets_in_event_schemas() -> None:
     ``QrScanEvent``. A missing entry means a widget is undiscoverable at the
     boundary.
     """
+    from tempest_core.widgets.events import QrScanEvent
+
     from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
-    from tempestroid.widgets.events import QrScanEvent
 
     for name in _E7_NEW_WIDGETS:
         assert name in EVENT_SCHEMAS, (

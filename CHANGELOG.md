@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The renderer-agnostic engine — style, widgets, components, the core
+  IR/reconciler/state, animation, navigation, theme, i18n, icons, devices and
+  validators — was extracted into the standalone **`tempest-core`** package, and
+  tempestroid now **depends on it** (`tempest-core>=0.1.0`) and consumes it as the
+  single source of truth instead of vendoring those modules. The public API is
+  unchanged: `from tempestroid import App, Column, Color` keeps working exactly as
+  before (the top-level package re-exports the full engine surface). The historical
+  deep paths `from tempestroid.style import Color` / `from tempestroid.core import
+  App` still resolve **at runtime** via a thin `sys.modules` alias
+  (`tempestroid/_adopt.py`), but type-checked code should prefer the top-level
+  `tempestroid` export or import the engine directly from `tempest_core` — which is
+  what tempestroid's own source, the examples and the test suite now do (the
+  renderer/native/bridge/cli/devserver layers stay tempestroid's own and are
+  untouched). No behaviour change — `pyright` strict clean, 1127 tests green.
 - **Dropped `material-icons-extended` (~9 MB DEX, Trilho F4 trim sub-task 5,
   cut #1).** The Compose host now depends on `androidx.compose.material:material-icons-core`
   instead of `…-extended`. The only consumer, `iconFor()` in `TempestRenderer.kt`,

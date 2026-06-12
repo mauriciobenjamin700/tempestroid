@@ -24,8 +24,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
 
-from tempestroid.core.state import App
-from tempestroid.widgets import Widget
+from tempest_core.core.state import App
+from tempest_core.widgets import Widget
 
 __all__ = ["AppSpec", "load_app_spec", "spec_from_project", "spec_from_source"]
 

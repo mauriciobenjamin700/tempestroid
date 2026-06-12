@@ -13,8 +13,7 @@ simulator honest against the Compose device renderer.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-
-from tempestroid.style import (
+from tempest_core.style import (
     AlignItems,
     Border,
     Color,

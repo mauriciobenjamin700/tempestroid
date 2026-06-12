@@ -11,10 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtWidgets import QWidget
+from tempest_core.core.ir import Patch
+from tempest_core.core.state import App
 
 from tempestroid.cli.app_loader import AppSpec
-from tempestroid.core.ir import Patch
-from tempestroid.core.state import App
 from tempestroid.renderers.qt.renderer import QtRenderer
 
 __all__ = ["Simulator"]

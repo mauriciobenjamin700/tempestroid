@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tempestroid.style import (
+from tempest_core.style import (
     AlignItems,
     Border,
     Color,
