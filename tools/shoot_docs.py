@@ -25,6 +25,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from tempest_core.core.reconciler import build  # noqa: E402
 
 import tempestroid as T  # noqa: E402
 from tempestroid import (  # noqa: E402
@@ -146,7 +147,6 @@ from tempestroid import (  # noqa: E402
     Widget,
     Wrap,
 )
-from tempestroid.core.reconciler import build  # noqa: E402
 from tempestroid.renderers.qt.renderer import QtRenderer  # noqa: E402
 
 # Repo root → docs/assets/components.
