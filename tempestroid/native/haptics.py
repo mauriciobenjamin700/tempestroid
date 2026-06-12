@@ -17,7 +17,16 @@ __all__ = ["ImpactStyle", "vibrate", "impact"]
 
 
 class ImpactStyle(StrEnum):
-    """The intensity of a haptic impact tap."""
+    """The intensity of a haptic impact tap.
+
+    Attributes:
+        LIGHT: A subtle, low-energy tap — for confirming minor interactions
+            such as a toggle flip or selection change.
+        MEDIUM: A moderate tap with noticeably more force than ``LIGHT`` — for
+            standard button presses and routine confirmations.
+        HEAVY: A strong, pronounced tap — for emphasizing significant events
+            such as completing an action or hitting a boundary.
+    """
 
     LIGHT = "light"
     MEDIUM = "medium"

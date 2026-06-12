@@ -214,9 +214,7 @@ class App(Generic[S]):
             raise RuntimeError("cannot swap_view before start()")
         # Build with the new view eagerly so a failure aborts before we commit;
         # the old self._view is untouched until the build succeeds.
-        new = build_scene(
-            self._inject_windows(view(self)), self._overlay_specs()
-        )
+        new = build_scene(self._inject_windows(view(self)), self._overlay_specs())
         self._view = view
         patches = diff_scene(self._current, new)
         self._current = new
@@ -362,11 +360,7 @@ class App(Generic[S]):
                 section.model_copy(update={"window": window})
                 if (
                     widget.key is not None
-                    and (
-                        window := self._windows.get(
-                            f"{widget.key}::{section.title}"
-                        )
-                    )
+                    and (window := self._windows.get(f"{widget.key}::{section.title}"))
                     is not None
                 )
                 else section
@@ -522,9 +516,7 @@ class App(Generic[S]):
         if len(self._overlays) != before:
             self.request_rebuild()
 
-    def _push(
-        self, widget: Widget, *, barrier: bool, is_toast: bool = False
-    ) -> str:
+    def _push(self, widget: Widget, *, barrier: bool, is_toast: bool = False) -> str:
         """Append an overlay entry and request a rebuild.
 
         Args:

@@ -31,9 +31,11 @@ class _State:
 
 
 def _view(app: "App[_State]") -> Widget:
-    label = "dark" if app.theme.is_dark(
-        platform_dark_mode=app.media.platform_dark_mode
-    ) else "light"
+    label = (
+        "dark"
+        if app.theme.is_dark(platform_dark_mode=app.media.platform_dark_mode)
+        else "light"
+    )
     return Text(content=f"{label}:{app.locale.language}")
 
 

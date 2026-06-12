@@ -120,10 +120,14 @@ def test_serialize_patch_insert_carries_node():
 
 def test_serialize_patch_remove_and_reorder():
     assert serialize_patch(Remove(path=(0,), index=2)) == {
-        "op": "remove", "path": [0], "index": 2,
+        "op": "remove",
+        "path": [0],
+        "index": 2,
     }
     assert serialize_patch(Reorder(path=(), order=[1, 0])) == {
-        "op": "reorder", "path": [], "order": [1, 0],
+        "op": "reorder",
+        "path": [],
+        "order": [1, 0],
     }
 
 
@@ -157,8 +161,9 @@ def test_serialize_canvas_commands_are_json_safe():
         commands=[
             MoveTo(x=0.0, y=0.0),
             LineTo(x=10.0, y=10.0),
-            ArcTo(x=0.0, y=0.0, width=20.0, height=20.0,
-                  start_angle=0.0, sweep_angle=90.0),
+            ArcTo(
+                x=0.0, y=0.0, width=20.0, height=20.0, start_angle=0.0, sweep_angle=90.0
+            ),
             Close(),
             DrawRect(x=1.0, y=2.0, width=3.0, height=4.0),
             DrawOval(x=5.0, y=6.0, width=7.0, height=8.0),
@@ -250,9 +255,7 @@ def test_serialize_dropdown_and_autocomplete_icon_paths():
     from tempestroid import Autocomplete, Dropdown
     from tempestroid.icons import icon_path
 
-    dropdown = serialize_node(
-        build(Dropdown(options=["a", "b"], leading_icon="user"))
-    )
+    dropdown = serialize_node(build(Dropdown(options=["a", "b"], leading_icon="user")))
     assert dropdown["props"]["leadingIconPath"] == icon_path("user")
 
     autocomplete = serialize_node(

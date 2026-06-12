@@ -24,7 +24,17 @@ __all__ = [
 
 
 class PermissionStatus(StrEnum):
-    """The outcome of a runtime-permission request/check."""
+    """The outcome of a runtime-permission request/check.
+
+    Attributes:
+        GRANTED: The app holds the permission and may use the capability now.
+        DENIED: The user declined the permission, but the system will still
+            prompt again on a future request (a soft, retryable refusal).
+        PERMANENTLY_DENIED: The user refused and selected "don't ask again"
+            (or denied twice on newer Android), so the system will no longer
+            show the prompt — the app must direct the user to the settings
+            screen to grant it manually.
+    """
 
     GRANTED = "granted"
     DENIED = "denied"
@@ -57,9 +67,7 @@ async def request_permission(permission: str) -> PermissionResult:
         the Qt simulator).
     """
     if not on_device():
-        return PermissionResult(
-            permission=permission, status=PermissionStatus.GRANTED
-        )
+        return PermissionResult(permission=permission, status=PermissionStatus.GRANTED)
     data = await send_native_request(
         "permissions", "request", {"permission": permission}
     )
@@ -77,10 +85,6 @@ async def check_permission(permission: str) -> PermissionResult:
         the Qt simulator).
     """
     if not on_device():
-        return PermissionResult(
-            permission=permission, status=PermissionStatus.GRANTED
-        )
-    data = await send_native_request(
-        "permissions", "check", {"permission": permission}
-    )
+        return PermissionResult(permission=permission, status=PermissionStatus.GRANTED)
+    data = await send_native_request("permissions", "check", {"permission": permission})
     return PermissionResult.model_validate({"permission": permission, **data})

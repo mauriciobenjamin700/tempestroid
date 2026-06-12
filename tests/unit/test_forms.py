@@ -219,9 +219,7 @@ def _run_submit(email: str) -> _SubmitState:
         form_node = serialize_node(scene.root)["children"][0]
         token = form_node["props"]["on_submit"]["$handler"]
         await device.handle_event(
-            EventMessage(
-                token=token, payload={"values": {"email": email}}
-            ).model_dump()
+            EventMessage(token=token, payload={"values": {"email": email}}).model_dump()
         )
 
     asyncio.run(run())

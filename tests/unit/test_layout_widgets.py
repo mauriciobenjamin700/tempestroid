@@ -294,9 +294,7 @@ def test_page_view_page_prop_diff_emits_update() -> None:
     v1 = PageView(page=0, children=[Text(content="A")])
     v2 = PageView(page=1, children=[Text(content="A")])
     patches = diff(build(v1), build(v2))
-    root_updates = [
-        p for p in patches if isinstance(p, Update) and p.path == ()
-    ]
+    root_updates = [p for p in patches if isinstance(p, Update) and p.path == ()]
     assert len(root_updates) == 1, (
         "exactly one root Update expected when only the page prop changes"
     )
@@ -310,9 +308,7 @@ def test_aspect_ratio_ratio_diff_emits_update() -> None:
     a1 = AspectRatio(ratio=1.5, child=Text(content="x"))
     a2 = AspectRatio(ratio=2.0, child=Text(content="x"))
     patches = diff(build(a1), build(a2))
-    root_updates = [
-        p for p in patches if isinstance(p, Update) and p.path == ()
-    ]
+    root_updates = [p for p in patches if isinstance(p, Update) and p.path == ()]
     assert len(root_updates) == 1
     assert root_updates[0].set_props["ratio"] == 2.0
 

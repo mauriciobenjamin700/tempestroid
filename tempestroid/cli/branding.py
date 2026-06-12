@@ -265,12 +265,8 @@ def staged_into_host(host: Path, branding: Branding) -> Generator[None, None, No
             )
         if branding.adaptive_icon is not None:
             color = branding.icon_bg or _DEFAULT_ICON_BG
-            _stage_write(
-                res / _FG_DRAWABLE, data=branding.adaptive_icon.read_bytes()
-            )
-            _stage_write(
-                res / _BG_COLOR_RES, data=_bg_color_xml(color).encode("utf-8")
-            )
+            _stage_write(res / _FG_DRAWABLE, data=branding.adaptive_icon.read_bytes())
+            _stage_write(res / _BG_COLOR_RES, data=_bg_color_xml(color).encode("utf-8"))
             xml = _ADAPTIVE_ICON_XML.encode("utf-8")
             _stage_write(res / _ADAPTIVE_XML, data=xml)
             _stage_write(res / _ADAPTIVE_XML_ROUND, data=xml)

@@ -153,9 +153,7 @@ class EmailInput(Component):
     """
 
     value: str = Field(default="", description="The current text value (controlled).")
-    label: str = Field(
-        default="E-mail", description="The label shown above the field."
-    )
+    label: str = Field(default="E-mail", description="The label shown above the field.")
     placeholder: str = Field(default="", description="The empty-field hint.")
     error: str = Field(
         default="", description="The validation message; shown in red when non-empty."
@@ -391,9 +389,7 @@ class AddressInput(Component):
     complement: str = Field(
         default="", description="The current address complement value."
     )
-    neighborhood: str = Field(
-        default="", description="The current neighborhood value."
-    )
+    neighborhood: str = Field(default="", description="The current neighborhood value.")
     city: str = Field(default="", description="The current city value.")
     state: str = Field(default="", description="The current state (UF) value.")
     label: str = Field(

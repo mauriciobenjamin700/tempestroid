@@ -33,6 +33,7 @@ def template_names() -> list[str]:
     """
     return ["default", *TEMPLATES.keys()]
 
+
 DEFAULT_APP_TEMPLATE = """\
 \"\"\"{name} — a tempestroid app.
 

@@ -253,9 +253,7 @@ def main() -> int:
     # code-push path can import this app without the desktop ``qt`` extra.
     from tempestroid.renderers.qt import run_qt
 
-    return run_qt(
-        make_state(), view, title="tempestroid — animation", size=(360, 620)
-    )
+    return run_qt(make_state(), view, title="tempestroid — animation", size=(360, 620))
 
 
 if __name__ == "__main__":

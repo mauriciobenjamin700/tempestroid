@@ -605,9 +605,7 @@ _NATIVE = Template(
     files={
         "app.py": _app_py(
             routes=_NATIVE_ROUTES,
-            imports=(
-                "from screens import detail_screen, home_screen, native_screen"
-            ),
+            imports=("from screens import detail_screen, home_screen, native_screen"),
         ),
         "state.py": _NATIVE_STATE_PY,
         "components/__init__.py": _COMPONENTS_INIT,

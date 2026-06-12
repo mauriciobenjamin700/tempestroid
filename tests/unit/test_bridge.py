@@ -239,9 +239,7 @@ async def test_overlay_handler_token_resolves_after_refresh():
 
     device: DeviceApp[Counter] = DeviceApp(Counter(), view, bridge)
     await device.start()
-    device.app.show_dialog(
-        Dialog(title="Hi", on_dismiss=lambda: dismissed.append(1))
-    )
+    device.app.show_dialog(Dialog(title="Hi", on_dismiss=lambda: dismissed.append(1)))
     await _drain()
     # The overlay's on_dismiss handler is registered under the namespaced token.
     await device.handle_event(

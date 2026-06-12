@@ -97,9 +97,7 @@ def diff(old: Node, new: Node) -> list[Patch]:
     return patches
 
 
-def build_scene(
-    widget: Widget, overlays: list[tuple[str, Widget, bool]]
-) -> Scene:
+def build_scene(widget: Widget, overlays: list[tuple[str, Widget, bool]]) -> Scene:
     """Build a full :class:`Scene` from a root widget plus an overlay layer.
 
     Each overlay is given as a ``(id, widget, barrier)`` tuple: the ``id``
@@ -150,9 +148,7 @@ def diff_scene(old: Scene, new: Scene) -> list[Patch]:
     return patches
 
 
-def _reconcile_overlays(
-    old: list[Node], new: list[Node], patches: list[Patch]
-) -> None:
+def _reconcile_overlays(old: list[Node], new: list[Node], patches: list[Patch]) -> None:
     """Diff the overlay layer under the reserved ``("overlay",)`` path prefix.
 
     Overlays are always keyed by their stable id, so a fully-keyed diff applies
@@ -188,9 +184,7 @@ def _reconcile(
 
     set_props, unset_props = _diff_props(old.props, new.props)
     if set_props or unset_props:
-        patches.append(
-            Update(path=path, set_props=set_props, unset_props=unset_props)
-        )
+        patches.append(Update(path=path, set_props=set_props, unset_props=unset_props))
 
     _reconcile_children(old.children, new.children, path, patches)
 
@@ -302,9 +296,7 @@ def _diff_props(
         names that were removed.
     """
     set_props = {
-        key: value
-        for key, value in new.items()
-        if key not in old or old[key] != value
+        key: value for key, value in new.items() if key not in old or old[key] != value
     }
     unset_props = [key for key in old if key not in new]
     return set_props, unset_props

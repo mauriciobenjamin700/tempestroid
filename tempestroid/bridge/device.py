@@ -89,9 +89,7 @@ class DeviceApp(Generic[S]):
         """
         self._bridge: Bridge = bridge
         self._registry: HandlerRegistry = HandlerRegistry()
-        self._app: App[S] = App(
-            state, view, apply_patches=self._on_patches, nav=nav
-        )
+        self._app: App[S] = App(state, view, apply_patches=self._on_patches, nav=nav)
         # Strong refs to in-flight send tasks so the loop does not GC them.
         self._pending: set[asyncio.Task[None]] = set()
 
