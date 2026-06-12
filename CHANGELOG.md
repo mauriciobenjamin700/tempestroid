@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-12
+
 ### Changed
 
 - The renderer-agnostic engine — style, widgets, components, the core

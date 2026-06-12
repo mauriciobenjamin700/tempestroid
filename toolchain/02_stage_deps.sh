@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # 02_stage_deps.sh — assemble the Android site-packages payload.
 #
-# Pure-Python deps (pydantic + annotated_types + typing_extensions) come straight
-# from PyPI; the compiled pydantic_core comes from the Android wheel built by
-# 01_build_wheels.sh. The tempestroid core itself is NOT staged here — the Gradle
-# assets task copies it fresh from src/ (minus the Qt renderer) on every build.
+# Pure-Python deps (pydantic + annotated_types + typing_extensions + the extracted
+# tempest-core engine) come straight from PyPI; the compiled pydantic_core comes
+# from the Android wheel built by 01_build_wheels.sh. The tempestroid core itself
+# is NOT staged here — the Gradle assets task copies it fresh from src/ (minus the
+# Qt renderer) on every build. tempestroid now imports the renderer-agnostic engine
+# from tempest_core, so that pure-Python package MUST be staged here too (else
+# `import tempest_core` fails on device).
 #
 # Output: toolchain/dist/site-packages/  (consumed by app/build.gradle.kts).
 #
@@ -19,6 +22,7 @@ STAGE="$DIST/site-packages"
 ABI="arm64-v8a"
 
 PYDANTIC_VERSION="2.12.5"
+TEMPEST_CORE_VERSION="0.1.0"
 PYDANTIC_CORE_WHEEL="$WHEELS/pydantic_core-2.41.5-cp314-cp314-android_24_${ABI//-/_}.whl"
 
 echo "==> staging site-packages at $STAGE"
@@ -27,12 +31,13 @@ mkdir -p "$STAGE"
 
 # 1) Pure-Python deps from PyPI (platform-independent). --no-deps so pip does not
 #    drag in a host pydantic_core; we supply the Android one below.
-echo "==> downloading pure-Python deps (pydantic==$PYDANTIC_VERSION + friends)"
+echo "==> downloading pure-Python deps (pydantic==$PYDANTIC_VERSION + tempest-core==$TEMPEST_CORE_VERSION + friends)"
 # uv pip: no bytecode compilation by default, so no host .pyc leaks into the APK.
 uv pip install \
     --target "$STAGE" \
     --no-deps \
     "pydantic==$PYDANTIC_VERSION" \
+    "tempest-core==$TEMPEST_CORE_VERSION" \
     "annotated-types" \
     "typing-extensions" \
     "typing-inspection" \
