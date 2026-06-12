@@ -177,9 +177,7 @@ def test_icon_falls_back_to_name_text_for_unknown() -> None:
 
 def test_scrollview_mounts_children_in_scroll_area() -> None:
     renderer = QtRenderer()
-    renderer.mount(
-        build(ScrollView(children=[Text(content="a"), Text(content="b")]))
-    )
+    renderer.mount(build(ScrollView(children=[Text(content="a"), Text(content="b")])))
     area = renderer.root_widget
     assert isinstance(area, QScrollArea)
     labels = [lbl.text() for lbl in area.findChildren(QLabel)]

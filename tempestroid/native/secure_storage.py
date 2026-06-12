@@ -26,9 +26,7 @@ def _require_device() -> None:
         NativeError: On the Qt simulator (``device_only``).
     """
     if not on_device():
-        raise NativeError(
-            "device_only", "secure storage not supported on Qt simulator"
-        )
+        raise NativeError("device_only", "secure storage not supported on Qt simulator")
 
 
 async def get_secret(key: str) -> str | None:

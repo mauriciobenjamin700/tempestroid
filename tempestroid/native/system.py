@@ -27,7 +27,16 @@ __all__ = [
 
 
 class Orientation(StrEnum):
-    """A screen-orientation lock the app can request."""
+    """A screen-orientation lock the app can request.
+
+    Attributes:
+        PORTRAIT: Lock the display to upright portrait — the screen is taller
+            than it is wide, regardless of how the device is held.
+        LANDSCAPE: Lock the display to landscape — the screen is wider than it
+            is tall, regardless of how the device is held.
+        AUTO: Release any lock and follow the device's own rotation sensor and
+            the user's auto-rotate setting.
+    """
 
     PORTRAIT = "portrait"
     LANDSCAPE = "landscape"
@@ -35,7 +44,14 @@ class Orientation(StrEnum):
 
 
 class StatusBarStyle(StrEnum):
-    """The status-bar foreground (icon/text) style."""
+    """The status-bar foreground (icon/text) style.
+
+    Attributes:
+        LIGHT: Render the status-bar icons and clock in a light (near-white)
+            color, for use over a dark status-bar background.
+        DARK: Render the status-bar icons and clock in a dark (near-black)
+            color, for use over a light status-bar background.
+    """
 
     LIGHT = "light"
     DARK = "dark"

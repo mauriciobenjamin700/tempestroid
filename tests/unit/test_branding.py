@@ -163,9 +163,7 @@ def test_staged_into_host_adaptive_default_bg(tmp_path: Path) -> None:
     fg = _png(tmp_path / "fg.png", b"MY-FG")
 
     with staged_into_host(host, Branding(adaptive_icon=fg)):
-        bg = (res / "values" / "ic_launcher_background.xml").read_text(
-            encoding="utf-8"
-        )
+        bg = (res / "values" / "ic_launcher_background.xml").read_text(encoding="utf-8")
         assert "#FFFFFF" in bg
 
 

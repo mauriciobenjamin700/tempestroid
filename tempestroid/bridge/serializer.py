@@ -107,15 +107,25 @@ def serialize_patch(patch: Patch) -> dict[str, Any]:
         TypeError: If the patch is of an unknown type.
     """
     if isinstance(patch, Replace):
-        return {"op": "replace", "path": list(patch.path),
-                "node": serialize_node(patch.node, patch.path)}
+        return {
+            "op": "replace",
+            "path": list(patch.path),
+            "node": serialize_node(patch.node, patch.path),
+        }
     if isinstance(patch, Update):
-        return {"op": "update", "path": list(patch.path),
-                "set": _serialize_props(None, patch.set_props, patch.path),
-                "unset": list(patch.unset_props)}
+        return {
+            "op": "update",
+            "path": list(patch.path),
+            "set": _serialize_props(None, patch.set_props, patch.path),
+            "unset": list(patch.unset_props),
+        }
     if isinstance(patch, Insert):
-        return {"op": "insert", "path": list(patch.path), "index": patch.index,
-                "node": serialize_node(patch.node, patch.path + (patch.index,))}
+        return {
+            "op": "insert",
+            "path": list(patch.path),
+            "index": patch.index,
+            "node": serialize_node(patch.node, patch.path + (patch.index,)),
+        }
     if isinstance(patch, Remove):
         return {"op": "remove", "path": list(patch.path), "index": patch.index}
     return {"op": "reorder", "path": list(patch.path), "order": list(patch.order)}

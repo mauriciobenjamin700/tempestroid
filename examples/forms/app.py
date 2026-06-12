@@ -166,9 +166,7 @@ def view(app: App[FormsState]) -> Widget:
     def on_submit(event: SubmitEvent) -> None:
         # Validation runs purely in Python: the submitted values are validated and
         # the resulting FormState (errors + validity) is folded back into state.
-        result = _build_form().validate(
-            {"email": state.email, "name": state.name}
-        )
+        result = _build_form().validate({"email": state.email, "name": state.name})
 
         def apply(s: FormsState) -> None:
             s.form_state = result

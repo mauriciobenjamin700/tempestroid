@@ -262,9 +262,7 @@ def _build_specimens() -> dict[str, Widget]:
             key="st",
         ),
         "Wrap": Wrap(
-            children=[
-                Chip(label=f"tag {i}", key=f"c{i}") for i in range(4)
-            ],
+            children=[Chip(label=f"tag {i}", key=f"c{i}") for i in range(4)],
             key="wr",
         ),
         "PageView": PageView(
@@ -580,9 +578,7 @@ def _build_specimens() -> dict[str, Widget]:
             key="sidebar",
         ),
         "Grid": Grid(
-            children=[
-                Chip(label=f"item {i}", key=f"g{i}") for i in range(6)
-            ],
+            children=[Chip(label=f"item {i}", key=f"g{i}") for i in range(6)],
             columns=3,
             key="grid",
         ),
@@ -776,8 +772,10 @@ def main() -> int:
 
     missing = [n for n in targets if n not in specimens and n not in SKIP]
     if missing:
-        print(f"WARNING: {len(missing)} exported class(es) have no specimen and "
-              f"are not skipped: {', '.join(missing)}")
+        print(
+            f"WARNING: {len(missing)} exported class(es) have no specimen and "
+            f"are not skipped: {', '.join(missing)}"
+        )
 
     rendered: list[str] = []
     failed: list[tuple[str, str]] = []
@@ -792,9 +790,10 @@ def main() -> int:
     print()
     print(f"Rendered {len(rendered)} PNG(s) to {ASSETS_DIR}")
     if SKIP:
-        print(f"Skipped {len(SKIP)}: " + ", ".join(
-            f"{n} ({why})" for n, why in SKIP.items()
-        ))
+        print(
+            f"Skipped {len(SKIP)}: "
+            + ", ".join(f"{n} ({why})" for n, why in SKIP.items())
+        )
     if failed:
         print(f"FAILED {len(failed)}: " + ", ".join(n for n, _ in failed))
         return 1

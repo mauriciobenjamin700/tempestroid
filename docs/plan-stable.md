@@ -223,7 +223,7 @@ sem copiar exemplo na mão. Reforça o contrato pythônico.
 
 ---
 
-## F4 — Distribuição profissional (planejado)
+## F4 — Distribuição profissional (em progresso)
 
 ### Objetivo
 Sair de "APK pra amigos sideloarem" (debug-signed) para **distribuível de
@@ -244,10 +244,13 @@ sideload); F4 cobre o salto para "profissional".
    `dist/<project>-release.apk`; verificável por `apksigner verify`.
    **Não cai no fallback `--fast`** — um APK release exige o build real.
    Device-verificação (instalar + abrir) pendente do toolchain Android.
-2. **Ícone adaptativo** — `tempest icon --adaptive` gera as camadas
-   foreground/background + o `mipmap-anydpi-v26/ic_launcher.xml` (adaptive icon),
-   para o launcher aplicar a máscara (arredondado/squircle) como um app nativo.
-   Hoje o ícone é um PNG quadrado simples (sem máscara do launcher).
+2. ✅ **Ícone adaptativo** — `tempest icon <src> --adaptive` grava o
+   `ic_launcher_foreground.png`; `tempest build --adaptive-icon <fg.png>
+   --icon-bg <#rrggbb>` emite o adaptive icon real (foreground/background +
+   `mipmap-anydpi-v26/ic_launcher{,_round}.xml`), com o PNG quadrado como
+   fallback pré-API-26. Lê `adaptive_icon`/`icon_bg` de `[tool.tempest]`;
+   Gradle-only (`--fast` avisa). Device-verificação (máscara do launcher)
+   pendente do toolchain Android.
 3. ✅ **Cobertura device dos widgets** — matriz publicada em
    `docs/referencia/cobertura.md` (PT+EN, na nav MkDocs): todo widget primitivo
    exportado tem case nos DOIS renderizadores (Compose: 62 cases primitivos + 7
@@ -282,5 +285,19 @@ F2 (native device) ──► transversal; pode correr em paralelo, PR por capaci
 F1 e F3 são as de maior alavanca para o time (criar + distribuir). F2 é
 incremental e paraleliza bem (uma capacidade por PR). Fechar as três → tempestroid
 "estável para uso em produção interna" no estilo pythônico que o time já escreve.
+
+### Próximos passos (pós-v0.12.0)
+
+F4 (1)(2)(3) entregues e publicados (v0.12.0). Restante, em ordem de alavanca:
+
+1. **Device-verify do já-mergeado** (mais barato — código pronto, só rodar no
+   aparelho): `release-apk` instala/abre + `apksigner verify`; `--adaptive-icon`
+   mascarado pelo launcher (screenshot). Rodar `android-doctor` + `dual-verify`.
+2. **F4(5) — trim de tamanho** do CPython embutido (~58MB → alvo ~25–30MB):
+   stdlib pruning (`test`/`idlelib`/`tkinter`/`ensurepip`/`lib2to3`) +
+   compressão; medir antes/depois.
+3. **F2 — native device** (1 PR por grupo): geolocation, camera+audio, share,
+   bluetooth, connectivity+permissions, biometria plena (digital cadastrada),
+   push FCM real (`google-services.json` + envio server).
 
 [PR #39]: https://github.com/mauriciobenjamin700/tempestroid/pull/39

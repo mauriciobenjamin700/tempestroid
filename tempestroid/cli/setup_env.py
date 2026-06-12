@@ -300,9 +300,7 @@ def _staged_toolchain_present() -> bool:
     return dist.is_dir() and any(dist.iterdir())
 
 
-def install_android_sdk(
-    sdk_dir: Path, *, console: Console | None = None
-) -> Path:
+def install_android_sdk(sdk_dir: Path, *, console: Console | None = None) -> Path:
     """Install the Android SDK packages needed to build into ``sdk_dir``.
 
     Downloads Google's command-line tools (if absent), accepts the SDK licenses

@@ -273,6 +273,8 @@ def _load_svg_renderer() -> type[Any] | None:
     except ImportError:
         return None
     return QSvgRenderer
+
+
 #: Repaint interval (ms) of the shimmer gradient loop (~30fps is plenty smooth
 #: for the simulator's loading placeholder).
 _SHIMMER_TICK_MS = 33
@@ -764,12 +766,8 @@ class _TextLabel(QLabel):
             is_last = index == len(visible) - 1
             if is_last and truncated and self._ellipsis:
                 segment = text[line.textStart() :]
-                elided = metrics.elidedText(
-                    segment, Qt.TextElideMode.ElideRight, width
-                )
-                painter.drawText(
-                    QRectF(0.0, y, width, advance), h_flags, elided
-                )
+                elided = metrics.elidedText(segment, Qt.TextElideMode.ElideRight, width)
+                painter.drawText(QRectF(0.0, y, width, advance), h_flags, elided)
             else:
                 line.draw(painter, QPointF(0.0, y))
 
@@ -808,8 +806,12 @@ def _drop_shadow(shadow: Shadow, parent: QWidget) -> QGraphicsDropShadowEffect:
     effect.setYOffset(shadow.offset_y)
     if shadow.color is not None:
         effect.setColor(
-            QColor(shadow.color.r, shadow.color.g, shadow.color.b,
-                   round(shadow.color.a * 255))
+            QColor(
+                shadow.color.r,
+                shadow.color.g,
+                shadow.color.b,
+                round(shadow.color.a * 255),
+            )
         )
     return effect
 
@@ -1093,9 +1095,7 @@ class _WrapWidget(QWidget):
             self._children.remove(widget)
         self._relayout()
 
-    def set_spacing(
-        self, gap: int, margins: tuple[int, int, int, int]
-    ) -> None:
+    def set_spacing(self, gap: int, margins: tuple[int, int, int, int]) -> None:
         """Set the inter-child gap and the surrounding contents margins.
 
         Args:
@@ -1214,9 +1214,7 @@ class _PageViewWidget(QStackedWidget):
         self._on_change: Callable[[PageChangeEvent], None] | None = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-    def set_on_change(
-        self, callback: Callable[[PageChangeEvent], None] | None
-    ) -> None:
+    def set_on_change(self, callback: Callable[[PageChangeEvent], None] | None) -> None:
         """Install (or clear) the page-change callback.
 
         Args:
@@ -1978,9 +1976,11 @@ class _ReorderableWidget(QWidget):
             if widget is None:
                 continue
             geom = widget.geometry()
-            mid = (geom.left() + geom.right()) / 2 if self._horizontal else (
-                geom.top() + geom.bottom()
-            ) / 2
+            mid = (
+                (geom.left() + geom.right()) / 2
+                if self._horizontal
+                else (geom.top() + geom.bottom()) / 2
+            )
             if coord < mid:
                 return index
         return count - 1
@@ -2812,6 +2812,7 @@ class _LazyGridArea(QScrollArea):
         """
         return list(self._items)
 
+
 class _ScrimWidget(QWidget):
     """A semi-transparent barrier drawn over the root while an overlay is open.
 
@@ -2911,9 +2912,7 @@ def _qcolor(color: Any) -> QColor:  # noqa: ANN401 — a tempestroid Color value
     Returns:
         The equivalent ``QColor`` (alpha scaled 0..255).
     """
-    return QColor(
-        int(color.r), int(color.g), int(color.b), round(float(color.a) * 255)
-    )
+    return QColor(int(color.r), int(color.g), int(color.b), round(float(color.a) * 255))
 
 
 class _ShimmerMixin(QWidget):
@@ -3046,9 +3045,7 @@ class _SkeletonWidget(_ShimmerMixin):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self._shimmer_brush(self.width()))
-        painter.drawRoundedRect(
-            QRectF(self.rect()), self._radius, self._radius
-        )
+        painter.drawRoundedRect(QRectF(self.rect()), self._radius, self._radius)
         painter.end()
 
 
@@ -3994,9 +3991,7 @@ class QtRenderer:
         self._refresh_overlay(overlay)
         self._sync_scrim()
 
-    def _replace_overlay(
-        self, index: int, old: _Rendered, patch: Replace
-    ) -> None:
+    def _replace_overlay(self, index: int, old: _Rendered, patch: Replace) -> None:
         """Replace a whole overlay (type/key changed) at ``index``.
 
         Args:
@@ -4084,9 +4079,7 @@ class QtRenderer:
         elif overlay.type in ("Toast", "Tooltip"):
             self._float_label(overlay, cast("QLabel", widget))
 
-    def _show_dialog_surface(
-        self, overlay: _Rendered, dialog: _DismissDialog
-    ) -> None:
+    def _show_dialog_surface(self, overlay: _Rendered, dialog: _DismissDialog) -> None:
         """Position and show a ``Dialog``/``BottomSheet``/``Popover`` surface.
 
         A ``BottomSheet`` is anchored to the host's bottom edge and slides up; a
@@ -4155,7 +4148,7 @@ class QtRenderer:
             y = host_global.y() + host_geom.height() - label.height() - 24
         else:
             anchor = self._anchor_global(overlay)
-            y = (anchor.y() if anchor is not None else host_global.y() + 24)
+            y = anchor.y() if anchor is not None else host_global.y() + 24
         label.move(x, y)
         label.show()
         if overlay.type == "Toast":
@@ -4243,9 +4236,7 @@ class QtRenderer:
             action = menu.addAction(item.label)
             action.triggered.connect(self._make_select(overlay, item))
 
-    def _make_select(
-        self, overlay: _Rendered, item: MenuItem
-    ) -> Callable[[], None]:
+    def _make_select(self, overlay: _Rendered, item: MenuItem) -> Callable[[], None]:
         """Build a triggered slot that selects ``item`` from ``overlay``.
 
         Args:
@@ -4819,9 +4810,7 @@ class QtRenderer:
             )
         if node.type == "PanHandler":
             pan = _PanWidget()
-            return _Rendered(
-                node.type, node.key, pan, cast("QBoxLayout", pan.layout())
-            )
+            return _Rendered(node.type, node.key, pan, cast("QBoxLayout", pan.layout()))
         if node.type == "ScaleHandler":
             scaler = _ScaleWidget()
             return _Rendered(
@@ -4829,9 +4818,7 @@ class QtRenderer:
             )
         if node.type == "DoubleTapHandler":
             dbl = _DoubleTapWidget()
-            return _Rendered(
-                node.type, node.key, dbl, cast("QBoxLayout", dbl.layout())
-            )
+            return _Rendered(node.type, node.key, dbl, cast("QBoxLayout", dbl.layout()))
         if node.type == "Dismissible":
             dismissible = _DismissibleWidget()
             return _Rendered(
@@ -4852,9 +4839,7 @@ class QtRenderer:
             return _Rendered(node.type, node.key, wrap, wrap_layout)
         if node.type == "ReorderableList":
             reorderable = _ReorderableWidget()
-            return _Rendered(
-                node.type, node.key, reorderable, reorderable.box_layout()
-            )
+            return _Rendered(node.type, node.key, reorderable, reorderable.box_layout())
         if node.type == "InteractiveViewer":
             return _Rendered(node.type, node.key, _InteractiveViewerWidget(), None)
         if node.type in ("Dialog", "BottomSheet", "Popover"):
@@ -5329,8 +5314,7 @@ class QtRenderer:
             max_lines=style.max_lines if style is not None else None,
             line_height=style.line_height if style is not None else None,
             ellipsis=(
-                style is not None
-                and style.text_overflow is TextOverflow.ELLIPSIS
+                style is not None and style.text_overflow is TextOverflow.ELLIPSIS
             ),
             align=self._text_alignment(style),
             color=color,
@@ -5986,9 +5970,7 @@ class QtRenderer:
         widget.setPixmap(pixmap)
         widget.setScaledContents(cast("str", props.get("fit", "contain")) == "fill")
 
-    def _apply_canvas(
-        self, widget: _CanvasWidget, props: dict[str, Any]
-    ) -> None:
+    def _apply_canvas(self, widget: _CanvasWidget, props: dict[str, Any]) -> None:
         """Push the Canvas draw commands (and optional fixed size) to the widget.
 
         The IR carries ``commands`` as a list of frozen ``DrawCommand`` Pydantic
@@ -6102,9 +6084,7 @@ class QtRenderer:
         painter.end()
         widget.setText("")
         widget.setPixmap(pixmap)
-        widget.setScaledContents(
-            cast("str", props.get("fit", "contain")) == "fill"
-        )
+        widget.setScaledContents(cast("str", props.get("fit", "contain")) == "fill")
 
     def _apply_blur(self, widget: QWidget, props: dict[str, Any]) -> None:
         """Apply a Gaussian blur effect to a ``Blur``/``BackdropFilter`` wrapper.
@@ -6383,9 +6363,7 @@ class QtRenderer:
             lambda value: TextChangeEvent(value=cast("str", value)),
         )
 
-    def _apply_pin_input(
-        self, widget: _PinInputWidget, props: dict[str, Any]
-    ) -> None:
+    def _apply_pin_input(self, widget: _PinInputWidget, props: dict[str, Any]) -> None:
         """Apply props to a PIN/OTP entry and wire its change/complete handlers.
 
         Args:
@@ -6742,9 +6720,7 @@ class QtRenderer:
         style = cast("Style | None", child.props.get("style"))
         if style is None or style.align_self is None:
             return
-        flag = self_alignment(
-            is_row=parent.type == "Row", align_self=style.align_self
-        )
+        flag = self_alignment(is_row=parent.type == "Row", align_self=style.align_self)
         if flag is not None:
             parent.layout.setAlignment(child.widget, flag)
 

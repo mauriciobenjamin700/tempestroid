@@ -107,9 +107,7 @@ def view(app: App[State]) -> Widget:
                 FormField(name="cpf", validators=[validate_cpf]),
             ]
         )
-        result = form.validate(
-            {"email": s.email, "phone": s.phone, "cpf": s.cpf}
-        )
+        result = form.validate({"email": s.email, "phone": s.phone, "cpf": s.cpf})
 
         def apply(st: State) -> None:
             st.errors = dict(result.errors)

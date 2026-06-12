@@ -103,8 +103,10 @@ def view(app: App[VerifyState]) -> Widget:
     async def do_biometrics() -> None:
         try:
             result = await authenticate(reason="Verify identity")
-            set_status(f"biometrics: authenticated={result.authenticated} "
-                       f"error={result.error!r}")
+            set_status(
+                f"biometrics: authenticated={result.authenticated} "
+                f"error={result.error!r}"
+            )
         except NativeError as exc:
             set_status(f"biometrics error: {exc}")
 

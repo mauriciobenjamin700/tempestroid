@@ -90,9 +90,7 @@ def test_new_rejects_existing_dir(tmp_path: Path):
     assert main(["new", "demo", "--into", str(tmp_path)]) == 1
 
 
-def test_build_dispatches_to_apk(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_build_dispatches_to_apk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """`tempest build` (no --release) builds a debug APK via Gradle build_apk.
 
     The applicationId is derived from the project name when --app-id is omitted,
@@ -118,9 +116,7 @@ def test_build_dispatches_to_apk(
     assert seen["app_id"] == "com.example.myapp"
 
 
-def test_build_uses_given_app_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_build_uses_given_app_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """An explicit --app-id is passed straight through to the debug APK build."""
     from tempestroid.cli import release_build
 
@@ -189,8 +185,13 @@ def _assert_scaffold_loads(root: Path) -> None:
         # Drop the project's top-level modules so a second scaffold in the same
         # test session re-imports its own copies (root is added to sys.path).
         for mod in (
-            "app", "state", "screens", "components",
-            "screens.home", "screens.detail", "screens.native",
+            "app",
+            "state",
+            "screens",
+            "components",
+            "screens.home",
+            "screens.detail",
+            "screens.native",
             "components.card",
         ):
             sys.modules.pop(mod, None)
@@ -362,9 +363,7 @@ def test_build_apk_reads_id_from_tool_tempest(
     (app / "pyproject.toml").write_text(
         '[tool.tempest]\napp = "app.py"\nid = "com.acme.todo"\nname = "Todo"\n'
     )
-    (app / "app.py").write_text(
-        "def make_state():\n    ...\ndef view(app):\n    ...\n"
-    )
+    (app / "app.py").write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
     monkeypatch.chdir(app)
 
     seen: dict[str, object] = {}
@@ -403,8 +402,16 @@ def test_build_apk_passes_adaptive_icon_branding(
 
     monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
     rc = main(
-        ["build", "apk", "--app", str(app), "--adaptive-icon", str(fg),
-         "--icon-bg", "#0b0f14"]
+        [
+            "build",
+            "apk",
+            "--app",
+            str(app),
+            "--adaptive-icon",
+            str(fg),
+            "--icon-bg",
+            "#0b0f14",
+        ]
     )
     assert rc == 0
     assert seen == {"adaptive_icon": fg, "icon_bg": "#0b0f14"}
@@ -453,8 +460,16 @@ def test_build_release_uses_given_app_id(
 
     monkeypatch.setattr(release_build, "build_aab", fake_build_aab)
     rc = main(
-        ["build", "prd", "--app", str(app), "--app-id", "com.acme.todo",
-         "--app-version", "2.1.0"]
+        [
+            "build",
+            "prd",
+            "--app",
+            str(app),
+            "--app-id",
+            "com.acme.todo",
+            "--app-version",
+            "2.1.0",
+        ]
     )
     assert rc == 0
     assert captured == {"app_id": "com.acme.todo", "version": "2.1.0"}
@@ -475,9 +490,7 @@ def test_build_release_apk_dispatches_to_release_apk(
 
     seen: dict[str, object] = {}
 
-    def fake_build_release_apk(
-        app_arg: object, config: object, **_kw: object
-    ) -> Path:
+    def fake_build_release_apk(app_arg: object, config: object, **_kw: object) -> Path:
         seen["app"] = app_arg
         seen["app_id"] = config.app_id  # type: ignore[attr-defined]
         return tmp_path / "out-release.apk"
@@ -500,17 +513,23 @@ def test_build_release_apk_passes_app_id_and_keystore(
     keystore.write_text("")
     captured: dict[str, object] = {}
 
-    def fake_build_release_apk(
-        _app: object, config: object, **_kw: object
-    ) -> Path:
+    def fake_build_release_apk(_app: object, config: object, **_kw: object) -> Path:
         captured["app_id"] = config.app_id  # type: ignore[attr-defined]
         captured["keystore"] = config.keystore  # type: ignore[attr-defined]
         return tmp_path / "out-release.apk"
 
     monkeypatch.setattr(release_build, "build_release_apk", fake_build_release_apk)
     rc = main(
-        ["build", "release-apk", "--app", str(app), "--app-id", "com.acme.todo",
-         "--keystore", str(keystore)]
+        [
+            "build",
+            "release-apk",
+            "--app",
+            str(app),
+            "--app-id",
+            "com.acme.todo",
+            "--keystore",
+            str(keystore),
+        ]
     )
     assert rc == 0
     assert captured == {"app_id": "com.acme.todo", "keystore": keystore}

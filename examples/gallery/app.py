@@ -186,9 +186,7 @@ def main() -> int:
     """
     from tempestroid.renderers.qt import run_qt
 
-    return run_qt(
-        make_state(), view, title="tempestroid — gallery", size=(380, 640)
-    )
+    return run_qt(make_state(), view, title="tempestroid — gallery", size=(380, 640))
 
 
 if __name__ == "__main__":

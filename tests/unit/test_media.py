@@ -95,8 +95,12 @@ def test_canvas_holds_all_nine_command_kinds() -> None:
             MoveTo(x=0.0, y=0.0),
             LineTo(x=1.0, y=1.0),
             ArcTo(
-                x=0.0, y=0.0, width=2.0, height=2.0,
-                start_angle=0.0, sweep_angle=45.0,
+                x=0.0,
+                y=0.0,
+                width=2.0,
+                height=2.0,
+                start_angle=0.0,
+                sweep_angle=45.0,
             ),
             Close(),
             FillCmd(color=[0.0, 0.0, 0.0, 1.0]),
@@ -306,8 +310,13 @@ def test_video_player_props_survive_serialization() -> None:
     from tempestroid.bridge import serialize_node
     from tempestroid.core.reconciler import build
 
-    vp = VideoPlayer(src="https://example.com/clip.mp4",
-                     autoplay=True, loop=True, controls=False, muted=True)
+    vp = VideoPlayer(
+        src="https://example.com/clip.mp4",
+        autoplay=True,
+        loop=True,
+        controls=False,
+        muted=True,
+    )
     payload = serialize_node(build(vp))
     json.dumps(payload)  # must not raise
     assert payload["type"] == "VideoPlayer"

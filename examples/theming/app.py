@@ -134,16 +134,23 @@ def view(app: App[ThemingState]) -> Widget:
         children=[
             Text(
                 content=t("title", locale, _TRANSLATIONS),
-                style=Style(color=Color.from_hex(fg), font_size=22.0,
-                            font_weight=FontWeight.BOLD),
-                semantics=Semantics(label=t("title", locale, _TRANSLATIONS),
-                                    role="heading"),
+                style=Style(
+                    color=Color.from_hex(fg),
+                    font_size=22.0,
+                    font_weight=FontWeight.BOLD,
+                ),
+                semantics=Semantics(
+                    label=t("title", locale, _TRANSLATIONS), role="heading"
+                ),
                 key="title",
             ),
             Text(
                 content=t("count", locale, _TRANSLATIONS, value=str(app.state.value)),
-                style=Style(color=Color.from_hex(fg), font_size=24.0,
-                            font_weight=FontWeight.BOLD),
+                style=Style(
+                    color=Color.from_hex(fg),
+                    font_size=24.0,
+                    font_weight=FontWeight.BOLD,
+                ),
                 semantics=Semantics(
                     label=t("count", locale, _TRANSLATIONS, value=str(app.state.value))
                 ),

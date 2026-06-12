@@ -127,9 +127,7 @@ def _stack_screen(app: App[NavState]) -> Widget:
     actions = Column(
         style=Style(gap=12, align=AlignItems.STRETCH),
         children=[
-            Text(
-                content=f"Screen {depth}", style=Style(color=_SUBTLE, font_size=16)
-            ),
+            Text(content=f"Screen {depth}", style=Style(color=_SUBTLE, font_size=16)),
             Text(
                 content=f"route: {app.nav.top.name}",
                 style=Style(color=_SUBTLE, font_size=14),

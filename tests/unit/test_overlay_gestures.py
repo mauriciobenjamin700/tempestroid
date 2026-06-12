@@ -96,9 +96,7 @@ def test_introspection_lists_new_widgets_and_events() -> None:
 
 
 def test_pan_event_validates_fields() -> None:
-    event = parse_event(
-        PanEvent, {"dx": 12.5, "dy": 0.3, "vx": 200.0, "vy": 5.0}
-    )
+    event = parse_event(PanEvent, {"dx": 12.5, "dy": 0.3, "vx": 200.0, "vy": 5.0})
     assert event.dx == 12.5
     assert event.dy == 0.3
     assert event.vx == 200.0

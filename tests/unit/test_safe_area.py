@@ -117,9 +117,7 @@ class TestSafeAreaQtRenderer:
 
     def test_child_renders_inside(self) -> None:
         renderer = QtRenderer()
-        renderer.mount(
-            build(SafeArea(child=Column(children=[Text(content="inner")])))
-        )
+        renderer.mount(build(SafeArea(child=Column(children=[Text(content="inner")]))))
         layout = renderer.root_widget.layout()
         assert isinstance(layout, QLayout)
         assert layout.count() == 1

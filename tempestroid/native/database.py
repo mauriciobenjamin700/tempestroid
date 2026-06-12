@@ -44,6 +44,7 @@ def _empty_rows() -> list[list[Any]]:
     """
     return []
 
+
 #: The desktop SQLite file path; ``None`` means the default under the home dir.
 _database_path: Path | None = None
 

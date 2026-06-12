@@ -106,7 +106,9 @@ CASES: dict[str, Style] = {
         radius=6,
     ),
     "typography": Style(
-        font_family="Roboto", font_size=18, font_weight=FontWeight.BOLD,
+        font_family="Roboto",
+        font_size=18,
+        font_weight=FontWeight.BOLD,
         text_align=TextAlign.CENTER,
     ),
     "flex_row_center": Style(
@@ -126,8 +128,12 @@ CASES: dict[str, Style] = {
         gap=8,
     ),
     "sizing": Style(
-        width=120, height=48, min_width=40, max_width=320,
-        min_height=20, max_height=80,
+        width=120,
+        height=48,
+        min_width=40,
+        max_width=320,
+        min_height=20,
+        max_height=80,
     ),
     "grow_margin": Style(grow=1, margin=Edge.all(16)),
     "animated": Style(
@@ -531,8 +537,7 @@ _E1_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 #: Adding a new divergence or widget requires extending both ``_E1_WIDGET_DIVERGENCES``
 #: AND this set — the tripwire test checks both directions.
 _E1_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E1_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E1_WIDGET_DIVERGENCES
 }
 
 
@@ -692,8 +697,7 @@ _E2_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E2_WIDGET_DIVERGENCES``.
 _E2_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E2_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E2_WIDGET_DIVERGENCES
 }
 
 
@@ -901,8 +905,7 @@ _E3_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E3_WIDGET_DIVERGENCES``.
 _E3_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E3_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E3_WIDGET_DIVERGENCES
 }
 
 
@@ -984,8 +987,7 @@ def test_e3_curve_golden_snapshot(name: str) -> None:
     assert path.exists(), f"missing golden for {name!r}; run UPDATE_GOLDEN=1"
     expected = json.loads(path.read_text(encoding="utf-8"))
     assert snap == expected, (
-        f"conformance drift for {name!r}; "
-        "review and re-run UPDATE_GOLDEN=1 if intended"
+        f"conformance drift for {name!r}; review and re-run UPDATE_GOLDEN=1 if intended"
     )
 
 
@@ -1300,8 +1302,7 @@ _E4_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E4_WIDGET_DIVERGENCES``.
 _E4_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E4_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E4_WIDGET_DIVERGENCES
 }
 
 #: The eight E4 gesture/interaction widgets introduced in phase E4.
@@ -1584,8 +1585,7 @@ _E5_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E5_WIDGET_DIVERGENCES``.
 _E5_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E5_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E5_WIDGET_DIVERGENCES
 }
 
 #: The six new E5 input-control widgets (excludes Form/FormField which are
@@ -1863,9 +1863,7 @@ def test_e5_form_and_field_event_schemas() -> None:
     from tempestroid.widgets.events import SubmitEvent, ValidationEvent
 
     form_schemas = EVENT_SCHEMAS.get("Form", {})
-    assert "on_submit" in form_schemas, (
-        "Form must declare on_submit in event_schemas"
-    )
+    assert "on_submit" in form_schemas, "Form must declare on_submit in event_schemas"
     assert form_schemas["on_submit"] is SubmitEvent, (
         "Form.on_submit must be bound to SubmitEvent"
     )
@@ -1973,8 +1971,7 @@ _E6_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E6_WIDGET_DIVERGENCES``.
 _E6_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E6_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E6_WIDGET_DIVERGENCES
 }
 
 #: The three new E6 layout widgets exposed in ``introspect()``'s widget catalog.
@@ -2212,8 +2209,7 @@ _E7_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E7_WIDGET_DIVERGENCES``.
 _E7_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E7_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E7_WIDGET_DIVERGENCES
 }
 
 #: The E7 widgets that must be present in the bridge ``EVENT_SCHEMAS`` contract
@@ -2275,8 +2271,9 @@ def test_e7_canvas_commands_are_json_serializable() -> None:
         commands=[
             MoveTo(x=0.0, y=0.0),
             LineTo(x=10.0, y=10.0),
-            ArcTo(x=0.0, y=0.0, width=20.0, height=20.0,
-                  start_angle=0.0, sweep_angle=90.0),
+            ArcTo(
+                x=0.0, y=0.0, width=20.0, height=20.0, start_angle=0.0, sweep_angle=90.0
+            ),
             Close(),
             DrawRect(x=1.0, y=2.0, width=3.0, height=4.0),
             DrawOval(x=5.0, y=6.0, width=7.0, height=8.0),
@@ -2613,14 +2610,12 @@ _E8_NATIVE_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (widget, topic) pairs that must appear in ``_E8_WIDGET_DIVERGENCES``.
 _E8_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["widget"]), str(row["topic"]))
-    for row in _E8_WIDGET_DIVERGENCES
+    (str(row["widget"]), str(row["topic"])) for row in _E8_WIDGET_DIVERGENCES
 }
 
 #: The (module, topic) pairs that must appear in ``_E8_NATIVE_DIVERGENCES``.
 _E8_NATIVE_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["module"]), str(row["topic"]))
-    for row in _E8_NATIVE_DIVERGENCES
+    (str(row["module"]), str(row["topic"])) for row in _E8_NATIVE_DIVERGENCES
 }
 
 #: The four new E8 events that must appear in ``introspect()['events']``.
@@ -2698,9 +2693,7 @@ def test_e8_native_divergences_complete() -> None:
     seen: set[tuple[str, str]] = set()
     for row in _E8_NATIVE_DIVERGENCES:
         key = (str(row["module"]), str(row["topic"]))
-        assert key not in seen, (
-            f"duplicate E8 native divergence row for {key!r}"
-        )
+        assert key not in seen, f"duplicate E8 native divergence row for {key!r}"
         seen.add(key)
         assert row["intentional"] is True, (
             f"native divergence {key!r} is intentional=False; "
@@ -2737,9 +2730,9 @@ def test_e8_reserved_tokens_exported_from_protocol() -> None:
         f"LIFECYCLE_TOKEN has unexpected value {LIFECYCLE_TOKEN!r}; "
         "the Kotlin LifecycleModule dispatches '__lifecycle__' — must match"
     )
-    assert CONNECTIVITY_TOKEN_PREFIX == _E8_RESERVED_TOKENS[
-        "CONNECTIVITY_TOKEN_PREFIX"
-    ], (
+    assert (
+        CONNECTIVITY_TOKEN_PREFIX == _E8_RESERVED_TOKENS["CONNECTIVITY_TOKEN_PREFIX"]
+    ), (
         f"CONNECTIVITY_TOKEN_PREFIX unexpected value {CONNECTIVITY_TOKEN_PREFIX!r}; "
         "the Kotlin ConnectivityModule dispatches '__connectivity__:<state>'"
     )
@@ -2760,9 +2753,7 @@ def test_e8_reserved_tokens_reexported_at_root() -> None:
             f"{name} missing from tempestroid.__all__; "
             f"add it to tempestroid/__init__.py"
         )
-        assert hasattr(tempestroid, name), (
-            f"{name} not importable from tempestroid"
-        )
+        assert hasattr(tempestroid, name), f"{name} not importable from tempestroid"
 
 
 def test_e8_keyboard_avoiding_view_in_event_schemas() -> None:
@@ -3031,9 +3022,7 @@ _E9_CASES: dict[str, dict[str, Any]] = {
                 padding=Edge(left=8, right=16),
                 margin=Edge(left=2, right=4),
                 text_align=TextAlign.LEFT,
-                border=SideBorder(
-                    left=Border(width=1, color=Color(r=10, g=20, b=30))
-                ),
+                border=SideBorder(left=Border(width=1, color=Color(r=10, g=20, b=30))),
             )
         ),
         "rtl": rtl_snapshot(
@@ -3041,9 +3030,7 @@ _E9_CASES: dict[str, dict[str, Any]] = {
                 padding=Edge(left=8, right=16),
                 margin=Edge(left=2, right=4),
                 text_align=TextAlign.LEFT,
-                border=SideBorder(
-                    left=Border(width=1, color=Color(r=10, g=20, b=30))
-                ),
+                border=SideBorder(left=Border(width=1, color=Color(r=10, g=20, b=30))),
             )
         ),
     },
@@ -3149,8 +3136,7 @@ _E9_RTL_DIVERGENCES: list[dict[str, str | bool]] = [
 
 #: The (field, topic) pairs that must appear in ``_E9_RTL_DIVERGENCES``.
 _E9_RTL_DIVERGENCE_KEYS: set[tuple[str, str]] = {
-    (str(row["field"]), str(row["topic"]))
-    for row in _E9_RTL_DIVERGENCES
+    (str(row["field"]), str(row["topic"])) for row in _E9_RTL_DIVERGENCES
 }
 
 
@@ -3192,10 +3178,16 @@ def test_e9_rtl_margin_divergence_is_real() -> None:
     ltr_compose = to_compose(style)
     rtl_compose = to_compose(style, rtl=True)
     assert ltr_compose["margin"] == {
-        "top": 0.0, "right": 8.0, "bottom": 0.0, "left": 4.0
+        "top": 0.0,
+        "right": 8.0,
+        "bottom": 0.0,
+        "left": 4.0,
     }
     assert rtl_compose["margin"] == {
-        "top": 0.0, "right": 4.0, "bottom": 0.0, "left": 8.0
+        "top": 0.0,
+        "right": 4.0,
+        "bottom": 0.0,
+        "left": 8.0,
     }
     # Qt: margin is not emitted by the translator at all (rtl is irrelevant).
     qss_ltr = to_qss(style, with_padding=True, rtl=False)

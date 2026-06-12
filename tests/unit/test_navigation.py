@@ -215,9 +215,7 @@ def test_tab_view_child_slot_and_route_change_schema():
 
 
 def test_route_drawer_two_child_slots_in_order():
-    drawer = RouteDrawer(
-        child=Text(content="main"), drawer=Text(content="panel")
-    )
+    drawer = RouteDrawer(child=Text(content="main"), drawer=Text(content="panel"))
     assert drawer.open is False
     assert RouteDrawer.child_field_names == frozenset({"child", "drawer"})
     # child first, drawer second — order is the renderer/diff contract
