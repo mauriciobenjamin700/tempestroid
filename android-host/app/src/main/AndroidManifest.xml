@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Runtime-requested where required (API 33+ for notifications; location,
-         camera and bluetooth scan are requested on demand by NativeModules). -->
+    <!-- LEAN BASE manifest (feature-gating, F4). Only permissions for the
+         always-present core capabilities live here. The heavy-feature entries —
+         CAMERA/RECORD_AUDIO + the FileProvider (camera/qr) and the FCM <service>
+         (push) — are injected by the manifest generator task in build.gradle.kts
+         ONLY when the matching feature is in -Ptempest.features, so the lean APK
+         never references a class from an absent dependency. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Bluetooth scan/connect on API 31+; older devices fall back to location. -->
@@ -34,7 +36,6 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
@@ -67,31 +68,8 @@
             </intent-filter>
         </activity>
 
-        <!-- E8 FCM service (PushModule). The host reads the registration token
-             via FirebaseMessaging.getInstance().token; receiving pushes needs this
-             service. It is DECLARED but device-gated: FCM requires a Firebase
-             project + a `google-services.json` at the module root + the
-             google-services Gradle plugin. None of those are wired here (to keep
-             the host buildable without a Firebase account), so at runtime
-             FirebaseApp init fails and PushModule replies error="not_configured".
-             Configuring Firebase is a documented device pendency. -->
-        <service
-            android:name=".TempestMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-
-        <!-- Exposes app-private capture files to the camera app (CameraModule). -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+        <!-- TEMPEST_FEATURE_APPLICATION_ENTRIES: the manifest generator injects
+             the camera FileProvider + the FCM <service> here when their feature
+             is active. Do not remove this marker comment. -->
     </application>
 </manifest>

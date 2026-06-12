@@ -217,6 +217,48 @@ tempest build --adaptive-icon assets/ic_launcher_foreground.png --icon-bg "#0b0f
     in assets (a stable path), `--splash`/`--splash-bg` work on **every** build
     path, including `--fast`.
 
+## Heavy native capabilities are opt-in (lean APK)
+
+The APK weight does not come from Python (the CPython stdlib is already trimmed at
+build time) but from the **heavy Android dependencies**: camera, QR scanner
+(ML Kit), push (Firebase), video (media3) and maps. So they are **optional** — the
+default build bundles **none of them**, cutting the debug APK from **~58 MB to
+~47 MB (−11.4 MB)**. You re-enable only what the app uses:
+
+```toml
+# pyproject.toml
+[tool.tempest]
+features = ["camera", "qr"]   # bundle only camera + QR scanner
+```
+
+or on the command line (repeatable):
+
+```bash
+tempest build --feature camera --feature qr
+```
+
+| Feature | Enables |
+| --- | --- |
+| `camera` | `CameraPreview` widget + `take_photo`/`record_video` |
+| `qr` | `QrScanner` widget (transitively pulls in `camera`) |
+| `push` | push notifications via FCM |
+| `video` | `VideoPlayer` widget |
+| `maps` | `MapView` widget |
+
+!!! info "Each feature needs a from-source build (SDK/NDK)"
+    A prebuilt APK cannot receive new Gradle dependencies, so any `--feature`
+    automatically turns on the `--from-source` path (needs the Android SDK + NDK).
+    The **lean default** (no features) keeps using the prebuilt host — zero toolchain.
+
+!!! tip "Without the feature, the widget becomes a placeholder"
+    If the app uses a `CameraPreview`/`QrScanner`/`VideoPlayer`/`MapView` but the
+    feature wasn't bundled, it renders a labeled placeholder instead of crashing; a
+    non-bundled native call raises `NativeError("feature_not_built")`.
+
+The PyPI extras mirror the features (`pip install tempestroid[camera]`) purely as
+**intent documentation** — what actually trims the APK is the build flag above, not
+pip.
+
 ## Distribute off the Play Store (`tempest build release-apk` → signed APK)
 
 To ship the app through a **website, an alternative store, or a direct link** —

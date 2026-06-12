@@ -733,3 +733,116 @@ def test_lint_runner_reports_missing_tool(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(lint_module.shutil, "which", no_tool)
     assert lint_module.run_ruff_check(".") == 127
+
+
+# --- Feature-gating (F4 trim) ---
+
+
+def test_resolve_features_validates_and_dedupes():
+    """resolve_features validates names and returns them in FEATURES order."""
+    from tempestroid.cli.project import resolve_features
+
+    assert resolve_features(["video", "camera", "camera"]) == ("camera", "video")
+
+
+def test_resolve_features_expands_transitive_qr_to_camera():
+    """qr (ML Kit on the camera preview) transitively requires camera."""
+    from tempestroid.cli.project import resolve_features
+
+    assert resolve_features(["qr"]) == ("camera", "qr")
+
+
+def test_resolve_features_rejects_unknown():
+    """An unknown feature name raises UnknownFeatureError."""
+    from tempestroid.cli.project import UnknownFeatureError, resolve_features
+
+    with pytest.raises(UnknownFeatureError):
+        resolve_features(["bogus"])
+
+
+def test_read_config_reads_features(tmp_path: Path):
+    """[tool.tempest] features is parsed into TempestConfig.features."""
+    from tempestroid.cli.project import read_config
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "app.py"\nfeatures = ["camera", "push"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    cfg = read_config(tmp_path / "app.py")
+    assert cfg.features == ("camera", "push")
+
+
+def test_build_feature_flag_forces_from_source_and_passes_features(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--feature camera` bundles the feature from source (prebuilt=False)."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(
+        _app: object,
+        *,
+        app_id: str,
+        features: tuple[str, ...] = (),
+        prebuilt: bool = True,
+        **_kw: object,
+    ) -> Path:
+        seen["features"] = features
+        seen["prebuilt"] = prebuilt
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", str(app), "--feature", "camera"]) == 0
+    assert seen["features"] == ("camera",)
+    assert seen["prebuilt"] is False
+
+
+def test_build_feature_qr_pulls_in_camera(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--feature qr` transitively bundles camera too."""
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(
+        _app: object, *, app_id: str, features: tuple[str, ...] = (), **_kw: object
+    ) -> Path:
+        seen["features"] = features
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", str(app), "--feature", "qr"]) == 0
+    assert seen["features"] == ("camera", "qr")
+
+
+def test_build_unknown_feature_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An unknown --feature is a clean exit 1, not a crash."""
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    assert main(["build", str(app), "--feature", "bogus"]) != 0
+
+
+def test_build_feature_with_fast_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--fast` cannot add native features — reject it (exit non-zero)."""
+    from tempestroid.cli import packaging, release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+
+    def fail(*_a: object, **_k: object) -> Path:
+        raise AssertionError("must not build when --feature + --fast conflict")
+
+    monkeypatch.setattr(release_build, "build_apk", fail)
+    monkeypatch.setattr(packaging, "package_app_apk", fail)
+    assert main(["build", str(app), "--feature", "camera", "--fast"]) != 0
