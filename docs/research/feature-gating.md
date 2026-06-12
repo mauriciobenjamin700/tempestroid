@@ -9,9 +9,11 @@
 > **Resultado medido (compile-only, sem device):** lean **46,8 MB** × full
 > **58,2 MB** = **−11,4 MB** (DEX descompactado −11,9 MB; 0 classes das libs
 > gateadas no lean × 4.913 no full). A meta inicial de ~25–30 MB **não foi
-> atingida**: as libs gateadas eram só ~11,9 MB do DEX de 72 MB — o resto é
-> `material-icons-extended` (~9 MB) + Compose/coil + os ~25 MB de CPython, fora do
-> escopo deste corte (ver "Próximos cortes" abaixo).
+> atingida** neste corte: as libs gateadas eram só ~11,9 MB do DEX de 72 MB — o
+> resto é `material-icons-extended` + Compose/coil + os ~25 MB de CPython, fora do
+> escopo deste corte (ver "Próximos cortes" abaixo). O corte #1 seguinte
+> (drop do `-extended`) **fechou boa parte do gap**: −31,7 MB no DEX descompactado
+> (−2,71 MB no APK comprimido) — medido A/B, ver "Próximos cortes" #1.
 
 ## Diagnóstico (medido em `tempest-host-0.11.1.apk`)
 
@@ -31,7 +33,8 @@
 | `video` | `androidx.media3:media3-{exoplayer,ui}` | `VideoPlayer` | — |
 | `maps` | maps-compose + play-services-maps (hoje comentado) | `MapView` | — |
 
-**Core (sempre presente):** Compose UI/Material3, `material-icons-extended`,
+**Core (sempre presente):** Compose UI/Material3, `material-icons-core` (curado;
+o `-extended` foi dropado — ver "Próximos cortes" #1),
 `coil-compose` (Image), lifecycle, activity-compose, work-runtime, biometric,
 security-crypto, e o grupo nativo sem-config (clipboard/storage/database/
 secure_storage/system/haptics/sensors/lifecycle/connectivity/prefs/share/geo).
@@ -133,9 +136,22 @@ nenhuma classe/serviço da dep ausente referenciado, e o merge valide.
 
 Para chegar perto dos ~25–30 MB seria preciso atacar o que sobra no DEX/assets:
 
-1. **`material-icons-extended` (~9 MB)** — hoje core (o widget `Icon` importa
-   ícones Material por nome em `TempestRenderer.kt`). Substituir pelo conjunto DIY
-   já existente (`tempestroid.icons`, vetores próprios) dropa a dep inteira.
+1. ✅ **`material-icons-extended` (~9 MB) — feito.** Achado ao implementar: o
+   widget `Icon` **não usa** nenhum glifo *extended*. O único consumidor,
+   `iconFor()` em `TempestRenderer.kt`, mapeia 22 nomes para `Icons.Filled.*` que
+   **vivem todos no `material-icons-core`** (transitivo via `material3`), e a fonte
+   de verdade real do ícone é o `iconPath` (SVG inline de `tempestroid/icons.py`) —
+   o `else -> null` cai pra texto, sem lookup reflexivo. Logo o corte foi um **swap
+   de 1 linha** no `build.gradle.kts` (`material-icons-extended` →
+   `material-icons-core`), não o port DIY que este doc supunha. Comportamento
+   inalterado. **Medido A/B (mesmo host, lean `assembleDebug`):** APK
+   **49,5 MB → 46,8 MB (−2,71 MB)**; DEX descompactado **60,7 MB → 29,0 MB
+   (−31,7 MB)**; **−11.106 classes** (27.625 → 16.519), das quais **−10.130 glifos
+   de ícone** (10.375 → 245, o resíduo 245 sendo o core curado que o renderer usa).
+   A estimativa ~9 MB acima **subestimava** — o DEX cai 31,7 MB descompactado
+   (−2,71 MB no APK comprimido, pois bytecode de vetor comprime muito).
+   Verificação on-device (ícones ainda renderizam) **pendente — sem aparelho neste
+   host**.
 2. **R8 minify + `shrinkResources`** no build release — hoje `isMinifyEnabled=false`
    (R8 stripa classes refletidas pelo Python). Com `proguard-rules.pro` de `-keep`
    da superfície JNI/refletida, derruba o DEX não-usado de Compose/coil. Exige
