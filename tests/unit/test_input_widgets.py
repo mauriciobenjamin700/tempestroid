@@ -10,6 +10,7 @@ import asyncio
 
 import pytest
 from PySide6.QtWidgets import QCheckBox, QDateEdit, QLineEdit
+from tempest_core.widgets import handler_accepts_event
 
 from tempestroid import (
     App,
@@ -40,7 +41,6 @@ from tempestroid import (
 from tempestroid.bridge import DeviceApp, EventMessage, LoopbackBridge, serialize_node
 from tempestroid.bridge.protocol import event_type_for
 from tempestroid.renderers.qt import QtRenderer
-from tempestroid.widgets import handler_accepts_event
 
 # --- events ----------------------------------------------------------------
 

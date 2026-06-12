@@ -1082,7 +1082,7 @@ requires-dist = [
     { name = "tempest-core", specifier = ">=0.1.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
-provides-extras = ["qt", "icons"]
+provides-extras = ["qt", "icons", "camera", "qr", "push", "video", "maps", "features"]
 
 [package.metadata.requires-dev]
 dev = [

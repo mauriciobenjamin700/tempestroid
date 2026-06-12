@@ -28,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tempestroid import (
+    App,
     Blur,
     Canvas,
     ClipPath,
@@ -42,7 +43,6 @@ from tempestroid import (
     Text,
     Widget,
 )
-from tempestroid.core.state import App
 
 _BARS = [40.0, 90.0, 60.0, 120.0, 75.0]
 _COLORS = [

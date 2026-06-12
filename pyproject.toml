@@ -48,6 +48,18 @@ qt = [
 icons = [
     "pillow>=10.0",
 ]
+# Heavy device capabilities are gated at BUILD time, not pip time: the native
+# weight (CameraX, ML Kit, Firebase, media3, maps) lives in the Android host APK
+# and is bundled only when the app opts in. These extras carry no Python deps —
+# they are intent markers so `pip install tempestroid[camera]` documents which
+# `[tool.tempest] features` (or `tempest build --feature camera`) the project
+# uses. The lean default build ships none of them, keeping the APK small.
+camera = []
+qr = []
+push = []
+video = []
+maps = []
+features = []
 
 [project.urls]
 Homepage = "https://github.com/mauriciobenjamin700/tempestroid"

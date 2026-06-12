@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 from PySide6.QtWidgets import QGraphicsBlurEffect, QLabel, QWidget
+from tempest_core.widgets import DrawCommand, Widget
 
 from tempestroid import (
     ArcTo,
@@ -34,7 +35,6 @@ from tempestroid import (
 )
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.renderer import _CanvasWidget, _ClipWidget
-from tempestroid.widgets import DrawCommand, Widget
 
 pytestmark = pytest.mark.usefixtures("qapp")
 

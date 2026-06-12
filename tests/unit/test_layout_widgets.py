@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+from tempest_core.core.introspection import WIDGET_TYPES
+from tempest_core.core.reconciler import diff
+from tempest_core.widgets.events import EventValidationError
 
 from tempestroid import (
     AspectRatio,
@@ -30,10 +33,7 @@ from tempestroid import (
     to_compose,
 )
 from tempestroid.bridge import serialize_node
-from tempestroid.core.introspection import WIDGET_TYPES
-from tempestroid.core.reconciler import diff
 from tempestroid.renderers.qt.style_translator import to_qss
-from tempestroid.widgets.events import EventValidationError
 
 # --- Wrap -------------------------------------------------------------------
 
@@ -271,7 +271,7 @@ def test_collapsing_app_bar_intermediate_height() -> None:
 
 def test_wrap_child_update_diff() -> None:
     """Updating a child inside a ``Wrap`` produces a single ``Update`` patch."""
-    from tempestroid.core.ir import Update
+    from tempest_core.core.ir import Update
 
     w1 = Wrap(children=[Text(content="A"), Text(content="B")])
     w2 = Wrap(children=[Text(content="A"), Text(content="C")])
@@ -289,7 +289,7 @@ def test_page_view_page_prop_diff_emits_update() -> None:
     The reconciler must treat ``page`` as an ordinary prop update — no new IR
     kind, no special handling.
     """
-    from tempestroid.core.ir import Update
+    from tempest_core.core.ir import Update
 
     v1 = PageView(page=0, children=[Text(content="A")])
     v2 = PageView(page=1, children=[Text(content="A")])
@@ -303,7 +303,7 @@ def test_page_view_page_prop_diff_emits_update() -> None:
 
 def test_aspect_ratio_ratio_diff_emits_update() -> None:
     """Changing ``AspectRatio.ratio`` emits a single ``Update`` patch on the root."""
-    from tempestroid.core.ir import Update
+    from tempest_core.core.ir import Update
 
     a1 = AspectRatio(ratio=1.5, child=Text(content="x"))
     a2 = AspectRatio(ratio=2.0, child=Text(content="x"))
@@ -490,8 +490,9 @@ def test_keyboard_avoiding_view_in_introspect() -> None:
 
 def test_keyboard_avoiding_view_child_update_diff() -> None:
     """Updating a child inside a ``KeyboardAvoidingView`` emits one ``Update``."""
+    from tempest_core.core.ir import Update
+
     from tempestroid import KeyboardAvoidingView
-    from tempestroid.core.ir import Update
 
     v1 = KeyboardAvoidingView(children=[Text(content="a")])
     v2 = KeyboardAvoidingView(children=[Text(content="b")])
@@ -502,8 +503,9 @@ def test_keyboard_avoiding_view_child_update_diff() -> None:
 
 def test_keyboard_avoiding_view_child_insert_diff() -> None:
     """Adding a child to a ``KeyboardAvoidingView`` emits an ``Insert``."""
+    from tempest_core.core.ir import Insert
+
     from tempestroid import KeyboardAvoidingView
-    from tempestroid.core.ir import Insert
 
     v1 = KeyboardAvoidingView(children=[Text(content="a")])
     v2 = KeyboardAvoidingView(children=[Text(content="a"), Text(content="b")])

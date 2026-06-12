@@ -534,6 +534,7 @@ def build_aab(
     output: Path | None = None,
     branding: Branding | None = None,
     prebuilt: bool = True,
+    features: tuple[str, ...] = (),
 ) -> Path:
     """Build a store-ready, release-signed ``.aab`` for ``app``.
 
@@ -550,6 +551,8 @@ def build_aab(
             for the build.
         prebuilt: Reuse the prebuilt host natives (``True``, default; no NDK /
             CPython toolchain) instead of staging the toolchain from source.
+        features: Opted-in build features (camera/qr/push/video/maps) whose heavy
+            native dependencies are bundled; empty (default) builds lean.
 
     Returns:
         The signed ``.aab`` path.
@@ -571,6 +574,9 @@ def build_aab(
     props = _signing_props(config, keystore)
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
+    if features:
+        feature_csv = ",".join(features)
+        props.append(f"-Ptempest.features={feature_csv}")
     with (
         staged_into_host(host, branding or Branding()),
         con.step("Gradle bundleRelease (store AAB)"),
@@ -600,6 +606,7 @@ def build_apk(
     output: Path | None = None,
     branding: Branding | None = None,
     prebuilt: bool = True,
+    features: tuple[str, ...] = (),
 ) -> Path:
     """Build a shippable, debug-signed ``.apk`` for ``app`` with its own id.
 
@@ -627,6 +634,8 @@ def build_apk(
             for the build.
         prebuilt: Reuse the prebuilt host natives (``True``, default) instead of
             staging the CPython toolchain from source.
+        features: Opted-in build features (camera/qr/push/video/maps) whose heavy
+            native dependencies are bundled; empty (default) builds lean.
 
     Returns:
         The debug-signed ``.apk`` path.
@@ -651,6 +660,9 @@ def build_apk(
     ]
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
+    if features:
+        feature_csv = ",".join(features)
+        props.append(f"-Ptempest.features={feature_csv}")
     with (
         staged_into_host(host, branding or Branding()),
         con.step(f"Gradle assembleDebug (applicationId={app_id})"),
@@ -675,6 +687,7 @@ def build_release_apk(
     output: Path | None = None,
     branding: Branding | None = None,
     prebuilt: bool = True,
+    features: tuple[str, ...] = (),
 ) -> Path:
     """Build a standalone, **release-signed** ``.apk`` for ``app``.
 
@@ -698,6 +711,8 @@ def build_release_apk(
             for the build.
         prebuilt: Reuse the prebuilt host natives (``True``, default; no NDK /
             CPython toolchain) instead of staging the toolchain from source.
+        features: Opted-in build features (camera/qr/push/video/maps) whose heavy
+            native dependencies are bundled; empty (default) builds lean.
 
     Returns:
         The release-signed ``.apk`` path.
@@ -718,6 +733,9 @@ def build_release_apk(
     props = _signing_props(config, keystore)
     if prebuilt_dir is not None:
         props.append(f"-Ptempest.prebuiltHost={prebuilt_dir}")
+    if features:
+        feature_csv = ",".join(features)
+        props.append(f"-Ptempest.features={feature_csv}")
     with (
         staged_into_host(host, branding or Branding()),
         con.step(f"Gradle assembleRelease (applicationId={config.app_id})"),

@@ -190,7 +190,7 @@ def test_parse_qr_scan_event_invalid_raises_event_validation_error() -> None:
     structural mismatch must surface as a typed, JSON-serializable error rather
     than a raw Pydantic ``ValidationError``.
     """
-    from tempestroid.widgets.events import EventValidationError
+    from tempest_core.widgets.events import EventValidationError
 
     # Missing required field 'data'.
     with pytest.raises(EventValidationError) as exc_info:
@@ -233,8 +233,8 @@ def test_canvas_commands_diff_detects_change() -> None:
     list as a diffable IR prop — the key invariant that lets both renderers just
     consume the updated list.
     """
-    from tempestroid.core.ir import Update
-    from tempestroid.core.reconciler import build, diff
+    from tempest_core.core.ir import Update
+    from tempest_core.core.reconciler import build, diff
 
     old_canvas = Canvas(commands=[MoveTo(x=0.0, y=0.0)])
     new_canvas = Canvas(commands=[MoveTo(x=1.0, y=1.0)])
@@ -249,7 +249,7 @@ def test_canvas_commands_diff_detects_change() -> None:
 
 def test_canvas_commands_diff_no_op_when_equal() -> None:
     """The reconciler emits no patch when a Canvas's commands are unchanged."""
-    from tempestroid.core.reconciler import build, diff
+    from tempest_core.core.reconciler import build, diff
 
     cmd = MoveTo(x=5.0, y=5.0)
     old_canvas = Canvas(commands=[cmd])
@@ -307,8 +307,9 @@ def test_video_player_props_survive_serialization() -> None:
     """
     import json
 
+    from tempest_core.core.reconciler import build
+
     from tempestroid.bridge import serialize_node
-    from tempestroid.core.reconciler import build
 
     vp = VideoPlayer(
         src="https://example.com/clip.mp4",
@@ -332,8 +333,9 @@ def test_web_view_props_survive_serialization() -> None:
     """``WebView`` props cross the serializer correctly."""
     import json
 
+    from tempest_core.core.reconciler import build
+
     from tempestroid.bridge import serialize_node
-    from tempestroid.core.reconciler import build
 
     wv = WebView(url="https://example.com", javascript_enabled=False)
     payload = serialize_node(build(wv))
@@ -352,9 +354,10 @@ def test_svg_fit_prop_is_string_in_serialized_output() -> None:
     """
     import json
 
+    from tempest_core.core.reconciler import build
+
     from tempestroid import Svg
     from tempestroid.bridge import serialize_node
-    from tempestroid.core.reconciler import build
 
     node = serialize_node(build(Svg(src="logo.svg")))
     json.dumps(node)  # must not raise
@@ -369,8 +372,9 @@ def test_clip_path_all_shapes_round_trip_through_serializer() -> None:
     """Each ``ClipShape`` value serializes to a plain string in node props."""
     import json
 
+    from tempest_core.core.reconciler import build
+
     from tempestroid.bridge import serialize_node
-    from tempestroid.core.reconciler import build
 
     for shape in ClipShape:
         node = serialize_node(build(ClipPath(shape=shape)))
@@ -384,8 +388,9 @@ def test_blur_radius_prop_survives_serialization() -> None:
     """``Blur.radius`` and ``BackdropFilter.radius`` serialize as floats."""
     import json
 
+    from tempest_core.core.reconciler import build
+
     from tempestroid.bridge import serialize_node
-    from tempestroid.core.reconciler import build
 
     for widget in (Blur(radius=12.5), BackdropFilter(radius=4.0)):
         node = serialize_node(build(widget))

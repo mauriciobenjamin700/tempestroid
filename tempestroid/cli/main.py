@@ -369,6 +369,15 @@ def build_cmd(
             "of reusing the prebuilt host natives (slow; needs the NDK).",
         ),
     ] = False,
+    feature: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--feature",
+            help="Bundle a heavy optional capability (camera/qr/push/video/maps); "
+            "repeatable. Adds to [tool.tempest] features. Each opt-in needs a "
+            "from-source build (SDK/NDK); the lean default ships none of them.",
+        ),
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Echo raw commands + full output."),
@@ -397,7 +406,11 @@ def build_cmd(
     toolchain instead of reusing the prebuilt natives.
     """
     from tempestroid.cli.branding import load_branding
-    from tempestroid.cli.project import read_config
+    from tempestroid.cli.project import (
+        UnknownFeatureError,
+        read_config,
+        resolve_features,
+    )
 
     # The positional is the build target; a path slipped there is treated as the
     # app file (so `tempest build app.py` still works).
@@ -425,6 +438,30 @@ def build_cmd(
     except ValueError as exc:
         print(f"cannot build: {exc}")
         raise typer.Exit(1) from exc
+
+    # Features: merge [tool.tempest] + repeated --feature flags, validate, and
+    # close over transitive requirements (qr → camera). Any opt-in feature pulls
+    # in heavy Gradle deps absent from the lean prebuilt host, so the build must
+    # run from source.
+    try:
+        features = resolve_features((*cfg.features, *(feature or [])))
+    except UnknownFeatureError as exc:
+        print(f"cannot build: {exc}")
+        raise typer.Exit(1) from exc
+    feature_list = ", ".join(features)
+    if features and fast:
+        print(
+            "cannot build: --fast cannot add native features "
+            f"({feature_list}) — it only repackages the lean prebuilt "
+            "host. Drop --fast (a feature build is from-source)."
+        )
+        raise typer.Exit(1)
+    if features and not from_source:
+        from_source = True
+        print(
+            f"info: features {feature_list} require a from-source build "
+            "(SDK/NDK) — enabling --from-source."
+        )
 
     is_release = target_norm in {"prd", "aab", "release"}
     is_release_apk = target_norm in {"release-apk", "apk-release"}
@@ -456,6 +493,7 @@ def build_cmd(
                 verbose,
                 branding,
                 from_source,
+                features,
             )
         )
     if is_release_apk:
@@ -471,6 +509,7 @@ def build_cmd(
                 verbose,
                 branding,
                 from_source,
+                features,
             )
         )
     if fast:
@@ -486,6 +525,7 @@ def build_cmd(
             verbose,
             branding,
             from_source,
+            features,
         )
     )
 
@@ -1070,6 +1110,7 @@ def _run_build(
     verbose: bool,
     branding: Branding,
     from_source: bool = False,
+    features: tuple[str, ...] = (),
 ) -> int:
     """Build a shippable, debug-signed per-app APK via Gradle, reporting outcome.
 
@@ -1090,6 +1131,8 @@ def _run_build(
         branding: Per-app branding (icon + splash) applied to the build.
         from_source: Stage the CPython toolchain from source instead of reusing
             the prebuilt host natives.
+        features: Opted-in build features (camera/qr/push/video/maps) to bundle;
+            empty (default) builds lean.
 
     Returns:
         The process exit code.
@@ -1116,12 +1159,30 @@ def _run_build(
             output=Path(output) if output else None,
             branding=branding,
             prebuilt=not from_source,
+            features=features,
         )
     except FileNotFoundError as exc:
         # A genuinely missing app file — not a toolchain gap. Don't fall back.
         console.fail(f"build failed: {exc}")
         return 1
     except (StepError, subprocess.CalledProcessError) as exc:
+        if features:
+            # The fast repackage can't add native deps, so falling back would
+            # silently drop the requested features. Fail with the real cause.
+            reason = (
+                f"exit {exc.returncode}"
+                if isinstance(exc, subprocess.CalledProcessError)
+                else str(exc)
+            )
+            feature_list = ", ".join(features)
+            console.fail(
+                f"feature build failed ({reason}). Features "
+                f"({feature_list}) need a working from-source toolchain "
+                "(SDK/NDK + CPython prefix); `--fast` cannot add them."
+            )
+            return (
+                exc.returncode if isinstance(exc, subprocess.CalledProcessError) else 1
+            )
         # The Gradle path needs the full toolchain (SDK/NDK + the CPython-Android
         # prefix + a source checkout) — heavy, and often unavailable from a plain
         # PyPI install. Rather than fail, fall back to the toolchain-free repackage
@@ -1154,6 +1215,7 @@ def _run_release(
     verbose: bool,
     branding: Branding,
     from_source: bool = False,
+    features: tuple[str, ...] = (),
 ) -> int:
     """Build a store-ready release AAB, preparing the environment, reporting outcome.
 
@@ -1169,6 +1231,8 @@ def _run_release(
         branding: Per-app branding (icon + splash) applied to the build.
         from_source: Stage the CPython toolchain from source instead of reusing
             the prebuilt host natives.
+        features: Opted-in build features (camera/qr/push/video/maps) to bundle;
+            empty (default) builds lean.
 
     Returns:
         The process exit code.
@@ -1211,6 +1275,7 @@ def _run_release(
             output=Path(output) if output else None,
             branding=branding,
             prebuilt=not from_source,
+            features=features,
         )
     except StepError:
         return 1
@@ -1234,6 +1299,7 @@ def _run_release_apk(
     verbose: bool,
     branding: Branding,
     from_source: bool = False,
+    features: tuple[str, ...] = (),
 ) -> int:
     """Build a standalone release-signed APK, preparing the env, reporting outcome.
 
@@ -1256,6 +1322,8 @@ def _run_release_apk(
         branding: Per-app branding (icon + splash) applied to the build.
         from_source: Stage the CPython toolchain from source instead of reusing
             the prebuilt host natives.
+        features: Opted-in build features (camera/qr/push/video/maps) to bundle;
+            empty (default) builds lean.
 
     Returns:
         The process exit code.
@@ -1296,6 +1364,7 @@ def _run_release_apk(
             output=Path(output) if output else None,
             branding=branding,
             prebuilt=not from_source,
+            features=features,
         )
     except StepError:
         return 1

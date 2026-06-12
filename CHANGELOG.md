@@ -13,12 +13,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   validators — was extracted into the standalone **`tempest-core`** package, and
   tempestroid now **depends on it** (`tempest-core>=0.1.0`) and consumes it as the
   single source of truth instead of vendoring those modules. The public API is
-  unchanged: `from tempestroid import App, Column, Color` and the historical
-  `from tempestroid.style import Color` / `from tempestroid.core import App`
-  submodule paths keep working (the latter via a thin `sys.modules` alias in
-  `tempestroid/_adopt.py`). tempestroid's own source imports `tempest_core`
-  directly; the renderer/native/bridge/cli layers are untouched. No behaviour
-  change — pyright at baseline, 1119 tests green.
+  unchanged: `from tempestroid import App, Column, Color` keeps working exactly as
+  before (the top-level package re-exports the full engine surface). The historical
+  deep paths `from tempestroid.style import Color` / `from tempestroid.core import
+  App` still resolve **at runtime** via a thin `sys.modules` alias
+  (`tempestroid/_adopt.py`), but type-checked code should prefer the top-level
+  `tempestroid` export or import the engine directly from `tempest_core` — which is
+  what tempestroid's own source, the examples and the test suite now do (the
+  renderer/native/bridge/cli/devserver layers stay tempestroid's own and are
+  untouched). No behaviour change — `pyright` strict clean, 1127 tests green.
+- **Dropped `material-icons-extended` (~9 MB DEX, Trilho F4 trim sub-task 5,
+  cut #1).** The Compose host now depends on `androidx.compose.material:material-icons-core`
+  instead of `…-extended`. The only consumer, `iconFor()` in `TempestRenderer.kt`,
+  maps 22 names to `Icons.Filled.*` glyphs that **all ship in the core set**
+  (transitive via `material3`), and the real source of truth for an icon is the
+  SVG `iconPath` prop inlined by `tempestroid/icons.py` — so no `-extended`-only
+  glyph was ever referenced and the swap is behavior-neutral. **Measured A/B
+  (same host, lean `assembleDebug`):** the debug APK drops **49.5 MB → 46.8 MB
+  (−2.71 MB)** and the uncompressed DEX **60.7 MB → 29.0 MB (−31.7 MB)** —
+  **11,106 fewer classes** (27,625 → 16,519), of which **10,130 are icon glyphs**
+  (10,375 → 245, the residual 245 being the curated core set the renderer maps to).
+  This was the largest non-CPython block left in the lean build after
+  feature-gating; the earlier ~9 MB estimate in the design doc understated it. The
+  compressed-APK win (−2.71 MB) is smaller than the uncompressed-DEX win because
+  icon-vector bytecode compresses heavily. **On-device verification (icons still
+  render) pending — no device on this host.** Design:
+  `docs/research/feature-gating.md` ("Próximos cortes" #1).
+
+### Added
+
+- **Opt-in native features (APK trim, Trilho F4 sub-task 5).** The heavy Android
+  capabilities (CameraX, ML Kit barcode, Firebase/FCM, media3 video, maps) are now
+  **gated at build time** — the lean default APK ships none of them, cutting the
+  debug APK from **~58 MB to ~47 MB (−11.4 MB)** and the uncompressed DEX by
+  ~11.9 MB (verified: the lean DEX has 0 classes from camera/mlkit/media3/
+  firebase, the full DEX has 4,913). An app opts back in per feature via
+  `[tool.tempest] features = ["camera", "qr"]` or `tempest build --feature camera`
+  (repeatable); `qr` transitively pulls in `camera`. Each opt-in builds from source
+  (SDK/NDK); the lean default keeps the toolchain-free prebuilt-host path. A
+  gated-off widget (`CameraPreview`/`QrScanner`/`VideoPlayer`/`MapView`) renders a
+  labeled placeholder and a gated-off native capability returns a typed
+  `NativeError("feature_not_built")`. New `FEATURES`/`resolve_features` in
+  `cli/project.py`; the `-Ptempest.features` Gradle property gates the deps +
+  source sets + a configuration-time manifest generator in `android-host`. Mirror
+  PyPI extras (`tempestroid[camera]` …) document intent. Further trim (the
+  ~9 MB `material-icons-extended`, R8 minification) is future work. Design:
+  `docs/research/feature-gating.md`. **On-device verification pending (no device).**
 
 ## [0.12.1] — 2026-06-11
 

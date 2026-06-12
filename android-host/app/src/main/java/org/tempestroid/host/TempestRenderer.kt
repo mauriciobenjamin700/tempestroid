@@ -121,19 +121,6 @@ import android.graphics.Paint as NativePaint
 import android.graphics.Path as NativePath
 import android.graphics.RectF
 import android.webkit.WebView as AndroidWebView
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -1231,43 +1218,6 @@ private fun interpretCanvasCommands(
 }
 
 /**
- * Render a [VideoPlayer] (E7): a Media3 [ExoPlayer] hosted in a [PlayerView] via
- * [AndroidView] — the Compose counterpart of the Qt `QMediaPlayer`+`QVideoWidget`.
- * The `src` is loaded as a [MediaItem]; `autoplay`/`controls`/`muted` map to the
- * player + view. The player is released when the view leaves the composition.
- */
-@Composable
-private fun RenderVideoPlayer(node: TempestNode, style: Map<String, Any?>) {
-    val context = LocalContext.current
-    val src = node.props["src"] as? String ?: ""
-    val autoplay = node.props["autoplay"] as? Boolean ?: false
-    val loop = node.props["loop"] as? Boolean ?: false
-    val controls = node.props["controls"] as? Boolean ?: true
-    val muted = node.props["muted"] as? Boolean ?: false
-    val player = remember(src) {
-        ExoPlayer.Builder(context).build().apply {
-            if (src.isNotEmpty()) setMediaItem(MediaItem.fromUri(src))
-            repeatMode = if (loop) ExoPlayer.REPEAT_MODE_ONE else ExoPlayer.REPEAT_MODE_OFF
-            volume = if (muted) 0f else 1f
-            prepare()
-            playWhenReady = autoplay
-        }
-    }
-    androidx.compose.runtime.DisposableEffect(player) {
-        onDispose { player.release() }
-    }
-    AndroidView(
-        modifier = baseModifier(style),
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                this.player = player
-                useController = controls
-            }
-        },
-    )
-}
-
-/**
  * Render a [WebView] (E7): an `android.webkit.WebView` hosted in [AndroidView] —
  * the Compose counterpart of the Qt `QWebEngineView`. JavaScript is gated by the
  * `javascript_enabled` prop; the `url` is loaded once at factory time and on
@@ -1318,129 +1268,13 @@ private fun contentScaleOf(fit: String?): ContentScale = when (fit) {
 }
 
 /**
- * Render a [CameraPreview] (E7): a CameraX [PreviewView] hosted in [AndroidView]
- * showing the live `facing` camera feed — the Compose counterpart of the Qt
- * PLACEHOLDER (Qt has no camera surface in the sim). Binding to the lifecycle owner
- * keeps the preview running while the composition is visible.
- */
-@Composable
-private fun RenderCameraPreview(node: TempestNode, style: Map<String, Any?>) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val facing = node.props["facing"] as? String ?: "back"
-    AndroidView(
-        modifier = baseModifier(style),
-        factory = { ctx ->
-            PreviewView(ctx).also { previewView ->
-                val providerFuture = ProcessCameraProvider.getInstance(ctx)
-                providerFuture.addListener({
-                    val provider = providerFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                    val selector = if (facing == "front") {
-                        CameraSelector.DEFAULT_FRONT_CAMERA
-                    } else {
-                        CameraSelector.DEFAULT_BACK_CAMERA
-                    }
-                    runCatching {
-                        provider.unbindAll()
-                        provider.bindToLifecycle(lifecycleOwner, selector, preview)
-                    }
-                }, ContextCompat.getMainExecutor(context))
-            }
-        },
-    )
-}
-
-/**
- * Render a [QrScanner] (E7): a CameraX [PreviewView] with an [ImageAnalysis] stage
- * feeding ML Kit [BarcodeScanning]. On a decode, the result rides the NORMAL event
- * channel — `on_scan` fires a [QrScanEvent]-shaped payload `{data, format}` (NOT
- * the `__native_result__` channel; the widget's `on_scan` handler is the sink).
- * To avoid a flood, only the first non-blank value per analyzer lifetime is sent.
- */
-@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
-@Composable
-private fun RenderQrScanner(
-    node: TempestNode,
-    style: Map<String, Any?>,
-    onEvent: (String, String) -> Unit,
-) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val emitted = remember { mutableStateOf(false) }
-    AndroidView(
-        modifier = baseModifier(style),
-        factory = { ctx ->
-            PreviewView(ctx).also { previewView ->
-                val providerFuture = ProcessCameraProvider.getInstance(ctx)
-                providerFuture.addListener({
-                    val provider = providerFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                    val scanner = BarcodeScanning.getClient()
-                    val analysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                    analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
-                        val mediaImage = proxy.image
-                        if (mediaImage == null) { proxy.close(); return@setAnalyzer }
-                        val image = InputImage.fromMediaImage(
-                            mediaImage, proxy.imageInfo.rotationDegrees,
-                        )
-                        scanner.process(image)
-                            .addOnSuccessListener { codes ->
-                                val first = codes.firstOrNull { !it.rawValue.isNullOrEmpty() }
-                                if (first != null && !emitted.value) {
-                                    emitted.value = true
-                                    handlerToken(node, "on_scan")?.let { token ->
-                                        val payload = JSONObject()
-                                            .put("data", first.rawValue)
-                                            .put("format", barcodeFormatName(first.format))
-                                        onEvent(token, payload.toString())
-                                    }
-                                }
-                            }
-                            .addOnCompleteListener { proxy.close() }
-                    }
-                    runCatching {
-                        provider.unbindAll()
-                        provider.bindToLifecycle(
-                            lifecycleOwner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview,
-                            analysis,
-                        )
-                    }
-                }, ContextCompat.getMainExecutor(context))
-            }
-        },
-    )
-}
-
-/** Map an ML Kit barcode format constant to the [QrScanEvent] `format` string. */
-private fun barcodeFormatName(format: Int): String = when (format) {
-    Barcode.FORMAT_QR_CODE -> "QR_CODE"
-    Barcode.FORMAT_EAN_13 -> "EAN_13"
-    Barcode.FORMAT_EAN_8 -> "EAN_8"
-    Barcode.FORMAT_CODE_128 -> "CODE_128"
-    Barcode.FORMAT_CODE_39 -> "CODE_39"
-    Barcode.FORMAT_UPC_A -> "UPC_A"
-    Barcode.FORMAT_UPC_E -> "UPC_E"
-    Barcode.FORMAT_DATA_MATRIX -> "DATA_MATRIX"
-    Barcode.FORMAT_PDF417 -> "PDF417"
-    Barcode.FORMAT_AZTEC -> "AZTEC"
-    else -> "QR_CODE"
-}
-
-/**
- * Render a [MapView] (E7) — DOCUMENTED PLACEHOLDER. Google Maps Compose would
- * require a `google-services.json` + a Maps API key in the manifest, without which
- * the APK does not build; that config is out of scope for the host skeleton, so the
- * widget renders an explicit placeholder on both leaves (mirrors the Qt sim
- * PLACEHOLDER). Wiring `maps-compose` is a documented post-phase follow-up.
+ * Render a [MapView] (E7) — DOCUMENTED PLACEHOLDER, independent of the feature
+ * set. Google Maps Compose would require a `google-services.json` + a Maps API
+ * key in the manifest, without which the APK does not build; that config is out
+ * of scope for the host skeleton, so the widget renders an explicit placeholder
+ * on both leaves (mirrors the Qt sim PLACEHOLDER). The `maps` feature reserves
+ * the name; wiring `maps-compose` is a documented post-phase follow-up, at which
+ * point this moves to `src/feat_maps` like the other features.
  */
 @Composable
 private fun RenderMapView(node: TempestNode, style: Map<String, Any?>) {
@@ -3323,7 +3157,7 @@ private fun BoxScope.absoluteModifier(style: Map<String, Any?>): Modifier {
 private fun styleOf(node: TempestNode): Map<String, Any?> =
     node.props["style"] as? Map<String, Any?> ?: emptyMap()
 
-private fun handlerToken(node: TempestNode, prop: String): String? {
+internal fun handlerToken(node: TempestNode, prop: String): String? {
     @Suppress("UNCHECKED_CAST")
     val ref = node.props[prop] as? Map<String, Any?> ?: return null
     return ref["\$handler"] as? String
@@ -3339,7 +3173,7 @@ private fun sizeModifier(style: Map<String, Any?>): Modifier {
 }
 
 /** Build the box-model Modifier chain (size → background+radius → padding). */
-private fun baseModifier(style: Map<String, Any?>): Modifier {
+internal fun baseModifier(style: Map<String, Any?>): Modifier {
     var m: Modifier = Modifier
     (style["width"] as? Number)?.let { m = m.width(it.toFloat().dp) }
     (style["height"] as? Number)?.let { m = m.height(it.toFloat().dp) }

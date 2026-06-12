@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 from pydantic import ValidationError
+from tempest_core.core.introspection import event_catalog, introspect
 
 from tempestroid import (
     App,
@@ -22,7 +23,6 @@ from tempestroid import (
     routes_from_path,
 )
 from tempestroid.bridge import BACK_TOKEN, DeviceApp, LoopbackBridge, make_event_sink
-from tempestroid.core.introspection import event_catalog, introspect
 
 
 @dataclass

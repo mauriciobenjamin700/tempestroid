@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from tempest_core.core.ir import Node
 
 from tempestroid import (
     App,
@@ -15,7 +16,6 @@ from tempestroid import (
     Widget,
 )
 from tempestroid.bridge import HandlerRegistry
-from tempestroid.core.ir import Node
 
 
 @dataclass
@@ -281,7 +281,7 @@ async def test_patch_reports_has_animations_true_while_active():
     ``has_animations == True`` — the signal the Kotlin host reads to spin up its
     ``withFrameNanos`` loop and start emitting the reserved frame token.
     """
-    from tempestroid.animation import AnimationController
+    from tempest_core.animation import AnimationController
 
     bridge = LoopbackBridge()
     device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)

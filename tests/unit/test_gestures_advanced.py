@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+from tempest_core.widgets import EventValidationError
 
 from tempestroid import (
     Dismissible,
@@ -32,7 +33,6 @@ from tempestroid import (
     serialize_node,
 )
 from tempestroid.bridge.protocol import event_type_for
-from tempestroid.widgets import EventValidationError
 
 # --- build: every widget lowers to the expected IR node ---------------------
 

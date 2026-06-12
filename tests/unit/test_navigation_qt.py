@@ -25,6 +25,8 @@ import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QLabel, QStackedWidget, QWidget
+from tempest_core.core.ir import Replace, Update
+from tempest_core.core.reconciler import build, diff
 
 from tempestroid import (
     App,
@@ -37,8 +39,6 @@ from tempestroid import (
     Text,
     Widget,
 )
-from tempestroid.core.ir import Replace, Update
-from tempestroid.core.reconciler import build, diff
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.app_runner import BackKeyFilter
 from tempestroid.renderers.qt.renderer import _DrawerHost, _NavHost, _TabBarWidget

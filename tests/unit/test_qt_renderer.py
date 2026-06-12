@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTimeEdit,
     QWidget,
 )
+from tempest_core.widgets import Form, FormField, Widget
 
 from tempestroid import (
     ActionSheet,
@@ -66,7 +67,6 @@ from tempestroid.renderers.qt.renderer import (
     _RangeSliderWidget,
     _ScrimWidget,
 )
-from tempestroid.widgets import Form, FormField, Widget
 
 pytestmark = pytest.mark.usefixtures("qapp")
 

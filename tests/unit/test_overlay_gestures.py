@@ -20,6 +20,7 @@ import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
+from tempest_core.widgets import EventValidationError
 
 from tempestroid import (
     DismissEvent,
@@ -50,7 +51,6 @@ from tempestroid import (
 from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.renderer import _GestureWidget, _StackWidget
-from tempestroid.widgets import EventValidationError
 
 # --- widgets / IR -----------------------------------------------------------
 
