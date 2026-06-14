@@ -116,54 +116,60 @@ def view(app: App[State]) -> Widget:
         app.set_state(apply)
 
     return ScrollView(
-        child=Column(
-            style=Style(
-                align=AlignItems.STRETCH,
-                gap=12.0,
-                padding=Edge.all(20.0),
-                background=Color.from_hex("#0b0f14"),
+        children=[
+            Column(
+                style=Style(
+                    align=AlignItems.STRETCH,
+                    gap=12.0,
+                    padding=Edge.all(20.0),
+                    background=Color.from_hex("#0b0f14"),
+                ),
+                children=[
+                    Text(
+                        content="Cadastro",
+                        style=Style(color=Color.from_hex("#ffffff"), font_size=22.0),
+                        key="title",
+                    ),
+                    ImagePicker(
+                        value=s.photo, label="Foto", on_pick=on_photo, key="photo"
+                    ),
+                    FormField(
+                        name="email",
+                        error=s.errors.get("email", ""),
+                        child=EmailInput(value=s.email, on_change=on_field("email")),
+                        key="f-email",
+                    ),
+                    FormField(
+                        name="phone",
+                        error=s.errors.get("phone", ""),
+                        child=PhoneInput(value=s.phone, on_change=on_field("phone")),
+                        key="f-phone",
+                    ),
+                    FormField(
+                        name="cpf",
+                        error=s.errors.get("cpf", ""),
+                        child=CPFInput(value=s.cpf, on_change=on_field("cpf")),
+                        key="f-cpf",
+                    ),
+                    FormField(
+                        name="password",
+                        child=PasswordInput(
+                            value=s.password, on_change=on_field("password")
+                        ),
+                        key="f-pwd",
+                    ),
+                    Button(label="Enviar", on_click=on_submit, key="submit"),
+                    Text(
+                        content="Enviado!" if s.submitted else "Preencha e envie",
+                        style=Style(
+                            color=Color.from_hex(
+                                "#22c55e" if s.submitted else "#9ca3af"
+                            )
+                        ),
+                        key="status",
+                    ),
+                ],
             ),
-            children=[
-                Text(
-                    content="Cadastro",
-                    style=Style(color=Color.from_hex("#ffffff"), font_size=22.0),
-                    key="title",
-                ),
-                ImagePicker(value=s.photo, label="Foto", on_pick=on_photo, key="photo"),
-                FormField(
-                    name="email",
-                    error=s.errors.get("email", ""),
-                    child=EmailInput(value=s.email, on_change=on_field("email")),
-                    key="f-email",
-                ),
-                FormField(
-                    name="phone",
-                    error=s.errors.get("phone", ""),
-                    child=PhoneInput(value=s.phone, on_change=on_field("phone")),
-                    key="f-phone",
-                ),
-                FormField(
-                    name="cpf",
-                    error=s.errors.get("cpf", ""),
-                    child=CPFInput(value=s.cpf, on_change=on_field("cpf")),
-                    key="f-cpf",
-                ),
-                FormField(
-                    name="password",
-                    child=PasswordInput(
-                        value=s.password, on_change=on_field("password")
-                    ),
-                    key="f-pwd",
-                ),
-                Button(label="Enviar", on_click=on_submit, key="submit"),
-                Text(
-                    content="Enviado!" if s.submitted else "Preencha e envie",
-                    style=Style(
-                        color=Color.from_hex("#22c55e" if s.submitted else "#9ca3af")
-                    ),
-                    key="status",
-                ),
-            ],
-        ),
+        ],
         key="scroll",
     )
