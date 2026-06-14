@@ -36,6 +36,8 @@ testes verdes). Acrescenta uma regra própria:
 | F3 | `tempest new --template` multi-arquivo + exemplos de chamadas nativas | ✅ done (v0.7.0, PR #43) | `tempest new --template <nome>` gera projeto multi-arquivo rodável (Qt + device) com exemplo nativo; coberto por teste de scaffold |
 | F-branding | Ícone + splash no `tempest build` + `tempest icon` (gera de uma imagem) | ✅ done (v0.8.0, PR #47) | ícone default + splash de assets cobrem o boot; `--icon/--splash/--splash-bg` + `tempest icon` device-verificados |
 | F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(1) APK release-signed ✅** (`tempest build release-apk`); **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); **(3) matriz de cobertura de widgets publicada ✅** (`docs/referencia/cobertura.md`, PT+EN); (4) fechar F2 + (5) trim pendentes (device/investigação) | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
+| F5 | **Harness de device confiável** — loop de validação on-device à prova de queda de USB (timeout por adb, detecção de drop, checkpoint/resume), base única do `dual-verify` | ✅ implementada (off-device) — **gate de toda device-verify futura** (bloqueia F2, device-verify do release-apk/ícone e os leftovers E8/E9); falta o teste de drop com device conectado | rodar os 24 examples no device sem hang (cada app ≤40s); desconectar o USB no meio aborta limpo com `ABORT … usb-drop` — detecção ≤20s no drop mid-run (~38s no pior caso de adb-server morto no start), sem adb wedged — e a re-execução **retoma** dos faltantes; `dual-verify` nunca reporta verde falso |
+| F6 | **Trim de tamanho do APK** — cortar o CPython 3.14 embutido de **~50MB → ~20MB** (stdlib pruning + compressão), o maior atrito de download/sideload pro time | ⬜ planejada — **alavanca direta de adoção**; mensurável off-device (não bloqueada pelo F5) | `tempest build` produz APK ≤~20MB que ainda boota o interpretador e roda os examples (Qt + device via F5); tamanho medido antes/depois e documentado; nenhum módulo runtime necessário removido |
 
 ---
 
@@ -261,8 +263,8 @@ sideload); F4 cobre o salto para "profissional".
    Coluna Compose derivada do `when (node.type)` em `TempestRenderer.kt`.
 4. **Fechar a F2** (capacidades nativas restantes no device) — pré-requisito para
    um app "profissional" que use câmera/geo/etc.
-5. **Trim de tamanho** (opcional) — investigar reduzir o ~58MB do CPython
-   embutido (stdlib pruning, compressão) para apps pequenos.
+5. **Trim de tamanho** — promovido à fase própria **F6** (~50MB → ~20MB); ver a
+   seção F6. Saiu de "opcional" porque o peso do APK é o maior atrito de adoção.
 
 ### Feito quando
 - `tempest build --release-apk --keystore …` produz um `.apk` release-assinado
@@ -274,30 +276,183 @@ sideload); F4 cobre o salto para "profissional".
 
 ---
 
+## F5 — Harness de device confiável (gate de toda device-verify futura)
+
+### Motivação (incidente 2026-06-13)
+A validação on-device é o **gargalo real** do trilho de estabilização: F2, o
+device-verify do `release-apk`/ícone adaptativo e os leftovers E8/E9 todos
+dependem de um loop de aparelho que funcione de ponta a ponta. Hoje ele **não é
+confiável**. Rodando `toolchain/validate_gallery.sh` (24 examples via code-push),
+o aparelho **desanexou do USB do WSL** no 2º app (`brforms`): nenhuma chamada
+`adb` tem `timeout`, então `cap_md5`/`screencap` **travaram indefinidamente**, o
+harness ficou 25 min preso, perdeu 23/24 apps (só `animation` chegou a `PASS`),
+deixou o `adb server` wedged (`adb devices` → rc=124) e `lsusb` parou de ver o
+device. Conclusão: antes de gastar device-verify em F2/E, o **loop precisa ser à
+prova de queda**.
+
+### Objetivo
+Um loop de device que: **(1)** nunca trava — toda chamada `adb` com `timeout`;
+**(2)** detecta queda de USB/`adb` e **aborta limpo** com diagnóstico (sem deixar
+`adb` wedged); **(3)** faz **checkpoint por-app** e é **re-rodável** (retoma sem
+refazer os já-verdes); **(4)** é a **base única** que `dual-verify` e o agente
+`device-verifier` chamam — nunca um script ad-hoc por fase.
+
+### Estado atual
+- `toolchain/validate_gallery.sh` existe mas está **untracked** (não commitado) e
+  **frágil**: chamadas `adb` cruas, sem detecção de drop, sem resume, mata só o
+  grupo do `serve` no caminho feliz.
+- `toolchain/_diag_hotreload.sh` (untracked) — diagnóstico de hot-reload, mesma
+  fragilidade.
+- `.claude/skills/dual-verify/verify.sh` e `.claude/skills/android-doctor/check.sh`
+  existem mas não detectam um device que **cai no meio** (só checam no início).
+
+### Arquivos
+- `toolchain/device_loop.sh` (novo) — helper compartilhado: `adbq() { timeout
+  "${ADB_TIMEOUT:-20}" adb "$@"; }`, `device_alive()` (cruza `adb get-state` +
+  `lsusb`), `abort_clean()` (mata serve group + `adb kill-server`), sourced pelos
+  harnesses. Sem dependência externa (estilo do resto da toolchain).
+- `toolchain/validate_gallery.sh` — **commitar** + endurecer: trocar todo `adb`
+  por `adbq`; pré-checar `device_alive` antes de cada app (drop → grava
+  `ABORT <app> usb-drop` no RESULTS e sai com código distinto); **resume** (lê o
+  RESULTS no início e pula apps já `PASS`); cleanup sempre mata o serve group.
+- `toolchain/_diag_hotreload.sh` — commitar + mesmo wrapper `adbq`.
+- `.claude/skills/dual-verify/verify.sh` — chamar o harness endurecido; ao detectar
+  `ABORT … usb-drop`, reportar honestamente "device half abortou em `<app>`" e
+  **falhar** (nunca verde falso), com o passo de recuperação `usbipd attach`.
+- `.claude/skills/android-doctor/check.sh` — novo check "device estável" (2
+  leituras de `adb get-state` espaçadas + `lsusb` Android visível) e registrar o
+  gotcha usbipd-WSL nas instruções de recuperação.
+
+### Sub-tarefas
+1. **`device_loop.sh`** (helper `adbq`/`device_alive`/`abort_clean`) + commitar os
+   dois harnesses untracked migrados pra ele.
+2. **Resume + drop-detect** no `validate_gallery.sh` (checkpoint por-app; abort em
+   ≤20s; sem adb wedged) — testar desconectando o USB no meio.
+3. **`dual-verify`/`android-doctor`** consomem o helper e reportam drop sem fingir
+   verde; documentar a recuperação `usbipd attach --wsl --busid <id>` (Windows).
+4. **README/CLAUDE.md**: a regra "device-verify passa pelo harness F5" + a nota do
+   gotcha USB-WSL.
+
+### Feito quando
+- Com o device conectado, o harness valida os 24 examples (screenshots + tabela
+  PASS/FAIL) **sem nenhum hang** — cada app limitado a ~40s.
+- Desconectar o USB no meio → aborta em ≤20s com `ABORT … usb-drop`, mata o
+  `serve`, **não** deixa `adb` wedged; a **re-execução retoma** dos apps faltantes
+  (não refaz os `PASS`).
+- `dual-verify` reporta honestamente "device half abortou" quando cai — nunca
+  verde falso — e `android-doctor` pega o device instável antes do build.
+- `framework-guard` verde (os scripts em `toolchain/` ficam fora dos gates Python,
+  mas o `dual-verify`/`android-doctor` rodam limpos).
+
+---
+
+## F6 — Trim de tamanho do APK (~50MB → ~20MB)
+
+### Por que isso importa (alavanca direta de adoção)
+O APK básico hoje pesa **~50MB**, quase tudo CPython 3.14 embutido (stdlib +
+`libpython`). Esse peso é o **maior atrito prático** para o time adotar o
+tempestroid: cada app que mandam pros colegas é um download/sideload de ~50MB,
+cada `tempest build`/`install` move 50MB pro device, e numa loja alternativa ou
+link direto o tamanho afasta instalação. Um app "olá mundo" não deveria pesar
+50MB. **Meta: ~20MB** — patamar em que um app tempestroid fica comparável a um app
+nativo pequeno e o atrito some. Não é polimento opcional; é o que separa "demo que
+roda no meu device" de "o time distribui sem reclamar do tamanho".
+
+### Estado atual
+- `tempest build` empacota o prefixo CPython inteiro (`toolchain/dist/python/...`
+  + stdlib em `assets/python/lib/python3.14/`). O `build.gradle.kts` já dropa
+  `__pycache__`/`*.pyc` mas mantém a stdlib completa.
+- Nada de pruning de módulos de stdlib não usados nem de compressão dedicada hoje.
+
+### Alvos de corte (medir cada um)
+| Alvo | Economia estimada | Risco |
+|---|---|---|
+| `test`/`tests` da stdlib | grande | nenhum (não usado em runtime) |
+| `idlelib`, `tkinter`, `turtledemo` | médio | nenhum (sem GUI no device) |
+| `ensurepip`, `pip`, `lib2to3`, `distutils` | médio | nenhum (não instalamos pacote no device) |
+| `lib-dynload/*.so` não usados (`_tkinter`, `_curses`, `audioop`…) | médio | médio (validar import set real) |
+| `.pyc`-only (dropar `.py` fonte, manter bytecode) ou vice-versa | médio | baixo |
+| Compressão (apenas o que `extractAssets` descompacta no boot) | variável | baixo (custo de CPU no 1º boot) |
+| Strip de `libpython3.14.so` (símbolos de debug) | pequeno-médio | baixo |
+
+### Arquivos
+- `toolchain/02_stage_deps.sh` / `toolchain/00_fetch_cpython.sh` — onde a stdlib é
+  montada: aplicar a allow/deny-list de módulos antes de empacotar.
+- `android-host/app/build.gradle.kts` — `CopyPythonStdlibTask`/`ignoreAssetsPattern`:
+  estender as exclusões; medir o APK resultante.
+- `MainActivity` (`extractAssets`) — se entrar compressão, descomprimir no boot
+  (o splash já cobre o tempo do 1º boot).
+- `docs/` — registrar a tabela antes/depois e o conjunto mínimo de módulos.
+
+### Sub-tarefas
+1. **Medir a baseline** por componente (`du -h` no APK extraído: libpython vs
+   stdlib vs site-packages) — saber de onde vêm os 50MB antes de cortar.
+2. **Pruning seguro** (test/idlelib/tkinter/ensurepip/lib2to3/distutils) +
+   re-medir; rodar os 24 examples pela F5 pra provar que nada quebrou.
+3. **Pruning de `lib-dynload`** guiado pelo import set real (varrer o que o
+   framework + examples importam) — mais arriscado, validar no device.
+4. **Compressão/strip** do restante se ainda acima de ~20MB; medir custo de boot.
+5. **Documentar** a tabela antes/depois + o "conjunto mínimo CPython" que o
+   tempestroid garante.
+
+### Feito quando
+- `tempest build` produz um APK **≤~20MB** que ainda boota o interpretador e roda
+  os examples nos dois renderizadores (Qt + device via F5), sem `ImportError`.
+- A redução está medida e documentada (antes/depois por componente).
+- Nenhum módulo necessário em runtime foi removido (provado pela galeria F5 verde).
+
+---
+
 ## Ordem sugerida e dependências
 
 ```
-F1 (build por-app) ──► desbloqueia distribuir vários apps do time
-F3 (templates)     ──► acelera começar projetos; usa F1 para empacotar
-F2 (native device) ──► transversal; pode correr em paralelo, PR por capacidade
+F1 (build por-app) ──► desbloqueia distribuir vários apps do time         ✅
+F3 (templates)     ──► acelera começar projetos; usa F1 para empacotar     ✅
+F4 (1)(2)(3)       ──► distribuição profissional (release-apk/ícone/matriz) ✅
+F5 (device loop)   ──► GATE: harness de device à prova de drop             ⬜
+   └─► F2 (native device) ─┐
+   └─► device-verify       ├─► só confiáveis DEPOIS do F5
+   └─► leftovers E8/E9 ────┘
+F6 (trim ~50→~20MB)──► alavanca de adoção; off-device, paralelo ao F5       ⬜
 ```
 
-F1 e F3 são as de maior alavanca para o time (criar + distribuir). F2 é
-incremental e paraleliza bem (uma capacidade por PR). Fechar as três → tempestroid
-"estável para uso em produção interna" no estilo pythônico que o time já escreve.
+F1/F3/F4(1-3) já entregaram criar + distribuir. **F5 é o novo gate**: a validação
+on-device era o gargalo frágil (queda de USB trava o loop), então F2, os
+device-verify pendentes e os leftovers E8/E9 só são confiáveis depois que o
+harness de device existir. **F6 (trim ~50MB → ~20MB) é a maior alavanca de
+adoção** e corre em paralelo por ser mensurável off-device (só o teste final de
+não-regressão usa a galeria F5). Fechar F5 → device-verify deixa de ser aposta;
+fechar F6 → o peso do APK para de afastar o time. Juntos lastreiam o "estável para
+produção interna".
 
-### Próximos passos (pós-v0.12.0)
+### Próximos passos (pós-v0.13.0)
 
-F4 (1)(2)(3) entregues e publicados (v0.12.0). Restante, em ordem de alavanca:
+v0.13.0 publicada: o engine compartilhado foi extraído para **`tempest-core`** (na
+PyPI) e o `tempestroid` agora o adota como dependência (cópia vendada dropada;
+`tempestroid/_adopt.py` aliasa `tempest_core.*` sob o path histórico). F4 (1)(2)(3)
+já entregues (v0.12.0).
 
-1. **Device-verify do já-mergeado** (mais barato — código pronto, só rodar no
-   aparelho): `release-apk` instala/abre + `apksigner verify`; `--adaptive-icon`
-   mascarado pelo launcher (screenshot). Rodar `android-doctor` + `dual-verify`.
-2. **F4(5) — trim de tamanho** do CPython embutido (~58MB → alvo ~25–30MB):
-   stdlib pruning (`test`/`idlelib`/`tkinter`/`ensurepip`/`lib2to3`) +
-   compressão; medir antes/depois.
-3. **F2 — native device** (1 PR por grupo): geolocation, camera+audio, share,
-   bluetooth, connectivity+permissions, biometria plena (digital cadastrada),
-   push FCM real (`google-services.json` + envio server).
+**F5 é o gate.** A queda de USB de 2026-06-13 mostrou que device-verify sem um
+harness à prova de drop é tempo perdido — então **F5 vem primeiro** e desbloqueia
+todo o resto. Ordem de alavanca:
+
+1. **F5 — harness de device confiável** (pré-requisito formal; ver seção F5):
+   `adbq`/timeout em toda chamada adb, detecção de queda de USB com abort limpo,
+   checkpoint/resume por-app, `dual-verify`/`android-doctor` consumindo o helper.
+   Sem isso, F2 e os device-verify abaixo não são confiáveis.
+2. **Device-verify do já-mergeado** (barato — código pronto, só rodar **via F5**):
+   adoção do `tempest-core` no device (rodar a galeria pelo harness novo);
+   `release-apk` instala/abre + `apksigner verify`; `--adaptive-icon` mascarado
+   pelo launcher (screenshot).
+3. **F6 — trim de tamanho** do CPython embutido (**~50MB → ~20MB**): stdlib
+   pruning (`test`/`idlelib`/`tkinter`/`ensurepip`/`lib2to3`/`distutils`) +
+   `lib-dynload` pruning + compressão; medir antes/depois (off-device, não
+   bloqueado por F5). **Maior alavanca de adoção** — o peso é o atrito nº 1 de
+   download/sideload pro time. Ver seção F6.
+4. **F2 — native device** (1 PR por grupo, **via F5**): geolocation, camera+audio,
+   share, bluetooth, connectivity+permissions, biometria plena (digital
+   cadastrada), push FCM real (`google-services.json` + envio server).
+5. **Leftovers E8/E9 no device** (via F5): TalkBack audível (E9), corpo real do
+   WorkManager worker (E8), sucesso pleno da biometria (E8).
 
 [PR #39]: https://github.com/mauriciobenjamin700/tempestroid/pull/39
