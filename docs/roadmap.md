@@ -195,6 +195,11 @@ para distribuição (Trilho F — ver [`docs/plan-stable.md`](plan-stable.md)):
   sobre o F7 — AVD reprodutível, boot por snapshot, auto-recuperação, **pool de N
   emuladores isolados** (sharding da suíte), screenshot/regressão visual e
   `scrcpy` (espelhamento ao vivo no WSLg). Tira a dor recorrente do emulador.
+  **Escrito (off-emulador):** `provision_avd.sh`, helpers de emulador no
+  `device_loop.sh`, `emulator_snapshot.sh`, `emulator_pool.sh` (experimental),
+  `visual_regression.py`, `emulator_verify.sh` (gating + auto-recuperação +
+  `VISUAL=1`), alvos `make` + runbook bilíngue. **Falta a prova de boot real**
+  (emulador estava ocupado por outra sessão) — ver `docs/plan-stable.md` F8.
 - **F9 — driver de testes nativo estilo Playwright:** API de automação de UI
   **cross-renderer** (mesmo script no simulador Qt e no Compose do
   emulador/device), com **auto-wait** (sem `sleep`), locators por Semantics/

@@ -41,6 +41,40 @@ from tempestroid.native.sensors import dispatch_sensor_event
 
 __all__ = ["run_dev_client", "serve_device"]
 
+_BUNDLE_PREFIX = "tempest-app-"
+
+
+def _sweep_stale_bundles(keep: Path | None = None) -> int:
+    """Delete leftover code-push bundle dirs from earlier ``serve`` sessions.
+
+    Each ``tempest serve`` push extracts the project to a fresh
+    ``tempest-app-*`` temp dir (see :func:`_load_bundle_spec`). Within a single
+    client process the previous push's dir is removed on the next push, but a
+    *new* process (every ``serve`` invocation is one) starts with no prior root
+    and never reclaims the dirs the earlier processes left behind. Across many
+    pushes — e.g. validating the whole example gallery — those orphans pile up
+    and fill the device/emulator ``/data`` partition, which then surfaces as a
+    bogus extraction failure (error screen) on a perfectly good app.
+
+    Sweeping the temp dir once at client startup reclaims that space. It is
+    best-effort: any dir that cannot be removed (in use, permission) is skipped.
+
+    Args:
+        keep: A bundle root to preserve (the current process's own), if any.
+
+    Returns:
+        The number of stale bundle dirs removed.
+    """
+    tmp_root = Path(tempfile.gettempdir())
+    removed = 0
+    for path in tmp_root.glob(f"{_BUNDLE_PREFIX}*"):
+        if not path.is_dir() or (keep is not None and path == keep):
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            removed += 1
+    return removed
+
 
 def _load_bundle_spec(data: bytes, previous_root: Path | None) -> tuple[Any, Path]:
     """Extract a pushed bundle, swap it onto ``sys.path``, and load its spec.
@@ -93,6 +127,13 @@ async def run_dev_client(
     """
     loop = asyncio.get_running_loop()
     current: dict[str, Any] = {"device": None, "hash": None, "root": None}
+
+    # Reclaim disk left by earlier ``serve`` sessions before the first push, so
+    # a long run (e.g. the whole example gallery) cannot fill ``/data`` with
+    # orphaned bundle dirs and fail a good app with a bogus extraction error.
+    swept = _sweep_stale_bundles()
+    if swept:
+        log(f"[tempest] swept {swept} stale bundle dir(s)")
 
     def on_event(token: str, payload_json: str) -> None:
         """Route a device event to the currently-loaded app.
