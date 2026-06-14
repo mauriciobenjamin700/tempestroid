@@ -37,7 +37,7 @@ testes verdes). Acrescenta uma regra própria:
 | F-branding | Ícone + splash no `tempest build` + `tempest icon` (gera de uma imagem) | ✅ done (v0.8.0, PR #47) | ícone default + splash de assets cobrem o boot; `--icon/--splash/--splash-bg` + `tempest icon` device-verificados |
 | F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(1) APK release-signed ✅** (`tempest build release-apk`); **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); **(3) matriz de cobertura de widgets publicada ✅** (`docs/referencia/cobertura.md`, PT+EN); (4) fechar F2 + (5) trim pendentes (device/investigação) | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
 | F5 | **Harness de device confiável** — loop de validação on-device à prova de queda de USB (timeout por adb, detecção de drop, checkpoint/resume), base única do `dual-verify` | ✅ implementada (off-device) — **gate de toda device-verify futura** (bloqueia F2, device-verify do release-apk/ícone e os leftovers E8/E9); falta o teste de drop com device conectado | rodar os 24 examples no device sem hang (cada app ≤40s); desconectar o USB no meio aborta limpo com `ABORT … usb-drop` — detecção ≤20s no drop mid-run (~38s no pior caso de adb-server morto no start), sem adb wedged — e a re-execução **retoma** dos faltantes; `dual-verify` nunca reporta verde falso |
-| F6 | **Trim de tamanho do APK** — cortar o CPython 3.14 embutido de **~50MB → ~20MB** (stdlib pruning + compressão), o maior atrito de download/sideload pro time | ⬜ planejada — **alavanca direta de adoção**; mensurável off-device (não bloqueada pelo F5) | `tempest build` produz APK ≤~20MB que ainda boota o interpretador e roda os examples (Qt + device via F5); tamanho medido antes/depois e documentado; nenhum módulo runtime necessário removido |
+| F6 | **Trim de tamanho do APK** — enxugar o CPython 3.14 embutido. **Fase-1 (off-device):** pruning seguro de stdlib morta. **Fase-2 (host-side, device-gated):** stdlib-archive/codecs/compressão | 🚧 fase-1 ✅ (PR #74) — baseline real **~39MB** (não ~50MB; já cortado por #70/#71), fase-1 rende ~1MB → **~38MB**; **~20MB exige fase-2 host-side** (Kotlin/C + device, não offline) | **fase-1:** excludes seguros (import trace verde) + APK rebuilda + tamanho documentado + gate verde; **fase-2 (futuro):** APK materialmente menor que boota e roda os examples (Qt + device via F5), custo de 1º boot medido |
 
 ---
 
@@ -263,8 +263,10 @@ sideload); F4 cobre o salto para "profissional".
    Coluna Compose derivada do `when (node.type)` em `TempestRenderer.kt`.
 4. **Fechar a F2** (capacidades nativas restantes no device) — pré-requisito para
    um app "profissional" que use câmera/geo/etc.
-5. **Trim de tamanho** — promovido à fase própria **F6** (~50MB → ~20MB); ver a
-   seção F6. Saiu de "opcional" porque o peso do APK é o maior atrito de adoção.
+5. **Trim de tamanho** — promovido à fase própria **F6**; ver a seção F6. Saiu de
+   "opcional" porque o peso do APK é o maior atrito de adoção. Achado ao medir
+   (PR #74): baseline real ~39MB (não ~50MB), fase-1 off-device rende ~1MB; ~20MB
+   exige fase-2 host-side device-gated.
 
 ### Feito quando
 - `tempest build --release-apk --keystore …` produz um `.apk` release-assinado
@@ -346,58 +348,72 @@ refazer os já-verdes); **(4)** é a **base única** que `dual-verify` e o agent
 
 ---
 
-## F6 — Trim de tamanho do APK (~50MB → ~20MB)
+## F6 — Trim de tamanho do APK (baseline real ~39MB)
 
 ### Por que isso importa (alavanca direta de adoção)
-O APK básico hoje pesa **~50MB**, quase tudo CPython 3.14 embutido (stdlib +
-`libpython`). Esse peso é o **maior atrito prático** para o time adotar o
-tempestroid: cada app que mandam pros colegas é um download/sideload de ~50MB,
-cada `tempest build`/`install` move 50MB pro device, e numa loja alternativa ou
-link direto o tamanho afasta instalação. Um app "olá mundo" não deveria pesar
-50MB. **Meta: ~20MB** — patamar em que um app tempestroid fica comparável a um app
-nativo pequeno e o atrito some. Não é polimento opcional; é o que separa "demo que
-roda no meu device" de "o time distribui sem reclamar do tamanho".
+O peso do APK é o **maior atrito prático** para o time adotar o tempestroid: cada
+app que mandam pros colegas é um download/sideload, cada `tempest build`/`install`
+move os bytes pro device, e numa loja alternativa/link direto o tamanho afasta
+instalação. Um app "olá mundo" deveria ser o mais leve possível.
 
-### Estado atual
-- `tempest build` empacota o prefixo CPython inteiro (`toolchain/dist/python/...`
-  + stdlib em `assets/python/lib/python3.14/`). O `build.gradle.kts` já dropa
-  `__pycache__`/`*.pyc` mas mantém a stdlib completa.
-- Nada de pruning de módulos de stdlib não usados nem de compressão dedicada hoje.
+### ⚠️ Correção do alvo (medido em 2026-06-13, PR #74)
+A meta inicial "~50MB → ~20MB" foi calibrada contra um **baseline velho**. Medido
+de verdade, o APK lean (debug, arm64, sem features extras) já pesa **~39MB**, não
+~50MB — o grosso já tinha sido cortado por **#71** (`material-icons-core`) e **#70**
+(feature-gating de camera/qr/push/video). O **piso é alto e em boa parte
+irredutível** sem mexer no host:
 
-### Alvos de corte (medir cada um)
-| Alvo | Economia estimada | Risco |
+| Componente | Tamanho | Redutível? |
 |---|---|---|
-| `test`/`tests` da stdlib | grande | nenhum (não usado em runtime) |
-| `idlelib`, `tkinter`, `turtledemo` | médio | nenhum (sem GUI no device) |
-| `ensurepip`, `pip`, `lib2to3`, `distutils` | médio | nenhum (não instalamos pacote no device) |
-| `lib-dynload/*.so` não usados (`_tkinter`, `_curses`, `audioop`…) | médio | médio (validar import set real) |
-| `.pyc`-only (dropar `.py` fonte, manter bytecode) ou vice-versa | médio | baixo |
-| Compressão (apenas o que `extractAssets` descompacta no boot) | variável | baixo (custo de CPU no 1º boot) |
-| Strip de `libpython3.14.so` (símbolos de debug) | pequeno-médio | baixo |
+| nativos (`libpython` 5.8MB + `libcrypto` 3.7MB + …) | ~11MB | **não** — já totalmente stripados (`llvm-strip` = 0 bytes) |
+| `pydantic_core` (wheel nativo) | ~4.6MB | não (dependência core) |
+| `pydantic` (puro-py) | ~2.0MB | não |
+| stdlib necessária + tempest_core + framework | resto | pouco |
+| stdlib morta (test/REPL/wsgiref/lib-dynload de teste) | ~1-2MB | **sim** (off-device, seguro) |
+
+**Conclusão honesta:** o único lever seguro off-device (excludes no
+`build.gradle.kts`) rende **~1MB**. Chegar a ~20MB **não é possível** só com
+pruning seguro off-device — exigiria mudança no host (stdlib como arquivo único
+montado em runtime, ou dropar codecs CJK) que é **Kotlin/C + device-gated**, fora
+do escopo de uma fase offline. O alvo realista off-device é **~37-38MB**; ~20MB
+vira um esforço host-side separado (F6-fase-2), device-gated.
+
+### Estado / entregue
+- **F6-fase-1 (PR #74, ✅ off-device):** excludes seguros no `CopyPythonStdlibTask`
+  (`build.gradle.kts`, source-mode, só assets — prefixo de dev intacto): `_pyrepl/`,
+  `wsgiref/`, `doctest.py`, `pydoc.py` + lib-dynload de teste (`_test*.so`,
+  `_xxtestfuzz*`, `xxsubtype*`, `xxlimited*`). Todos provados ausentes do grafo de
+  import (framework + pydantic + tempest_core) por trace off-device. **39MB → ~38MB**
+  (lib-dynload 67 → 54 `.so`). Doc bilíngue "Tamanho do APK" em `docs/guia/build.md`
+  (+ `.en`). Caveat conhecido: os excludes vivem no `@TaskAction`, não num `@Input`
+  → editar a lista exige `--rerun-tasks`/clean (build limpo aplica certo; só afeta
+  re-medição em dev) — documentado nos deploy notes do PR.
+
+### F6-fase-2 (host-side, device-gated — NÃO offline)
+Para ir materialmente abaixo de ~38MB, os levers restantes precisam do host +
+validação no device (depende do F5):
+- **stdlib como arquivo único** (zip/`.pyc` em um `.zip` no `sys.path`) montado em
+  runtime em vez de ~1500 arquivos soltos — corta overhead de filesystem + permite
+  compressão; precisa de mudança no `extractAssets`/boot (Kotlin/C) e medição de
+  custo de 1º boot (o splash cobre).
+- **dropar codecs CJK** da stdlib (`encodings/`) se nenhum app precisar — economia
+  média, risco médio (validar locale/i18n no device, cruza com E9).
+- **compressão dos assets** com descompressão no boot.
 
 ### Arquivos
-- `toolchain/02_stage_deps.sh` / `toolchain/00_fetch_cpython.sh` — onde a stdlib é
-  montada: aplicar a allow/deny-list de módulos antes de empacotar.
-- `android-host/app/build.gradle.kts` — `CopyPythonStdlibTask`/`ignoreAssetsPattern`:
-  estender as exclusões; medir o APK resultante.
-- `MainActivity` (`extractAssets`) — se entrar compressão, descomprimir no boot
-  (o splash já cobre o tempo do 1º boot).
-- `docs/` — registrar a tabela antes/depois e o conjunto mínimo de módulos.
-
-### Sub-tarefas
-1. **Medir a baseline** por componente (`du -h` no APK extraído: libpython vs
-   stdlib vs site-packages) — saber de onde vêm os 50MB antes de cortar.
-2. **Pruning seguro** (test/idlelib/tkinter/ensurepip/lib2to3/distutils) +
-   re-medir; rodar os 24 examples pela F5 pra provar que nada quebrou.
-3. **Pruning de `lib-dynload`** guiado pelo import set real (varrer o que o
-   framework + examples importam) — mais arriscado, validar no device.
-4. **Compressão/strip** do restante se ainda acima de ~20MB; medir custo de boot.
-5. **Documentar** a tabela antes/depois + o "conjunto mínimo CPython" que o
-   tempestroid garante.
+- `android-host/app/build.gradle.kts` — `CopyPythonStdlibTask` (excludes; fase-1 ✓).
+- `toolchain/02_stage_deps.sh` / `00_fetch_cpython.sh` — se a allow/deny-list migrar
+  pra etapa de staging.
+- `MainActivity` (`extractAssets`) — fase-2: stdlib-archive/compressão no boot.
+- `docs/guia/build.md` (+ `.en`) — tabela antes/depois + piso documentado (fase-1 ✓).
 
 ### Feito quando
-- `tempest build` produz um APK **≤~20MB** que ainda boota o interpretador e roda
-  os examples nos dois renderizadores (Qt + device via F5), sem `ImportError`.
+- **Fase-1 (✅):** `build.gradle.kts` dropa a stdlib morta com segurança (import
+  trace verde), APK rebuilda limpo, tamanho medido/documentado, gate verde.
+- **Fase-2 (futuro, device-gated):** se perseguida, `tempest build` produz um APK
+  materialmente menor que ainda boota o interpretador e roda os examples nos dois
+  renderizadores (Qt + device via F5), sem `ImportError`, com custo de 1º boot
+  medido — e o ganho real vs a complexidade do host registrado antes de seguir.
 - A redução está medida e documentada (antes/depois por componente).
 - Nenhum módulo necessário em runtime foi removido (provado pela galeria F5 verde).
 
@@ -413,17 +429,17 @@ F5 (device loop)   ──► GATE: harness de device à prova de drop           
    └─► F2 (native device) ─┐
    └─► device-verify       ├─► só confiáveis DEPOIS do F5
    └─► leftovers E8/E9 ────┘
-F6 (trim ~50→~20MB)──► alavanca de adoção; off-device, paralelo ao F5       ⬜
+F6 (trim APK)      ──► fase-1 ✅ ~39→~38MB (off-device); fase-2 ~20MB = host  🚧
 ```
 
 F1/F3/F4(1-3) já entregaram criar + distribuir. **F5 é o novo gate**: a validação
 on-device era o gargalo frágil (queda de USB trava o loop), então F2, os
 device-verify pendentes e os leftovers E8/E9 só são confiáveis depois que o
-harness de device existir. **F6 (trim ~50MB → ~20MB) é a maior alavanca de
-adoção** e corre em paralelo por ser mensurável off-device (só o teste final de
-não-regressão usa a galeria F5). Fechar F5 → device-verify deixa de ser aposta;
-fechar F6 → o peso do APK para de afastar o time. Juntos lastreiam o "estável para
-produção interna".
+harness de device existir. **F6 (trim do APK):** a fase-1 off-device já cortou a
+stdlib morta com segurança (~39MB → ~38MB, PR #74); o ganho grande (alvo ~20MB) é
+**fase-2 host-side device-gated**, não off-device — então passou a depender do F5
+como qualquer outro device-verify. Fechar F5 → device-verify deixa de ser aposta
+e destrava a fase-2 do F6.
 
 ### Próximos passos (pós-v0.13.0)
 
@@ -444,11 +460,11 @@ todo o resto. Ordem de alavanca:
    adoção do `tempest-core` no device (rodar a galeria pelo harness novo);
    `release-apk` instala/abre + `apksigner verify`; `--adaptive-icon` mascarado
    pelo launcher (screenshot).
-3. **F6 — trim de tamanho** do CPython embutido (**~50MB → ~20MB**): stdlib
-   pruning (`test`/`idlelib`/`tkinter`/`ensurepip`/`lib2to3`/`distutils`) +
-   `lib-dynload` pruning + compressão; medir antes/depois (off-device, não
-   bloqueado por F5). **Maior alavanca de adoção** — o peso é o atrito nº 1 de
-   download/sideload pro time. Ver seção F6.
+3. **F6 — trim de tamanho.** Fase-1 off-device **já entregue** (PR #74): pruning
+   seguro da stdlib morta, **~39MB → ~38MB**. O alvo grande (~20MB) é **fase-2
+   host-side device-gated** (stdlib-archive/codecs/compressão — Kotlin/C + device),
+   então depende do F5. Baseline real é ~39MB (não ~50MB; já cortado por #70/#71).
+   Ver seção F6.
 4. **F2 — native device** (1 PR por grupo, **via F5**): geolocation, camera+audio,
    share, bluetooth, connectivity+permissions, biometria plena (digital
    cadastrada), push FCM real (`google-services.json` + envio server).
