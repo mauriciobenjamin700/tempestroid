@@ -36,10 +36,11 @@ do SDK no device — não a do dev desktop:
 - **Núcleo obrigatório:** `onnxruntime` (C++ pesado) + `numpy` (tensores I/O).
 - **Backend de imagem:** o extra `[opencv]` puxa `opencv-python` (enorme; outra
   wheel nativa). Avaliar usar **Pillow** ou o decoder de imagem do próprio host
-  (Android `BitmapFactory`) em vez de OpenCV no device.
-- **`pandas`/`scikit-learn` NÃO são dependências do SDK de visão** — entram só se
-  o app do usuário fizer feature-engineering tabular ou pós-processamento ML
-  clássico. Por isso o Trilho G os trata como **camada opcional**, não núcleo.
+  (Android `BitmapFactory`) em vez de OpenCV no device — ver §3.5.
+- **`pandas`/`scikit-learn`/`scikit-image` NÃO são dependências do SDK de
+  visão** — entram só se o app do usuário fizer feature-engineering tabular,
+  pós-processamento ML clássico ou processamento de imagem avançado. Por isso o
+  Trilho G os trata como **camada opcional**, não núcleo.
 
 > **G0 done-when:** árvore de deps do `ort-vision-sdk[opencv]` resolvida para
 > `aarch64`/`x86_64`-android, com cada pacote marcado: pure-python (trivial),
@@ -114,6 +115,38 @@ Kotlin.
 
 ---
 
+### 3.5 `opencv` e `scikit-image` — backends de imagem/visão pesados
+
+Duas libs que o app pode querer, ambas no balde **difícil**:
+
+**`opencv-python` (cv2)**
+
+- **Sem wheel android no PyPI.** O PyPI só publica desktop
+  (manylinux/win/mac); o `piwheels` cobre **ARM-Linux** (Raspberry Pi), **não**
+  Android. → buildar do NDK = pesado (binário ~50–90 MB, dezenas de deps C++).
+- Caminhos melhores no device:
+  - **(a) OpenCV Android SDK nativo** (`.so`/Kotlin oficial) + ponte JNI — a
+    inferência/processamento roda em C++, o Python só orquestra (espelha o
+    caminho **(B)** da §TL;DR). Evita a wheel cv2.
+  - **(b) Evitar cv2** — decode/resize via `BitmapFactory` do host + `numpy`, e
+    `Pillow` para o resto. Cobre a maioria dos pré-processos de visão.
+- Se cv2-em-Python for inevitável: usar **`opencv-python-headless`** (sem GUI,
+  menor) + custom build. Risco **alto**, tamanho **muito alto**.
+
+**`scikit-image` (skimage)**
+
+- Quase puro-Python no topo, **mas depende de `scipy`** (`scipy.ndimage`,
+  `scipy.fft`, …) → **herda o pior risco da stack** (Fortran/LAPACK + OpenMP).
+  As outras deps (`imageio`, `tifffile`, `networkx`, `pillow`, `lazy_loader`,
+  `packaging`) são leves.
+- Logo: **skimage fica gated atrás do `scipy` (G4)**. Se o `scipy` fechar,
+  skimage adiciona pouco; se não fechar, skimage não roda.
+
+> **Regra prática:** para *visão* (decode, resize, normalize, tensor I/O), ficar
+> em `numpy` + `Pillow`/`BitmapFactory` cobre G0→G2 sem cv2 nem skimage. `cv2`
+> (SDK nativo) e `skimage` (pós-`scipy`) são camadas opcionais, só sob demanda
+> real de app.
+
 ## 4. Tamanho do APK — restrição dura
 
 Empilhar CPython 3.14 + stdlib (Trilho B já ~39 MB) + `numpy` + `onnxruntime` +
@@ -135,9 +168,9 @@ Mitigações a investigar em G:
 |---|---|---|---|
 | **G0** | Spike de viabilidade: mapear deps reais do `ort-vision-sdk`, decidir caminho (A)/(B), provar `import numpy` + `onnxruntime` no device | médio | árvore de deps classificada; decisão A/B registrada; `numpy` importa no aparelho |
 | **G1** | Wheel do `onnxruntime` (ou AAR) + inferência de 1 modelo `.onnx` real ponta-a-ponta no device | **alto** | um `Detector`/`Classifier` do SDK roda no aparelho e devolve resultado tipado (verificado por screenshot) |
-| **G2** | Caminho de imagem sem OpenCV (Pillow ou `BitmapFactory` do host) + pré/pós em `numpy` | médio | imagem da câmera/galeria → tensor → inferência sem `opencv-python` na APK |
+| **G2** | Caminho de imagem sem OpenCV (Pillow ou `BitmapFactory` do host) + pré/pós em `numpy`; se cv2 for exigido, OpenCV Android SDK nativo + ponte (não a wheel) | médio | imagem da câmera/galeria → tensor → inferência sem `opencv-python` na APK |
 | **G3** | (opcional) `pandas` no device — feature-engineering tabular | médio | `import pandas` + um pipeline tabular roda no aparelho |
-| **G4** | (opcional) `scipy` + `scikit-learn` no device — ML clássico | **alto** | `import sklearn`; um modelo sklearn faz `predict` no aparelho |
+| **G4** | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + processamento de imagem (skimage gated atrás do scipy) | **alto** | `import sklearn`/`skimage`; um modelo sklearn faz `predict` no aparelho |
 | **G5** | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | APK com inferência cabe num orçamento de tamanho acordado, medido |
 
 `G3`/`G4` ficam **gated** por demanda real de app — não bloqueiam o caminho de

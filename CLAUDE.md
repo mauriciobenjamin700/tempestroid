@@ -133,9 +133,9 @@ roadmap em [`docs/roadmap.md`](docs/roadmap.md) e [`docs/plan.md`](docs/plan.md)
 |---|---|---|---|
 | G0 | Spike de viabilidade: deps reais do `ort-vision-sdk`, decidir caminho **(A) CPython-puro** (wheels android via cibuildwheel, padrão B1) vs **(B) inferência-nativa** (AAR `onnxruntime-android` + shim JNI), provar `import numpy`+`onnxruntime` no device | ⏳ planejado | árvore de deps classificada (pure/native-fácil/native-difícil); decisão A/B registrada; `numpy` importa no aparelho |
 | G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta | ⏳ planejado | um `Detector`/`Classifier` do SDK roda no aparelho e devolve resultado tipado (screenshot) |
-| G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory` do host) + pré/pós em `numpy` | ⏳ planejado | imagem câmera/galeria → tensor → inferência sem `opencv-python` na APK |
+| G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory` do host; cv2 → OpenCV Android SDK nativo + ponte, **não** a wheel) + pré/pós em `numpy` | ⏳ planejado | imagem câmera/galeria → tensor → inferência sem `opencv-python` na APK |
 | G3 | (opcional) `pandas` no device — feature-engineering tabular | ⏳ planejado | `import pandas` + pipeline tabular roda no aparelho |
-| G4 | (opcional) `scipy`+`scikit-learn` no device — ML clássico (calcanhar: Fortran/LAPACK+OpenMP) | ⏳ planejado | `import sklearn`; modelo sklearn faz `predict` no aparelho |
+| G4 | (opcional) `scipy`+`scikit-learn`+`scikit-image` no device — ML clássico + processamento de imagem (calcanhar: Fortran/LAPACK+OpenMP; skimage gated atrás do scipy) | ⏳ planejado | `import sklearn`/`skimage`; modelo sklearn faz `predict` no aparelho |
 | G5 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | ⏳ planejado | APK com inferência cabe num orçamento de tamanho acordado, medido |
 
 `G3`/`G4` ficam **gated** por demanda real de app — não bloqueiam o caminho de

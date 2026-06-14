@@ -112,9 +112,9 @@ inicial. Pesquisa fundamentada em
 |---|---|---|---|
 | G0 | Spike de viabilidade: deps reais do SDK, decidir caminho CPython-puro vs inferência-nativa, provar `numpy`+`onnxruntime` no device | médio | ⏳ planejado |
 | G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta no device | **alto** | ⏳ planejado |
-| G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory`) + pré/pós em `numpy` | médio | ⏳ planejado |
+| G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory`; cv2 → SDK nativo, não wheel) + pré/pós em `numpy` | médio | ⏳ planejado |
 | G3 | (opcional) `pandas` no device — feature-engineering tabular | médio | ⏳ planejado |
-| G4 | (opcional) `scipy` + `scikit-learn` no device — ML clássico | **alto** | ⏳ planejado |
+| G4 | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + img (skimage gated atrás do scipy) | **alto** | ⏳ planejado |
 | G5 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | ⏳ planejado |
 
 !!! warning "Dois caminhos, decisão em G0"
