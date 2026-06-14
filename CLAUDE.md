@@ -120,6 +120,38 @@ E0/E2 nas transições; E4–E9 acoplam menos e reordenam por demanda.
 | E8 | Plataforma/sistema (haptics, sensores, lifecycle, deep link, permissões, biometria, secure storage, prefs, SQLite, connectivity, push, background) | ✅ done | metade Python unit-testada off-device (envelopes, futures, resultados tipados, parse dos eventos de stream, registros de callback sensor/lifecycle/connectivity, prefs/SQLite reais via tmp_path); tokens reservados `__sensor__`/`__lifecycle__`/`__connectivity__` roteados em jni.py **e** devserver/client.py; `KeyboardAvoidingView` + 4 eventos novos em introspect; biometria/FCM/WorkManager/sensores reais hardware-gated (Kotlin pelo kotlin-specialist). **Device-verificado (2026-06-04, Xiaomi 23053RN02A)** via `examples/platform/app.py` + `examples/sysverify/app.py`: **haptics** (vibração física 80ms via `VibratorManagerService`), **lifecycle** ("foreground"), **prefs** (write), **sensores** (stream do acelerômetro ao vivo, z≈9.8 gravidade, Kotlin `SensorManager`→`__sensor__`→callback→UI), **background/WorkManager** (enqueue confirmado em `dumpsys jobscheduler` `.schedulePersisted()`; worker ainda no-op stub), **biometria** (alcança o `BiometricManager`, retorna resultado tipado — `Status 7`/NONE_ENROLLED sem digital; **fix: `MainActivity` agora é `FragmentActivity`** senão o `BiometricPrompt` não hospeda), **push** (notificação local postada na shade + caminho do token FCM retorna `not_configured` tipado sem `google-services.json`). Pendente só o que exige config externa/hardware extra: digital cadastrada (sucesso pleno da biometria), `google-services.json`+envio server (token/push FCM real), corpo real do worker (re-entrar Python) |
 | E9 | Transversais (tema/dark + MediaQuery, i18n/l10n + RTL, acessibilidade/semantics, fontes custom + escala) | ✅ done | metade IR/core completa e testada off-device: `theme.py` (`Theme`/`ThemeMode`/`MediaQueryData`), `i18n.py` (`Locale`/`translate`/`t`), `App.set_theme`/`set_locale`/`_update_media` (contexto que o `view` lê — não nós da árvore, rebuild coalescido), `Semantics`+`focusable`/`focus_order` no `Widget` base (propagados a ambos os renderers + introspect), `Style.text_scale`/`font_asset` nos DOIS tradutores + conformância (goldens `rtl_layout`/`text_scale_font_asset` + parity `(True,True)`), RTL espelha start/end (padding/margin/border-side/text-align) em `to_compose`/`to_qss` via flag `rtl`, `ThemeChangeEvent`/`LocaleChangeEvent` roteados por `THEME_TOKEN`/`LOCALE_TOKEN` em jni.py (sem mudança C/JNI), `examples/theming/app.py`; renderers Qt (E9c) + Compose (E9d) pelos respectivos especialistas. **Device-verificado (2026-06-04, Xiaomi 23053RN02A):** `examples/theming/app.py` → **dark mode** (bg/texto/accent trocam), **i18n/locale** (PT↔árabe via `set_locale`) e **RTL** (texto árabe + espelhamento de start/end) funcionam no aparelho (screenshots light/dark/RTL). TalkBack audível ainda pendente (precisa ativar o leitor) |
 
+### Trilho H — design system: componentes estilizados (M3 + API Chakra) (planejado)
+
+Elevar os **46 componentes** já existentes (no engine `tempest-core`) a um
+**design system** ancorado em **Material 3** com **ergonomia de API do Chakra**
+(`variant`/`size`/`color_scheme` + tokens de tema), para que **pesquisadores
+acadêmicos** montem apps Android de validação (junto ao [Trilho G](docs/research/onnx-ml-stack.md))
+com pouco esforço e visual profissional. **Não é greenfield**: o gap é a camada
+de tokens + API de variantes + estados visuais + vitrine, não os componentes em
+si. Plano fase-a-fase em [`docs/plan-design-system.md`](docs/plan-design-system.md);
+tabela em [`docs/roadmap.md`](docs/roadmap.md).
+
+| Phase | Scope | Status | Done when |
+|---|---|---|---|
+| H0 | Sistema de tokens (foundation): paleta tonal M3 + `color_scheme`s, escalas de espaçamento (4pt)/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | ⏳ planejado | `Theme` expõe as escalas; um componente lê um token e ambos os renderers produzem o mesmo visual; conformância pina os tokens |
+| H1 | API de variantes (Chakra): `Variant`/`Size`/`color_scheme` → `Style` via tema (função pura) + estados (hover/press/disabled/focus) como state layers M3 + transversais (a11y/contraste/touch-target, RTL, responsividade); `Button` piloto | ⏳ planejado | `Button(variant/size/color_scheme)` + 4 estados idêntico (dentro das divergências) nos dois renderers; resolução `→Style` unit-testada; contraste WCAG AA + touch-target ≥48dp |
+| H2 | Kit base ação/entrada estilizado: Button/IconButton (+ ícones)/Input/Checkbox/RadioGroup/Switch/Select/Slider + inputs BR sobre os inputs do E5 | ⏳ planejado | cada componente aceita variant/size/color_scheme, preserva Semantics/RTL, passa na conformância e aparece na galeria |
+| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | ⏳ planejado | idem H2 |
+| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton (E3), Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | ⏳ planejado | idem H2 |
+| H5 | Navegação estilizada: AppBar/CollapsingAppBar, NavBar, Drawer/Sidebar, Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs (skins M3 sobre os hosts do E0) | ⏳ planejado | idem H2 |
+| H6 | Componentes de pesquisa (liga ao Trilho G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | ⏳ planejado | app exemplo mostra resultado do `ort-vision-sdk` em `DetectionOverlay`+`MetricCard`+gráfico nos dois renderers (device se houver) |
+| H7 | Galeria (storybook) + docs tutorial-first bilíngues + dark/RTL verificados + conformância (matriz representativa) de tokens/variants | ⏳ planejado | galeria navegável + docs publicadas; dark/RTL verificados; gate verde nos dois repos |
+
+**Cross-repo (enforced para H):** ao contrário do Trilho E (tudo em
+`tempestroid`), o Trilho H atravessa **dois repos** porque o engine foi extraído
+(v0.13.0): camada IR/tokens/componentes → **`tempest-core`**; renderer Qt →
+**`tempestroid/renderers/qt`**; renderer Compose → **`android-host`**. Cada fase
+fecha com as **três camadas casadas** + conformância nos dois tradutores `Style`.
+Token/variante landa e é **released** no `tempest-core` primeiro, depois
+`tempestroid` bumpa a dep e os renderers consomem — cada fase é um par de PRs
+coordenados. Tokens/variantes são **aditivos** (`Style` cru continua aceito).
+Nenhum pacote PyPI novo: tudo no ecossistema `tempest-core` + `tempestroid`.
+
 ### Trilho G — inferência ONNX + stack científica no device (investigação)
 
 Rodar inferência de modelos `.onnx` **dentro do app Android nativo** usando o

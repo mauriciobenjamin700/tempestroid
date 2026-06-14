@@ -99,6 +99,36 @@ E4–E9 acoplam menos e reordenam por demanda (exceto E6c←E1 e E3d←E0).
     O único movimento permitido é um **módulo dedicado novo** por área (ex.:
     `navigation.py`, `animation.py`), sempre re-exportado pelo `__init__.py`.
 
+## Trilho H — design system: componentes estilizados (M3 + API Chakra)
+
+Elevar o catálogo de **46 componentes** já existentes (no engine `tempest-core`)
+a um **design system bonito e coeso**, ancorado visualmente em **Material 3** com
+a **ergonomia de API do Chakra UI** (`variant`/`size`/`color_scheme` + tokens de
+tema). Alvo de produto: **pesquisadores acadêmicos** montam apps Android de
+validação de resultados (junto com o Trilho G de
+inferência ONNX) com pouco esforço e visual profissional. Plano fase-a-fase em
+[`docs/plan-design-system.md`](plan-design-system.md).
+
+| Fase | Escopo | Risco | Status |
+|---|---|---|---|
+| H0 | Sistema de tokens: paleta tonal M3 + `color_scheme`s, escalas de espaçamento/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | **alto** | ⏳ planejado |
+| H1 | API de variantes (Chakra): `variant`/`size`/`color_scheme` → `Style` via tema + estados (hover/press/disabled/focus); `Button` piloto | **alto** | ⏳ planejado |
+| H2 | Kit base ação/entrada estilizado: Button/IconButton (+ sistema de ícones)/Input/Checkbox/RadioGroup/Switch/Select/Slider + inputs BR | médio | ⏳ planejado |
+| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | baixo | ⏳ planejado |
+| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton, Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | baixo | ⏳ planejado |
+| H5 | Navegação estilizada: AppBar/CollapsingAppBar, NavBar, Drawer/Sidebar, Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs (skins M3 sobre os hosts do E0) | médio | ⏳ planejado |
+| H6 | Componentes de pesquisa (liga ao G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | médio | ⏳ planejado |
+| H7 | Galeria (storybook) + docs tutorial-first bilíngues + dark/RTL verificados + conformância (matriz representativa) de tokens/variants | baixo | ⏳ planejado |
+
+!!! warning "Trilho cross-repo — três camadas, dois repositórios"
+    Diferente do Trilho E (tudo em `tempestroid`), o Trilho H atravessa **dois
+    repos** porque o engine foi extraído (v0.13.0): camada IR/tokens/componentes
+    → **`tempest-core`**; renderer Qt → **`tempestroid`**; renderer Compose →
+    **`android-host`**. Cada fase só fecha com as **três camadas casadas** +
+    conformância nos dois tradutores `Style`. Tokens/variantes são **aditivos** —
+    `Style` cru continua aceito, apps existentes não quebram. Nenhum pacote PyPI
+    novo: tudo dentro do ecossistema `tempest-core` + `tempestroid`.
+
 ## Trilho G — inferência ONNX + stack científica no device (investigação)
 
 Rodar inferência de modelos `.onnx` **dentro do app Android nativo** usando o
