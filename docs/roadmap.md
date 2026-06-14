@@ -129,6 +129,35 @@ inferência ONNX) com pouco esforço e visual profissional. Plano fase-a-fase em
     `Style` cru continua aceito, apps existentes não quebram. Nenhum pacote PyPI
     novo: tudo dentro do ecossistema `tempest-core` + `tempestroid`.
 
+## Trilho G — inferência ONNX + stack científica no device (investigação)
+
+Rodar inferência de modelos `.onnx` **dentro do app Android nativo** usando o
+[`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk), com
+`numpy` / `pandas` / `scikit-learn` funcionando no aparelho. **Investigação
+primeiro** — a viabilidade (qual caminho, quais wheels fecham) é o entregável
+inicial. Pesquisa fundamentada em
+[`docs/research/onnx-ml-stack.md`](research/onnx-ml-stack.md).
+
+| Fase | Escopo | Risco | Status |
+|---|---|---|---|
+| G0 | Spike de viabilidade: deps reais do SDK, decidir caminho CPython-puro vs inferência-nativa, provar `numpy`+`onnxruntime` no device | médio | ⏳ planejado |
+| G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta no device | **alto** | ⏳ planejado |
+| G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory`; cv2 → SDK nativo, não wheel) + pré/pós em `numpy` | médio | ⏳ planejado |
+| G3 | (opcional) `pandas` no device — feature-engineering tabular | médio | ⏳ planejado |
+| G4 | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + img (skimage gated atrás do scipy) | **alto** | ⏳ planejado |
+| G5 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | ⏳ planejado |
+
+!!! warning "Dois caminhos, decisão em G0"
+    **(A) CPython puro** cross-compila `onnxruntime`+`numpy`(+`pandas`/`sklearn`)
+    como wheels Android (padrão B1 = `pydantic-core`) e o SDK roda no
+    interpretador embarcado. **(B) Inferência nativa** usa o AAR
+    `onnxruntime-android` (Kotlin/C++) com um shim sobre a ponte JNI, evitando a
+    wheel C++ mais pesada. `scipy`/`sklearn` são o calcanhar (Fortran/LAPACK +
+    OpenMP) — por isso G3/G4 são opcionais e não bloqueiam o caminho de visão
+    (G0→G2). Tudo **dentro do repositório**: metade Python em `tempestroid/`,
+    metade Kotlin em `android-host/`; o `ort-vision-sdk` segue dependência
+    externa (não re-implementado aqui).
+
 ## Manutenção — skills de qualidade (`.claude/skills/`)
 
 Guardas de saúde do framework, encadeadas pelos *gates*:

@@ -224,6 +224,17 @@ fase-a-fase (E0–E9, com passos IR · Qt · Compose · testes, metas e "feito q
 está em [`plan-parity.md`](plan-parity.md). Cada fase entrega as três camadas
 casadas e só fecha com os dois renderizadores verdes.
 
+O **Trilho G** (investigação) abre a frente de **inferência ONNX + stack
+científica no device**: rodar modelos `.onnx` via
+[`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk) dentro
+do app nativo, com `numpy`/`pandas`/`scikit-learn` no aparelho. A viabilidade é o
+primeiro entregável — dois caminhos em aberto (CPython-puro com wheels android
+via cibuildwheel, padrão B1; vs inferência nativa pelo AAR `onnxruntime-android`
+sobre a ponte JNI). Pesquisa fundamentada em
+[`research/onnx-ml-stack.md`](research/onnx-ml-stack.md); fases G0–G5 em
+[`roadmap.md`](roadmap.md). `scipy`/`sklearn` são o calcanhar (Fortran/LAPACK +
+OpenMP) — por isso opcionais e gated, sem bloquear o caminho de visão (G0→G2).
+
 ---
 
 ## 8. Riscos e mitigação
