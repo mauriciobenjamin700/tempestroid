@@ -39,6 +39,8 @@ testes verdes). Acrescenta uma regra própria:
 | F5 | **Harness de device confiável** — loop de validação on-device à prova de queda de USB (timeout por adb, detecção de drop, checkpoint/resume), base única do `dual-verify` | ✅ implementada (off-device) — **gate de toda device-verify futura** (bloqueia F2, device-verify do release-apk/ícone e os leftovers E8/E9); falta o teste de drop com device conectado | rodar os 24 examples no device sem hang (cada app ≤40s); desconectar o USB no meio aborta limpo com `ABORT … usb-drop` — detecção ≤20s no drop mid-run (~38s no pior caso de adb-server morto no start), sem adb wedged — e a re-execução **retoma** dos faltantes; `dual-verify` nunca reporta verde falso |
 | F6 | **Trim de tamanho do APK** — enxugar o CPython 3.14 embutido. **Fase-1 (off-device):** pruning seguro de stdlib morta. **Fase-2 (host-side, device-gated):** stdlib-archive/codecs/compressão | 🚧 fase-1 ✅ (PR #74) — baseline real **~39MB** (não ~50MB; já cortado por #70/#71), fase-1 rende ~1MB → **~38MB**; **~20MB exige fase-2 host-side** (Kotlin/C + device, não offline) | **fase-1:** excludes seguros (import trace verde) + APK rebuilda + tamanho documentado + gate verde; **fase-2 (futuro):** APK materialmente menor que boota e roda os examples (Qt + device via F5), custo de 1º boot medido |
 | F7 | **Alvo de device sem hardware físico** — emulador headless x86_64 (equivalente completo, dirigido pelo harness F5) + testes de tela do renderizador Compose na JVM (Roborazzi). Remove o device físico do caminho crítico | 🚧 **provado ponta-a-ponta** (2026-06-13): AVD x86_64 headless + APK x86_64 → counter renderiza e `0→3` por tap, ZERO hardware físico; falta empacotar em comandos (`make emulator-verify`) + camada B | `make emulator-verify` (sem USB) sobe o AVD x86_64, instala o host e roda a galeria F5 verde com screenshots (CPython+JNI+Compose+nativas); camada B pina o Compose em testes JVM no gate; `dual-verify` trata emulador como leg de device legítimo |
+| F8 | **Emulação estável + visualização nativa** — camada de confiabilidade sobre o F7: provisionamento reprodutível do AVD, boot determinístico por snapshot, gating de prontidão, auto-recuperação de AVD travado, **pool de N emuladores em paralelo** (isolados, sharding da suíte), pipeline de screenshot/screen-record + regressão visual, espelhamento ao vivo (`scrcpy`) e fallback de farm na nuvem quando não há KVM | ⏳ planejado | `make emulator` sobe um AVD pinado em ≤ Ns por snapshot, com auto-recuperação se travar; **um pool de N instâncias isoladas roda a suíte em paralelo** (sharded), bound por hardware; o fluxo de um app é capturável (screenshot/vídeo) e comparável a golden; `scrcpy` espelha emulador/device no host (WSLg); CI sem KVM cai pra farm; zero passos manuais frágeis |
+| F9 | **Driver de testes nativo estilo Playwright** — API de automação de UI de alto nível, **cross-renderer** (mesmo script dirige o simulador Qt **e** o Compose no emulador/device), com **auto-wait** (sem sleeps), locators por Semantics/texto/key, ações (tap/type/scroll/back), asserts, screenshot/trace. Roda sobre a ponte + a árvore de Semantics do E9 + a introspecção | ⏳ planejado | um teste `tempest test` localiza um nó por Semantics/texto/key, age, espera a UI estabilizar e afirma o estado — o **mesmo script passa no Qt e no emulador/device**; flakes eliminados pelo auto-wait; trace+screenshot por passo em falha |
 
 ---
 
@@ -497,6 +499,165 @@ o lado Python `to_compose`); a camada B pina o **consumo Kotlin** desse spec.
 
 ---
 
+## F8 — Emulação estável + visualização nativa
+
+### Por que isso importa (a dor recorrente)
+O F7 provou que o **emulador headless x86_64 substitui o device físico**, mas o
+dia a dia ainda dói: o AVD demora pra bootar e às vezes **trava** (GPU
+`swiftshader` no WSL, `boot_completed` que nunca chega, `adb` que enrosca), o
+`make emulator-verify` faz **cold-boot toda vez** (`-no-snapshot -read-only`,
+lento e não-determinístico), e **ver** o que o renderizador Compose desenhou é
+difícil — hoje é tirar screenshot na mão. Resultado: o time perde tempo brigando
+com o emulador em vez de ver o app rodando. O F8 é a **camada de confiabilidade +
+visualização** sobre o alvo do F7.
+
+### Estratégias (cada uma é uma sub-tarefa)
+
+1. **Provisionamento reprodutível do AVD.** Um script idempotente
+   (`avdmanager`/`sdkmanager`) cria o AVD pinando **system image + API + perfil**
+   exatos (`pixel8_api34`, x86_64, google_apis) — o time inteiro tem o **mesmo**
+   AVD, recriável do zero. Sem "funciona na minha máquina".
+2. **Boot determinístico por snapshot.** Salvar um **snapshot "golden"** do AVD
+   já bootado (pós-`boot_completed`) e **restaurar** dele (`-snapshot golden` em
+   vez de `-no-snapshot`): boot em **segundos**, estado limpo conhecido. Cold-boot
+   só quando o snapshot é invalidado (troca de imagem/host).
+3. **Gating de prontidão robusto.** Antes de instalar/serve, esperar
+   `sys.boot_completed=1` **e** `init.svc.bootanim=stopped` **e** `pm` respondendo
+   — com timeout por etapa (padrão F5). Acaba com o install flaky "device offline".
+4. **Auto-recuperação de AVD travado.** Detectar emulador preso (sem
+   `boot_completed` em N s, `adb` enroscado, GPU morta) → `kill` + cold-boot, e em
+   último caso **wipe-data**/recriar do passo 1. Gerência de **porta/serial**
+   (evitar corrida no `emulator-5554`).
+5. **Robustez de render no WSL.** Padrão `swiftshader_indirect`; documentar
+   fallback `-gpu guest`/`host` + os sintomas de cada um. Cruza com o achado do
+   Qt no WSL (`QT_QPA_PLATFORM=xcb` para o simulador) — visualização desktop e
+   emulador têm gotchas de GPU separados, ambos documentados.
+6. **Pipeline de screenshot + screen-record + regressão visual.** Capturar
+   screenshot (e opcional `screenrecord` mp4) **por example** no `emulator-verify`,
+   nomeados e versionados em `docs/assets/emulator/`; comparar contra **golden
+   images** (diff de pixels com tolerância) — uma regressão visual no Compose
+   falha o gate. Complementa a **camada B** (Roborazzi, F7) e a conformância (D).
+7. **Espelhamento ao vivo (`scrcpy`).** `scrcpy` espelha o emulador (ou um device
+   físico) numa janela no host com input — a forma de **ver e clicar** o lado
+   nativo ao vivo. Documentar no WSL (precisa **WSLg**/X). Um `make mirror` abre.
+8. **Preview-first: o Qt é a visualização rápida.** Reforçar o fluxo: o
+   **simulador Qt** (`make run`/`dev`) é a visualização instantânea de iteração; o
+   **emulador** é a verificação de verdade do lado nativo. O dev itera no Qt e só
+   sobe ao emulador para confirmar Compose/JNI/nativas — não fica esperando AVD a
+   cada mudança de UI.
+9. **Fallback de farm na nuvem.** Quando **não há KVM** (CI sem virtualização
+   aninhada, máquina sem `/dev/kvm`), cair para **Firebase Test Lab** /
+   Genymotion SaaS / BrowserStack como contingência documentada — o
+   `emulator-verify` detecta a ausência de KVM e aponta o caminho.
+10. **Pool de N emuladores em paralelo (bound por hardware).** Subir **várias
+    instâncias** do AVD ao mesmo tempo, cada uma **isolada** (serial/porta
+    próprios via `-port`, `-read-only` + diretório de dados/snapshot próprio para
+    não corromperem o mesmo AVD), e **shardar** a suíte de examples entre elas —
+    o tempo de validação cai ~linearmente com o número de cores/RAM disponíveis.
+    Um gerente de pool aloca/recicla instâncias, respeita um teto calculado do
+    hardware (`nproc`/RAM/KVM) e derruba tudo no fim. É a base de execução
+    paralela que o F9 consome.
+
+> **Isolamento é o que dá estabilidade no paralelo.** Cada instância roda
+> `-read-only` a partir do snapshot golden com **userdata próprio** — assim N
+> emuladores compartilham a imagem base sem corromper estado um do outro, e um
+> que trave é reciclado sem afetar os demais (auto-recuperação, item 4, por
+> instância).
+
+### Arquivos
+- `toolchain/provision_avd.sh` (novo) — cria/recria o AVD pinado (idempotente).
+- `toolchain/emulator_verify.sh` — boot por snapshot + gating de prontidão +
+  auto-recuperação + captura de screenshot/vídeo por example + diff de golden.
+- `Makefile` — `make emulator` (boot por snapshot), `make mirror` (`scrcpy`),
+  `make emulator-snapshot` (salvar o golden), `emulator-verify` estendido.
+- `docs/assets/emulator/` — goldens versionados por example.
+- `docs/guia/dispositivo-wsl.md` (+ `.en`) — runbook: AVD reprodutível, snapshot,
+  `scrcpy`/WSLg, GPU fallback, farm na nuvem, fluxo preview-first.
+- `.claude/skills/android-doctor` — checar snapshot golden + KVM + `scrcpy`/WSLg.
+
+### Feito quando
+- `make emulator` sobe o AVD **por snapshot em segundos** (não cold-boot), com
+  gating de prontidão e auto-recuperação se travar — sem passos manuais frágeis.
+- `make emulator-verify` captura screenshot (e vídeo opcional) **por example** e
+  **falha em regressão visual** contra os goldens versionados.
+- `make mirror` (`scrcpy`) espelha emulador/device no host (WSLg) para ver e
+  interagir com o lado nativo ao vivo.
+- O runbook bilíngue documenta AVD reprodutível, snapshot, GPU fallback, farm na
+  nuvem e o fluxo **preview-first** (Qt rápido → emulador confirma).
+- Ausência de KVM é detectada e aponta o fallback de farm, em vez de falhar opaco.
+- `make emulator-pool N=<k>` sobe `k` instâncias isoladas e o `emulator-verify`
+  **sharda a suíte** entre elas, com teto calculado do hardware; uma instância
+  travada é reciclada sem derrubar as outras; tudo é destruído no fim.
+
+---
+
+## F9 — Driver de testes nativo estilo Playwright
+
+### Por que isso importa (o "Playwright do nativo")
+Hoje a device-verify é "rode a galeria e olhe o screenshot". Falta o que o
+Playwright deu pra web: uma **API de automação de UI estável**, com **auto-wait**
+(sem `sleep` mágico), **locators** semânticos e **asserts** — escrita uma vez e
+rodando de forma determinística. O F8 dá emuladores estáveis e em paralelo; o F9
+dá a **linguagem de teste** que dirige a UI por cima deles (e do simulador Qt).
+
+### A grande sacada: cross-renderer
+O tempestroid já tem as três peças que um driver precisa, e que a web não tem de
+graça: a **árvore de Semantics** (E9: `Semantics`/`focusable`/`focus_order`), a
+**introspecção** tipada (A6) e a **ponte** bidirecional (`dispatchEvent` ↔
+mount/patch). Logo o driver pode ser **agnóstico de renderizador**: o **mesmo
+script de teste** dirige o **simulador Qt** (rápido, local) **e** o **Compose no
+emulador/device** (verdade nativa), porque os dois falam o mesmo IR + eventos
+tipados. Isso é mais forte que o Playwright (preso ao DOM): aqui o "DOM" é a nossa
+IR, idêntica nos dois alvos.
+
+### Forma da API (rascunho)
+```python
+async def test_counter(page):           # "page" = um app montado num alvo
+    await page.get_by_text("Count: 0").expect_visible()
+    await page.get_by_key("inc").tap()  # locator por key estável da IR
+    await page.get_by_role("button", name="+").tap()
+    await page.expect_text("Count: 2")  # auto-wait até a UI estabilizar
+    await page.screenshot("counter-2.png")
+```
+- **Locators:** por `key` da IR, por texto, por Semantics/role/label (E9), por
+  `focus_order`. Resolvem contra a árvore montada — não contra pixels.
+- **Auto-wait:** toda ação/asserção espera a árvore **estabilizar** (sem patches
+  pendentes no ciclo de rebuild coalescido do A4) antes de prosseguir — a fonte de
+  flake some sem `sleep`.
+- **Ações:** `tap`/`type`/`scroll`/`swipe`/`back` viram eventos tipados injetados
+  pela ponte (o mesmo caminho do `dispatchEvent` do device e do `_invoke` do Qt).
+- **Asserts + trace:** `expect_*` com timeout; em falha, **trace** (sequência de
+  árvores + eventos) e screenshot por passo — debug determinístico.
+- **Runner:** `tempest test` roda os scripts, escolhe o alvo (`--target qt` |
+  `--target emulator` | `--target device`) e, no emulador, usa o **pool do F8**
+  para rodar em **paralelo/sharded**.
+
+### Relação com o que já existe
+- **Não** substitui a conformância (D) nem a camada B (F7): aqueles pinam
+  tradução de `Style`; o F9 dirige **fluxo de UI ponta-a-ponta** (evento → estado
+  → re-render) nos dois renderizadores.
+- Reusa o harness F5 (timeout/checkpoint/drop) para a execução no device/emulador.
+- O `dual-verify` passa a poder rodar **o mesmo teste F9** nos dois legs.
+
+### Arquivos
+- `tempestroid/testing/` (novo) — o driver: `Page`, locators, auto-wait, ações,
+  `expect_*`, trace; backends por alvo (Qt in-process; emulador/device via ponte).
+- `tempestroid/cli/` — comando `tempest test` (alvo + pool + relatório).
+- `android-host/` — hook de injeção de evento/serialização de árvore para o driver
+  (reusa `dispatchEvent` + o canal de mount/patch; sem mudança de C/JNI esperada).
+- `docs/guia/testing.md` (+ `.en`) — tutorial-first do driver, exemplos rodáveis.
+- `examples/*/test_*.py` — testes de exemplo cross-renderer.
+
+### Feito quando
+- Um teste F9 localiza um nó por Semantics/texto/key, age e afirma o estado com
+  **auto-wait** — e o **mesmo script passa no Qt e no emulador/device**.
+- O flake por timing some (sem `sleep`): a espera é pela árvore estabilizar.
+- `tempest test --target emulator` usa o **pool do F8** e roda a suíte em paralelo.
+- Falha gera trace + screenshot por passo; `dual-verify` roda o mesmo teste nos
+  dois legs.
+
+---
+
 ## Ordem sugerida e dependências
 
 ```
@@ -508,6 +669,9 @@ F5 (device loop)   ──► GATE: harness de device à prova de drop           
    └─► device-verify       ├─► só confiáveis DEPOIS do F5
    └─► leftovers E8/E9 ────┘
 F6 (trim APK)      ──► fase-1 ✅ ~39→~38MB (off-device); fase-2 ~20MB = host  🚧
+F7 (emulador alvo) ──► device sem hardware físico (provado E2E)             🚧
+   └─► F8 (emulação estável + pool de N + visualização) ──► tira a dor do emu ⬜
+        └─► F9 (driver "Playwright nativo", cross-renderer, sobre o pool)    ⬜
 ```
 
 F1/F3/F4(1-3) já entregaram criar + distribuir. **F5 é o novo gate**: a validação
@@ -548,5 +712,12 @@ todo o resto. Ordem de alavanca:
    cadastrada), push FCM real (`google-services.json` + envio server).
 5. **Leftovers E8/E9 no device** (via F5): TalkBack audível (E9), corpo real do
    WorkManager worker (E8), sucesso pleno da biometria (E8).
+6. **F7 → F8 → F9 — caminho da emulação estável + testes.** F7 já provou o
+   emulador headless como alvo (falta empacotar). **F8** mata a dor do dia a dia:
+   AVD reprodutível, boot por snapshot, auto-recuperação, **pool de N emuladores
+   isolados** e pipeline de screenshot/regressão visual + `scrcpy`. **F9** é o
+   **"Playwright nativo"**: driver de UI cross-renderer (mesmo script no Qt e no
+   emulador/device), auto-wait sem `sleep`, locators por Semantics — rodando em
+   paralelo sobre o pool do F8. F8/F9 dependem do F5 (harness) para a execução.
 
 [PR #39]: https://github.com/mauriciobenjamin700/tempestroid/pull/39

@@ -147,6 +147,7 @@ nav:
       - Roadmap e fases: roadmap.md
       - Plano de design (EN): plan.md
       - Plano do design system (Trilho H): plan-design-system.md
+      - Plano de estabilização (Trilho F): plan-stable.md
       - Pesquisa — runtime Android (EN): research/android-runtime.md
       - Pesquisa — runbook Android (EN): research/android-runbook.md
       - Pesquisa — ONNX + stack científica no device: research/onnx-ml-stack.md
