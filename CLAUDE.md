@@ -164,14 +164,16 @@ roadmap em [`docs/roadmap.md`](docs/roadmap.md) e [`docs/plan.md`](docs/plan.md)
 | Phase | Scope | Status | Done when |
 |---|---|---|---|
 | G0 | Spike de viabilidade: deps reais do `ort-vision-sdk`, decidir caminho **(A) CPython-puro** (wheels android via cibuildwheel, padrão B1) vs **(B) inferência-nativa** (AAR `onnxruntime-android` + shim JNI), provar `import numpy`+`onnxruntime` no device | ⏳ planejado | árvore de deps classificada (pure/native-fácil/native-difícil); decisão A/B registrada; `numpy` importa no aparelho |
-| G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta | ⏳ planejado | um `Detector`/`Classifier` do SDK roda no aparelho e devolve resultado tipado (screenshot) |
+| G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta, **fora da UI thread/loop** + **escolha de EP** (NNAPI/XNNPACK/QNN, fallback CPU, latência medida) | ⏳ planejado | um `Detector`/`Classifier` do SDK roda no aparelho sem travar a UI, com EP escolhido (screenshot + latência) |
 | G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory` do host; cv2 → OpenCV Android SDK nativo + ponte, **não** a wheel) + pré/pós em `numpy` | ⏳ planejado | imagem câmera/galeria → tensor → inferência sem `opencv-python` na APK |
-| G3 | (opcional) `pandas` no device — feature-engineering tabular | ⏳ planejado | `import pandas` + pipeline tabular roda no aparelho |
-| G4 | (opcional) `scipy`+`scikit-learn`+`scikit-image` no device — ML clássico + processamento de imagem (calcanhar: Fortran/LAPACK+OpenMP; skimage gated atrás do scipy) | ⏳ planejado | `import sklearn`/`skimage`; modelo sklearn faz `predict` no aparelho |
-| G5 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | ⏳ planejado | APK com inferência cabe num orçamento de tamanho acordado, medido |
+| G3 | Otimização de execução: pipeline `.onnx`→`.ort` + quantização (INT8/fp16); avaliar `onnxruntime-extensions` (pré/pós no grafo) | ⏳ planejado | modelo `.ort` quantizado roda no device; pré/pós movido pro grafo onde valer |
+| G4 | Entrega e storage do modelo: embutido vs download+cache, `mmap` no load, Play Asset Delivery p/ modelos grandes | ⏳ planejado | modelo carrega por cada estratégia escolhida sem estourar RAM; delivery registrado |
+| G5 | (opcional) `pandas` no device — feature-engineering tabular | ⏳ planejado | `import pandas` + pipeline tabular roda no aparelho |
+| G6 | (opcional) `scipy`+`scikit-learn`+`scikit-image` no device — ML clássico + processamento de imagem (calcanhar: Fortran/LAPACK+OpenMP; skimage gated atrás do scipy) | ⏳ planejado | `import sklearn`/`skimage`; modelo sklearn faz `predict` no aparelho |
+| G7 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | ⏳ planejado | APK com inferência cabe num orçamento de tamanho acordado, medido |
 
 `G3`/`G4` ficam **gated** por demanda real de app — não bloqueiam o caminho de
-visão (`G0→G2`), que é o que o `ort-vision-sdk` exercita. Mesma regra de sempre:
+visão (`G0→G4`), que é o que o `ort-vision-sdk` exercita. Mesma regra de sempre:
 metade Python em `tempestroid/`, metade Kotlin em `android-host/`; o
 `ort-vision-sdk` segue dependência externa, não re-implementado aqui.
 
