@@ -29,6 +29,10 @@ export ANDROID_SDK_ROOT=/usr/lib/android-sdk
 OUT="docs/assets/examples"
 RESULTS="/tmp/gallery_results.txt"
 HOST="org.tempestroid.host"
+# Per-app timing. Defaults suit the (slow) swiftshader emulator; a fast physical
+# device can shrink them (MOUNT_WAIT=20 SETTLE=3 …) for a quicker sweep.
+MOUNT_WAIT="${MOUNT_WAIT:-50}"   # max seconds to wait for the "pushed app" mount marker
+SETTLE="${SETTLE:-6}"            # seconds to let Compose paint after the push
 mkdir -p "$OUT"
 # Checkpoint file: keep it across runs so we can resume; FRESH=1 starts over.
 if [ "${FRESH:-0}" = "1" ]; then : > "$RESULTS"; fi
@@ -49,6 +53,10 @@ fi
 
 adbq reverse tcp:8765 tcp:8765 >/dev/null 2>&1 || true
 
+# Pre-grant POST_NOTIFICATIONS so the first-launch runtime permission dialog never
+# overlays a captured frame (Android 13+). Harmless if the perm/host is absent.
+adbq shell pm grant "$HOST" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+
 # validate <name> <path> — returns 0 on PASS/FAIL recorded, 1 if the device
 # dropped mid-app (caller aborts the whole run).
 validate() {
@@ -61,14 +69,28 @@ validate() {
     local spid=$!
     LAST_SPID="$spid"
 
-    # warmup: cold host start + dev-client fetch + first compose frame
-    sleep 9
-    # wait for a stable frame (two equal caps ~2s apart), up to ~24s total
+    # Wait for the app to actually MOUNT, not merely for a "stable" frame: a
+    # slow target (the swiftshader emulator boots CPython in ~15-30s) shows the
+    # launcher meanwhile, and the launcher is itself a stable frame — so a
+    # stable-frame-only wait screenshots the launcher, not the app. Poll logcat
+    # for the dev-server push marker, then settle for the Compose mount.
+    local mounted=0 waited=0
+    while [ "$waited" -lt "$MOUNT_WAIT" ]; do
+        if adbq logcat -d 2>/dev/null | grep -q "pushed app"; then mounted=1; break; fi
+        if ! device_alive; then
+            kill -- "-$spid" >/dev/null 2>&1 || true
+            echo "ABORT  $name  usb-drop (waiting mount)" >> "$RESULTS"
+            return 1
+        fi
+        sleep 3; waited=$((waited + 3))
+    done
+    # settle: let Compose mount + paint the first real frame after the push.
+    sleep "$SETTLE"
+    # then wait for a stable frame (two equal caps ~2s apart), up to ~16s.
     local last="" cur="" stable=0 i
-    for i in $(seq 1 12); do
+    for i in $(seq 1 8); do
         cur="$(cap_stable_md5)"
         if [ -z "$cur" ]; then
-            # empty capture — the device may have dropped; confirm and bail.
             if ! device_alive; then
                 kill -- "-$spid" >/dev/null 2>&1 || true
                 echo "ABORT  $name  usb-drop (mid-capture)" >> "$RESULTS"
@@ -88,9 +110,11 @@ validate() {
     err=$(adbq logcat -d 2>/dev/null | grep -iE 'Traceback|ModuleNotFoundError|ImportError|dev client error' | head -2 | tr '\n' '|') || true
     md5="$(md5sum "$OUT/$name.png" 2>/dev/null | cut -d' ' -f1)"
     if [ -n "$err" ]; then
-        echo "FAIL   $name  stable=$stable  md5=$md5  :: $err" >> "$RESULTS"
+        echo "FAIL   $name  mounted=$mounted stable=$stable  md5=$md5  :: $err" >> "$RESULTS"
+    elif [ "$mounted" -eq 0 ]; then
+        echo "FAIL   $name  mounted=0 (no 'pushed app' in ${MOUNT_WAIT}s)  md5=$md5" >> "$RESULTS"
     else
-        echo "PASS   $name  stable=$stable  md5=$md5" >> "$RESULTS"
+        echo "PASS   $name  mounted=1 stable=$stable  md5=$md5" >> "$RESULTS"
     fi
     # kill the serve process GROUP (setsid leader); no pattern matching.
     kill -- "-$spid" >/dev/null 2>&1 || true
