@@ -80,10 +80,21 @@ def spec_from_project(
 ) -> AppSpec:
     """Load an app spec from a multi-file project root + entry module.
 
-    Puts ``root`` on ``sys.path`` (so ``entry``'s absolute imports of sibling
-    modules/packages resolve) and execs the entry module's source. This is the
-    multi-file counterpart of :func:`load_app_spec`: the device side (baked APK
-    or code-push) extracts a project bundle to ``root`` and calls this.
+    Puts both the project ``root`` *and* the entry module's own parent directory
+    on ``sys.path`` (so ``entry``'s absolute imports resolve whether the sibling
+    lives at the project root — ``from src.foo import x`` — or right next to the
+    entry — ``from app import x``), then execs the entry module's source. This is
+    the multi-file counterpart of :func:`load_app_spec`: the device side (baked
+    APK or code-push) extracts a project bundle to ``root`` and calls this.
+
+    Mirroring the entry parent onto ``sys.path`` keeps the on-device/bundle
+    loader in parity with the in-process headless test runner
+    (:mod:`tempestroid.testing.runner`), which already inserts the entry file's
+    parent so a test/app entry can import a sibling module
+    (``from app import view, make_state``). Without it, an entry that imports a
+    sibling fails on device with ``ModuleNotFoundError`` whenever the resolved
+    project root sits above the entry's own directory (e.g. the repo root or
+    ``examples/`` for ``examples/counter/test_counter.py``).
 
     Args:
         root: The project root directory to place on ``sys.path``.
@@ -102,9 +113,14 @@ def spec_from_project(
     entry_file = (root_path / entry).resolve()
     if not entry_file.is_file():
         raise FileNotFoundError(f"app entry not found: {entry_file}")
-    root_str = str(root_path)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
+    # Both dirs go on sys.path (additive + idempotent). The project root anchors
+    # `from src.foo import x`; the entry's own parent anchors `from sibling import
+    # x`. When root == entry parent (single-dir project) the dedupe collapses to
+    # one insert. Keep the entry parent at index 0 so a sibling shadows nothing
+    # below it — same policy the headless runner applies.
+    for path_str in (str(root_path), str(entry_file.parent)):
+        if path_str not in sys.path:
+            sys.path.insert(0, path_str)
     source = entry_file.read_text(encoding="utf-8")
     return spec_from_source(source, filename=str(entry_file), name=name)
 

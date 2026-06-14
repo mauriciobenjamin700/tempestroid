@@ -7,6 +7,7 @@ just calls these (extract + load) over the JNI bridge.
 """
 
 import io
+import sys
 import zipfile
 from pathlib import Path
 
@@ -143,6 +144,80 @@ def test_spec_from_project_resolves_sibling_imports(tmp_path: Path) -> None:
     rendered = spec.view(_StubApp(spec.make_state()))  # type: ignore[arg-type]
     assert isinstance(rendered, Text)
     assert rendered.content == "hi world"
+
+
+# Entry imports a sibling by bare name (`from app import …`), and the entry lives
+# in a subdirectory below the project root — the exact F9 emulator shape, where
+# the resolved root (the pyproject dir) sits *above* the entry's own directory.
+_SIBLING_APP_ENTRY = """
+from app import make_state, view
+
+__all__ = ["make_state", "view"]
+"""
+
+_SIBLING_APP_IMPL = """
+from dataclasses import dataclass
+
+from tempestroid import App, Text, Widget
+
+
+@dataclass
+class State:
+    label: str = "sibling"
+
+
+def make_state() -> State:
+    return State()
+
+
+def view(app: App[State]) -> Widget:
+    return Text(content=app.state.label)
+"""
+
+
+def test_spec_from_project_adds_entry_parent_for_bare_sibling_import(
+    tmp_path: Path,
+) -> None:
+    """An entry below the root that imports a bare sibling loads on the device path.
+
+    Reproduces the F9 emulator bug: ``examples/counter/test_counter.py`` does
+    ``from app import make_state, view`` (a sibling), but ``resolve_project`` picks
+    the repo/``examples`` pyproject dir as root — *above* ``examples/counter/``.
+    The headless runner inserts the entry's parent, so it worked in-process; the
+    device/bundle path (``spec_from_project``) used to insert only the root, so the
+    bare ``import app`` raised ``ModuleNotFoundError`` on device. The fix mirrors
+    the entry's parent onto ``sys.path`` here too.
+    """
+    # Root carries the pyproject (the import anchor) but the entry + its sibling
+    # live one level down, so root != entry parent.
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "counter/entry.py"\n', encoding="utf-8"
+    )
+    sub = tmp_path / "counter"
+    sub.mkdir()
+    (sub / "app.py").write_text(_SIBLING_APP_IMPL, encoding="utf-8")
+    (sub / "entry.py").write_text(_SIBLING_APP_ENTRY, encoding="utf-8")
+
+    entry_parent = str(sub.resolve())
+    sys.path[:] = [p for p in sys.path if p != entry_parent]
+    try:
+        # Loading without ModuleNotFoundError proves the entry parent landed on
+        # sys.path so the bare `from app import …` resolved.
+        spec = spec_from_project(
+            tmp_path, "counter/entry.py", name="_tempest_sibling_test"
+        )
+        assert entry_parent in sys.path
+        assert spec.make_state().label == "sibling"
+        rendered = spec.view(_StubApp(spec.make_state()))  # type: ignore[arg-type]
+        assert isinstance(rendered, Text)
+        assert rendered.content == "sibling"
+        # Idempotent: a second load must not duplicate the entry parent entry.
+        spec_from_project(tmp_path, "counter/entry.py", name="_tempest_sibling_test")
+        assert sys.path.count(entry_parent) == 1
+    finally:
+        sys.path[:] = [p for p in sys.path if p != entry_parent]
+        sys.modules.pop("_tempest_sibling_test", None)
+        sys.modules.pop("app", None)
 
 
 def test_stage_app_bundle_writes_zip_asset(tmp_path: Path) -> None:
