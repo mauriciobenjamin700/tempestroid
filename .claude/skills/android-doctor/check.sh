@@ -88,15 +88,28 @@ if [[ $QUICK -eq 0 ]]; then
   else
     ADB="adb"
   fi
+  # Every adb call here is time-bounded: a wedged adb server (e.g. after the
+  # device drops off USB-WSL) would otherwise hang `adb devices` forever — the
+  # exact failure that motivated Trilho F5.
+  adbq() { timeout 20 "$ADB" "$@"; }
   if command -v "$ADB" >/dev/null 2>&1 || [[ -x "$ADB" ]]; then
-    devices=$("$ADB" devices | awk 'NR>1 && $1 != "" {print}')
+    devices=$(adbq devices | awk 'NR>1 && $1 != "" {print}')
     n_ok=$(echo "$devices" | awk '$2=="device"{c++} END{print c+0}')
     n_bad=$(echo "$devices" | awk '$2=="unauthorized"||$2=="offline"{c++} END{print c+0}')
     if [[ "$n_ok" -eq 1 ]]; then
       serial=$(echo "$devices" | awk '$2=="device"{print $1; exit}')
-      abi=$("$ADB" -s "$serial" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')
+      abi=$(adbq -s "$serial" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')
       ok "1 device in 'device' state: $serial (abi=$abi)"
       [[ "$abi" == "arm64-v8a" ]] || warn "abi is '$abi', not arm64-v8a — needs the matching staged wheel/runtime"
+      # Stability probe: two spaced get-state reads. A device that flaps on
+      # USB-WSL passes the first `adb devices` but drops mid-build — catch it now.
+      s1=$(adbq get-state 2>/dev/null | tr -d '\r'); sleep 2
+      s2=$(adbq get-state 2>/dev/null | tr -d '\r')
+      if [[ "$s1" == "device" && "$s2" == "device" ]]; then
+        ok "device stable (two spaced get-state reads)"
+      else
+        warn "device state flapped ('$s1' → '$s2') — USB-WSL link is unstable; re-attach (usbipd attach --wsl --busid <id>) before a long device-verify run"
+      fi
     elif [[ "$n_ok" -gt 1 ]]; then
       warn "$n_ok devices connected — pass -s <serial> to adb / Gradle to disambiguate"
     elif [[ "$n_bad" -gt 0 ]]; then
