@@ -82,7 +82,10 @@ validate() {
     adbq exec-out screencap -p > "$OUT/$name.png" 2>/dev/null
 
     local err md5
-    err=$(adbq logcat -d 2>/dev/null | grep -iE 'Traceback|ModuleNotFoundError|ImportError|dev client error' | head -2 | tr '\n' '|')
+    # `|| true`: a clean logcat means grep exits 1; without errexit that is
+    # already harmless (err="" → PASS branch), but make the intent explicit so a
+    # future `set -e` cannot turn "no errors found" into a script abort.
+    err=$(adbq logcat -d 2>/dev/null | grep -iE 'Traceback|ModuleNotFoundError|ImportError|dev client error' | head -2 | tr '\n' '|') || true
     md5="$(md5sum "$OUT/$name.png" 2>/dev/null | cut -d' ' -f1)"
     if [ -n "$err" ]; then
         echo "FAIL   $name  stable=$stable  md5=$md5  :: $err" >> "$RESULTS"
