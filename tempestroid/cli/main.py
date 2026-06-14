@@ -21,6 +21,7 @@ import typer
 
 if TYPE_CHECKING:
     from tempestroid.cli.branding import Branding
+    from tempestroid.testing import TestReport
 
 __all__ = ["app", "main"]
 
@@ -765,19 +766,31 @@ def uitest_cmd(
         typer.Option(
             "--target",
             "-t",
-            help="Backend target. Only `headless` (renderer-agnostic, in-process) "
-            "is available now; `qt`/`emulator`/`device` arrive with F8.",
+            help="Backend target: `headless` (renderer-agnostic, in-process) or "
+            "`emulator` (REAL Compose render on an Android emulator). `qt`/"
+            "`device` are reserved.",
         ),
     ] = "headless",
+    jobs: Annotated[
+        int,
+        typer.Option(
+            "--jobs",
+            "-j",
+            help="Emulator instances to run in parallel (`--target emulator` "
+            "only). Capped by the host's CPU/RAM.",
+        ),
+    ] = 1,
 ) -> None:
     """Run a Playwright-style native UI test file (F9 driver).
 
-    Drives the renderer-agnostic IR/state/event core with auto-wait (no fixed
-    sleeps): locate nodes by key/text/semantics, act with tap/fill, assert with
-    expect_*. The `headless` target runs in-process with no renderer; the same
-    script will run on `qt`/`emulator`/`device` once those backends land (F8).
+    Drives the IR/state/event core with auto-wait (no fixed sleeps): locate nodes
+    by key/text/semantics, act with tap/fill, assert with expect_*. The
+    `headless` target runs in-process with no renderer; `--target emulator` runs
+    the SAME script against a real app on the Compose renderer on an Android
+    emulator, sharding across `-j N` isolated instances and saving a real
+    screenshot per test.
     """
-    raise typer.Exit(_run_uitest(path, target))
+    raise typer.Exit(_run_uitest(path, target, jobs))
 
 
 @app.command("check", rich_help_panel=_QUALITY)
@@ -1540,17 +1553,20 @@ def _run_run(
         return exc.returncode or 1
 
 
-def _run_uitest(path: str, target: str) -> int:
+def _run_uitest(path: str, target: str, jobs: int = 1) -> int:
     """Run a UI test file against a backend target and report the outcome.
 
     Args:
-        path: Path to the UI test file.
-        target: The backend target (``headless`` now; ``qt``/``emulator``/
-            ``device`` arrive with F8).
+        path: Path to the UI test file (or a directory of ``test_*.py`` files for
+            the emulator target).
+        target: The backend target (``headless`` or ``emulator``).
+        jobs: Emulator instances to run in parallel (``emulator`` only).
 
     Returns:
         ``0`` when every test passed, ``1`` otherwise (or on a load error).
     """
+    if target == "emulator":
+        return _run_uitest_emulator(path, jobs)
     from tempestroid.testing import run_test_file
 
     try:
@@ -1562,27 +1578,102 @@ def _run_uitest(path: str, target: str) -> int:
         print(f"cannot run UI tests: {exc}")
         return 1
 
-    if not report.outcomes:
-        print(f"no `test_*` functions found in {report.path}")
+    _print_report(report)
+    return 0 if report.passed else 1
+
+
+def _discover_test_files(path: str) -> list[str]:
+    """Resolve a path to a list of UI test files.
+
+    Args:
+        path: A file path or a directory (scanned for ``test_*.py``).
+
+    Returns:
+        The matching file paths (a single-element list for a file).
+    """
+    from pathlib import Path
+
+    target = Path(path)
+    if target.is_dir():
+        return sorted(str(p) for p in target.glob("test_*.py"))
+    return [str(target)]
+
+
+def _run_uitest_emulator(path: str, jobs: int) -> int:
+    """Run UI tests on N real emulators, sharding files and capturing shots.
+
+    Acquires up to ``jobs`` serials from an :class:`EmulatorPool` (reusing any
+    already-running emulator), shards the discovered files across them, runs each
+    on an :class:`EmulatorBackend`, saves a real screenshot per test under
+    ``docs/assets/emulator/uitest/``, and aggregates the reports.
+
+    Args:
+        path: A UI test file or a directory of ``test_*.py`` files.
+        jobs: Desired parallel emulator count (capped by hardware).
+
+    Returns:
+        ``0`` when every test passed, else ``1``.
+    """
+    from pathlib import Path
+
+    from tempestroid.testing import EmulatorPool, run_test_files_emulator
+
+    files = _discover_test_files(path)
+    if not files:
+        print(f"no UI test files found at {path}")
         return 1
 
+    pool = EmulatorPool()
+    serials = pool.allocate(jobs)
+    if not serials:
+        print(
+            "no emulator available. Start one (`make emulator`) or connect a "
+            "device, then retry."
+        )
+        return 1
+    joined = ", ".join(serials)
+    print(f"running {len(files)} file(s) on {len(serials)} emulator(s): {joined}")
+    shot_dir = Path("docs/assets/emulator/uitest")
+    try:
+        reports = run_test_files_emulator(
+            list(files), serials, screenshot_dir=shot_dir
+        )
+    finally:
+        pool.teardown()
+
+    all_passed = True
+    for report in reports:
+        _print_report(report)
+        all_passed = all_passed and report.passed
+    print(f"screenshots saved under {shot_dir}/")
+    return 0 if all_passed else 1
+
+
+def _print_report(report: TestReport) -> None:
+    """Print one :class:`TestReport`'s outcomes in a uniform format.
+
+    Args:
+        report: A :class:`tempestroid.testing.TestReport`.
+    """
+    print(f"\n{report.path} (target {report.target!r}):")
+    if not report.outcomes:
+        print(f"  no `test_*` functions found in {report.path}")
+        return
     for outcome in report.outcomes:
         mark = "PASS" if outcome.passed else "FAIL"
-        print(f"[{mark}] {outcome.name}")
+        print(f"  [{mark}] {outcome.name}")
         if not outcome.passed:
-            print(f"  {outcome.message}")
+            print(f"    {outcome.message}")
             if outcome.traceback:
                 indented = "\n".join(
-                    f"    {line}" for line in outcome.traceback.rstrip().splitlines()
+                    f"      {line}"
+                    for line in outcome.traceback.rstrip().splitlines()
                 )
                 print(indented)
             if outcome.tree_dump:
-                print(f"  tree at failure:\n    {outcome.tree_dump}")
-
+                print(f"    tree at failure:\n      {outcome.tree_dump}")
     passed = sum(1 for o in report.outcomes if o.passed)
-    total = len(report.outcomes)
-    print(f"\n{passed}/{total} passed on target {report.target!r}.")
-    return 0 if report.passed else 1
+    print(f"  {passed}/{len(report.outcomes)} passed.")
 
 
 def _run_doctor(verbose: bool) -> int:

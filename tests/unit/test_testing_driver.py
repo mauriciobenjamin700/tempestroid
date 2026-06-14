@@ -246,14 +246,26 @@ def test_run_test_file_on_example_passes() -> None:
 
 
 def test_run_test_file_rejects_planned_target() -> None:
-    """Selecting an F8 target raises NotImplementedError pointing at F8."""
+    """Selecting a reserved (qt/device) target raises NotImplementedError."""
     example = (
         Path(__file__).resolve().parents[2]
         / "examples"
         / "counter"
         / "test_counter.py"
     )
-    with pytest.raises(NotImplementedError, match="F8"):
+    with pytest.raises(NotImplementedError):
+        run_test_file(example, target="qt")
+
+
+def test_run_test_file_rejects_emulator_via_per_file_api() -> None:
+    """The emulator target must go through the per-serial API, not run_test_file."""
+    example = (
+        Path(__file__).resolve().parents[2]
+        / "examples"
+        / "counter"
+        / "test_counter.py"
+    )
+    with pytest.raises(ValueError, match="run_test_files_emulator"):
         run_test_file(example, target="emulator")
 
 

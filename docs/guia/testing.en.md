@@ -12,8 +12,8 @@ assertion (the tree must settle before proceeding).
 !!! tip "Why it's stronger than Playwright"
     Playwright talks to the DOM. Here the "DOM" is our **IR** — identical across
     renderers. So the **same script** runs on the headless backend (fast, local)
-    and will run on the Qt simulator and the emulator/device once those backends
-    land (Trilho F8) — with no change to the test.
+    and on the `emulator` backend (a REAL Compose app on an Android emulator) —
+    with no change to the test.
 
 ## The minimal example
 
@@ -154,13 +154,46 @@ uv run tempest uitest examples/counter/test_counter.py --target headless
 | Target | State | What it drives |
 | --- | --- | --- |
 | `headless` | ✅ available | The IR/state/events in-process, no renderer |
-| `qt` | ⏳ F8 | The Qt simulator in-process |
-| `emulator` | ⏳ F8 | Compose on an emulator (F8 parallel pool) |
-| `device` | ⏳ F8 | Compose on a real device, over the bridge |
+| `emulator` | ✅ available | A REAL app through the **Compose** renderer on an Android emulator |
+| `qt` | ⏳ reserved | The Qt simulator in-process |
+| `device` | ⏳ reserved | Compose on a physical device, over the bridge |
 
-Selecting an F8 target today raises `NotImplementedError` pointing at F8. Since
-they all speak the **same IR + typed events**, your headless test will run on
-those targets unchanged.
+Since they all speak the **same IR + typed events**, your headless test runs on
+the other targets unchanged.
+
+### The `emulator` target — REAL Compose render + N in parallel
+
+```bash
+# one emulator (reuses a running one, e.g. emulator-5554)
+uv run tempest uitest examples/counter/test_counter.py --target emulator
+
+# N isolated emulators in parallel (capped by host CPU/RAM)
+uv run tempest uitest examples/ --target emulator -j 3
+```
+
+The `emulator` backend (`EmulatorBackend`) drives a **real** app through the
+**Compose** renderer: it owns a `DevServer` in **harness mode**, `adb -s <serial>
+reverse`s, and launches the host in dev mode. The device's code-push client:
+
+- **device → host:** POSTs the `mount` JSON and every `patch` batch back; the
+  server keeps a host-side **mirror** (`Scene`, via
+  `tempestroid.testing.mirror`). `page.scene()` reads that mirror.
+- **host → device:** `page.tap(...)` reads the handler **token** from the
+  mirrored node (`{"$handler": token}`), enqueues the event; the client
+  long-polls, consumes it, and feeds `DeviceApp.handle_event` — **the same path a
+  real Compose tap takes** — and the resulting patch flows back and updates the
+  mirror. **No `adb input tap` by coordinate, no C/JNI change.**
+
+**Auto-wait** (`settle`) polls the mirror *revision* until it has been quiet for a
+short window AND the enqueued event was consumed — no fixed `sleep` as the primary
+mechanism. `EmulatorPool` allocates/recycles N isolated instances (port
+`5554 + i*2`), reusing running emulators and **capping N by the host's CPU/RAM**.
+
+!!! check "REAL pixel screenshots"
+    On the `emulator` target every test saves a screenshot under
+    `docs/assets/emulator/uitest/<test>.png` captured via `adb exec-out
+    screencap` — **real Compose pixels**, not the tree dump. That is the proof the
+    device leaf behaves like the core.
 
 ## In code (no CLI)
 
@@ -184,6 +217,6 @@ await page.expect_text("Count: 1")
   real renderer takes.
 - **Assertions** (`expect_text`/`expect_visible`/`expect_count`) **auto-wait**:
   they wait for the tree to settle, no `sleep`, no flake.
-- The `headless` backend drives the **renderer-agnostic core**, so the **same
-  script** will run on Qt and on the emulator/device once those backends land
-  (F8). ✅
+- The `headless` backend drives the **renderer-agnostic core**; the `emulator`
+  backend runs the **same script** against a REAL Compose app on an Android
+  emulator (`-j N` in parallel, a pixel screenshot per test). ✅

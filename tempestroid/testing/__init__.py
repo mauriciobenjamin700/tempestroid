@@ -8,14 +8,16 @@ state — with **auto-wait** built into every action and assertion (the tree mus
 settle before proceeding; no fixed sleeps), so timing flake disappears.
 
 Because every backend speaks the same IR + typed-event vocabulary, one test
-script runs against every target. This slice ships the **headless** backend
-(:class:`HeadlessBackend`) — it drives the
+script runs against every target. Two backends ship today: the **headless**
+backend (:class:`HeadlessBackend`) drives the
 :class:`~tempestroid.core.state.App`/IR/event core in-process with no renderer,
 exercising the full ``event → handler → state → rebuild → diff → patch`` loop
-deterministically. The Qt-window and emulator/device backends slot in behind the
-same :class:`TestBackend` protocol once Trilho F8 lands the stable targets — the
-:class:`Page`/:class:`Locator`/assertion surface is unchanged, so **the same test
-will run on Qt and on the emulator/device**.
+deterministically; the **emulator** backend (:class:`EmulatorBackend`) drives a
+REAL app through the **Compose** renderer on an Android emulator over the dev-
+server harness bridge, and :class:`EmulatorPool` runs N isolated emulators in
+parallel. The :class:`Page`/:class:`Locator`/assertion surface is identical
+across targets, so **the same test runs headless and on the emulator** — only the
+handler resolution differs (headless → callable, emulator → token).
 
 Public surface:
 
@@ -23,20 +25,39 @@ Public surface:
 * :class:`Locator` — a lazy, late-resolving node query.
 * :class:`TestBackend` — the protocol a renderer target implements.
 * :class:`HeadlessBackend` — the no-renderer reference backend.
+* :class:`EmulatorBackend` — drives a real Compose render on an emulator/device.
+* :class:`EmulatorPool` — allocate/recycle N isolated emulators for parallel runs.
 * :func:`run_test_file` — load + run a UI test file's ``test_*`` functions.
+* :func:`run_test_files_emulator` — shard files across emulator serials.
+* :mod:`tempestroid.testing.mirror` — host-side scene mirror (deserialize +
+  apply patches), re-exported here as :func:`deserialize_scene` /
+  :func:`apply_patches`.
 """
 
 from __future__ import annotations
 
 from tempestroid.testing.backend import HeadlessBackend, TestBackend, event_schema_for
+from tempestroid.testing.emulator import EmulatorBackend
 from tempestroid.testing.locator import Locator, LocatorError
+from tempestroid.testing.mirror import (
+    apply_patches,
+    deserialize_node,
+    deserialize_scene,
+)
 from tempestroid.testing.page import Page
+from tempestroid.testing.pool import (
+    EmulatorPool,
+    max_parallel_emulators,
+    running_emulators,
+)
 from tempestroid.testing.runner import (
     PLANNED_TARGETS,
     SUPPORTED_TARGETS,
     TestOutcome,
     TestReport,
     run_test_file,
+    run_test_file_emulator,
+    run_test_files_emulator,
 )
 
 __all__ = [
@@ -45,8 +66,17 @@ __all__ = [
     "LocatorError",
     "TestBackend",
     "HeadlessBackend",
+    "EmulatorBackend",
+    "EmulatorPool",
+    "max_parallel_emulators",
+    "running_emulators",
     "event_schema_for",
+    "deserialize_node",
+    "deserialize_scene",
+    "apply_patches",
     "run_test_file",
+    "run_test_file_emulator",
+    "run_test_files_emulator",
     "TestReport",
     "TestOutcome",
     "SUPPORTED_TARGETS",

@@ -12,8 +12,8 @@ asserção (a árvore precisa estabilizar antes de prosseguir).
 !!! tip "Por que é mais forte que o Playwright"
     O Playwright fala com o DOM. Aqui o "DOM" é a nossa **IR** — idêntica em todos
     os renderizadores. Por isso o **mesmo script** roda no backend headless (rápido,
-    local) e vai rodar no simulador Qt e no emulador/dispositivo quando esses
-    backends chegarem (Trilho F8) — sem mudar uma linha do teste.
+    local) e no backend `emulator` (app Compose REAL num emulador Android) — sem
+    mudar uma linha do teste.
 
 ## O exemplo mínimo
 
@@ -155,13 +155,50 @@ uv run tempest uitest examples/counter/test_counter.py --target headless
 | Alvo | Estado | O que dirige |
 | --- | --- | --- |
 | `headless` | ✅ disponível | A IR/estado/eventos em processo, sem renderizador |
-| `qt` | ⏳ F8 | O simulador Qt em processo |
-| `emulator` | ⏳ F8 | Compose num emulador (pool paralelo do F8) |
-| `device` | ⏳ F8 | Compose num dispositivo real, pela ponte |
+| `emulator` | ✅ disponível | App REAL pelo renderizador **Compose** num emulador Android |
+| `qt` | ⏳ reservado | O simulador Qt em processo |
+| `device` | ⏳ reservado | Compose num dispositivo físico, pela ponte |
 
-Selecionar um alvo de F8 hoje levanta `NotImplementedError` apontando para o F8.
-Como todos falam a **mesma IR + eventos tipados**, o seu teste headless rodará
-nesses alvos sem mudança.
+Como todos falam a **mesma IR + eventos tipados**, o seu teste headless roda nos
+demais alvos sem mudar uma linha.
+
+### Alvo `emulator` — render Compose REAL + N em paralelo
+
+```bash
+# 1 emulador (reaproveita um já rodando, ex.: emulator-5554)
+uv run tempest uitest examples/counter/test_counter.py --target emulator
+
+# N emuladores isolados em paralelo (limitado por CPU/RAM do host)
+uv run tempest uitest examples/ --target emulator -j 3
+```
+
+O backend `emulator` (`EmulatorBackend`) dirige um app **de verdade** pelo
+renderizador **Compose**: ele sobe um `DevServer` em **modo harness**, faz
+`adb -s <serial> reverse` e lança o host em modo dev. O cliente code-push do
+dispositivo:
+
+- **device → host:** dá `POST` do JSON de `mount` e de cada lote de `patch` de
+  volta; o servidor mantém um **espelho** (`Scene`) do lado do host (via
+  `tempestroid.testing.mirror`). `page.scene()` lê esse espelho.
+- **host → device:** `page.tap(...)` lê o **token** do handler do nó espelhado
+  (`{"$handler": token}`), enfileira o evento; o cliente faz long-poll, consome e
+  alimenta `DeviceApp.handle_event` — **o mesmo caminho de um toque Compose real**
+  — e o rebuild/patch resultante volta e atualiza o espelho. **Nada de
+  `adb input tap` por coordenada, nada de mudança em C/JNI.**
+
+O **auto-wait** (`settle`) monitora a *revisão* do espelho até ela ficar quieta
+por uma janela curta E o evento enfileirado ter sido consumido — sem `sleep`
+fixo como mecanismo principal.
+
+`EmulatorPool` aloca/recicla N instâncias isoladas (porta `5554 + i*2`,
+serial `emulator-<porta>`), reaproveitando emuladores já rodando e **limitando N
+pela CPU/RAM do host** (sempre logando quando reduz o pedido).
+
+!!! check "Screenshots de pixels REAIS"
+    No alvo `emulator`, cada teste salva um screenshot em
+    `docs/assets/emulator/uitest/<teste>.png` capturado via
+    `adb exec-out screencap` — **pixels Compose reais**, não a serialização da
+    árvore. É a evidência de que o leaf de dispositivo se comporta como o núcleo.
 
 ## Em código (sem CLI)
 
@@ -185,6 +222,6 @@ await page.expect_text("Count: 1")
   renderizador real.
 - **Asserções** (`expect_text`/`expect_visible`/`expect_count`) têm **auto-wait**:
   esperam a árvore estabilizar, sem `sleep`, sem flake.
-- O backend `headless` dirige o **núcleo agnóstico de renderizador**, então o
-  **mesmo script** rodará no Qt e no emulador/dispositivo quando esses backends
-  chegarem (F8). ✅
+- O backend `headless` dirige o **núcleo agnóstico de renderizador**; o backend
+  `emulator` roda o **mesmo script** contra um app Compose REAL num emulador
+  Android (`-j N` em paralelo, screenshot de pixels por teste). ✅
