@@ -1,4 +1,5 @@
 """Tests for the LAN code-push dev server and client (phase B5)."""
+# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
@@ -518,3 +519,46 @@ async def test_dev_client_recovers_after_error_screen() -> None:
     assert "App failed to load" in json.dumps(bridges[0].sent[0])
     assert bridges[1].sent[0]["kind"] == "mount"
     assert "n=0" in json.dumps(bridges[1].sent[0])
+
+
+def test_sweep_stale_bundles_removes_orphans(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``_sweep_stale_bundles`` reclaims orphaned code-push bundle dirs.
+
+    Each ``serve`` session extracts to a ``tempest-app-*`` temp dir; a new
+    process never reclaims dirs an earlier process left, so they pile up and
+    fill ``/data``. The startup sweep must delete every such orphan (keeping
+    ``keep``), and leave unrelated temp dirs untouched.
+    """
+    from tempestroid.devserver import client as client_mod
+
+    monkeypatch.setattr(
+        client_mod.tempfile, "gettempdir", lambda: str(tmp_path)
+    )
+
+    orphans = [tmp_path / "tempest-app-aaa", tmp_path / "tempest-app-bbb"]
+    keep = tmp_path / "tempest-app-keep"
+    unrelated = tmp_path / "some-other-dir"
+    for path in [*orphans, keep, unrelated]:
+        path.mkdir()
+        (path / "marker.txt").write_text("x", encoding="utf-8")
+
+    removed = client_mod._sweep_stale_bundles(keep=keep)
+
+    assert removed == 2
+    assert all(not o.exists() for o in orphans)
+    assert keep.exists()
+    assert unrelated.exists()
+
+
+def test_sweep_stale_bundles_handles_empty_tmp(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The sweep is a no-op (returns 0) when there are no bundle dirs."""
+    from tempestroid.devserver import client as client_mod
+
+    monkeypatch.setattr(
+        client_mod.tempfile, "gettempdir", lambda: str(tmp_path)
+    )
+    assert client_mod._sweep_stale_bundles() == 0
