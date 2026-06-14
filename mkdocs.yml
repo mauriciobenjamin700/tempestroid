@@ -134,6 +134,7 @@ nav:
       - Navegação entre telas: guia/navegacao.md
       - Estilos: guia/estilos.md
       - Eventos: guia/eventos.md
+      - Testes de UI: guia/testing.md
       - CLI (tempest): guia/cli.md
       - Galeria de exemplos: guia/exemplos.md
       - Build, deploy e publicação: guia/build.md

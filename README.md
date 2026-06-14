@@ -195,6 +195,7 @@ uv run tempest build prd            # store-ready release AAB (Play); reads [too
 uv run tempest run                  # build + install on a device + stream logs (needs SDK/NDK)
 uv run tempest icon logo.png        # generate icon.png + splash.png from one image (needs [icons])
 uv run tempest spec                 # print the typed contract (widgets/events) as JSON
+uv run tempest uitest test_app.py   # run a Playwright-style native UI test (headless)
 uv run tempest --version            # print the framework version (also: tempest version)
 uv run tempest --help
 ```
@@ -335,6 +336,7 @@ surfaced and the happy path stays quiet.
 | `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only) |
 | `tempest type [path]` | ✅ | `pyright` on the target (strict type check) |
 | `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter) |
+| `tempest uitest <path>` | ✅ | Run a **Playwright-style native UI test** file (F9 driver): an app module + `async def test_*(page)` functions, driven against the renderer-agnostic IR with **auto-wait** (no `sleep`). `--target`/`-t`: `headless` (default, in-process, no renderer); `qt`/`emulator`/`device` arrive with F8 — the same script runs on them unchanged |
 | `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test (stops at the first failure). Each tool is resolved on `PATH` or via `uv run` |
 
 ### Running on a device from WSL
@@ -777,6 +779,38 @@ its native engine — is pinned by the conformance suite).
 
 - **`run_qt(state, view, *, title, size)`** — run an app in the Qt simulator.
 - **`run_dev(app_path)`** — the `tempest dev` cockpit.
+
+### UI test driver (`tempestroid.testing`)
+
+A Playwright-style driver that automates an app against the **renderer-agnostic
+IR** (not pixels): locate nodes, inject typed events, assert with **auto-wait**
+(no `sleep`). Because every backend speaks the same IR + typed events, the **same
+script runs on every target** — the headless backend now drives the IR/state/event
+core in-process, and the Qt/emulator/device backends slot in behind the same
+`TestBackend` protocol once Trilho F8 lands them. Drive it with `tempest uitest`.
+
+- **`Page`** — the top-level driver. Locators: `get_by_key` / `get_by_text` /
+  `get_by_role` / `get_by_semantics` / `get_by_prop`. Actions: `tap` / `fill` /
+  `back`. Auto-waiting assertions: `expect_text` / `expect_visible` /
+  `expect_count`. `snapshot()` returns a JSON-able tree dump (the headless analogue
+  of a screenshot; pixel screenshots arrive with the Qt/device backends, F8).
+- **`Locator`** — a lazy node query that resolves against the live scene at
+  action/assert time (`first` / `all()` / `count()` / `resolve()`); raises
+  `LocatorError` when zero or (for `resolve`) many nodes match.
+- **`TestBackend`** — the `Protocol` a renderer target implements (`mount` /
+  `scene` / `dispatch` / `settle` / `patches`).
+- **`HeadlessBackend`** — the no-renderer reference backend (wraps an `App`).
+- **`run_test_file(path, target="headless")`** — load + run a UI test file's
+  `test_*` functions, returning a `TestReport` of `TestOutcome`s.
+
+```python
+from tempestroid.testing import HeadlessBackend, Page
+
+page = Page(HeadlessBackend(make_state, view))
+await page.mount()
+await page.tap(page.get_by_key("inc"))
+await page.expect_text("Count: 1")   # auto-waits until the tree settles
+```
 
 ### Device presets (`tempestroid.devices`)
 
