@@ -101,3 +101,36 @@ teclado numérico por *design* do app, não por limite do renderizador.
     cada build lê como mudança de prop (limitação conhecida). Os exemplos ainda
     emitem *patches* corretos — apenas mais que o mínimo estrito. Prefira
     referências de *handler* estáveis em apps de produção.
+
+## Capturas no dispositivo (emulador x86_64, sem hardware físico)
+
+!!! note "Geradas sem aparelho físico"
+    Renderizadas pelo renderizador **Compose** num **emulador x86_64 headless**
+    (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero hardware.
+    24 dos 25 exemplos; `stopwatch` (animado) fica para uma recaptura como GIF
+    (ver [Animados](#animados)).
+
+| | | |
+|---|---|---|
+| ![animation](../assets/examples/animation.png){ width=200 }<br>`animation` | ![brforms](../assets/examples/brforms.png){ width=200 }<br>`brforms` | ![calculator](../assets/examples/calculator.png){ width=200 }<br>`calculator` |
+| ![colorpicker](../assets/examples/colorpicker.png){ width=200 }<br>`colorpicker` | ![counter](../assets/examples/counter.png){ width=200 }<br>`counter` | ![device_counter](../assets/examples/device_counter.png){ width=200 }<br>`device_counter` |
+| ![form](../assets/examples/form.png){ width=200 }<br>`form` | ![forms](../assets/examples/forms.png){ width=200 }<br>`forms` | ![gallery](../assets/examples/gallery.png){ width=200 }<br>`gallery` |
+| ![gestures](../assets/examples/gestures.png){ width=200 }<br>`gestures` | ![icons](../assets/examples/icons.png){ width=200 }<br>`icons` | ![layout](../assets/examples/layout.png){ width=200 }<br>`layout` |
+| ![lists](../assets/examples/lists.png){ width=200 }<br>`lists` | ![media](../assets/examples/media.png){ width=200 }<br>`media` | ![multifile](../assets/examples/multifile.png){ width=200 }<br>`multifile` |
+| ![native_caps](../assets/examples/native_caps.png){ width=200 }<br>`native_caps` | ![navigation](../assets/examples/navigation.png){ width=200 }<br>`navigation` | ![overlays](../assets/examples/overlays.png){ width=200 }<br>`overlays` |
+| ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
+| ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
+
+### Animados
+
+Exemplos com movimento (`animation`, `gestures`, `stopwatch`) precisam de um
+**GIF** — um PNG estático não mostra a animação. O harness
+`toolchain/capture_gif.sh` captura uma rajada de frames no dispositivo e monta o
+GIF (via `toolchain/frames_to_gif.py`). Como esses exemplos são **estáticos em
+repouso**, dispare a animação com `TAP_X`/`TAP_Y` antes da rajada:
+
+```bash
+# ex.: stopwatch — toca "start" e captura o relógio correndo
+TAP_X=540 TAP_Y=1400 ANDROID_SERIAL=emulator-5554 \
+    bash toolchain/capture_gif.sh examples/stopwatch/app.py
+```

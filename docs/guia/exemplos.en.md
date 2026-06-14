@@ -100,3 +100,36 @@ app design, not by a renderer limit.
     reads as a prop change (a known limitation). The examples still emit correct
     patches — just more than the strict minimum. Prefer stable handler references
     in production apps.
+
+## On-device screenshots (x86_64 emulator, no physical hardware)
+
+!!! note "Captured without a physical device"
+    Rendered by the **Compose** renderer on a **headless x86_64 emulator**
+    (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero hardware.
+    24 of the 25 examples; `stopwatch` (animated) is left for a GIF re-capture
+    (see [Animated](#animated)).
+
+| | | |
+|---|---|---|
+| ![animation](../assets/examples/animation.png){ width=200 }<br>`animation` | ![brforms](../assets/examples/brforms.png){ width=200 }<br>`brforms` | ![calculator](../assets/examples/calculator.png){ width=200 }<br>`calculator` |
+| ![colorpicker](../assets/examples/colorpicker.png){ width=200 }<br>`colorpicker` | ![counter](../assets/examples/counter.png){ width=200 }<br>`counter` | ![device_counter](../assets/examples/device_counter.png){ width=200 }<br>`device_counter` |
+| ![form](../assets/examples/form.png){ width=200 }<br>`form` | ![forms](../assets/examples/forms.png){ width=200 }<br>`forms` | ![gallery](../assets/examples/gallery.png){ width=200 }<br>`gallery` |
+| ![gestures](../assets/examples/gestures.png){ width=200 }<br>`gestures` | ![icons](../assets/examples/icons.png){ width=200 }<br>`icons` | ![layout](../assets/examples/layout.png){ width=200 }<br>`layout` |
+| ![lists](../assets/examples/lists.png){ width=200 }<br>`lists` | ![media](../assets/examples/media.png){ width=200 }<br>`media` | ![multifile](../assets/examples/multifile.png){ width=200 }<br>`multifile` |
+| ![native_caps](../assets/examples/native_caps.png){ width=200 }<br>`native_caps` | ![navigation](../assets/examples/navigation.png){ width=200 }<br>`navigation` | ![overlays](../assets/examples/overlays.png){ width=200 }<br>`overlays` |
+| ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
+| ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
+
+### Animated
+
+Examples with motion (`animation`, `gestures`, `stopwatch`) need a **GIF** — a
+static PNG can't show the animation. The `toolchain/capture_gif.sh` harness
+bursts on-device frames and assembles the GIF (via `toolchain/frames_to_gif.py`).
+Since these examples are **static at rest**, trigger the animation with
+`TAP_X`/`TAP_Y` before the burst:
+
+```bash
+# e.g. stopwatch — tap "start" and capture the running clock
+TAP_X=540 TAP_Y=1400 ANDROID_SERIAL=emulator-5554 \
+    bash toolchain/capture_gif.sh examples/stopwatch/app.py
+```
