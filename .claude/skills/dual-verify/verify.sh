@@ -21,7 +21,9 @@ section "detecting connected device"
 if [[ -x "$SDK/platform-tools/adb" ]]; then ADB="$SDK/platform-tools/adb"; else ADB="adb"; fi
 DEVICE=0
 if command -v "$ADB" >/dev/null 2>&1 || [[ -x "$ADB" ]]; then
-  n_ok=$("$ADB" devices 2>/dev/null | awk 'NR>1 && $2=="device"{c++} END{print c+0}')
+  # Time-bound the probe: a wedged adb server (device dropped off USB-WSL) would
+  # otherwise hang here — the failure mode Trilho F5 hardens against.
+  n_ok=$(timeout 20 "$ADB" devices 2>/dev/null | awk 'NR>1 && $2=="device"{c++} END{print c+0}')
   if [[ "$n_ok" -ge 1 ]]; then
     DEVICE=1
     printf "${GREEN}device connected${RESET} — dual path: Qt + Compose required\n"
@@ -54,6 +56,13 @@ if [[ $DEVICE -eq 1 ]]; then
   cmd "make apk-install            # rebuild + adb install the APK"
   cmd "tempest serve $APP   # live code-push over adb reverse (no rebuild)"
   cmd "make logcat                 # tail device logs for runtime errors"
+  echo
+  echo "  For a FULL widget-surface sweep (all examples, screenshots + traceback scan),"
+  echo "  use the hardened F5 harness — it is USB-drop-safe and RESUMES on re-run:"
+  cmd "bash toolchain/validate_gallery.sh    # checkpointed; FRESH=1 to restart"
+  echo "  If it prints an 'ABORT … usb-drop' line, the device fell off USB mid-run:"
+  echo "  the device half is NOT verified — re-attach (usbipd attach --wsl --busid <id>)"
+  echo "  and re-run to resume. Do NOT report device parity off a partial sweep."
   cat <<EOF
 
   On-device checklist (known gotchas):
@@ -61,6 +70,7 @@ if [[ $DEVICE -eq 1 ]]; then
     [ ] Dense/operator-key layouts keep their spacing/arrangement.
     [ ] The changed flow behaves identically to the Qt sim.
     [ ] Screenshot captured (the rule REQUIRES it for the device leg).
+    [ ] If the gallery harness ran: no 'ABORT … usb-drop' in /tmp/gallery_results.txt.
 EOF
 else
   section "device leg — SKIPPED (no device)"
