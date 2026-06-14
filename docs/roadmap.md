@@ -140,12 +140,14 @@ inicial. Pesquisa fundamentada em
 
 | Fase | Escopo | Risco | Status |
 |---|---|---|---|
-| G0 | Spike de viabilidade: deps reais do SDK, decidir caminho CPython-puro vs inferência-nativa, provar `numpy`+`onnxruntime` no device | médio | ⏳ planejado |
-| G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta no device | **alto** | ⏳ planejado |
+| G0 | Spike de viabilidade: deps reais do SDK, decidir caminho CPython-puro vs inferência-nativa, levantar EPs do device-alvo, provar `numpy`+`onnxruntime` no device | médio | ⏳ planejado |
+| G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta no device, fora da UI thread/loop + escolha de EP (NNAPI/XNNPACK/QNN, fallback CPU, latência medida) | **alto** | ⏳ planejado |
 | G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory`; cv2 → SDK nativo, não wheel) + pré/pós em `numpy` | médio | ⏳ planejado |
-| G3 | (opcional) `pandas` no device — feature-engineering tabular | médio | ⏳ planejado |
-| G4 | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + img (skimage gated atrás do scipy) | **alto** | ⏳ planejado |
-| G5 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | ⏳ planejado |
+| G3 | Otimização de execução: pipeline `.onnx`→`.ort` + quantização (INT8/fp16); avaliar `onnxruntime-extensions` (pré/pós no grafo) | médio | ⏳ planejado |
+| G4 | Entrega e storage do modelo: embutido vs download+cache, `mmap` no load, Play Asset Delivery p/ modelos grandes | médio | ⏳ planejado |
+| G5 | (opcional) `pandas` no device — feature-engineering tabular | médio | ⏳ planejado |
+| G6 | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + img (skimage gated atrás do scipy) | **alto** | ⏳ planejado |
+| G7 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | ⏳ planejado |
 
 !!! warning "Dois caminhos, decisão em G0"
     **(A) CPython puro** cross-compila `onnxruntime`+`numpy`(+`pandas`/`sklearn`)
@@ -153,8 +155,9 @@ inicial. Pesquisa fundamentada em
     interpretador embarcado. **(B) Inferência nativa** usa o AAR
     `onnxruntime-android` (Kotlin/C++) com um shim sobre a ponte JNI, evitando a
     wheel C++ mais pesada. `scipy`/`sklearn` são o calcanhar (Fortran/LAPACK +
-    OpenMP) — por isso G3/G4 são opcionais e não bloqueiam o caminho de visão
-    (G0→G2). Tudo **dentro do repositório**: metade Python em `tempestroid/`,
+    OpenMP) — por isso G5/G6 são opcionais e não bloqueiam o caminho de visão
+    (G0→G4, que inclui aceleração por EP, formato `.ort`/quantização e entrega do
+    modelo). Tudo **dentro do repositório**: metade Python em `tempestroid/`,
     metade Kotlin em `android-host/`; o `ort-vision-sdk` segue dependência
     externa (não re-implementado aqui).
 

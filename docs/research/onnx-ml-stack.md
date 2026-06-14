@@ -152,11 +152,76 @@ Duas libs que o app pode querer, ambas no balde **difícil**:
   skimage adiciona pouco; se não fechar, skimage não roda.
 
 > **Regra prática:** para *visão* (decode, resize, normalize, tensor I/O), ficar
-> em `numpy` + `Pillow`/`BitmapFactory` cobre G0→G2 sem cv2 nem skimage. `cv2`
+> em `numpy` + `Pillow`/`BitmapFactory` cobre o caminho de visão sem cv2 nem skimage. `cv2`
 > (SDK nativo) e `skimage` (pós-`scipy`) são camadas opcionais, só sob demanda
 > real de app.
 
-## 4. Tamanho do APK — restrição dura
+## 4. Ecossistema de execução nativa (só inferência — treino fora de escopo)
+
+> **Escopo fixado:** a lib só **executa** modelos; **treino está fora** — sem
+> torch/TF-train, autograd, datasets, otimizadores, augmentation pesada. Isso
+> reduz muito a superfície de deps. O que resta é o ecossistema de *runtime de
+> inferência*, mapeado abaixo (era o ponto cego das §§1–3).
+
+### 4.1 Execution Providers (aceleração de hardware)
+
+A inferência no CPU puro é o piso; o ganho real (ordem de grandeza) vem dos EPs.
+Cada EP é uma **flag de build** do `onnxruntime` + **registro em runtime** ao
+criar a sessão, com **fallback p/ CPU** quando o device não suporta:
+
+- **NNAPI** — interface unificada CPU/GPU/DSP/NPU do Android (API 27+; ideal 9+).
+- **XNNPACK** — kernels CPU float otimizados (ARM); publicado no AAR Maven.
+- **QNN** — Qualcomm Hexagon/NPU (Snapdragon); maior ganho onde existe.
+- **GPU/Vulkan** — conforme device.
+
+> Decisão de quais EPs habilitar entra no **G1** (não é nota de rodapé): medir
+> latência por EP no device-alvo e escolher a cadeia (ex.: QNN→NNAPI→XNNPACK→CPU).
+
+### 4.2 `onnxruntime-extensions` (pré/pós dentro do grafo)
+
+Operadores custom (tokenização, decode/resize de imagem, NMS, etc.) **embutidos
+no grafo ONNX** em vez de em Python. Para visão: pode mover resize/normalize/NMS
+para dentro do modelo → **menos `numpy`/`opencv` no device** e APK menor. Forte
+candidato a encolher o caminho (A). Confirmar suporte Android + tamanho em G0/G1.
+
+### 4.3 Formato e otimização do modelo
+
+- **`.onnx` → `.ort`** — formato mobile do ONNX Runtime (carrega mais rápido,
+  casa com *minimal build*).
+- **Quantização** — INT8 dinâmica/estática, float16; corta tamanho e acelera.
+- **Otimização de grafo** — níveis (basic/extended/all), fusão de operadores.
+- **Opset** — garantir compatibilidade do opset do modelo com o runtime buildado.
+
+Um **pipeline de conversão** (onnx→ort + quantize) roda no host, não no device.
+
+### 4.4 Entrega e armazenamento do modelo
+
+Onde o `.onnx`/`.ort` vive em produção:
+
+- **Embutido no APK** (asset) — simples, mas infla o APK (ver §5).
+- **Baixado em runtime** — APK enxuto; precisa de cache local + verificação.
+- **Play Asset Delivery** — para modelos grandes, fora do APK base.
+- **`mmap` no load** — não estoura a RAM com modelos grandes; respeitar limites
+  de memória mobile.
+
+### 4.5 Threading da inferência
+
+Inferência é CPU-pesada: roda **fora da UI thread** *e* **fora do loop asyncio**
+(thread pool / executor), casando com o `async_predict` (`asyncio.to_thread`) e o
+`ort_async_predict` (`run_async` nativo do ORT) do `ort-vision-sdk` e com o
+invariante do Trilho B (Python já roda fora da UI thread). O resultado volta ao
+loop via `call_soon_threadsafe`.
+
+### 4.6 Amplitude de domínio (hoje fora de escopo — flag)
+
+Visão é o foco (o que o `ort-vision-sdk` exercita). **Se** um dia entrar NLP/áudio:
+tokenizers (HF Rust — tem wheels; sentencepiece), áudio (`librosa` puxa
+`scipy`/`numba` = difícil). Registrado como **out-of-scope** explícito para não
+inflar o caminho de visão.
+
+---
+
+## 5. Tamanho do APK — restrição dura
 
 Empilhar CPython 3.14 + stdlib (Trilho B já ~39 MB) + `numpy` + `onnxruntime` +
 modelo `.onnx` + (eventual) `opencv`/`scipy`/`sklearn` estoura fácil **>150 MB**.
@@ -171,32 +236,34 @@ Mitigações a investigar em G:
 
 ---
 
-## 5. Fases propostas (investigação-primeiro)
+## 6. Fases propostas (investigação-primeiro)
 
 | Fase | Escopo | Risco | Feito quando |
 |---|---|---|---|
-| **G0** | Spike de viabilidade: mapear deps reais do `ort-vision-sdk`, decidir caminho (A)/(B), provar `import numpy` + `onnxruntime` no device | médio | árvore de deps classificada; decisão A/B registrada; `numpy` importa no aparelho |
-| **G1** | Wheel do `onnxruntime` (ou AAR) + inferência de 1 modelo `.onnx` real ponta-a-ponta no device | **alto** | um `Detector`/`Classifier` do SDK roda no aparelho e devolve resultado tipado (verificado por screenshot) |
+| **G0** | Spike de viabilidade: mapear deps reais do `ort-vision-sdk`, decidir caminho (A)/(B), levantar EPs disponíveis no device-alvo, provar `import numpy` + `onnxruntime` no device | médio | árvore de deps classificada; decisão A/B registrada; EPs do device listados; `numpy` importa no aparelho |
+| **G1** | Wheel do `onnxruntime` (ou AAR) + inferência de 1 modelo `.onnx` real ponta-a-ponta no device, **rodando fora da UI thread/loop** (§4.5) + **escolha de EP** (§4.1: medir latência, fallback CPU) | **alto** | um `Detector`/`Classifier` do SDK roda no aparelho, devolve resultado tipado sem travar a UI, com EP escolhido (verificado por screenshot + latência medida) |
 | **G2** | Caminho de imagem sem OpenCV (Pillow ou `BitmapFactory` do host) + pré/pós em `numpy`; se cv2 for exigido, OpenCV Android SDK nativo + ponte (não a wheel) | médio | imagem da câmera/galeria → tensor → inferência sem `opencv-python` na APK |
-| **G3** | (opcional) `pandas` no device — feature-engineering tabular | médio | `import pandas` + um pipeline tabular roda no aparelho |
-| **G4** | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + processamento de imagem (skimage gated atrás do scipy) | **alto** | `import sklearn`/`skimage`; um modelo sklearn faz `predict` no aparelho |
-| **G5** | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | APK com inferência cabe num orçamento de tamanho acordado, medido |
+| **G3** | Otimização de execução (§4.2/§4.3): pipeline `.onnx`→`.ort` + quantização (INT8/fp16) no host; avaliar `onnxruntime-extensions` (pré/pós no grafo) | médio | modelo `.ort` quantizado roda no device; pré/pós movido pro grafo onde valer (menos numpy/opencv) |
+| **G4** | Entrega e storage do modelo (§4.4): embutido vs download em runtime + cache, `mmap` no load, Play Asset Delivery p/ modelos grandes | médio | um modelo carrega por cada estratégia escolhida sem estourar RAM; decisão de delivery registrada |
+| **G5** | (opcional) `pandas` no device — feature-engineering tabular | médio | `import pandas` + um pipeline tabular roda no aparelho |
+| **G6** | (opcional) `scipy` + `scikit-learn` + `scikit-image` no device — ML clássico + processamento de imagem (skimage gated atrás do scipy) | **alto** | `import sklearn`/`skimage`; um modelo sklearn faz `predict` no aparelho |
+| **G7** | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | médio | APK com inferência cabe num orçamento de tamanho acordado, medido |
 
-`G3`/`G4` ficam **gated** por demanda real de app — não bloqueiam o caminho de
-visão (`G0→G2`), que é o que o `ort-vision-sdk` exercita.
+`G5`/`G6` ficam **gated** por demanda real de app — não bloqueiam o caminho de
+visão (`G0→G4`), que é o que o `ort-vision-sdk` exercita.
 
 ---
 
-## 6. Riscos e perguntas em aberto
+## 7. Riscos e perguntas em aberto
 
 - **`scipy`/`sklearn` podem simplesmente não fechar** no NDK sem esforço grande
-  de Fortran/LAPACK — por isso G4 é o último e opcional. Confirmar se a
+  de Fortran/LAPACK — por isso G6 é o último e opcional. Confirmar se a
   comunidade já publica wheels android (improvável em jun/2026).
-- **Threading do onnxruntime** vs a regra do Trilho B ("Python fora da UI
-  thread") — a inferência é CPU-pesada; precisa rodar no executor de fundo, não
-  bloquear o loop asyncio nem a UI.
-- **Aceleração:** NNAPI / XNNPACK / GPU como execution providers do onnxruntime
-  no Android — ganho grande, mas cada EP é uma flag de build a validar.
+- **Fragmentação de EP entre devices** (§4.1) — QNN só em Snapdragon, NNAPI varia
+  por OEM/versão; a cadeia precisa de **fallback p/ CPU** garantido e medição por
+  device-alvo, não só no aparelho de bancada. Threading (§4.5) já promovido.
+- **`onnxruntime-extensions` no Android** (§4.2) — confirmar suporte e custo de
+  tamanho em G0/G1 antes de apostar nele para encolher o pré/pós.
 - **Tudo dentro do projeto:** seguindo a regra do `CLAUDE.md`, a metade Python
   do Trilho G mora no pacote `tempestroid/` (ex.: `native/inference.py` se o
   caminho (B) precisar de um envelope) e a metade Kotlin em `android-host/` —
@@ -242,7 +309,19 @@ obrigatória antes de iniciar a fase indicada.
 - ONNX Runtime — custom build (reduzir operadores, `--include_ops_by_config`): <https://onnxruntime.ai/docs/build/custom.html>
 - ONNX Runtime — NNAPI Execution Provider (aceleração CPU/GPU/NPU, API 27+): <https://onnxruntime.ai/docs/execution-providers/NNAPI-ExecutionProvider.html>
 - ONNX Runtime — XNNPACK Execution Provider (AAR no Maven): <https://onnxruntime.ai/docs/execution-providers/Xnnpack-ExecutionProvider.html>
+- ONNX Runtime — QNN Execution Provider (Qualcomm Hexagon/NPU): <https://onnxruntime.ai/docs/execution-providers/QNN-ExecutionProvider.html>
 - ONNX Runtime — catálogo de Execution Providers: <https://onnxruntime.ai/docs/execution-providers/>
+
+### Execução: formato, otimização e pré/pós
+
+- **★ ONNX Runtime — ORT format model** (`.ort`, minimal build): <https://onnxruntime.ai/docs/reference/ort-format-models.html>
+- ONNX Runtime — quantização (INT8/fp16): <https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html>
+- ONNX Runtime — otimizações de grafo (níveis/fusão): <https://onnxruntime.ai/docs/performance/model-optimizations/graph-optimizations.html>
+- **★ onnxruntime-extensions** (pré/pós no grafo: tokenização, imagem, NMS): <https://github.com/microsoft/onnxruntime-extensions>
+
+### Entrega e storage do modelo
+
+- Play Asset Delivery (modelos grandes fora do APK base): <https://developer.android.com/guide/playcore/asset-delivery>
 
 ### OpenCV / processamento de imagem no Android
 
