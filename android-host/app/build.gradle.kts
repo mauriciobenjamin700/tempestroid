@@ -339,14 +339,33 @@ abstract class CopyPythonStdlibTask @Inject constructor(
                     // packaging tooling (ensurepip/venv/lib2to3), the build config
                     // dir (Makefile/static lib — not used at runtime), docs data and
                     // bytecode caches. None are needed to run a tempestroid app; this
-                    // cuts the bundled CPython roughly in half.
+                    // cuts the bundled CPython roughly in half. (F6 APK trim.)
                     exclude(
+                        // Regression test suites + the IDLE editor.
                         "**/test/**", "**/tests/**", "test/**", "tests/**",
                         "idlelib/**", "**/idle_test/**",
+                        // Tk/turtle GUI (no Tk on Android) + the turtle demo.
                         "tkinter/**", "turtledemo/**", "turtle.py",
+                        // Packaging / install tooling — never run on device.
                         "ensurepip/**", "venv/**", "lib2to3/**",
+                        // Build config dir (Makefile/static lib), docs data, caches,
+                        // the frozen "hello" example modules.
                         "config-*/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
                         "pydoc_data/**", "**/__phello__/**", "__hello__.py",
+                        // F6: pure-Python modules with no device use — the new
+                        // interactive REPL (_pyrepl), the WSGI reference server
+                        // (wsgiref), the doctest framework and the pydoc CLI. None
+                        // are imported by the framework / pydantic runtime (verified
+                        // off-device with an import trace); apps run headless with no
+                        // REPL, no WSGI, no doctest. ~0.4 MB.
+                        "_pyrepl/**", "wsgiref/**", "doctest.py", "pydoc.py",
+                        // F6: lib-dynload test/example extension modules. These are
+                        // CPython's own C-API test harnesses + the "xx" example
+                        // extensions — never importable by an app at runtime. ~0.9 MB.
+                        "lib-dynload/_test*.so",
+                        "lib-dynload/_xxtestfuzz*.so",
+                        "lib-dynload/xxsubtype*.so",
+                        "lib-dynload/xxlimited*.so",
                     )
                 }
             }
