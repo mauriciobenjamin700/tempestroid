@@ -27,6 +27,13 @@ SHOT="$SHOT_DIR/verify.png"
 GOLDEN_DIR="$ROOT/docs/assets/emulator/golden"
 BOOT_WAIT="${TEMPEST_EMU_BOOT_WAIT:-30}"
 READY_WAIT="${TEMPEST_EMU_READY_WAIT:-300}"
+# Wait for the app to actually MOUNT before the screenshot (code-push 'pushed
+# app' marker + host owns the foreground), not a blind sleep — a blind sleep
+# screenshots a still-booting blank screen and false-greens. SETTLE lets Compose
+# paint the first frame after the host is foreground.
+MOUNT_WAIT="${TEMPEST_EMU_MOUNT_WAIT:-120}"
+SETTLE="${TEMPEST_EMU_SETTLE:-8}"
+HOST_PKG="org.tempestroid.host"
 # VISUAL=1 compares the final screenshot to a versioned golden (F8); a missing
 # golden is created (baseline). Off by default so the legacy flow is unchanged.
 VISUAL="${VISUAL:-0}"
@@ -69,13 +76,41 @@ ANDROID_SERIAL="$EMU_SERIAL" setsid uv run --project "$ROOT" tempest serve "$APP
 serve_pid=$!
 cleanup() { kill -- "-$serve_pid" 2>/dev/null || kill "$serve_pid" 2>/dev/null || true; }
 trap cleanup EXIT
-echo "    serve pid=$serve_pid log=$serve_log; waiting ${BOOT_WAIT}s for CPython boot + push"
-sleep "$BOOT_WAIT"
+echo "    serve pid=$serve_pid log=$serve_log"
+# Wait for a real mount, not a blind sleep: (1) the code-push pushed the bundle
+# ('pushed app' in logcat), then (2) the host owns the foreground. A blind sleep
+# screenshots a still-booting blank screen and reports a false PASS.
+echo "    waiting for mount (up to ${MOUNT_WAIT}s): code-push push + host foreground"
+host_is_foreground() {
+    adb_emu shell dumpsys activity activities 2>/dev/null \
+        | grep -E "mResumedActivity|topResumedActivity|ResumedActivity" \
+        | grep -q "$HOST_PKG"
+}
+waited=0
+pushed=0
+while [ "$waited" -lt "$MOUNT_WAIT" ]; do
+    if [ "$pushed" = "0" ] && adb_emu logcat -d -t 600 2>/dev/null | grep -q "pushed app"; then
+        pushed=1
+        echo "    code-push pushed the app (${waited}s)"
+    fi
+    if [ "$pushed" = "1" ] && host_is_foreground; then
+        echo "    host is foreground (${waited}s) — settling ${SETTLE}s for first paint"
+        break
+    fi
+    sleep 3
+    waited=$((waited + 3))
+done
+[ "$pushed" = "1" ] || fail "code-push never pushed the app within ${MOUNT_WAIT}s (serve log: $serve_log)"
+host_is_foreground || fail "host never reached the foreground — app failed to mount (serve log: $serve_log)"
+sleep "$SETTLE"
 
 echo "==> [6/6] screenshot → $SHOT"
 mkdir -p "$SHOT_DIR"
 adb_emu exec-out screencap -p > "$SHOT" || fail "screencap failed"
 [ -s "$SHOT" ] || fail "screenshot is empty"
+# Final guard: the host must STILL own the foreground at capture time, else the
+# screenshot is the launcher (the blank-screen false-green this replaces).
+host_is_foreground || fail "host left the foreground before capture — screenshot is not the app"
 echo "    saved $SHOT ($(du -h "$SHOT" | cut -f1))"
 
 echo "==> scanning logcat for Python tracebacks"
