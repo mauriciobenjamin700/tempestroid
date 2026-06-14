@@ -349,6 +349,45 @@ ligue também **"Instalar via USB"**, senão `adb install` falha com
     aponta o que falta antes de um build. Rodando em WSL? Veja o guia dedicado de
     [USB no dispositivo (WSL)](dispositivo-wsl.md).
 
+## Tamanho do APK
+
+O peso do APK vem quase todo do **CPython 3.14 embarcado** (os `.so` nativos + a
+biblioteca padrão) mais o `pydantic_core` nativo — tudo necessário em tempo de
+execução. O build já entrega um APK **enxuto**: dependências pesadas opcionais são
+*feature-gated* (`tempest.features` — câmera/QR/vídeo/push só entram quando
+pedidas), os ícones usam só o `material-icons-core` e a biblioteca padrão é
+podada antes de virar asset.
+
+Composição de um APK debug *lean* (arm64-v8a, sem features extras):
+
+| Componente | Tamanho (no APK) | Pode remover? |
+| --- | --- | --- |
+| `lib/arm64-v8a/*.so` (libpython, libcrypto, libsqlite, libssl) | ~11 MB | ❌ runtime (já *stripped*) |
+| `site-packages/pydantic_core` (wheel nativo) | ~4.6 MB | ❌ runtime |
+| `site-packages/pydantic` | ~2.0 MB | ❌ runtime |
+| `lib-dynload/*.so` (módulos de extensão da stdlib) | ~6.6 MB | parcial — só os de teste |
+| stdlib pura (`asyncio`, `email`, `json`, `re`, …) | ~6 MB | parcial |
+| Compose/AndroidX + DEX + recursos | ~3 MB | ❌ runtime |
+
+!!! info "O que é podado (F6)"
+    O `CopyPythonStdlibTask` em `android-host/app/build.gradle.kts` exclui dos
+    **assets** (não toca no prefixo de dev) tudo que um app não usa em tempo de
+    execução: as suítes de teste (`test/`), o editor IDLE, Tk/turtle, as
+    ferramentas de empacotamento (`ensurepip`/`venv`/`lib2to3`), `pydoc_data`, os
+    caches de bytecode, **mais** o REPL interativo (`_pyrepl`), o servidor WSGI de
+    referência (`wsgiref`), `doctest.py`/`pydoc.py` e os **módulos de extensão de
+    teste** do CPython (`lib-dynload/_test*.so`, `_xxtestfuzz`, `xxsubtype`,
+    `xxlimited*`). Nenhum é importado pelo framework nem pelo `pydantic` (validado
+    off-device com um *trace* de imports).
+
+!!! note "Por que não cai abaixo de ~38 MB"
+    Os nativos (`libpython3.14.so` 5.8 MB, `libcrypto` 3.7 MB) já vêm *stripped*
+    (rodar `llvm-strip` economiza 0 bytes) e o `pydantic_core`/`pydantic` são
+    obrigatórios. O que sobra para podar com segurança é dead-weight de teste, que
+    comprime bem no zip — o ganho líquido é modesto (~1 MB). Cortes maiores
+    (comprimir a stdlib num único arquivo, dropar os codecs CJK) exigem mexer no
+    host Kotlin/C e validação no aparelho — fora do escopo *offline* desta fase.
+
 ## Mandar o APK para alguém testar
 
 1. Gere: `tempest build apk`.
