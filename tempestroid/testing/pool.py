@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -244,8 +245,8 @@ class EmulatorPool:
             *args: Positional arguments to the function.
         """
         script = self._toolchain / "device_loop.sh"
-        quoted = " ".join(f'"{arg}"' for arg in args)
-        command = f". {script!s}; {func} {quoted}"
+        quoted = " ".join(shlex.quote(arg) for arg in args)
+        command = f". {shlex.quote(str(script))}; {func} {quoted}"
         env = dict(os.environ)
         env.setdefault("ANDROID_SDK_ROOT", "/usr/lib/android-sdk")
         try:

@@ -65,7 +65,14 @@ _MOUNT_TIMEOUT = 120.0
 #: The host activity launched in dev mode (mirrors
 #: :data:`tempestroid.cli.packaging._HOST_ACTIVITY`).
 _HOST_ACTIVITY = "org.tempestroid.host/.MainActivity"
+#: The host package id (the part of :data:`_HOST_ACTIVITY` before ``/``), used to
+#: force-stop a still-running host before each per-test launch.
+_HOST_PACKAGE = _HOST_ACTIVITY.split("/", 1)[0]
 _DEV_URL_EXTRA = "tempest_dev_url"
+#: After a dispatched event is consumed, wait at most this long for its rebuild
+#: patch (a revision bump) before treating the event as a no-op and settling —
+#: so ``settle`` provably waits for the device's round-trip when one is coming.
+_SETTLE_GRACE = 2.0
 
 
 class EmulatorBackend:
@@ -159,8 +166,9 @@ class EmulatorBackend:
         self._server.start()
         self._port = int(self._server.port)
         if self._launch:
-            self._adb_reverse(self._port)
-            self._launch_host(self._port)
+            # adb + am are blocking; keep the event loop responsive.
+            await asyncio.to_thread(self._adb_reverse, self._port)
+            await asyncio.to_thread(self._launch_host, self._port)
         await self._await_first_mount()
         self._mounted = True
 
@@ -231,8 +239,10 @@ class EmulatorBackend:
         server = self._require_server()
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
-        last_revision = server.revision()
+        baseline_revision = server.revision()
+        last_revision = baseline_revision
         quiet_since = loop.time()
+        consumed_at: float | None = None
         while True:
             await asyncio.sleep(0.05)
             now = loop.time()
@@ -241,11 +251,20 @@ class EmulatorBackend:
             consumed_ok = (
                 consumed_floor is None or server.consumed_count() >= consumed_floor
             )
+            if consumed_ok and consumed_at is None:
+                consumed_at = now
             if revision != last_revision:
                 last_revision = revision
                 quiet_since = now
+            # The dispatched event's effect is the rebuild patch: a revision bump
+            # after the command was consumed. Don't conclude "settled" until we've
+            # seen it — unless the grace elapses with none (a no-op handler).
+            saw_patch = revision != baseline_revision
+            effect_resolved = saw_patch or (
+                consumed_at is not None and (now - consumed_at) >= _SETTLE_GRACE
+            )
             quiet_long_enough = (now - quiet_since) >= _QUIET_WINDOW
-            if pending == 0 and consumed_ok and quiet_long_enough:
+            if pending == 0 and consumed_ok and effect_resolved and quiet_long_enough:
                 return
             if now >= deadline:
                 raise TimeoutError(
@@ -365,6 +384,14 @@ class EmulatorBackend:
         Args:
             port: The dev-server port the host's code-push client targets.
         """
+        # Force-stop first: `am start` on an already-running host only delivers a
+        # new-intent to the live instance, whose dev-client keeps polling the
+        # previous (now-closed) server port and never re-mounts. Stopping it makes
+        # every per-test launch a cold start that connects to THIS server.
+        subprocess.run(  # noqa: S603
+            [self._adb, "-s", self._serial, "shell", "am", "force-stop", _HOST_PACKAGE],
+            check=True,
+        )
         subprocess.run(  # noqa: S603
             [
                 self._adb,
@@ -377,7 +404,7 @@ class EmulatorBackend:
                 _HOST_ACTIVITY,
                 "--es",
                 _DEV_URL_EXTRA,
-                f"http://localhost:{port}",
+                f"http://127.0.0.1:{port}",
             ],
             check=True,
         )
