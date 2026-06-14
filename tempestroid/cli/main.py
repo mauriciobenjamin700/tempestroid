@@ -750,6 +750,36 @@ def test_cmd(
     raise typer.Exit(run_pytest(target))
 
 
+@app.command("uitest", rich_help_panel=_QUALITY)
+def uitest_cmd(
+    path: Annotated[
+        str,
+        typer.Argument(
+            metavar="[PATH]",
+            help="UI test file: an app module (view + make_state) plus "
+            "`async def test_*(page)` functions.",
+        ),
+    ],
+    target: Annotated[
+        str,
+        typer.Option(
+            "--target",
+            "-t",
+            help="Backend target. Only `headless` (renderer-agnostic, in-process) "
+            "is available now; `qt`/`emulator`/`device` arrive with F8.",
+        ),
+    ] = "headless",
+) -> None:
+    """Run a Playwright-style native UI test file (F9 driver).
+
+    Drives the renderer-agnostic IR/state/event core with auto-wait (no fixed
+    sleeps): locate nodes by key/text/semantics, act with tap/fill, assert with
+    expect_*. The `headless` target runs in-process with no renderer; the same
+    script will run on `qt`/`emulator`/`device` once those backends land (F8).
+    """
+    raise typer.Exit(_run_uitest(path, target))
+
+
 @app.command("check", rich_help_panel=_QUALITY)
 def check_cmd(
     target: Annotated[
@@ -1508,6 +1538,51 @@ def _run_run(
     except subprocess.CalledProcessError as exc:
         console.fail(f"command failed (exit {exc.returncode}).")
         return exc.returncode or 1
+
+
+def _run_uitest(path: str, target: str) -> int:
+    """Run a UI test file against a backend target and report the outcome.
+
+    Args:
+        path: Path to the UI test file.
+        target: The backend target (``headless`` now; ``qt``/``emulator``/
+            ``device`` arrive with F8).
+
+    Returns:
+        ``0`` when every test passed, ``1`` otherwise (or on a load error).
+    """
+    from tempestroid.testing import run_test_file
+
+    try:
+        report = run_test_file(path, target=target)
+    except NotImplementedError as exc:
+        print(exc)
+        return 1
+    except (FileNotFoundError, AttributeError, TypeError, ValueError) as exc:
+        print(f"cannot run UI tests: {exc}")
+        return 1
+
+    if not report.outcomes:
+        print(f"no `test_*` functions found in {report.path}")
+        return 1
+
+    for outcome in report.outcomes:
+        mark = "PASS" if outcome.passed else "FAIL"
+        print(f"[{mark}] {outcome.name}")
+        if not outcome.passed:
+            print(f"  {outcome.message}")
+            if outcome.traceback:
+                indented = "\n".join(
+                    f"    {line}" for line in outcome.traceback.rstrip().splitlines()
+                )
+                print(indented)
+            if outcome.tree_dump:
+                print(f"  tree at failure:\n    {outcome.tree_dump}")
+
+    passed = sum(1 for o in report.outcomes if o.passed)
+    total = len(report.outcomes)
+    print(f"\n{passed}/{total} passed on target {report.target!r}.")
+    return 0 if report.passed else 1
 
 
 def _run_doctor(verbose: bool) -> int:
