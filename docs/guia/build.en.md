@@ -346,6 +346,46 @@ also enable **"Install via USB"**, or `adb install` fails with
     at what is missing before a build. On WSL? See the dedicated
     [device-over-USB (WSL)](dispositivo-wsl.md) guide.
 
+## APK size
+
+Almost all of the APK weight is the **embedded CPython 3.14** (the native `.so`s
++ the standard library) plus the native `pydantic_core` — all required at
+runtime. The build already ships a **lean** APK: heavy optional dependencies are
+*feature-gated* (`tempest.features` — camera/QR/video/push are only pulled in
+when asked for), the icons use only `material-icons-core`, and the standard
+library is pruned before it becomes an asset.
+
+Breakdown of a *lean* debug APK (arm64-v8a, no extra features):
+
+| Component | Size (in APK) | Removable? |
+| --- | --- | --- |
+| `lib/arm64-v8a/*.so` (libpython, libcrypto, libsqlite, libssl) | ~11 MB | ❌ runtime (already stripped) |
+| `site-packages/pydantic_core` (native wheel) | ~4.6 MB | ❌ runtime |
+| `site-packages/pydantic` | ~2.0 MB | ❌ runtime |
+| `lib-dynload/*.so` (stdlib extension modules) | ~6.6 MB | partial — test ones only |
+| pure stdlib (`asyncio`, `email`, `json`, `re`, …) | ~6 MB | partial |
+| Compose/AndroidX + DEX + resources | ~3 MB | ❌ runtime |
+
+!!! info "What gets pruned (F6)"
+    `CopyPythonStdlibTask` in `android-host/app/build.gradle.kts` excludes from the
+    **assets** (it never touches the dev prefix) everything an app does not use at
+    runtime: the test suites (`test/`), the IDLE editor, Tk/turtle, the packaging
+    tooling (`ensurepip`/`venv`/`lib2to3`), `pydoc_data`, the bytecode caches,
+    **plus** the interactive REPL (`_pyrepl`), the WSGI reference server
+    (`wsgiref`), `doctest.py`/`pydoc.py` and CPython's **test extension modules**
+    (`lib-dynload/_test*.so`, `_xxtestfuzz`, `xxsubtype`, `xxlimited*`). None are
+    imported by the framework or `pydantic` (verified off-device with an import
+    trace).
+
+!!! note "Why it doesn't drop below ~38 MB"
+    The natives (`libpython3.14.so` 5.8 MB, `libcrypto` 3.7 MB) already ship
+    stripped (running `llvm-strip` saves 0 bytes) and `pydantic_core`/`pydantic`
+    are mandatory. What's left to prune safely is test dead-weight, which
+    compresses well in the zip — so the net gain is modest (~1 MB). Bigger cuts
+    (compressing the stdlib into a single archive, dropping the CJK codecs) would
+    require touching the Kotlin/C host and on-device validation — out of scope for
+    this offline phase.
+
 ## Send the APK for someone to test
 
 1. Build: `tempest build apk`.
