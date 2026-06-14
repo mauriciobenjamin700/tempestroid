@@ -113,11 +113,12 @@ inferência ONNX) com pouco esforço e visual profissional. Plano fase-a-fase em
 |---|---|---|---|
 | H0 | Sistema de tokens: paleta tonal M3 + `color_scheme`s, escalas de espaçamento/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | **alto** | ⏳ planejado |
 | H1 | API de variantes (Chakra): `variant`/`size`/`color_scheme` → `Style` via tema + estados (hover/press/disabled/focus); `Button` piloto | **alto** | ⏳ planejado |
-| H2 | Kit base ação/entrada estilizado: Button/IconButton/Input/Checkbox/Radio/Switch/Select/Slider | médio | ⏳ planejado |
-| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid | baixo | ⏳ planejado |
-| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton, Tooltip, Stat | baixo | ⏳ planejado |
-| H5 | Componentes de pesquisa (liga ao G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | médio | ⏳ planejado |
-| H6 | Galeria (storybook) + docs tutorial-first bilíngues + dark mode verificado + conformância de tokens/variants | baixo | ⏳ planejado |
+| H2 | Kit base ação/entrada estilizado: Button/IconButton (+ sistema de ícones)/Input/Checkbox/RadioGroup/Switch/Select/Slider + inputs BR | médio | ⏳ planejado |
+| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | baixo | ⏳ planejado |
+| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton, Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | baixo | ⏳ planejado |
+| H5 | Navegação estilizada: AppBar/CollapsingAppBar, NavBar, Drawer/Sidebar, Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs (skins M3 sobre os hosts do E0) | médio | ⏳ planejado |
+| H6 | Componentes de pesquisa (liga ao G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | médio | ⏳ planejado |
+| H7 | Galeria (storybook) + docs tutorial-first bilíngues + dark/RTL verificados + conformância (matriz representativa) de tokens/variants | baixo | ⏳ planejado |
 
 !!! warning "Trilho cross-repo — três camadas, dois repositórios"
     Diferente do Trilho E (tudo em `tempestroid`), o Trilho H atravessa **dois

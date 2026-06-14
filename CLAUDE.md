@@ -134,12 +134,13 @@ tabela em [`docs/roadmap.md`](docs/roadmap.md).
 | Phase | Scope | Status | Done when |
 |---|---|---|---|
 | H0 | Sistema de tokens (foundation): paleta tonal M3 + `color_scheme`s, escalas de espaçamento (4pt)/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | ⏳ planejado | `Theme` expõe as escalas; um componente lê um token e ambos os renderers produzem o mesmo visual; conformância pina os tokens |
-| H1 | API de variantes (Chakra): `Variant`/`Size`/`color_scheme` → `Style` via tema (função pura) + estados (hover/press/disabled/focus) como state layers M3; `Button` piloto | ⏳ planejado | `Button(variant/size/color_scheme)` + 4 estados idêntico (dentro das divergências) nos dois renderers; resolução `→Style` unit-testada |
-| H2 | Kit base ação/entrada estilizado: Button/IconButton/Input/Checkbox/Radio/Switch/Select/Slider sobre os inputs do E5 | ⏳ planejado | cada componente aceita variant/size/color_scheme, passa na conformância e aparece na galeria |
-| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid | ⏳ planejado | idem H2 |
-| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton (E3), Tooltip, Stat | ⏳ planejado | idem H2 |
-| H5 | Componentes de pesquisa (liga ao Trilho G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | ⏳ planejado | app exemplo mostra resultado do `ort-vision-sdk` em `DetectionOverlay`+`MetricCard`+gráfico nos dois renderers (device se houver) |
-| H6 | Galeria (storybook) + docs tutorial-first bilíngues + dark verificado + conformância de tokens/variants | ⏳ planejado | galeria navegável + docs publicadas; dark verificado; gate verde nos dois repos |
+| H1 | API de variantes (Chakra): `Variant`/`Size`/`color_scheme` → `Style` via tema (função pura) + estados (hover/press/disabled/focus) como state layers M3 + transversais (a11y/contraste/touch-target, RTL, responsividade); `Button` piloto | ⏳ planejado | `Button(variant/size/color_scheme)` + 4 estados idêntico (dentro das divergências) nos dois renderers; resolução `→Style` unit-testada; contraste WCAG AA + touch-target ≥48dp |
+| H2 | Kit base ação/entrada estilizado: Button/IconButton (+ ícones)/Input/Checkbox/RadioGroup/Switch/Select/Slider + inputs BR sobre os inputs do E5 | ⏳ planejado | cada componente aceita variant/size/color_scheme, preserva Semantics/RTL, passa na conformância e aparece na galeria |
+| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | ⏳ planejado | idem H2 |
+| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton (E3), Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | ⏳ planejado | idem H2 |
+| H5 | Navegação estilizada: AppBar/CollapsingAppBar, NavBar, Drawer/Sidebar, Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs (skins M3 sobre os hosts do E0) | ⏳ planejado | idem H2 |
+| H6 | Componentes de pesquisa (liga ao Trilho G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | ⏳ planejado | app exemplo mostra resultado do `ort-vision-sdk` em `DetectionOverlay`+`MetricCard`+gráfico nos dois renderers (device se houver) |
+| H7 | Galeria (storybook) + docs tutorial-first bilíngues + dark/RTL verificados + conformância (matriz representativa) de tokens/variants | ⏳ planejado | galeria navegável + docs publicadas; dark/RTL verificados; gate verde nos dois repos |
 
 **Cross-repo (enforced para H):** ao contrário do Trilho E (tudo em
 `tempestroid`), o Trilho H atravessa **dois repos** porque o engine foi extraído

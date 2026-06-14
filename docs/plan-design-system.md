@@ -88,17 +88,41 @@ verdes** mais conformância; havendo device, verificação dual.
 
 | Fase | Escopo | Risco | Status |
 |---|---|---|---|
-| H0 | **Sistema de tokens** (foundation): paleta tonal M3 + `color_scheme`s, escalas de espaçamento (grid 4pt), raio, tipografia (display/headline/title/body/label), elevação/sombra, motion. `Theme` resolve tokens; `Style` referencia-os. | **alto** | ⏳ planejado |
-| H1 | **API de variantes (Chakra)**: protocolo `variant`/`size`/`color_scheme` → `Style` via tema; estados visuais (hover/press/disabled/focus) como state layers M3. `Button` como piloto (solid/outline/ghost/link × xs–lg × colorScheme). | **alto** | ⏳ planejado |
-| H2 | **Kit base ação/entrada estilizado**: Button, IconButton, Input/TextField, Checkbox, Radio, Switch, Select, Slider — aplicam variant/size/color_scheme + estados sobre os inputs do E5. | médio | ⏳ planejado |
-| H3 | **Superfície & layout estilizado**: Card (elevated/filled/outlined), Surface, Divider, Stack helpers (HStack/VStack/Spacer), Container responsivo, Grid — skins M3. | baixo | ⏳ planejado |
-| H4 | **Data display & feedback estilizado**: Badge/Tag/Chip/Avatar (variants), Alert/Banner (status color_schemes), Progress/Spinner, Skeleton (reusa E3), Tooltip, Stat. | baixo | ⏳ planejado |
-| H5 | **Componentes de pesquisa** (liga ao Trilho G): MetricCard/StatCard, wrappers de gráfico (Line/Bar sobre o canvas do E7), DataTable estilizada (sort/paginate), ConfidenceBadge, DetectionOverlay (bounding boxes p/ resultados do `ort-vision-sdk`), ImagePicker→ResultView. | médio | ⏳ planejado |
-| H6 | **Galeria + docs + dark**: example app "gallery" (estilo storybook) com cada componente × variante; docs tutorial-first (padrão tiangolo) bilíngue; dark mode verificado nos dois renderers; conformância de tokens/variants. | baixo | ⏳ planejado |
+| H0 | **Sistema de tokens** (foundation): paleta tonal M3 + `color_scheme`s, escalas de espaçamento (grid 4pt), raio, tipografia (display/headline/title/body/label), elevação/sombra, motion; **temas customizáveis** (marca do pesquisador). `Theme` resolve tokens; `Style` referencia-os. | **alto** | ⏳ planejado |
+| H1 | **API de variantes (Chakra)**: protocolo `variant`/`size`/`color_scheme` → `Style` via tema; estados visuais (hover/press/disabled/focus) como state layers M3; **transversais** (a11y/contraste/touch-target, RTL, responsividade) embutidos na resolução — ver §7. `Button` como piloto (solid/outline/ghost/link × xs–lg × colorScheme). | **alto** | ⏳ planejado |
+| H2 | **Kit base ação/entrada estilizado**: Button, IconButton (+ sistema de **ícones**), Input/TextField, Checkbox, RadioGroup, Switch, Select, Slider, **inputs BR** (CPF/CNPJ/Email/Phone/Password/Address) — aplicam variant/size/color_scheme + estados sobre os inputs do E5. | médio | ⏳ planejado |
+| H3 | **Superfície & layout estilizado**: Card (elevated/filled/outlined), Surface, Divider, Stack helpers (HStack/VStack/Spacer), Container responsivo, Grid, ListTile, Accordion — skins M3. | baixo | ⏳ planejado |
+| H4 | **Data display & feedback estilizado**: Badge/Tag/Chip/Avatar (variants), Alert/Banner (status color_schemes), Progress/Spinner, Skeleton (reusa E3), Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper. | baixo | ⏳ planejado |
+| H5 | **Navegação estilizada**: AppBar/CollapsingAppBar (TopAppBar M3), NavBar (NavigationBar), Drawer/Sidebar (NavigationDrawer/Rail), Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs — skins M3 sobre os hosts do E0. | médio | ⏳ planejado |
+| H6 | **Componentes de pesquisa** (liga ao Trilho G): MetricCard/StatCard, wrappers de gráfico (Line/Bar sobre o canvas do E7), DataTable estilizada (sort/paginate), ConfidenceBadge, DetectionOverlay (bounding boxes p/ resultados do `ort-vision-sdk`), ImagePicker→ResultView, Calendar/Clock estilizados. | médio | ⏳ planejado |
+| H7 | **Galeria + docs + dark**: example app "gallery" (estilo storybook) com cada componente × variante; docs tutorial-first (padrão tiangolo) bilíngue; dark mode verificado nos dois renderers; conformância de tokens/variants (matriz representativa — ver §7). | baixo | ⏳ planejado |
 
-`H0`→`H1` são a fundação e destravam todo o resto; `H2`–`H4` são o catálogo
-base; `H5` é o diferencial para o público-alvo (pesquisadores) e consome o
-Trilho G; `H6` é o polimento e a vitrine.
+`H0`→`H1` são a fundação e destravam todo o resto; `H2`–`H5` são o catálogo
+completo (kit base + superfície + feedback + navegação); `H6` é o diferencial
+para o público-alvo (pesquisadores) e consome o Trilho G; `H7` é o polimento e a
+vitrine.
+
+### Cobertura do catálogo (os 46 componentes do `tempest-core`)
+
+Todo componente existente recebe o tratamento (variant/size/color_scheme +
+estados), distribuído pelas fases — nenhum fica órfão:
+
+- **H2 (ação/entrada):** Button, IconButton, inputs do E5, RadioGroup, `*Input`
+  BR (CPF/CNPJ/Email/Phone/Password/Address), DocumentPicker, ImagePicker.
+- **H3 (superfície/layout):** Card, Divider, Grid, Table/TableCell/TableRow,
+  ListTile, Accordion, Surface/Container/Stack (novos helpers).
+- **H4 (data display/feedback):** Badge, Chip, Avatar, Banner, Rating,
+  EmptyState, SegmentedControl, Stepper, Tooltip/Progress/Spinner/Stat (novos).
+- **H5 (navegação):** AppBar, CollapsingAppBar, NavBar, Drawer, Sidebar, Footer,
+  Header, Breadcrumb, Burger, Scaffold, SearchBar.
+- **H6 (pesquisa):** DataTable, ImagePicture, Calendar, Clock + os novos
+  (MetricCard, gráficos, ConfidenceBadge, DetectionOverlay).
+
+!!! note "Componentes novos vs. existentes"
+    A maioria já existe e só ganha a camada de variante/token. Os marcados como
+    "novos" (Surface, Stat, Progress/Spinner, Tooltip-skin, MetricCard, gráficos,
+    ConfidenceBadge, DetectionOverlay) são acréscimos — lowerizam para primitivas
+    via `Component.render`, como o restante.
 
 ---
 
@@ -115,6 +139,9 @@ Espelhando Material 3 + a escala do Chakra:
   já casando com `Style.text_scale`/`font_asset` do E9.
 - **Elevação/sombra:** níveis 0–5 (M3 tonal elevation).
 - **Motion:** durações + curvas padrão (reusa `Curve`/`Transition` do E3).
+- **Tema de marca (customização):** o pesquisador cria um `Theme` com seu
+  `color_scheme` (ou sobrescreve tokens pontuais) e injeta via `App.set_theme`
+  (já existe no E9) — sem tocar nos componentes. Um tema default M3 vem pronto.
 
 Os componentes nunca recebem cor/tamanho cru — recebem **token** ou
 `variant`/`size`/`color_scheme`, e o tema resolve para `Style`.
@@ -143,39 +170,66 @@ Card(variant="elevated")
 
 ---
 
-## 7. Riscos e mitigação
+## 7. Transversais do design system (atravessam todas as fases)
+
+Quatro preocupações que **não são uma fase** — entram na resolução
+`variant/size/color_scheme → Style` (H1) e valem para todo componente:
+
+- **Acessibilidade (a11y).** A paleta tonal de cada `color_scheme` é gerada
+  garantindo **contraste WCAG AA** entre cor e seu `on_*`; `size` nunca produz
+  alvo de toque < **48dp** (mínimo M3); a `Semantics` + `focusable`/`focus_order`
+  do E9 são **preservadas** por todos os componentes estilizados (rótulo,
+  estado, role). Conformância inclui um check de contraste por scheme.
+- **RTL.** Os componentes reusam o espelhamento start/end do E9 (`to_compose`/
+  `to_qss` com flag `rtl`) — variantes não podem reintroduzir lados fixos
+  (`left`/`right`); só `start`/`end`.
+- **Ícones.** H2 introduz um **sistema de ícones** tipado (set padrão +
+  registro do usuário), consumido por `IconButton`, inputs, navegação, etc. —
+  fecha o gap dos "nomes de ícone arbitrários → texto cru" do renderer Qt.
+- **Responsividade.** `size`/layout aceitam **valores por breakpoint** (estilo
+  Chakra responsive / MUI `sx`), resolvidos contra a `MediaQueryData` do E9 —
+  ex.: `size={"base": "sm", "md": "lg"}`. O tema define os breakpoints.
+
+---
+
+## 8. Riscos e mitigação
 
 | Risco | Mitigação |
 |---|---|
 | Coordenação cross-repo (`tempest-core` ↔ `tempestroid` ↔ `android-host`) | Token/variante landa e é **released** no `tempest-core` primeiro; tempestroid bumpa a dep; renderers consomem. Cada fase é um par de PRs coordenados. |
 | Divergência M3 (Compose nativo) vs emulação Qt | Suite de conformância pina os dois tradutores por token/variante (padrão Trilho D); divergências documentadas, não escondidas. |
-| Escopo inflar (virar "mais um MUI") | v1 = catálogo enxuto coeso + os componentes de pesquisa do público-alvo; extras sob demanda. |
+| **Explosão combinatória da conformância** (variant × size × color_scheme × estado × componente) | Pinar uma **matriz representativa** (não o produto cartesiano): por componente, um golden por variante e um por estado, com size/color_scheme amostrados; a resolução `→Style` é função pura e tem unit tests exaustivos baratos cobrindo o resto. |
+| Escopo inflar (virar "mais um MUI") | v1 = catálogo existente + transversais + componentes de pesquisa do público-alvo; extras sob demanda. |
 | Tokens quebrarem apps existentes | `Style` cru continua aceito; variantes são **aditivas** — quem já estiliza na mão não quebra. |
+| a11y/contraste só "no papel" | Check automático de contraste por `color_scheme` na conformância; alvo de toque mínimo validado no size. |
 
 ---
 
-## 8. Feito quando (por fase)
+## 9. Feito quando (por fase)
 
-- **H0** — `Theme` expõe as escalas de token; um componente lê um token e ambos
-  os renderers produzem o mesmo visual; conformância pina os tokens.
+- **H0** — `Theme` expõe as escalas de token + tema de marca customizável; um
+  componente lê um token e ambos os renderers produzem o mesmo visual;
+  conformância pina os tokens.
 - **H1** — `Button` com `variant`/`size`/`color_scheme` + 4 estados renderiza
   idêntico (dentro das divergências documentadas) nos dois renderers; resolução
-  `→Style` unit-testada.
-- **H2–H4** — cada componente do kit aceita variant/size/color_scheme, passa na
-  conformância e aparece na galeria.
-- **H5** — um app de exemplo mostra resultado do `ort-vision-sdk` num
+  `→Style` unit-testada; contraste WCAG AA e touch-target ≥ 48dp validados.
+- **H2–H5** — cada componente do catálogo (entrada, superfície, feedback,
+  navegação) aceita variant/size/color_scheme, preserva `Semantics`/RTL, passa
+  na conformância e aparece na galeria.
+- **H6** — um app de exemplo mostra resultado do `ort-vision-sdk` num
   `DetectionOverlay` + `MetricCard` + gráfico, nos dois renderers (device quando
   houver hardware).
-- **H6** — galeria navegável + docs bilíngues tutorial-first publicadas; dark
-  mode verificado; gate verde nos dois repos.
+- **H7** — galeria navegável + docs bilíngues tutorial-first publicadas; dark
+  mode + RTL verificados; gate verde nos dois repos.
 
 ---
 
-## 9. Relação com os outros trilhos
+## 10. Relação com os outros trilhos
 
-- **Consome E9** (tema/dark/MediaQuery, `text_scale`/`font_asset`) como base de
-  tokens.
-- **Consome E7** (canvas) para os wrappers de gráfico de H5.
+- **Consome E9** (tema/dark/MediaQuery, `text_scale`/`font_asset`, RTL,
+  Semantics) como base de tokens, responsividade, espelhamento e a11y.
+- **Consome E7** (canvas) para os wrappers de gráfico de H6.
 - **Consome E5** (inputs) como base do kit de entrada de H2.
-- **Casa com o Trilho G** (inferência ONNX): H5 dá a UI de validação que o
+- **Consome E0** (navegação) como base dos hosts estilizados de H5.
+- **Casa com o Trilho G** (inferência ONNX): H6 dá a UI de validação que o
   pesquisador usa para ver os resultados do modelo.
