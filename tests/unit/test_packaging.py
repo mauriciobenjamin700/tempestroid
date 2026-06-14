@@ -339,6 +339,26 @@ def _noop_port(_port: int) -> None:
     """Stub for adb_reverse/launch_host_dev (records nothing)."""
 
 
+def _fake_adb_run(
+    cmd: "Sequence[str]", **_kw: object
+) -> "subprocess.CompletedProcess[str]":
+    """Stub ``subprocess.run`` so deploy tests never shell out to real adb.
+
+    ``deploy_offline`` force-stops the host with a real
+    ``adb shell am force-stop`` before pushing. Left unmocked, that call blocks
+    indefinitely whenever the adb server is wedged (a recurring emulator/USB
+    failure mode) — hanging the unit test and the whole gate. A unit test must
+    never touch a real device, so stub it to a clean completed process.
+
+    Args:
+        cmd: The command the production code would have run.
+
+    Returns:
+        A successful :class:`subprocess.CompletedProcess` with empty streams.
+    """
+    return subprocess.CompletedProcess(list(cmd), 0, stdout="", stderr="")
+
+
 class _FakeDevServer:
     """Stand-in for ``DevServer`` that fires ``on_fetch`` as soon as it starts.
 
@@ -397,6 +417,7 @@ def test_deploy_offline_pushes_when_host_present(
     # Host already installed → the ~50 MB adb install is skipped.
     monkeypatch.setattr("tempestroid.cli.packaging.host_installed", _host_present)
     monkeypatch.setattr("tempestroid.devserver.DevServer", _FakeDevServer)
+    monkeypatch.setattr(subprocess, "run", _fake_adb_run)
     reversed_ports: list[int] = []
     launched_ports: list[int] = []
     monkeypatch.setattr("tempestroid.cli.packaging.adb_reverse", reversed_ports.append)
@@ -434,6 +455,7 @@ def test_deploy_offline_installs_host_when_absent(
     monkeypatch.setattr("tempestroid.devserver.DevServer", _FakeDevServer)
     monkeypatch.setattr("tempestroid.cli.packaging.adb_reverse", _noop_port)
     monkeypatch.setattr("tempestroid.cli.packaging.launch_host_dev", _noop_port)
+    monkeypatch.setattr(subprocess, "run", _fake_adb_run)
     installed: list[list[str]] = []
 
     def fake_run(_self: Console, cmd: Sequence[str], **_kw: object) -> None:
