@@ -476,8 +476,11 @@ o lado Python `to_compose`); a camada B pina o **consumo Kotlin** desse spec.
 - `android-host/app/build.gradle.kts` — já suporta; só consome o prefixo x86_64.
 - `.claude/skills/android-doctor` + `dual-verify` — aceitar `emulator-*` como alvo
   válido (não só device físico) e preferir o emulador quando nenhum device físico.
-- **Camada B:** `android-host/app/src/test/…` — testes Roborazzi/Robolectric do
-  `TempestRenderer.kt` + golden PNGs versionados.
+- **Camada B:** `android-host/app/src/test/java/org/tempestroid/host/` — asserts
+  determinísticos (`StyleComposeMappingTest` + `TempestTreeParseTest`); deps de
+  teste em `android-host/app/build.gradle.kts` (`testImplementation` JUnit4 +
+  Compose BOM + `org.json`); `android-host/app/src/test/roborazzi/…` +
+  `app/src/test/screenshots/*.png` — testes Roborazzi opt-in + goldens versionados.
 
 ### Sub-tarefas
 1. **Stage x86_64** (CPython prefix + site-packages) — fecha o único gap.
@@ -485,15 +488,31 @@ o lado Python `to_compose`); a camada B pina o **consumo Kotlin** desse spec.
 3. **`make emulator-verify`** — install no emulador + galeria F5 → screenshots +
    scan de traceback, tudo sem hardware. Vira o caminho de device-verify default.
 4. **android-doctor/dual-verify** aceitam emulador como alvo (e CI).
-5. **Camada B** — testes de tela JVM do renderizador Compose (Roborazzi) + goldens.
+5. **Camada B** ✅ — testes de tela JVM do renderizador Compose. Duas frentes em
+   `android-host/app/src/test/`: (a) **asserts determinísticos** (sempre no gate,
+   `:app:testDebugUnitTest`, ~3s, sem Robolectric/rede) que pinam as funções puras
+   `Style → Modifier/Arrangement/Alignment/Color` de `TempestRenderer.kt`
+   (`StyleComposeMappingTest`, 20 testes) + o parse do envelope mount/patch em
+   `TempestTree.kt` (`TempestTreeParseTest`, 14 testes) — espelham os mesmos
+   estilos canônicos dos goldens da fase D; (b) **Roborazzi** (opt-in
+   `-Ptempest.roborazzi=true`) que renderiza os `@Composable` via Robolectric e
+   grava/compara PNGs golden em `app/src/test/screenshots/` (Column/Row/Stack/Text
+   canônicos). Regenerar: `./gradlew :app:recordRoborazziDebug
+   -Ptempest.roborazzi=true` (ou `make compose-shots`); verificar:
+   `./gradlew :app:verifyRoborazziDebug -Ptempest.roborazzi=true`. Roborazzi fica
+   off no gate default (baixa runtime do Robolectric na 1ª execução) — os asserts
+   determinísticos é que rodam sempre.
 6. **CI** — job que sobe o emulador headless e roda a galeria (gated por KVM no runner).
 
 ### Feito quando
 - `make emulator-verify` (sem nenhum aparelho USB) sobe o AVD x86_64, instala o
   host x86_64 e roda a galeria F5 verde com screenshots — provando CPython boot +
   JNI + Compose + nativas sem hardware físico.
-- A camada B pina o renderizador Compose em testes JVM (golden images) que rodam
-  no `framework-guard`/CI em segundos, sem emulador.
+- ✅ A camada B pina o renderizador Compose em testes JVM que rodam em segundos
+  sem emulador: 34 asserts determinísticos (`Style → Modifier/Arrangement/
+  Alignment/Color` + parse mount/patch) sempre no gate (`make compose-test`), mais
+  4 golden images Roborazzi opt-in (`make compose-shots`). Complementa a
+  conformância da fase D (lado Python `to_compose`) pinando o consumo Kotlin.
 - `dual-verify` trata o emulador como um leg de device legítimo; o device físico
   vira opcional (confirmação final), não o gargalo.
 

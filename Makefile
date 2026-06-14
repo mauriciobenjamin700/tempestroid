@@ -135,6 +135,14 @@ doctor: ## Validate the Android toolchain (SDK/NDK/Gradle/JDK/device/staging)
 toolchain: ## Fetch CPython 3.14 + build wheels + stage device site-packages
 	cd toolchain && source env.sh && ./00_fetch_cpython.sh && ./01_build_wheels.sh && ./02_stage_deps.sh
 
+.PHONY: compose-test
+compose-test: ## F7 camada B: JVM screen tests of the Compose renderer (no device/emulator)
+	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:testDebugUnitTest
+
+.PHONY: compose-shots
+compose-shots: ## Record Roborazzi golden PNGs of the Compose renderer (opt-in)
+	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:recordRoborazziDebug -Ptempest.roborazzi=true
+
 .PHONY: apk
 apk: ## Build debug APK (assembleDebug)
 	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug
