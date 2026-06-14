@@ -14,6 +14,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// F7 camada B (optional): apply the Roborazzi screen-test plugin only when asked
+// (`-Ptempest.roborazzi=true`). Off by default so the gate runs the lean
+// deterministic-assert tests without pulling the Robolectric runtime.
+val roborazziEnabled = (project.findProperty("tempest.roborazzi")?.toString() == "true")
+if (roborazziEnabled) {
+    apply(plugin = "io.github.takahirom.roborazzi")
+}
+
 // FCM (E8): apply the google-services plugin ONLY when a google-services.json is
 // present, so the host builds without a Firebase project (the PushModule then
 // replies `not_configured`). Drop a google-services.json into android-host/app/
@@ -170,6 +178,25 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // --- F7 camada B: JVM screen tests of the Compose renderer -----------------
+    // Robolectric-backed unit tests need merged Android resources and tolerate
+    // calls into unmocked android.* (e.g. android.util.Log) by returning defaults
+    // rather than throwing. The actual tempestroid tests assert on the PURE
+    // Style → Modifier/Arrangement/Alignment/Color mapping functions, which do not
+    // touch the Android framework — but the flags keep Robolectric-style tests
+    // (and any future Roborazzi screen test) runnable in the same source set.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+    }
+
+    // The Roborazzi screen tests import Roborazzi/Robolectric, so their source
+    // lives in a dedicated dir added to the test source set ONLY when the opt-in
+    // flag is set (else they would fail to compile without those deps).
+    if (roborazziEnabled) {
+        sourceSets.getByName("test").java.srcDir("src/test/roborazzi")
     }
 
     // --- Feature source-set selection (F4) ----------------------------------
@@ -529,22 +556,41 @@ val copyPrebuiltTempestHost = if (isPrebuilt) {
     null
 }
 
+// F7 camada B: the CPython staging source dirs (toolchain/dist + the natives
+// prefix) are produced by `make toolchain` and are NOT needed to RUN the JVM unit
+// tests of the renderer (`:app:testDebugUnitTest`) — only to assemble a runnable
+// APK. When they are absent (a checkout that only runs the camada-B gate, e.g. CI
+// before staging), wiring them as generated assets/jniLibs makes even unit tests
+// fail at config-time (the @InputDirectory existence check). So register the
+// generated source dirs ONLY when the staging inputs exist. When they exist (any
+// device/emulator build) the wiring is byte-for-byte unchanged.
+val pythonStagingPresent: Boolean =
+    libsSourceDir.exists() && stdlibSourceDir.exists() && depsSourceDir.exists()
+if (!pythonStagingPresent) {
+    logger.lifecycle(
+        "tempest: CPython staging dirs absent — skipping jniLibs/assets staging " +
+            "(JVM unit tests run; `make toolchain` to build a runnable APK).",
+    )
+}
+
 androidComponents {
     onVariants { variant ->
-        variant.sources.jniLibs?.addGeneratedSourceDirectory(
-            copyPythonLibs, CopyPythonLibsTask::outputDir
-        )
-        copyPrebuiltTempestHost?.let {
+        if (pythonStagingPresent) {
             variant.sources.jniLibs?.addGeneratedSourceDirectory(
-                it, CopyPrebuiltTempestHostTask::outputDir
+                copyPythonLibs, CopyPythonLibsTask::outputDir
+            )
+            copyPrebuiltTempestHost?.let {
+                variant.sources.jniLibs?.addGeneratedSourceDirectory(
+                    it, CopyPrebuiltTempestHostTask::outputDir
+                )
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(
+                copyPythonStdlib, CopyPythonStdlibTask::outputDir
+            )
+            variant.sources.assets?.addGeneratedSourceDirectory(
+                copyPythonSitePackages, CopyPythonSitePackagesTask::outputDir
             )
         }
-        variant.sources.assets?.addGeneratedSourceDirectory(
-            copyPythonStdlib, CopyPythonStdlibTask::outputDir
-        )
-        variant.sources.assets?.addGeneratedSourceDirectory(
-            copyPythonSitePackages, CopyPythonSitePackagesTask::outputDir
-        )
     }
 }
 
@@ -631,4 +677,46 @@ dependencies {
     // which is out of scope for the host skeleton. Wiring it is a post-phase task:
     // implementation("com.google.maps.android:maps-compose:6.1.0")
     // implementation("com.google.android.gms:play-services-maps:19.0.0")
+
+    // --- F7 camada B: JVM unit tests of the Compose renderer -------------------
+    // These pin the KOTLIN consumption of the `Style → Compose` spec — the
+    // mapping the renderer does from the serialized style map to Compose
+    // Modifier/Arrangement/Alignment/Color values and the mount/patch envelope
+    // parse in TempestTree — running on the JVM in seconds (no device/emulator),
+    // complementing the phase-D conformance suite (which pins the Python side
+    // `to_compose`).
+    //
+    // JUnit4 is the runner; the Compose BOM (declared above for `implementation`)
+    // is re-pinned here so the test classpath resolves `androidx.compose.ui.*`
+    // value types (Color/Dp/Arrangement/Alignment) the asserts compare against.
+    // `ui-test-junit4` is included so a future Roborazzi/`createComposeRule`
+    // screen test can live in the same source set without another dependency
+    // change; the current tests assert on the pure mapping functions only.
+    testImplementation("junit:junit:4.13.2")
+    // The mount/patch envelope parse in TempestTree uses org.json, which on the
+    // JVM unit-test classpath is otherwise the empty Android stub (every method
+    // returns a default → NPE on the fluent `put(...)` chain even with
+    // isReturnDefaultValues=true). The real reference implementation makes the
+    // parse path exercise actual JSON, matching the device's bundled org.json.
+    testImplementation("org.json:json:20240303")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui")
+    testImplementation("androidx.compose.ui:ui-graphics")
+    testImplementation("androidx.compose.foundation:foundation")
+    testImplementation("androidx.compose.material3:material3")
+    testImplementation("androidx.compose.ui:ui-unit")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+
+    // --- F7 camada B (optional): Roborazzi golden screen tests ----------------
+    // Only on the test classpath when -Ptempest.roborazzi=true. They render the
+    // actual @Composable via Robolectric (off-device) and record/compare PNG
+    // goldens under app/src/test/screenshots/. Robolectric downloads its
+    // android-all runtime on first run, so this path is opt-in (the default
+    // deterministic-assert tests stay lean and network-free).
+    if (roborazziEnabled) {
+        testImplementation("org.robolectric:robolectric:4.13")
+        testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.0")
+        testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.32.0")
+        testImplementation("androidx.compose.ui:ui-test-manifest")
+    }
 }

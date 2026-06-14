@@ -330,7 +330,7 @@ private fun RenderAccessible(node: TempestNode, onEvent: (String, String) -> Uni
 
 /** Map a serialized semantics `role` string to a Compose [Role], or `null` when
  *  the role has no direct Compose equivalent (e.g. "heading" → handled separately). */
-private fun roleFor(role: String?): Role? = when (role) {
+internal fun roleFor(role: String?): Role? = when (role) {
     "button" -> Role.Button
     "checkbox" -> Role.Checkbox
     "switch" -> Role.Switch
@@ -1380,7 +1380,7 @@ private fun RenderClipPath(
 }
 
 /** Parse a serialized color prop (a `#rrggbb`/`#aarrggbb` hex string) to a [Color]. */
-private fun colorFromProp(value: Any?): Color? =
+internal fun colorFromProp(value: Any?): Color? =
     (value as? String)?.let { parseHexColor(it) }
 
 /**
@@ -3232,7 +3232,7 @@ private fun swipeJson(dx: Float, dy: Float): String {
 }
 
 /** Two-axis [Alignment] for a Stack's non-positioned children, from `stackAlign`. */
-private fun stackAlignmentOf(style: Map<String, Any?>): Alignment = when (style["stackAlign"]) {
+internal fun stackAlignmentOf(style: Map<String, Any?>): Alignment = when (style["stackAlign"]) {
     "topStart" -> Alignment.TopStart
     "topCenter" -> Alignment.TopCenter
     "topEnd" -> Alignment.TopEnd
@@ -3254,7 +3254,7 @@ private fun BoxScope.absoluteModifier(style: Map<String, Any?>): Modifier {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun styleOf(node: TempestNode): Map<String, Any?> =
+internal fun styleOf(node: TempestNode): Map<String, Any?> =
     node.props["style"] as? Map<String, Any?> ?: emptyMap()
 
 internal fun handlerToken(node: TempestNode, prop: String): String? {
@@ -3308,7 +3308,7 @@ internal fun baseModifier(style: Map<String, Any?>): Modifier {
     return m
 }
 
-private fun edgeOf(style: Map<String, Any?>, key: String): PaddingValues? {
+internal fun edgeOf(style: Map<String, Any?>, key: String): PaddingValues? {
     @Suppress("UNCHECKED_CAST")
     val edge = style[key] as? Map<String, Any?> ?: return null
     fun side(name: String) = (edge[name] as? Number)?.toFloat()?.dp ?: 0.dp
@@ -3318,13 +3318,13 @@ private fun edgeOf(style: Map<String, Any?>, key: String): PaddingValues? {
     )
 }
 
-private fun colorOf(style: Map<String, Any?>, key: String): Color? {
+internal fun colorOf(style: Map<String, Any?>, key: String): Color? {
     val hex = style[key] as? String ?: return null
     return parseHexColor(hex)
 }
 
 /** Parse `#rrggbb` or `#aarrggbb` into a Compose [Color]. */
-private fun parseHexColor(hex: String): Color? {
+internal fun parseHexColor(hex: String): Color? {
     val s = hex.removePrefix("#")
     return when (s.length) {
         6 -> Color(("ff$s").toLong(16))
@@ -3339,7 +3339,7 @@ private fun parseHexColor(hex: String): Color? {
  * which folds the same factor into `font-size`. Returns `Unspecified` when no font
  * size is declared (so the Material default size, itself subject to text scale, wins).
  */
-private fun scaledFontSize(style: Map<String, Any?>): androidx.compose.ui.unit.TextUnit {
+internal fun scaledFontSize(style: Map<String, Any?>): androidx.compose.ui.unit.TextUnit {
     val size = (style["fontSize"] as? Number)?.toFloat() ?: return androidx.compose.ui.unit.TextUnit.Unspecified
     val scale = (style["textScale"] as? Number)?.toFloat() ?: 1f
     return (size * scale).sp
@@ -3361,7 +3361,7 @@ private fun fontFamilyOf(style: Map<String, Any?>): FontFamily? {
     }
 }
 
-private fun textAlignOf(style: Map<String, Any?>): TextAlign? = when (style["textAlign"]) {
+internal fun textAlignOf(style: Map<String, Any?>): TextAlign? = when (style["textAlign"]) {
     "left" -> TextAlign.Left
     "center" -> TextAlign.Center
     "right" -> TextAlign.Right
@@ -3369,7 +3369,7 @@ private fun textAlignOf(style: Map<String, Any?>): TextAlign? = when (style["tex
     else -> null
 }
 
-private fun verticalArrangement(style: Map<String, Any?>): Arrangement.Vertical {
+internal fun verticalArrangement(style: Map<String, Any?>): Arrangement.Vertical {
     val gap = (style["gap"] as? Number)?.toFloat()
     return when (style["arrangement"]) {
         "center" -> Arrangement.Center
@@ -3381,7 +3381,7 @@ private fun verticalArrangement(style: Map<String, Any?>): Arrangement.Vertical 
     }
 }
 
-private fun horizontalArrangement(style: Map<String, Any?>): Arrangement.Horizontal {
+internal fun horizontalArrangement(style: Map<String, Any?>): Arrangement.Horizontal {
     val gap = (style["gap"] as? Number)?.toFloat()
     return when (style["arrangement"]) {
         "center" -> Arrangement.Center
@@ -3393,13 +3393,13 @@ private fun horizontalArrangement(style: Map<String, Any?>): Arrangement.Horizon
     }
 }
 
-private fun horizontalAlignment(style: Map<String, Any?>): Alignment.Horizontal = when (style["alignment"]) {
+internal fun horizontalAlignment(style: Map<String, Any?>): Alignment.Horizontal = when (style["alignment"]) {
     "center" -> Alignment.CenterHorizontally
     "end" -> Alignment.End
     else -> Alignment.Start
 }
 
-private fun verticalAlignment(style: Map<String, Any?>): Alignment.Vertical = when (style["alignment"]) {
+internal fun verticalAlignment(style: Map<String, Any?>): Alignment.Vertical = when (style["alignment"]) {
     "center" -> Alignment.CenterVertically
     "end" -> Alignment.Bottom
     else -> Alignment.Top
