@@ -356,10 +356,39 @@ also enable **"Install via USB"**, or `adb install` fails with
 
 The app runs standalone — without your computer, without a dev server.
 
+## Testing without a physical device (emulator)
+
+A physical device on USB is the recurring bottleneck (USB-WSL drops, MIUI install
+toggles, a locked screen). For **hardware-free** validation, tempestroid runs on a
+**headless x86_64 emulator** — a full equivalent (CPython boot + JNI bridge +
+Compose + native capabilities):
+
+```bash
+make emulator-verify          # boot the x86_64 AVD, build the x86_64 host, install + run
+make emulator-verify APP=examples/forms/app.py   # any app
+```
+
+The target (`toolchain/emulator_verify.sh`) chains: boot the headless AVD →
+`make stage-x86` (x86_64 CPython 3.14 prefix + x86_64 `pydantic_core`) →
+`make apk-x86` (an x86_64-only APK) → install on the emulator → `tempest serve` →
+screenshot into `docs/assets/emulator/`.
+
+!!! tip "Why x86_64"
+    The emulator runs on the host arch (x86_64), so it needs the x86_64 CPython +
+    wheel — staged into `dist/python/x86_64` / `dist/site-packages-x86_64`
+    (`stage-x86` reuses the tarball cibuildwheel already cached). The physical
+    device's arm64 path stays **untouched** (`-Ptempest.depsDir` keeps them apart).
+
+!!! note "Two adb targets"
+    If a physical device is also attached, the commands target the emulator
+    explicitly (`-s $(EMU_SERIAL)` / `ANDROID_SERIAL`) — no ambiguity.
+
 ## Recap
 
 - Apps are **multi-file**: the project tree ships with them, on `sys.path`, in
   both the simulator and the device.
+- **Hardware-free:** `make emulator-verify` validates everything on a headless
+  x86_64 emulator — no physical device.
 - `tempest deploy` / `serve` run on **your** device **without any SDK** — great
   for testing, but yield no artifact.
 - `tempest build apk` yields a **distributable, per-app APK** (its own id → N apps

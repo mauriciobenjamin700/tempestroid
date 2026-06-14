@@ -434,10 +434,17 @@ val stdlibSourceDir = if (isPrebuilt) {
 } else {
     file("$pythonPrefix/lib/python$pyVer")
 }
+// `-Ptempest.depsDir=<DIR>` overrides the source-build site-packages dir so a
+// non-default ABI (e.g. the x86_64 emulator target, F7) can point at its own
+// staging (../toolchain/dist/site-packages-x86_64) without clobbering the arm64
+// one. Defaults to the current arm64 path, so existing arm64 builds are
+// byte-for-byte unchanged. (Ignored in prebuilt mode — deps come from the APK.)
 val depsSourceDir = if (isPrebuilt) {
     File(prebuiltHostDir, "assets/python/lib/python$pyVer/site-packages")
 } else {
-    rootProject.file("../toolchain/dist/site-packages")
+    rootProject.file(
+        (project.findProperty("tempest.depsDir") ?: "../toolchain/dist/site-packages").toString()
+    )
 }
 val tempestroidCore = rootProject.file("../tempestroid")
 
