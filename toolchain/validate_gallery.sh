@@ -33,6 +33,8 @@ HOST="org.tempestroid.host"
 # device can shrink them (MOUNT_WAIT=20 SETTLE=3 …) for a quicker sweep.
 MOUNT_WAIT="${MOUNT_WAIT:-50}"   # max seconds to wait for the "pushed app" mount marker
 SETTLE="${SETTLE:-6}"            # seconds to let Compose paint after the push
+FG_WAIT="${FG_WAIT:-20}"         # max seconds to wait for the host to be foreground
+LOGTAIL="${LOGTAIL:-400}"        # logcat -t window (lighter than a full -d dump)
 mkdir -p "$OUT"
 # Checkpoint file: keep it across runs so we can resume; FRESH=1 starts over.
 if [ "${FRESH:-0}" = "1" ]; then : > "$RESULTS"; fi
@@ -69,14 +71,14 @@ validate() {
     local spid=$!
     LAST_SPID="$spid"
 
-    # Wait for the app to actually MOUNT, not merely for a "stable" frame: a
-    # slow target (the swiftshader emulator boots CPython in ~15-30s) shows the
-    # launcher meanwhile, and the launcher is itself a stable frame — so a
-    # stable-frame-only wait screenshots the launcher, not the app. Poll logcat
-    # for the dev-server push marker, then settle for the Compose mount.
+    # Wait for the app to actually MOUNT, not merely for a "stable" frame: a slow
+    # target (the swiftshader emulator boots CPython in ~15-30s) shows the launcher
+    # meanwhile, and the launcher is itself a stable frame. Poll logcat (a light
+    # `-t $LOGTAIL` window, NOT a full `-d` buffer dump — the heavy dumps under
+    # rapid cycling were wedging the emulator's adb channel) for the push marker.
     local mounted=0 waited=0
     while [ "$waited" -lt "$MOUNT_WAIT" ]; do
-        if adbq logcat -d 2>/dev/null | grep -q "pushed app"; then mounted=1; break; fi
+        if adbq logcat -d -t "$LOGTAIL" 2>/dev/null | grep -q "pushed app"; then mounted=1; break; fi
         if ! device_alive; then
             kill -- "-$spid" >/dev/null 2>&1 || true
             echo "ABORT  $name  usb-drop (waiting mount)" >> "$RESULTS"
@@ -84,37 +86,38 @@ validate() {
         fi
         sleep 3; waited=$((waited + 3))
     done
-    # settle: let Compose mount + paint the first real frame after the push.
+    # settle: let Compose paint the first real frame after the push.
     sleep "$SETTLE"
-    # then wait for a stable frame (two equal caps ~2s apart), up to ~16s.
-    local last="" cur="" stable=0 i
-    for i in $(seq 1 8); do
-        cur="$(cap_stable_md5)"
-        if [ -z "$cur" ]; then
-            if ! device_alive; then
-                kill -- "-$spid" >/dev/null 2>&1 || true
-                echo "ABORT  $name  usb-drop (mid-capture)" >> "$RESULTS"
-                return 1
-            fi
-        elif [ "$cur" = "$last" ]; then
-            stable=1; break
+    # Foreground-gate: confirm the host owns the resumed activity before the
+    # screenshot. If it never foregrounds (booting / crashed back to launcher),
+    # the capture would be the launcher — we record that as a FAIL, never a PASS.
+    local fg=0 fgwaited=0
+    while [ "$fgwaited" -lt "$FG_WAIT" ]; do
+        if host_foreground "$HOST"; then fg=1; break; fi
+        if ! device_alive; then
+            kill -- "-$spid" >/dev/null 2>&1 || true
+            echo "ABORT  $name  usb-drop (waiting foreground)" >> "$RESULTS"
+            return 1
         fi
-        last="$cur"; sleep 2
+        sleep 3; fgwaited=$((fgwaited + 3))
     done
+    # ONE screencap (the old 8-iteration stable loop was a heavy adb hot-spot).
     adbq exec-out screencap -p > "$OUT/$name.png" 2>/dev/null
 
     local err md5
     # `|| true`: a clean logcat means grep exits 1; without errexit that is
     # already harmless (err="" → PASS branch), but make the intent explicit so a
     # future `set -e` cannot turn "no errors found" into a script abort.
-    err=$(adbq logcat -d 2>/dev/null | grep -iE 'Traceback|ModuleNotFoundError|ImportError|dev client error' | head -2 | tr '\n' '|') || true
+    err=$(adbq logcat -d -t "$LOGTAIL" 2>/dev/null | grep -iE 'Traceback|ModuleNotFoundError|ImportError|dev client error' | head -2 | tr '\n' '|') || true
     md5="$(md5sum "$OUT/$name.png" 2>/dev/null | cut -d' ' -f1)"
     if [ -n "$err" ]; then
-        echo "FAIL   $name  mounted=$mounted stable=$stable  md5=$md5  :: $err" >> "$RESULTS"
+        echo "FAIL   $name  mounted=$mounted fg=$fg  md5=$md5  :: $err" >> "$RESULTS"
     elif [ "$mounted" -eq 0 ]; then
         echo "FAIL   $name  mounted=0 (no 'pushed app' in ${MOUNT_WAIT}s)  md5=$md5" >> "$RESULTS"
+    elif [ "$fg" -eq 0 ]; then
+        echo "FAIL   $name  fg=0 (host not foreground in ${FG_WAIT}s — capture is the launcher)  md5=$md5" >> "$RESULTS"
     else
-        echo "PASS   $name  mounted=1 stable=$stable  md5=$md5" >> "$RESULTS"
+        echo "PASS   $name  mounted=1 fg=1  md5=$md5" >> "$RESULTS"
     fi
     # kill the serve process GROUP (setsid leader); no pattern matching.
     kill -- "-$spid" >/dev/null 2>&1 || true

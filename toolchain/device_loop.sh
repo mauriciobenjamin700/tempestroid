@@ -53,6 +53,16 @@ cap_stable_md5() {
     rm -f "$f"
 }
 
+# host_foreground <package> — true iff <package> owns the resumed (foreground)
+# activity. Gates captures so a screenshot is never the launcher sitting behind a
+# still-booting / crashed-back app (the slow swiftshader emulator failure mode).
+host_foreground() {
+    local pkg="$1"
+    adbq shell dumpsys activity activities 2>/dev/null \
+        | grep -E "mResumedActivity|topResumedActivity|ResumedActivity" \
+        | grep -q "$pkg"
+}
+
 # abort_clean <serve_pgid> <reason> — kill the serve process GROUP (setsid
 # leader; never pattern-match, which would also match the harness itself),
 # reset the (possibly wedged) adb server, and print a recovery hint. Safe to
