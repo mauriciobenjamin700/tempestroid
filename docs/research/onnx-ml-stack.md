@@ -77,6 +77,15 @@ arm64 / macOS x86_64** + Android SDK/NDK — igual ao Trilho B (NDK r27,
 `ANDROID_SDK_ROOT=/usr/lib/android-sdk` neste host; não roda em WSL sem o
 toolchain).
 
+> **Prova de viabilidade — Chaquopy.** O SDK Chaquopy já mantém um **repositório
+> público de wheels android pré-buildadas** (`numpy` com OpenBLAS, `scipy`,
+> `opencv`, `scikit-learn`, `tensorflow`) em <https://chaquo.com/pypi-13.1/>,
+> com os **scripts de build abertos** em `chaquo/chaquopy` (`server/pypi`). Não
+> usamos o runtime Chaquopy (decisão B = JNI próprio + CPython oficial), **mas
+> as receitas de cross-compile dele são a melhor referência existente** para
+> fechar `scipy`/`sklearn`/`opencv` no NDK — exatamente o nosso calcanhar. G0
+> deve estudá-las antes de buildar do zero. Ver §Referências.
+
 ---
 
 ## 3. `onnxruntime` no Android — wheel vs AAR
@@ -196,12 +205,56 @@ visão (`G0→G2`), que é o que o `ort-vision-sdk` exercita.
 
 ---
 
-## Fontes
+## Referências para avançar a pesquisa
 
-- cibuildwheel 4.0 (Android: auditwheel, pkg-config, Fortran) — <https://iscinumpy.dev/post/cibuildwheel-4-0-0/>
-- cibuildwheel 3.0 (Android desde 3.1) — <https://iscinumpy.dev/post/cibuildwheel-3-0-0/>
-- cibuildwheel docs — <https://cibuildwheel.pypa.io/>
-- scikit-learn — release de wheels via CI (cibuildwheel) — <https://github.com/scikit-learn/scikit-learn/issues/30284>
-- ONNX Runtime — build for inferencing (Android, `--build_wheel`, `--android_abi`) — <https://onnxruntime.ai/docs/build/inferencing.html>
-- ONNX Runtime — custom build (reduzir operadores) — <https://onnxruntime.ai/docs/build/custom.html>
-- `ort-vision-sdk` — <https://github.com/mauriciobenjamin700/ort-vision-sdk>
+Material de leitura curado por tema. Os itens marcados **★** são leitura
+obrigatória antes de iniciar a fase indicada.
+
+### Receitas de wheels científicas para Android (a melhor referência)
+
+- **★ Chaquopy — repositório de wheels android pré-buildadas** (numpy/OpenBLAS,
+  scipy, opencv, scikit-learn, tensorflow): <https://chaquo.com/pypi-13.1/>
+- **★ Chaquopy — scripts de build das wheels** (`server/pypi`; as receitas de
+  cross-compile de cada pacote): <https://github.com/chaquo/chaquopy>
+- Chaquopy — "More data science packages now available" (notas de OpenBLAS,
+  versões): <https://chaquo.com/chaquopy/more-data-science-packages-now-available/>
+
+### Cross-compilar wheels nativas (toolchain)
+
+- **★ cibuildwheel — docs** (target Android, opções de build): <https://cibuildwheel.pypa.io/>
+- cibuildwheel 4.0 — Android maduro (auditwheel, pkg-config, Fortran, `xbuild-files`): <https://iscinumpy.dev/post/cibuildwheel-4-0-0/>
+- cibuildwheel 3.0 — Android desde a 3.1: <https://iscinumpy.dev/post/cibuildwheel-3-0-0/>
+- NumPy — guia de build/cross-compile (Meson): <https://numpy.org/doc/stable/building/>
+- SciPy — guia de build (BLAS/LAPACK, Fortran): <https://docs.scipy.org/doc/scipy/building/>
+- scikit-learn — release de wheels via CI (cibuildwheel + OpenMP): <https://github.com/scikit-learn/scikit-learn/issues/30284>
+- maturin — build de extensões Rust (referência do `pydantic-core`, Trilho B1): <https://www.maturin.rs/>
+
+### Runtime CPython no Android (base do Trilho B)
+
+- **★ PEP 738 — Android como plataforma suportada**: <https://peps.python.org/pep-0738/>
+- CPython — using Python on Android (3.14, binários oficiais): <https://docs.python.org/3.14/using/android.html>
+- Pesquisa interna do runtime (B0–B6): [`android-runtime.md`](android-runtime.md) · runbook executável: [`android-runbook.md`](android-runbook.md)
+
+### ONNX Runtime no Android
+
+- **★ ONNX Runtime — deploy on mobile** (visão geral, formato ORT, EPs): <https://onnxruntime.ai/docs/tutorials/mobile/>
+- ONNX Runtime — build for inferencing (Android, `--build_wheel`, `--android_abi`): <https://onnxruntime.ai/docs/build/inferencing.html>
+- ONNX Runtime — custom build (reduzir operadores, `--include_ops_by_config`): <https://onnxruntime.ai/docs/build/custom.html>
+- ONNX Runtime — NNAPI Execution Provider (aceleração CPU/GPU/NPU, API 27+): <https://onnxruntime.ai/docs/execution-providers/NNAPI-ExecutionProvider.html>
+- ONNX Runtime — XNNPACK Execution Provider (AAR no Maven): <https://onnxruntime.ai/docs/execution-providers/Xnnpack-ExecutionProvider.html>
+- ONNX Runtime — catálogo de Execution Providers: <https://onnxruntime.ai/docs/execution-providers/>
+
+### OpenCV / processamento de imagem no Android
+
+- OpenCV — Android (SDK nativo, alternativa à wheel cv2): <https://opencv.org/android/>
+- Pillow — docs (decode/resize puro-Python, sem cv2): <https://pillow.readthedocs.io/>
+
+### Projetos comparáveis (Python embarcado no Android)
+
+- Chaquopy — SDK Python para Android (Gradle plugin, embedding): <https://chaquo.com/chaquopy/>
+- BeeWare Briefcase — empacotar apps Python (inclui Android): <https://briefcase.readthedocs.io/>
+- python-for-android (Kivy) — toolchain p4a: <https://python-for-android.readthedocs.io/>
+
+### O SDK do time
+
+- **★ `ort-vision-sdk`** (a API de inferência que o Trilho G precisa rodar no device): <https://github.com/mauriciobenjamin700/ort-vision-sdk>
