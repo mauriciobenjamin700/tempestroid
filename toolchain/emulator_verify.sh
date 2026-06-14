@@ -13,15 +13,23 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=toolchain/device_loop.sh
+. "$ROOT/toolchain/device_loop.sh"
 APP="${1:-examples/counter/app.py}"
 AVD="${AVD:-pixel8_api34}"
 EMU_SERIAL="${EMU_SERIAL:-emulator-5554}"
+EMU_PORT="${EMU_PORT:-5554}"
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}"
 export ANDROID_SDK_ROOT
 EMU_APK="$ROOT/android-host/app/build/outputs/apk/debug/app-debug.apk"
 SHOT_DIR="$ROOT/docs/assets/emulator"
 SHOT="$SHOT_DIR/verify.png"
+GOLDEN_DIR="$ROOT/docs/assets/emulator/golden"
 BOOT_WAIT="${TEMPEST_EMU_BOOT_WAIT:-30}"
+READY_WAIT="${TEMPEST_EMU_READY_WAIT:-300}"
+# VISUAL=1 compares the final screenshot to a versioned golden (F8); a missing
+# golden is created (baseline). Off by default so the legacy flow is unchanged.
+VISUAL="${VISUAL:-0}"
 
 adb_emu() { adb -s "$EMU_SERIAL" "$@"; }
 
@@ -29,7 +37,12 @@ fail() { echo "EMULATOR-VERIFY: FAIL — $*" >&2; exit 1; }
 
 echo "==> [1/6] ensure emulator $EMU_SERIAL is up (AVD=$AVD)"
 make -C "$ROOT" emulator AVD="$AVD" EMU_SERIAL="$EMU_SERIAL" ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
-adb_emu wait-for-device
+# Gate on genuine readiness (not just wait-for-device, which races the slow
+# swiftshader path). Recover once if the AVD is wedged before giving up.
+if ! emu_wait_ready "$EMU_SERIAL" "$READY_WAIT"; then
+    echo "    not ready — attempting one recovery"
+    emu_recover "$AVD" "$EMU_SERIAL" "$EMU_PORT" || fail "emulator $EMU_SERIAL never became ready"
+fi
 
 echo "==> [2/6] stage x86_64 CPython runtime + site-packages"
 bash "$ROOT/toolchain/stage_emulator_runtime.sh"
@@ -70,6 +83,16 @@ logdump="$(adb_emu logcat -d -s tempest:V python:V AndroidRuntime:E 2>/dev/null 
 if echo "$logdump" | grep -qE 'Traceback \(most recent call last\)|FATAL EXCEPTION'; then
     echo "$logdump" | grep -E 'Traceback|Error|Exception' | tail -20 >&2
     fail "Python traceback / fatal exception in logcat"
+fi
+
+if [ "$VISUAL" = "1" ]; then
+    app_name="$(basename "$(dirname "$APP")")"
+    golden="$GOLDEN_DIR/$app_name.png"
+    echo "==> visual regression vs $golden"
+    if ! uv run --project "$ROOT" python "$ROOT/toolchain/visual_regression.py" \
+        "$SHOT" "$golden" --tolerance "${VISUAL_TOLERANCE:-0.02}"; then
+        fail "visual regression against golden $golden"
+    fi
 fi
 
 echo

@@ -11,6 +11,10 @@ GRADLEW    := ./gradlew
 # F7 — headless x86_64 emulator target. AVD name + the adb serial it boots as.
 AVD        ?= pixel8_api34
 EMU_SERIAL ?= emulator-5554
+EMU_PORT   ?= 5554
+# F8 — golden snapshot for deterministic fast boot + pool size (default: by host).
+SNAPSHOT   ?= golden
+N          ?=
 # This host: SDK/NDK live here (not the stale ANDROID_HOME). Override if needed.
 ANDROID_SDK_ROOT ?= /usr/lib/android-sdk
 # Version read from pyproject (single source of truth) for tagging.
@@ -187,14 +191,21 @@ logcat: ## Tail device logs for the host process
 EMU_APK := $(ANDROID)/app/build/outputs/apk/debug/app-debug.apk
 
 .PHONY: emulator
-emulator: ## Boot the headless x86_64 AVD if it's not already running (AVD=pixel8_api34)
+emulator: ## Boot the headless x86_64 AVD (fast from the '$(SNAPSHOT)' snapshot if present; F7/F8)
 	@if adb devices | grep -q '^$(EMU_SERIAL)[[:space:]]*device$$'; then \
 		echo "emulator $(EMU_SERIAL) already running"; \
 	else \
-		echo "==> booting AVD $(AVD) headless as $(EMU_SERIAL)"; \
+		snap_dir="$$HOME/.android/avd/$(AVD).avd/snapshots/$(SNAPSHOT)"; \
+		if [ -d "$$snap_dir" ]; then \
+			echo "==> booting AVD $(AVD) from snapshot '$(SNAPSHOT)' (fast) as $(EMU_SERIAL)"; \
+			snap_args="-snapshot $(SNAPSHOT)"; \
+		else \
+			echo "==> no '$(SNAPSHOT)' snapshot — cold-booting AVD $(AVD) (run 'make emulator-snapshot' once to speed this up)"; \
+			snap_args="-no-snapshot"; \
+		fi; \
 		ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) setsid $(ANDROID_SDK_ROOT)/emulator/emulator \
-			-avd $(AVD) -no-window -no-audio -no-boot-anim \
-			-gpu swiftshader_indirect -no-snapshot -read-only \
+			-avd $(AVD) -port $(EMU_PORT) -no-window -no-audio -no-boot-anim \
+			-gpu swiftshader_indirect $$snap_args -read-only \
 			>/tmp/tempest-emulator.log 2>&1 & \
 		echo "==> waiting for $(EMU_SERIAL) to come online"; \
 		adb -s $(EMU_SERIAL) wait-for-device; \
@@ -204,6 +215,23 @@ emulator: ## Boot the headless x86_64 AVD if it's not already running (AVD=pixel
 		done; \
 		echo "emulator $(EMU_SERIAL) booted"; \
 	fi
+
+.PHONY: provision-avd
+provision-avd: ## Create the pinned x86_64 AVD idempotently (FORCE=1 recreates; F8)
+	bash toolchain/provision_avd.sh
+
+.PHONY: emulator-snapshot
+emulator-snapshot: ## Boot once + save the '$(SNAPSHOT)' golden snapshot for fast boots (F8)
+	bash toolchain/emulator_snapshot.sh
+
+.PHONY: emulator-pool
+emulator-pool: ## Run the example gallery sharded across N isolated emulators (N=, F8; experimental)
+	N="$(N)" bash toolchain/emulator_pool.sh
+
+.PHONY: mirror
+mirror: ## Mirror the emulator/device screen live with scrcpy (needs WSLg/X; F8)
+	@command -v scrcpy >/dev/null 2>&1 || { echo "scrcpy not installed — 'sudo apt install scrcpy' (needs WSLg)"; exit 1; }
+	scrcpy -s $(EMU_SERIAL)
 
 .PHONY: stage-x86
 stage-x86: ## Stage the x86_64 CPython prefix + site-packages for the emulator (F7)
