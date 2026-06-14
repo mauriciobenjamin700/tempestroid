@@ -71,6 +71,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.TextField
@@ -235,15 +236,55 @@ fun RenderNode(node: TempestNode, onEvent: (String, String) -> Unit) {
     // — complementing the box-model values Python already mirrors in to_compose(rtl).
     // Absent (the common case) → render with the inherited direction, no extra wrap.
     val rtl = node.props["locale_rtl"] as? Boolean
-    if (rtl != null) {
-        val direction = if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
-        CompositionLocalProvider(LocalLayoutDirection provides direction) {
-            RenderAccessible(node, onEvent)
-        }
-    } else {
-        RenderAccessible(node, onEvent)
+    // Contrast tracking: when this node paints its own `background`, publish the
+    // color that reads legibly against it (white on a dark fill, black on a light
+    // one) so descendant Text/labels that declare no explicit color stay visible —
+    // independent of the OS-driven Material theme (which may be light while the app
+    // paints a dark surface, the case where unstyled text would otherwise vanish).
+    val bg = colorOf(styleOf(node), "background")
+    val body: @Composable () -> Unit = { RenderAccessible(node, onEvent) }
+    val direction = rtl?.let { if (it) LayoutDirection.Rtl else LayoutDirection.Ltr }
+    when {
+        direction != null && bg != null -> CompositionLocalProvider(
+            LocalLayoutDirection provides direction,
+            LocalContrastColor provides contrastColorFor(bg),
+        ) { body() }
+        direction != null -> CompositionLocalProvider(
+            LocalLayoutDirection provides direction,
+        ) { body() }
+        bg != null -> CompositionLocalProvider(
+            LocalContrastColor provides contrastColorFor(bg),
+        ) { body() }
+        else -> body()
     }
 }
+
+/**
+ * The color that reads legibly against the nearest ancestor's painted background
+ * (E9-style contrast tracking). Seeded at the root from the Material on-surface
+ * color and overridden by any node that declares a `Style.background`, so an
+ * unstyled [Text]/label always contrasts with the surface it actually sits on —
+ * even when the OS Material theme (light/dark) disagrees with the app's palette.
+ */
+private val LocalContrastColor = compositionLocalOf<Color?> { null }
+
+/**
+ * Pick a high-contrast foreground color for a background [bg]: white on a dark
+ * fill, near-black on a light fill, by perceptual luminance (Rec. 601 weights).
+ */
+private fun contrastColorFor(bg: Color): Color {
+    val luminance = 0.299f * bg.red + 0.587f * bg.green + 0.114f * bg.blue
+    return if (luminance < 0.5f) Color.White else Color(0xFF1A1A1A)
+}
+
+/**
+ * The default foreground color for text/labels that declare no explicit color:
+ * the tracked [LocalContrastColor] (the nearest painted background's contrast),
+ * or the Material on-surface color when no background has been tracked.
+ */
+@Composable
+private fun defaultTextColor(): Color =
+    LocalContrastColor.current ?: MaterialTheme.colorScheme.onSurface
 
 /**
  * E9 accessibility wrapper: if the node declares `semantics` / `focusable` /
@@ -308,7 +349,13 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
     when (node.type) {
         "Text" -> Text(
             text = node.props["content"] as? String ?: "",
-            color = colorOf(style, "color") ?: Color.Unspecified,
+            // When the Style declares no explicit color, fall back to a CONTRASTING
+            // default (NOT Color.Unspecified, which inherits LocalContentColor and
+            // reads near-black on a dark app surface, so unstyled text vanishes).
+            // LocalContrastColor tracks the nearest painted background's contrast
+            // (white on dark, black on light); absent any tracked background it
+            // falls back to the Material on-surface color.
+            color = colorOf(style, "color") ?: defaultTextColor(),
             // E9 text scale: Style.text_scale (serialized "textScale") multiplies the
             // declared font size, mirroring the Qt translator (which folds it into
             // font-size). Compose's own LocalDensity.fontScale (the OS accessibility
@@ -1421,7 +1468,12 @@ private fun RenderTabView(
 ) {
     val active = (node.props["active"] as? Number)?.toInt() ?: 0
     val child = node.children.firstOrNull()
-    Column(modifier = baseModifier(style)) {
+    // The tab strip must sit FLUSH under the status bar (which the root Surface
+    // already insets). The host's Style background/size go on the outer Column,
+    // but its padding is moved to the CONTENT slot only — applying it above the
+    // strip would push the TabRow down and leave a (dark) gap between the status
+    // bar and the strip, making it look detached.
+    Column(modifier = backgroundSizeModifier(style)) {
         TabStrip(node, active, onEvent)
         AnimatedContent(
             targetState = active,
@@ -1431,7 +1483,7 @@ private fun RenderTabView(
             // The content is built by Python for the active tab; key the slot by
             // the selected index so a tab swap cross-fades the new content.
             if (child != null && selected == active) {
-                RenderNode(child, onEvent)
+                Box(modifier = paddingModifier(style)) { RenderNode(child, onEvent) }
             }
         }
     }
@@ -1644,7 +1696,13 @@ private fun RenderCheckbox(
                 }
             },
         )
-        Text(text = node.props["label"] as? String ?: "")
+        // The label carries no per-label color in the IR, so paint it with the
+        // tracked contrast color rather than the inherited default (which reads
+        // near-black on a dark app background and disappears).
+        Text(
+            text = node.props["label"] as? String ?: "",
+            color = defaultTextColor(),
+        )
     }
 }
 
@@ -1659,7 +1717,11 @@ private fun RenderDatePicker(
     var open by remember { mutableStateOf(false) }
     val value = node.props["value"] as? String ?: ""
     val label = node.props["label"] as? String ?: ""
-    Button(onClick = { open = true }, modifier = baseModifier(style)) {
+    Button(
+        onClick = { open = true },
+        modifier = sizeModifier(style),
+        colors = pickerButtonColors(style),
+    ) {
         Text(text = if (value.isNotEmpty()) value else if (label.isNotEmpty()) label else "Pick date")
     }
     if (open) {
@@ -1709,8 +1771,36 @@ private fun RenderFilePicker(
     }
     val value = node.props["value"] as? String ?: ""
     val label = node.props["label"] as? String ?: "Choose file"
-    Button(onClick = { launcher.launch("*/*") }, modifier = baseModifier(style)) {
+    Button(
+        onClick = { launcher.launch("*/*") },
+        modifier = sizeModifier(style),
+        colors = pickerButtonColors(style),
+    ) {
         Text(text = if (value.isNotEmpty()) "$label: $value" else label)
+    }
+}
+
+/**
+ * Container/content colors for a picker trigger ([RenderDatePicker] /
+ * [RenderFilePicker]). When the node's Style declares a `background`, honour it
+ * (matching a regular tempestroid [Button]); otherwise fall back to the theme's
+ * NEUTRAL `secondaryContainer` instead of the Material primary — so a picker
+ * trigger does not show raw Material purple clashing with the app's palette.
+ */
+@Composable
+private fun pickerButtonColors(style: Map<String, Any?>): androidx.compose.material3.ButtonColors {
+    val container = colorOf(style, "background")
+    val content = colorOf(style, "color")
+    return if (container != null) {
+        ButtonDefaults.buttonColors(
+            containerColor = container,
+            contentColor = content ?: Color.White,
+        )
+    } else {
+        ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = content ?: MaterialTheme.colorScheme.onSecondaryContainer,
+        )
     }
 }
 
@@ -2123,7 +2213,13 @@ private fun RenderFormField(
     val child = node.children.firstOrNull()
     Column(modifier = baseModifier(style)) {
         if (label.isNotEmpty()) {
-            Text(text = label, fontWeight = FontWeight.Medium)
+            // Field labels carry no IR color → use the tracked contrast color so
+            // they stay legible on a dark app background (see Text/Checkbox above).
+            Text(
+                text = label,
+                fontWeight = FontWeight.Medium,
+                color = defaultTextColor(),
+            )
         }
         if (child != null) RenderNode(child, onEvent)
         if (error.isNotEmpty()) {
@@ -2194,7 +2290,11 @@ private fun RenderSwitch(
                 }
             },
         )
-        Text(text = node.props["label"] as? String ?: "")
+        // No per-label color in the IR → tracked contrast color (see RenderCheckbox).
+        Text(
+            text = node.props["label"] as? String ?: "",
+            color = defaultTextColor(),
+        )
     }
 }
 
@@ -3169,6 +3269,29 @@ private fun sizeModifier(style: Map<String, Any?>): Modifier {
     var m: Modifier = Modifier
     (style["width"] as? Number)?.let { m = m.width(it.toFloat().dp) }
     (style["height"] as? Number)?.let { m = m.height(it.toFloat().dp) }
+    return m
+}
+
+/**
+ * Size + background (no padding) — used by hosts like [RenderTabView] that must
+ * place a flush-to-edge child (the tab strip) before applying the Style padding,
+ * which is moved onto the content slot via [paddingModifier].
+ */
+private fun backgroundSizeModifier(style: Map<String, Any?>): Modifier {
+    var m: Modifier = Modifier
+    (style["width"] as? Number)?.let { m = m.width(it.toFloat().dp) }
+    (style["height"] as? Number)?.let { m = m.height(it.toFloat().dp) }
+    colorOf(style, "background")?.let { bg ->
+        val radius = (style["radius"] as? Number)?.toFloat() ?: 0f
+        m = m.background(bg, RoundedCornerShape(radius.dp))
+    }
+    return m
+}
+
+/** The Style padding alone — the complement of [backgroundSizeModifier]. */
+private fun paddingModifier(style: Map<String, Any?>): Modifier {
+    var m: Modifier = Modifier
+    edgeOf(style, "padding")?.let { m = m.padding(it) }
     return m
 }
 
