@@ -232,6 +232,27 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
   is inert; the simulator still renders them, matching Compose). The simulator can
   also be sized to a `Device` preset: `run_qt`/`run_dev` accept an optional
   `device: Device | None` (wins over `size` when both given).
+- **Box-model fidelity (`feat/qt-fidelity-boxmodel`).** Four imperative renderer
+  fixes (translator still inert → conformance unchanged), spec in
+  [`docs/qt-fidelity-roadmap.md`](docs/qt-fidelity-roadmap.md): (1) **P0** — every
+  node's box QSS is now **scoped to an `#objectName` selector**
+  (`_scoped_stylesheet`) instead of a bare body, so a bordered/backgrounded
+  container no longer cascades its box onto descendants (a bare QSS body is an
+  implicit universal selector in Qt); same scoping for the `FormField` error label
+  and `Toast`/`Tooltip` pills. (2) **P1 radius** — `_apply_visual` sets
+  `WA_StyledBackground` when `background`/`radius` is present (so a rounded
+  background-only box clips), and after sizing clamps an over-large radius (pill
+  sentinel `999`, circles) to `min(w, h)/2` via `_clamp_radius`/`_clamp_node_radius`
+  (re-renders the scoped QSS from a size-adjusted style copy; `_ClipWidget` clamps
+  its mask too). (3) **P1 sizing** — when **both** `width`/`height` are fixed,
+  `_apply_sizing` also pins `QSizePolicy.Fixed/Fixed` so a parent `QBoxLayout`'s
+  cross-axis stretch can't oval a square box (idempotent reset to
+  `Preferred/Preferred`). (4) **P2 icons** — `_ICON_ALIASES`/`_resolve_icon_name`
+  map common Material names (`photo_camera`→`eye`, `history`→`clock`, `person`→
+  `user`, …) to curated glyphs in `_icon_pixmap` so they render a line icon
+  instead of the literal-text fallback; `register_icon` is still the escape hatch.
+  All four are renderer-only — the `_COVERAGE` parity table and goldens are
+  untouched. Tests: `tests/unit/test_qt_boxmodel.py`.
 - `QtRenderer` owns a *host* widget so a root `Replace` is a uniform child swap.
   Updates re-apply the full merged visual idempotently. Headless tests run under
   `QT_QPA_PLATFORM=offscreen` (see `tests/conftest.py`).
