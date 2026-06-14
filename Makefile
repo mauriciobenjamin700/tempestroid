@@ -8,6 +8,9 @@
 APP        ?= examples/counter/app.py
 ANDROID    := android-host
 GRADLEW    := ./gradlew
+# F7 — headless x86_64 emulator target. AVD name + the adb serial it boots as.
+AVD        ?= pixel8_api34
+EMU_SERIAL ?= emulator-5554
 # This host: SDK/NDK live here (not the stale ANDROID_HOME). Override if needed.
 ANDROID_SDK_ROOT ?= /usr/lib/android-sdk
 # Version read from pyproject (single source of truth) for tagging.
@@ -175,6 +178,47 @@ apk-install: apk install ## Build + install the debug APK
 .PHONY: logcat
 logcat: ## Tail device logs for the host process
 	adb logcat -s tempest:V python:V AndroidRuntime:E
+
+# ---- emulator target (F7 — headless x86_64, no physical device) -------------
+# Run + verify a tempestroid app on a HEADLESS x86_64 emulator, so no physical
+# device is required. Every adb/gradle/serve step targets the emulator EXPLICITLY
+# (-s $(EMU_SERIAL) / ANDROID_SERIAL) since a physical device may ALSO be attached.
+
+EMU_APK := $(ANDROID)/app/build/outputs/apk/debug/app-debug.apk
+
+.PHONY: emulator
+emulator: ## Boot the headless x86_64 AVD if it's not already running (AVD=pixel8_api34)
+	@if adb devices | grep -q '^$(EMU_SERIAL)[[:space:]]*device$$'; then \
+		echo "emulator $(EMU_SERIAL) already running"; \
+	else \
+		echo "==> booting AVD $(AVD) headless as $(EMU_SERIAL)"; \
+		ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) setsid $(ANDROID_SDK_ROOT)/emulator/emulator \
+			-avd $(AVD) -no-window -no-audio -no-boot-anim \
+			-gpu swiftshader_indirect -no-snapshot -read-only \
+			>/tmp/tempest-emulator.log 2>&1 & \
+		echo "==> waiting for $(EMU_SERIAL) to come online"; \
+		adb -s $(EMU_SERIAL) wait-for-device; \
+		echo "==> waiting for sys.boot_completed=1"; \
+		until [ "$$(adb -s $(EMU_SERIAL) shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do \
+			sleep 2; \
+		done; \
+		echo "emulator $(EMU_SERIAL) booted"; \
+	fi
+
+.PHONY: stage-x86
+stage-x86: ## Stage the x86_64 CPython prefix + site-packages for the emulator (F7)
+	bash toolchain/stage_emulator_runtime.sh
+
+.PHONY: apk-x86
+apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
+	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug \
+		-Ptempest.abi=x86_64 \
+		-Ptempest.pythonPrefix=../toolchain/dist/python/x86_64 \
+		-Ptempest.depsDir=../toolchain/dist/site-packages-x86_64
+
+.PHONY: emulator-verify
+emulator-verify: ## End-to-end: boot emulator → stage-x86 → apk-x86 → install → serve APP → screenshot (F7)
+	bash toolchain/emulator_verify.sh "$(APP)"
 
 # ---- housekeeping -----------------------------------------------------------
 .PHONY: clean

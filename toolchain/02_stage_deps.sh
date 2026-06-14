@@ -18,14 +18,24 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="$HERE/dist"
 WHEELS="$DIST/wheels"
-STAGE="$DIST/site-packages"
-ABI="arm64-v8a"
+
+# ABI selection (F7): the default arm64-v8a build keeps its UNCHANGED output dir
+# (dist/site-packages) so existing arm64 builds are byte-for-byte untouched; an
+# x86_64 build (the headless emulator target) stages into a sibling
+# dist/site-packages-x86_64 so it never clobbers the arm64 staging. Only the
+# compiled pydantic_core wheel differs by ABI (the pure-Python deps are identical).
+ABI="${TEMPEST_ABI:-arm64-v8a}"
+if [[ "$ABI" == "arm64-v8a" ]]; then
+    STAGE="$DIST/site-packages"
+else
+    STAGE="$DIST/site-packages-$ABI"
+fi
 
 PYDANTIC_VERSION="2.12.5"
 TEMPEST_CORE_VERSION="0.1.0"
 PYDANTIC_CORE_WHEEL="$WHEELS/pydantic_core-2.41.5-cp314-cp314-android_24_${ABI//-/_}.whl"
 
-echo "==> staging site-packages at $STAGE"
+echo "==> staging site-packages for ABI=$ABI at $STAGE"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 
