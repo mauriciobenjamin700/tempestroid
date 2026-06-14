@@ -38,6 +38,7 @@ testes verdes). Acrescenta uma regra própria:
 | F4 | Distribuição profissional: APK release-signed standalone (keystore própria) + ícone adaptativo + cobertura device dos widgets/nativas restantes | 🚧 em progresso — **(1) APK release-signed ✅** (`tempest build release-apk`); **(2) ícone adaptativo ✅** (`tempest icon --adaptive` + `tempest build --adaptive-icon/--icon-bg`); **(3) matriz de cobertura de widgets publicada ✅** (`docs/referencia/cobertura.md`, PT+EN); (4) fechar F2 + (5) trim pendentes (device/investigação) | `tempest build release-apk --keystore` produz APK release-assinado instalável fora da Play; `tempest icon --adaptive` gera ícone adaptativo (fg/bg); matriz de widgets/nativas device-verificada |
 | F5 | **Harness de device confiável** — loop de validação on-device à prova de queda de USB (timeout por adb, detecção de drop, checkpoint/resume), base única do `dual-verify` | ✅ implementada (off-device) — **gate de toda device-verify futura** (bloqueia F2, device-verify do release-apk/ícone e os leftovers E8/E9); falta o teste de drop com device conectado | rodar os 24 examples no device sem hang (cada app ≤40s); desconectar o USB no meio aborta limpo com `ABORT … usb-drop` — detecção ≤20s no drop mid-run (~38s no pior caso de adb-server morto no start), sem adb wedged — e a re-execução **retoma** dos faltantes; `dual-verify` nunca reporta verde falso |
 | F6 | **Trim de tamanho do APK** — enxugar o CPython 3.14 embutido. **Fase-1 (off-device):** pruning seguro de stdlib morta. **Fase-2 (host-side, device-gated):** stdlib-archive/codecs/compressão | 🚧 fase-1 ✅ (PR #74) — baseline real **~39MB** (não ~50MB; já cortado por #70/#71), fase-1 rende ~1MB → **~38MB**; **~20MB exige fase-2 host-side** (Kotlin/C + device, não offline) | **fase-1:** excludes seguros (import trace verde) + APK rebuilda + tamanho documentado + gate verde; **fase-2 (futuro):** APK materialmente menor que boota e roda os examples (Qt + device via F5), custo de 1º boot medido |
+| F7 | **Alvo de device sem hardware físico** — emulador headless x86_64 (equivalente completo, dirigido pelo harness F5) + testes de tela do renderizador Compose na JVM (Roborazzi). Remove o device físico do caminho crítico | 🚧 **provado ponta-a-ponta** (2026-06-13): AVD x86_64 headless + APK x86_64 → counter renderiza e `0→3` por tap, ZERO hardware físico; falta empacotar em comandos (`make emulator-verify`) + camada B | `make emulator-verify` (sem USB) sobe o AVD x86_64, instala o host e roda a galeria F5 verde com screenshots (CPython+JNI+Compose+nativas); camada B pina o Compose em testes JVM no gate; `dual-verify` trata emulador como leg de device legítimo |
 
 ---
 
@@ -416,6 +417,83 @@ validação no device (depende do F5):
   medido — e o ganho real vs a complexidade do host registrado antes de seguir.
 - A redução está medida e documentada (antes/depois por componente).
 - Nenhum módulo necessário em runtime foi removido (provado pela galeria F5 verde).
+
+---
+
+## F7 — Alvo de device sem hardware físico (emulador + testes de tela JVM)
+
+### Por que isso importa (o device físico é o gargalo recorrente)
+Toda device-verify hoje depende de um aparelho físico ligado via USB. No WSL isso
+é **frágil e intermitente**: o usbipd cai (incidente 2026-06-13 que motivou o F5),
+a MIUI exige "Install via USB", a tela bloqueia. O device vira o gargalo de TODA
+validação (F2, device-verify, leftovers E8/E9, fase-2 do F6). Precisamos de um
+alvo **repetível, CI-able e sem hardware** que exercite exatamente o que só o
+device exercita: o boot do CPython, o transporte JNI, o renderizador Compose e as
+capacidades nativas.
+
+### A solução em duas camadas
+**Camada A — emulador headless x86_64 (equivalente completo do device).** Um AVD
+x86_64 rodando headless cobre tudo que o aparelho cobre (CPython + JNI + Compose +
+nativas), e o **harness F5 o dirige sem mudança** — `adb -s emulator-5554` é só
+mais um alvo. Sem USB, sem usbipd, sem MIUI. Roda em CI.
+
+**Camada B — testes de tela do renderizador Compose na JVM (rápido, sem
+emulador).** Roborazzi/Robolectric (ou Compose-desktop test) renderizam os
+`@Composable` do `TempestRenderer.kt` num teste JVM e comparam contra golden
+images — pinam o mapeamento `Style → Modifier/Arrangement/Alignment` em
+segundos, sem device nem emulador. Complementa a conformância da fase D (que pina
+o lado Python `to_compose`); a camada B pina o **consumo Kotlin** desse spec.
+
+### Estado atual (provado ponta-a-ponta — 2026-06-13)
+- ✅ **KVM presente** neste host (`/dev/kvm`, 24 flags de virt) → emulador
+  acelerado. **AVD `pixel8_api34` (x86_64, android-34, google_apis) bootou
+  headless** (`-no-window -gpu swiftshader_indirect`, `sys.boot_completed=1`).
+- ✅ **wheel x86_64 já buildado** (`toolchain/dist/wheels/pydantic_core-…-android_24_x86_64.whl`)
+  e **tarball CPython 3.14 x86_64 já cacheado** pelo cibuildwheel
+  (`~/.cache/cibuildwheel/python-3.14.3-x86_64-linux-android.tar.gz`) — sem download.
+- ✅ `build.gradle.kts` **já parametriza o ABI** (`-Ptempest.abi=x86_64
+  -Ptempest.pythonPrefix=…/x86_64`); `00_fetch_cpython.sh`/`env.sh` parametrizados
+  por `TEMPEST_ABI`/`TEMPEST_RUST_TARGET`.
+- ✅ **PROVA E2E:** prefixo x86_64 staged do cache → `pydantic_core` x86_64 trocado
+  no site-packages → `gradlew :app:assembleDebug -Ptempest.abi=x86_64` (APK 53MB,
+  só libs x86_64) → `adb -s emulator-5554 install` → `tempest serve counter` →
+  **CPython 3.14 x86_64 bootou** (`_socket.cpython-314-x86_64-linux-android.so`,
+  asyncio), counter montou, e **3 taps no `+` → `Count: 3`** (round-trip JNI →
+  handler → patch → recompose), cores do Style corretas. Screenshots em
+  `docs/assets/emulator/`.
+- 🚧 **Falta:** empacotar os passos manuais em comandos repetíveis (`02_stage_deps.sh`
+  ABI-aware + `make emulator`/`apk-x86`/`emulator-verify`) e a camada B (testes JVM).
+
+### Arquivos
+- `toolchain/00_fetch_cpython.sh` — rodar com `TEMPEST_ABI=x86_64
+  TEMPEST_RUST_TARGET=x86_64-linux-android` (tarball oficial x86_64 → `dist/python/x86_64/`).
+- `toolchain/02_stage_deps.sh` — montar `dist/site-packages` x86_64 (a wheel
+  x86_64 + pydantic puro-py + tempest_core).
+- `Makefile` — alvos novos: `make emulator` (boot headless do AVD), `make apk-x86`
+  (build `-Ptempest.abi=x86_64`), `make emulator-verify` (boot + install + galeria F5).
+- `android-host/app/build.gradle.kts` — já suporta; só consome o prefixo x86_64.
+- `.claude/skills/android-doctor` + `dual-verify` — aceitar `emulator-*` como alvo
+  válido (não só device físico) e preferir o emulador quando nenhum device físico.
+- **Camada B:** `android-host/app/src/test/…` — testes Roborazzi/Robolectric do
+  `TempestRenderer.kt` + golden PNGs versionados.
+
+### Sub-tarefas
+1. **Stage x86_64** (CPython prefix + site-packages) — fecha o único gap.
+2. **`make emulator` + `make apk-x86`** — boot headless + build x86_64.
+3. **`make emulator-verify`** — install no emulador + galeria F5 → screenshots +
+   scan de traceback, tudo sem hardware. Vira o caminho de device-verify default.
+4. **android-doctor/dual-verify** aceitam emulador como alvo (e CI).
+5. **Camada B** — testes de tela JVM do renderizador Compose (Roborazzi) + goldens.
+6. **CI** — job que sobe o emulador headless e roda a galeria (gated por KVM no runner).
+
+### Feito quando
+- `make emulator-verify` (sem nenhum aparelho USB) sobe o AVD x86_64, instala o
+  host x86_64 e roda a galeria F5 verde com screenshots — provando CPython boot +
+  JNI + Compose + nativas sem hardware físico.
+- A camada B pina o renderizador Compose em testes JVM (golden images) que rodam
+  no `framework-guard`/CI em segundos, sem emulador.
+- `dual-verify` trata o emulador como um leg de device legítimo; o device físico
+  vira opcional (confirmação final), não o gargalo.
 
 ---
 
