@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.14.0] — 2026-06-14
 
+### Added
+
+- **Native UI test driver (F9, slice 1)** — a `tempestroid.testing` package and a
+  new `tempest uitest <path>` command. The driver is **cross-renderer by design**
+  (it drives the same IR + typed events both renderers speak): locators by key /
+  text / Semantics role, **auto-wait** (waits for the rebuild to settle, no
+  `sleep`), actions (`tap`/`type`/scroll), and `expect_*` assertions. The
+  `headless` target (in-process `App`) ships and runs in the gate; the `qt` /
+  `emulator` / `device` targets are stubbed to point at F8.
+
 ### Changed
 
 - **Qt simulator fidelity (box model).** The desktop simulator now renders the
