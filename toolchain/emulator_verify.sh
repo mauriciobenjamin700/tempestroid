@@ -42,6 +42,11 @@ adb_emu() { adb -s "$EMU_SERIAL" "$@"; }
 
 fail() { echo "EMULATOR-VERIFY: FAIL — $*" >&2; exit 1; }
 
+# Proactively unwedge a hung adb server before any adb work (a wedged server
+# makes `make emulator`'s `adb devices` probe hang). adb_ensure is a no-op when
+# the server is healthy.
+adb_ensure
+
 echo "==> [1/6] ensure emulator $EMU_SERIAL is up (AVD=$AVD)"
 make -C "$ROOT" emulator AVD="$AVD" EMU_SERIAL="$EMU_SERIAL" ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
 # Gate on genuine readiness (not just wait-for-device, which races the slow
