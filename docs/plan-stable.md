@@ -39,7 +39,7 @@ testes verdes). Acrescenta uma regra própria:
 | F5 | **Harness de device confiável** — loop de validação on-device à prova de queda de USB (timeout por adb, detecção de drop, checkpoint/resume), base única do `dual-verify` | ✅ implementada (off-device) — **gate de toda device-verify futura** (bloqueia F2, device-verify do release-apk/ícone e os leftovers E8/E9); falta o teste de drop com device conectado | rodar os 24 examples no device sem hang (cada app ≤40s); desconectar o USB no meio aborta limpo com `ABORT … usb-drop` — detecção ≤20s no drop mid-run (~38s no pior caso de adb-server morto no start), sem adb wedged — e a re-execução **retoma** dos faltantes; `dual-verify` nunca reporta verde falso |
 | F6 | **Trim de tamanho do APK** — enxugar o CPython 3.14 embutido. **Fase-1 (off-device):** pruning seguro de stdlib morta. **Fase-2 (host-side, device-gated):** stdlib-archive/codecs/compressão | 🚧 fase-1 ✅ (PR #74) — baseline real **~39MB** (não ~50MB; já cortado por #70/#71), fase-1 rende ~1MB → **~38MB**; **~20MB exige fase-2 host-side** (Kotlin/C + device, não offline) | **fase-1:** excludes seguros (import trace verde) + APK rebuilda + tamanho documentado + gate verde; **fase-2 (futuro):** APK materialmente menor que boota e roda os examples (Qt + device via F5), custo de 1º boot medido |
 | F7 | **Alvo de device sem hardware físico** — emulador headless x86_64 (equivalente completo, dirigido pelo harness F5) + testes de tela do renderizador Compose na JVM (Roborazzi). Remove o device físico do caminho crítico | 🚧 **provado ponta-a-ponta** (2026-06-13): AVD x86_64 headless + APK x86_64 → counter renderiza e `0→3` por tap, ZERO hardware físico; falta empacotar em comandos (`make emulator-verify`) + camada B | `make emulator-verify` (sem USB) sobe o AVD x86_64, instala o host e roda a galeria F5 verde com screenshots (CPython+JNI+Compose+nativas); camada B pina o Compose em testes JVM no gate; `dual-verify` trata emulador como leg de device legítimo |
-| F8 | **Emulação estável + visualização nativa** — camada de confiabilidade sobre o F7: provisionamento reprodutível do AVD, boot determinístico por snapshot, gating de prontidão, auto-recuperação de AVD travado, **pool de N emuladores em paralelo** (isolados, sharding da suíte), pipeline de screenshot/screen-record + regressão visual, espelhamento ao vivo (`scrcpy`) e fallback de farm na nuvem quando não há KVM | 🚧 **escrito (off-emulador), boot-proof adiado** — `provision_avd.sh` (AVD idempotente), helpers de emulador em `device_loop.sh` (`kvm_available`/`emu_online`/`emu_wait_ready`/`emu_boot` snapshot-aware + `EMU_READONLY`/`emu_recover`/`emu_stop`), `emulator_snapshot.sh` (snapshot golden), `emulator_pool.sh` (pool sharded, **experimental**), `visual_regression.py` (diff Pillow por histograma, **lógica testada off-device**), `emulator_verify.sh` estendido (gating + auto-recuperação + `VISUAL=1`), alvos `make provision-avd`/`emulator-snapshot`/`emulator-pool`/`mirror` + `emulator` boot-por-snapshot, runbook bilíngue em `guia/dispositivo-wsl.md`. Validado por `bash -n` + lógica do `visual_regression`; **falta a prova de boot real** (emulador estava ocupado por outra sessão) | `make emulator` sobe um AVD pinado em ≤ Ns por snapshot, com auto-recuperação se travar; **um pool de N instâncias isoladas roda a suíte em paralelo** (sharded), bound por hardware; o fluxo de um app é capturável (screenshot/vídeo) e comparável a golden; `scrcpy` espelha emulador/device no host (WSLg); CI sem KVM cai pra farm; zero passos manuais frágeis |
+| F8 | **Emulação estável + visualização nativa** — camada de confiabilidade sobre o F7: provisionamento reprodutível do AVD, boot determinístico por snapshot, gating de prontidão, auto-recuperação de AVD travado, **pool de N emuladores em paralelo** (isolados, sharding da suíte), pipeline de screenshot/screen-record + regressão visual, espelhamento ao vivo (`scrcpy`) e fallback de farm na nuvem quando não há KVM | ✅ **boot-proven no emulador (2026-06-14)** — `make emulator-snapshot` (cold-boot gravável → readiness gating → salva `golden` → stop) **OK**; `make emulator` restaura do snapshot em **3s**; `make emulator-verify VISUAL=1` **PASS real** (counter monta, screenshot bate o golden); tap "+" 3× → **Count 0→3** (round-trip evento→JNI→handler→patch→recompose) com a fidelidade Compose #80 (texto contrastante branco-no-escuro + cores dos botões corretas). **Bloqueador real encontrado+fixado:** o diálogo `POST_NOTIFICATIONS` (API 34) cobria o host → pre-grant no `emulator_verify.sh`. Pool sharded (`emulator_pool.sh`) segue **experimental** (não exercitado em paralelo) | `make emulator` sobe um AVD pinado em ≤ Ns por snapshot, com auto-recuperação se travar; **um pool de N instâncias isoladas roda a suíte em paralelo** (sharded), bound por hardware; o fluxo de um app é capturável (screenshot/vídeo) e comparável a golden; `scrcpy` espelha emulador/device no host (WSLg); CI sem KVM cai pra farm; zero passos manuais frágeis |
 | F9 | **Driver de testes nativo estilo Playwright** — API de automação de UI de alto nível, **cross-renderer** (mesmo script dirige o simulador Qt **e** o Compose no emulador/device), com **auto-wait** (sem sleeps), locators por Semantics/texto/key, ações (tap/type/scroll/back), asserts, screenshot/trace. Roda sobre a ponte + a árvore de Semantics do E9 + a introspecção | ⏳ planejado | um teste `tempest test` localiza um nó por Semantics/texto/key, age, espera a UI estabilizar e afirma o estado — o **mesmo script passa no Qt e no emulador/device**; flakes eliminados pelo auto-wait; trace+screenshot por passo em falha |
 
 ---
@@ -583,12 +583,11 @@ visualização** sobre o alvo do F7.
 > que trave é reciclado sem afetar os demais (auto-recuperação, item 4, por
 > instância).
 
-### Estado / entregue (escrito off-emulador, boot-proof adiado)
+### Estado / entregue (boot-proven no emulador — 2026-06-14)
 
-Toda a camada de scripts foi escrita e validada por `bash -n` + a lógica do
-`visual_regression` (off-device); **falta só a prova de boot real** — o único
-emulador do host estava ocupado por outra sessão na hora, então rodá-lo colidiria
-e seria inverificável. Entregue:
+Toda a camada de scripts foi escrita, validada por `bash -n` + a lógica do
+`visual_regression`, e **boot-provada num emulador x86_64** (ver "Boot-proven"
+abaixo). Entregue:
 
 - `toolchain/device_loop.sh` — helpers de emulador: `kvm_available`, `emu_online`,
   `emu_wait_ready` (boot_completed + bootanim parado + `pm` respondendo, tudo
@@ -604,12 +603,23 @@ e seria inverificável. Entregue:
 - `docs/guia/dispositivo-wsl.md` (+ `.en`) — runbook: KVM, AVD reprodutível, snapshot,
   regressão visual, pool, `scrcpy`/WSLg, GPU fallback, farm na nuvem, preview-first.
 
-### Pendente (precisa do emulador livre)
+### Boot-proven (2026-06-14, emulador x86_64)
 
-- Prova de boot: `make provision-avd` → `emulator-snapshot` → `emulator-verify VISUAL=1` verde.
-- `docs/assets/emulator/golden/` — goldens versionados por example (gerados na 1ª prova).
+- ✅ `make emulator-snapshot`: cold-boot gravável → readiness gating (`boot_completed` +
+  bootanim parado + `pm` respondendo) → salva `golden` → stop. **OK**.
+- ✅ `make emulator`: restaura do snapshot `golden` em **~3s** (vs ~2min cold).
+- ✅ `make emulator-verify VISUAL=1`: **PASS real** — counter monta, screenshot bate o
+  golden (`docs/assets/emulator/golden/counter.png`); tap "+" 3× → **Count 0→3**
+  (round-trip evento→JNI→handler→patch→recompose); fidelidade Compose #80 confirmada
+  (texto contrastante + cores dos botões).
+- ✅ **Bloqueador real fixado:** o diálogo `POST_NOTIFICATIONS` (API 34) cobria o host →
+  pre-grant após o install no `emulator_verify.sh`.
+
+### Pendente
+
+- Pool sharded (`emulator_pool.sh`) validado em paralelo ponta-a-ponta (segue experimental).
 - `.claude/skills/android-doctor` — check de snapshot golden + KVM + `scrcpy`/WSLg.
-- Camada de screen-record (mp4) e o pool validado ponta-a-ponta.
+- Camada de screen-record (mp4) + golden por example (além do counter).
 
 ### Feito quando
 - `make emulator` sobe o AVD **por snapshot em segundos** (não cold-boot), com
@@ -706,7 +716,7 @@ F5 (device loop)   ──► GATE: harness de device à prova de drop           
    └─► leftovers E8/E9 ────┘
 F6 (trim APK)      ──► fase-1 ✅ ~39→~38MB (off-device); fase-2 ~20MB = host  🚧
 F7 (emulador alvo) ──► device sem hardware físico (provado E2E)             🚧
-   └─► F8 (emulação estável + pool de N + visualização) ──► escrito; boot-proof adiado 🚧
+   └─► F8 (emulação estável + pool de N + visualização) ──► boot-proven no emulador ✅ (pool ainda experimental)
         └─► F9 (driver "Playwright nativo", cross-renderer, sobre o pool)    ⬜
 ```
 
