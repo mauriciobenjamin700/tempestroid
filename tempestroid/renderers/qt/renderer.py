@@ -565,18 +565,19 @@ _ICON_PIXMAP_CACHE: dict[tuple[str, int, int], QPixmap] = {}
 #: Qt simulator's convenience layer only — a name with no curated equivalent (or a
 #: project-specific glyph) still goes through ``register_icon``.
 _ICON_ALIASES: dict[str, str] = {
+    # camera/lens names → "eye" (closest curated "view/lens" proxy; no camera
+    # glyph exists). Names with NO related curated glyph (image, photo, science…)
+    # are intentionally NOT aliased: a wrong glyph (a star for "image") misleads
+    # more than the honest raw-name text fallback.
     "photo_camera": "eye",
     "camera": "eye",
     "camera_alt": "eye",
-    "image": "star",
-    "photo": "star",
     "history": "clock",
     "schedule": "clock",
     "access_time": "clock",
     "person": "user",
     "account_circle": "user",
     "people": "user",
-    "science": "info",
     "help": "info",
     "help_outline": "info",
     "close": "x",
