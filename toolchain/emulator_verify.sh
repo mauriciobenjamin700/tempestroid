@@ -65,6 +65,12 @@ fi
 
 echo "==> [4/6] install on $EMU_SERIAL"
 adb_emu install -r "$EMU_APK" || fail "adb install failed"
+# Pre-grant POST_NOTIFICATIONS: on API 33+ a fresh install pops a runtime
+# permission dialog (GrantPermissionsActivity) that covers the host — the host
+# then never owns the foreground and the mount gate (rightly) fails. Granting it
+# up front (the host declares it for the notify capability) keeps the dialog from
+# stealing focus. Best-effort: a failure here must not abort the run.
+adb_emu shell pm grant "$HOST_PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
 echo "==> [5/6] tempest serve $APP at the emulator (background)"
 adb_emu logcat -c || true
