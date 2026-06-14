@@ -186,3 +186,13 @@ para distribuição (Trilho F — ver [`docs/plan-stable.md`](plan-stable.md)):
 - **F4 — distribuição profissional:** APK release-assinado standalone (keystore
   própria), ícone adaptativo (`tempest icon --adaptive`) e matriz de cobertura
   device dos widgets/nativas restantes.
+- **F7 — alvo de device sem hardware:** emulador headless x86_64 (provado E2E),
+  falta empacotar em `make emulator-verify` + camada B (testes JVM do Compose).
+- **F8 — emulação estável + visualização nativa:** camada de confiabilidade
+  sobre o F7 — AVD reprodutível, boot por snapshot, auto-recuperação, **pool de N
+  emuladores isolados** (sharding da suíte), screenshot/regressão visual e
+  `scrcpy` (espelhamento ao vivo no WSLg). Tira a dor recorrente do emulador.
+- **F9 — driver de testes nativo estilo Playwright:** API de automação de UI
+  **cross-renderer** (mesmo script no simulador Qt e no Compose do
+  emulador/device), com **auto-wait** (sem `sleep`), locators por Semantics/
+  texto/key, rodando em paralelo sobre o pool do F8. O "Playwright do nativo".
