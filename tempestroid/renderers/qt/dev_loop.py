@@ -29,6 +29,7 @@ from tempest_core.devices import DEFAULT_DEVICE, Device
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
 from tempestroid.renderers.qt.app_runner import BackKeyFilter, connect_lifecycle
+from tempestroid.renderers.qt.platform_setup import configure_qt_platform
 from tempestroid.renderers.qt.simulator import Simulator
 
 __all__ = ["run_dev"]
@@ -132,6 +133,10 @@ def run_dev(
     """
     app_path = Path(path).resolve()
     window_size = (device or DEFAULT_DEVICE).size
+    # Prefer xcb + mute the qpa probe on Linux/WSLg before the QApplication is
+    # created (no-op when the user pinned QT_QPA_PLATFORM/QT_LOGGING_RULES — so
+    # `QT_QPA_PLATFORM=offscreen` in headless tests is left untouched).
+    configure_qt_platform()
     qt_app = cast("QApplication", QApplication.instance() or QApplication(sys.argv))
     connect_lifecycle(qt_app)
     loop = qasync.QEventLoop(qt_app)

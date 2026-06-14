@@ -24,6 +24,7 @@ from tempest_core.devices import DEFAULT_DEVICE, Device
 from tempest_core.widgets import AppState, Widget
 
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
+from tempestroid.renderers.qt.platform_setup import configure_qt_platform
 from tempestroid.renderers.qt.renderer import QtRenderer
 
 __all__ = ["run_qt", "BackKeyFilter", "connect_lifecycle"]
@@ -180,6 +181,10 @@ def run_qt(
         The process exit code (``0`` on a clean loop shutdown).
     """
     window_size = device.size if device is not None else size
+    # Prefer xcb + mute the qpa probe on Linux/WSLg before the QApplication is
+    # created (no-op when the user pinned QT_QPA_PLATFORM/QT_LOGGING_RULES — so
+    # `QT_QPA_PLATFORM=offscreen` in headless tests is left untouched).
+    configure_qt_platform()
     qt_app = QApplication.instance() or QApplication(sys.argv)
     if isinstance(qt_app, QApplication):
         connect_lifecycle(qt_app)
