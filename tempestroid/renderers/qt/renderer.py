@@ -98,6 +98,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QScrollBar,
+    QSizePolicy,
     QSlider,
     QStackedWidget,
     QStyle,
@@ -119,6 +120,7 @@ from tempest_core.core.ir import (
 )
 from tempest_core.icons import Icons, icon_path
 from tempest_core.style import (
+    Corners,
     Edge,
     JustifyContent,
     Position,
@@ -557,6 +559,68 @@ def _to_qt_input_mask(mask: str) -> str:
 #: action that asks for the same name/size/color.
 _ICON_PIXMAP_CACHE: dict[tuple[str, int, int], QPixmap] = {}
 
+#: Common Material-symbol names → the nearest curated tempestroid icon. Apps that
+#: reach for a familiar Material name (``Icon(name="photo_camera")``) resolve to a
+#: sensible curated glyph instead of falling back to the literal text. This is the
+#: Qt simulator's convenience layer only — a name with no curated equivalent (or a
+#: project-specific glyph) still goes through ``register_icon``.
+_ICON_ALIASES: dict[str, str] = {
+    # camera/lens names → "eye" (closest curated "view/lens" proxy; no camera
+    # glyph exists). Names with NO related curated glyph (image, photo, science…)
+    # are intentionally NOT aliased: a wrong glyph (a star for "image") misleads
+    # more than the honest raw-name text fallback.
+    "photo_camera": "eye",
+    "camera": "eye",
+    "camera_alt": "eye",
+    "history": "clock",
+    "schedule": "clock",
+    "access_time": "clock",
+    "person": "user",
+    "account_circle": "user",
+    "people": "user",
+    "help": "info",
+    "help_outline": "info",
+    "close": "x",
+    "cancel": "x",
+    "done": "check",
+    "check_circle": "check",
+    "add": "plus",
+    "remove": "minus",
+    "delete": "trash",
+    "delete_outline": "trash",
+    "email": "mail",
+    "notifications": "bell",
+    "notifications_none": "bell",
+    "favorite": "heart",
+    "favorite_border": "heart",
+    "settings_outlined": "settings",
+    "expand_more": "chevron-down",
+    "expand_less": "chevron-up",
+    "navigate_before": "chevron-left",
+    "navigate_next": "chevron-right",
+    "arrow_back": "arrow-left",
+    "arrow_forward": "arrow-right",
+    "call": "phone",
+    "date_range": "calendar",
+    "event": "calendar",
+}
+
+
+def _resolve_icon_name(name: str) -> str:
+    """Map a Material-symbol alias to its curated icon name (else return as-is).
+
+    Consulted by :func:`_icon_pixmap` so common Material names render a curated
+    glyph rather than the literal text fallback. A name that is already curated
+    (or unknown) passes through unchanged.
+
+    Args:
+        name: The requested icon name (curated, Material alias, or custom).
+
+    Returns:
+        The curated name to render, or the original name when no alias matches.
+    """
+    return _ICON_ALIASES.get(name, name)
+
 
 def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
     """Build a stroked vector-icon pixmap from the curated icon set.
@@ -568,7 +632,8 @@ def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
     result is cached by ``(name, size, color)``.
 
     Args:
-        name: A curated icon name (an :class:`Icons` member or raw string).
+        name: A curated icon name (an :class:`Icons` member or raw string), or a
+            common Material-symbol alias (resolved via :data:`_ICON_ALIASES`).
         size: The target square pixel size of the pixmap.
         color: The stroke color (the surrounding foreground/text color).
 
@@ -577,11 +642,12 @@ def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
         glyph, or ``None`` when the name is unknown or ``QtSvg`` is unavailable
         (the caller falls back to text).
     """
-    d = icon_path(name)
+    resolved = _resolve_icon_name(name)
+    d = icon_path(resolved)
     if d is None:
         return None
     size = max(1, int(size))
-    key = (name, size, color.rgba())
+    key = (resolved, size, color.rgba())
     cached = _ICON_PIXMAP_CACHE.get(key)
     if cached is not None:
         return cached
@@ -647,6 +713,77 @@ def _eye_icon(revealed: bool, color: QColor) -> QIcon:
     name = Icons.EYE if revealed else Icons.EYE_OFF
     icon = _icon_qicon(str(name), 16, color)
     return icon if icon is not None else QIcon()
+
+
+def _scoped_stylesheet(widget: QWidget, body: str) -> None:
+    """Set a widget's stylesheet scoped to itself via an ``#objectName`` selector.
+
+    A *bare* QSS body (e.g. ``"border: 1px solid …; border-radius: 8px"``) is
+    treated by Qt as an implicit universal selector, so the declarations cascade
+    onto the widget **and all its descendants** — a bordered card then draws a
+    stray box around every text/icon child, and a child's own ``setStyleSheet``
+    (color/font) does not reset the inherited border. Scoping the body to an
+    ``#name`` selector keyed on the widget's object name confines the box
+    decoration to the widget itself, leaving descendants untouched.
+
+    Args:
+        widget: The widget whose stylesheet is being set.
+        body: The bare QSS declaration body (without a selector). An empty body
+            clears the stylesheet (no selector wrapper, so Qt resets cleanly).
+    """
+    if not body:
+        widget.setStyleSheet("")
+        return
+    name = widget.objectName() or f"tw_{id(widget):x}"
+    widget.setObjectName(name)
+    widget.setStyleSheet(f"#{name} {{ {body} }}")
+
+
+def _clamp_radius_value(radius: float, w: int, h: int) -> float:
+    """Clamp a uniform corner radius to half the smaller widget dimension.
+
+    A radius larger than ``min(w, h) / 2`` cannot round the box any further — the
+    pill sentinel (a very large value, e.g. ``999``) is meant to fully round the
+    shorter axis. Clamping makes the pill/circle render as a true capsule/disc
+    instead of leaving Qt's inconsistent handling of an over-large radius square
+    off the corners.
+
+    Args:
+        radius: The requested uniform radius.
+        w: The widget's width in pixels.
+        h: The widget's height in pixels.
+
+    Returns:
+        The radius capped at ``min(w, h) / 2`` (unchanged when already smaller,
+        or when the size is not yet known so no cap can be derived).
+    """
+    if w <= 0 or h <= 0:
+        return radius
+    return min(radius, min(w, h) / 2.0)
+
+
+def _clamp_radius(radius: float | Corners, w: int, h: int) -> float | Corners:
+    """Clamp a uniform or per-corner radius to half the smaller widget dimension.
+
+    Per-corner radii are clamped component-wise, mirroring the uniform case so a
+    ``Corners`` pill/circle is realized faithfully too.
+
+    Args:
+        radius: The requested uniform radius or per-corner :class:`Corners`.
+        w: The widget's width in pixels.
+        h: The widget's height in pixels.
+
+    Returns:
+        The clamped radius (same kind as the input).
+    """
+    if isinstance(radius, Corners):
+        return Corners(
+            top_left=_clamp_radius_value(radius.top_left, w, h),
+            top_right=_clamp_radius_value(radius.top_right, w, h),
+            bottom_right=_clamp_radius_value(radius.bottom_right, w, h),
+            bottom_left=_clamp_radius_value(radius.bottom_left, w, h),
+        )
+    return _clamp_radius_value(radius, w, h)
 
 
 class _TextLabel(QLabel):
@@ -953,7 +1090,13 @@ class _ClipWidget(QWidget):
         elif self._shape == "oval":
             path.addEllipse(rect)
         else:  # rounded_rect (default)
-            path.addRoundedRect(rect, self._radius, self._radius)
+            # Clamp the corner radius to half the smaller side so an over-large
+            # radius (pill sentinel) yields a true capsule instead of a malformed
+            # mask rather than overshooting the box.
+            radius = _clamp_radius_value(
+                self._radius, int(rect.width()), int(rect.height())
+            )
+            path.addRoundedRect(rect, radius, radius)
         self.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 (Qt override)
@@ -3403,7 +3546,7 @@ class _FormFieldWidget(QWidget):
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         outer.addLayout(self.content_layout)
         self._error: QLabel = QLabel()
-        self._error.setStyleSheet("color: #d32f2f;")
+        _scoped_stylesheet(self._error, "color: #d32f2f")
         self._error.setVisible(False)
         outer.addWidget(self._error)
 
@@ -4858,9 +5001,11 @@ class QtRenderer:
             label.setWindowFlags(
                 Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
             )
-            label.setStyleSheet(
+            label.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            _scoped_stylesheet(
+                label,
                 "background: rgba(33, 33, 33, 0.92); color: white;"
-                " padding: 8px 14px; border-radius: 8px;"
+                " padding: 8px 14px; border-radius: 8px",
             )
             return _Rendered(node.type, node.key, label, None)
         if node.type in ("Animated", "Hero"):
@@ -5014,18 +5159,20 @@ class QtRenderer:
         # loaded font to the ``"CustomAsset"`` family ``to_qss`` references, so the
         # widget font is the faithful channel for the custom typeface.
         custom_family = self._ensure_font_asset(style)
-        qss = to_qss(style, with_padding=not is_container, rtl=self._rtl)
-        if custom_family is not None:
-            # QSS ``font-family`` wins over the widget's ``QFont``, and the
-            # placeholder family ``to_qss`` emits (``"CustomAsset"``) is not a real
-            # font name — rewrite it to the loaded asset's actual family so the
-            # custom typeface renders. (The renderer is the only place that knows
-            # the real family, since it loaded the file.)
-            qss = qss.replace(
-                f'font-family: "{_CUSTOM_FONT_FAMILY}"',
-                f'font-family: "{custom_family}"',
-            )
-        node.widget.setStyleSheet(qss)
+        qss = self._node_qss(
+            style, is_container=is_container, custom_family=custom_family
+        )
+        # Scope the QSS to the widget itself (``#objectName``) so box decoration
+        # (border/background/radius) never cascades onto descendants — a bare body
+        # acts as a universal selector in Qt and would tint/box every child.
+        _scoped_stylesheet(node.widget, qss)
+        if style is not None and (
+            style.background is not None or style.radius is not None
+        ):
+            # Qt only clips a QSS ``background-color`` to ``border-radius`` when the
+            # widget paints a styled background; without a border, a rounded
+            # background-only box renders square unless this attribute is set.
+            node.widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._apply_custom_font(node.widget, custom_family)
         self._apply_accessibility(node)
         if node.layout is not None:
@@ -5142,9 +5289,11 @@ class QtRenderer:
             # node style; restore the floating-pill look (a custom style still
             # wins via the merged QSS set above when one is provided).
             if style is None:
-                label.setStyleSheet(
+                label.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+                _scoped_stylesheet(
+                    label,
                     "background: rgba(33, 33, 33, 0.92); color: white;"
-                    " padding: 8px 14px; border-radius: 8px;"
+                    " padding: 8px 14px; border-radius: 8px",
                 )
         elif node.type == "Canvas":
             self._apply_canvas(cast("_CanvasWidget", node.widget), node.props)
@@ -5165,12 +5314,88 @@ class QtRenderer:
             # ``Style``); apply them after ``_apply_sizing`` so they win over its
             # flexible-size reset.
             self._apply_skeleton_size(cast("_SkeletonWidget", node.widget), node.props)
+        # Now that the widget's size is pinned, clamp an over-large radius (pill
+        # sentinel, circle) to ``min(w, h) / 2`` so the corners round fully
+        # instead of leaving Qt's square-off of an out-of-range radius.
+        self._clamp_node_radius(node.widget, style, custom_family, is_container)
         self._apply_effects(node.widget, style)
         if node.type in ("Blur", "BackdropFilter"):
             # Blur is the wrapper's whole purpose, so it owns the single Qt
             # graphics-effect slot — applied after ``_apply_effects`` so it is
             # never clobbered by the (usually absent) shadow/opacity effect.
             self._apply_blur(node.widget, node.props)
+
+    def _node_qss(
+        self,
+        style: Style | None,
+        *,
+        is_container: bool,
+        custom_family: str | None,
+    ) -> str:
+        """Build a node's QSS body, rewriting the custom-font placeholder family.
+
+        Factored out of :meth:`_apply_visual` so the radius-clamp pass can rebuild
+        the same body from a size-adjusted style without duplicating the
+        ``"CustomAsset"`` → real-family rewrite.
+
+        Args:
+            style: The node's style, or ``None``.
+            is_container: Whether the node is a container (padding goes to the
+                layout's ``contentsMargins`` instead of the QSS body).
+            custom_family: The loaded custom-font family name, or ``None``.
+
+        Returns:
+            The bare (unscoped) QSS declaration body.
+        """
+        qss = to_qss(style, with_padding=not is_container, rtl=self._rtl)
+        if custom_family is not None:
+            # QSS ``font-family`` wins over the widget's ``QFont``, and the
+            # placeholder family ``to_qss`` emits (``"CustomAsset"``) is not a real
+            # font name — rewrite it to the loaded asset's actual family so the
+            # custom typeface renders. (The renderer is the only place that knows
+            # the real family, since it loaded the file.)
+            qss = qss.replace(
+                f'font-family: "{_CUSTOM_FONT_FAMILY}"',
+                f'font-family: "{custom_family}"',
+            )
+        return qss
+
+    def _clamp_node_radius(
+        self,
+        widget: QWidget,
+        style: Style | None,
+        custom_family: str | None,
+        is_container: bool,
+    ) -> None:
+        """Re-apply the node's QSS with the radius clamped to the widget size.
+
+        ``border-radius`` is left untouched when it already fits inside the box;
+        an over-large radius (pill sentinel / circle) is capped at ``min(w, h)/2``
+        so the corners round fully. The effective size prefers the style's fixed
+        ``width``/``height`` (known immediately) and falls back to the widget's
+        current geometry. When no size is known yet the raw radius stands and a
+        later resize re-runs ``_apply_visual`` through the normal patch path.
+
+        Args:
+            widget: The styled widget carrying the radius.
+            style: The node's style, or ``None``.
+            custom_family: The loaded custom-font family name, or ``None``.
+            is_container: Whether the node is a container (padding routing).
+        """
+        if style is None or style.radius is None:
+            return
+        w = int(style.width) if style.width is not None else widget.width()
+        h = int(style.height) if style.height is not None else widget.height()
+        if w <= 0 or h <= 0:
+            return
+        clamped = _clamp_radius(style.radius, w, h)
+        if clamped == style.radius:
+            return
+        adjusted = style.model_copy(update={"radius": clamped})
+        body = self._node_qss(
+            adjusted, is_container=is_container, custom_family=custom_family
+        )
+        _scoped_stylesheet(widget, body)
 
     def _ensure_font_asset(self, style: Style | None) -> str | None:
         """Register a ``style.font_asset`` file with ``QFontDatabase`` (once).
@@ -5329,8 +5554,12 @@ class QtRenderer:
         here. ``aspect_ratio`` derives the missing dimension from the fixed one
         (``height = width / ratio`` or ``width = height * ratio``); with neither
         dimension fixed it has no anchor in Qt and is left to the device renderer
-        (a documented divergence). Idempotent: an unset dimension is restored to
-        Qt's flexible ``[0, QWIDGETSIZE_MAX]`` range.
+        (a documented divergence). When **both** dimensions are fixed the size
+        policy is pinned to ``Fixed``/``Fixed`` as well, otherwise a parent
+        ``QBoxLayout``'s cross-axis stretch overrides ``setFixedWidth/Height`` and
+        a square box (icon disc, avatar) renders oval. Idempotent: an unset
+        dimension is restored to Qt's flexible ``[0, QWIDGETSIZE_MAX]`` range and
+        the size policy back to ``Preferred``/``Preferred``.
 
         Args:
             widget: The target widget.
@@ -5354,6 +5583,12 @@ class QtRenderer:
         else:
             widget.setMinimumHeight(0)
             widget.setMaximumHeight(_QT_SIZE_MAX)
+        if width is not None and height is not None:
+            widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        else:
+            widget.setSizePolicy(
+                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+            )
 
     @staticmethod
     def _apply_effects(widget: QWidget, style: Style | None) -> None:
