@@ -6,6 +6,61 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-06-14
+
+### Added
+
+- **Native UI test driver (F9, slice 1)** — a `tempestroid.testing` package and a
+  new `tempest uitest <path>` command. The driver is **cross-renderer by design**
+  (it drives the same IR + typed events both renderers speak): locators by key /
+  text / Semantics role, **auto-wait** (waits for the rebuild to settle, no
+  `sleep`), actions (`tap`/`type`/scroll), and `expect_*` assertions. The
+  `headless` target (in-process `App`) ships and runs in the gate; the `qt` /
+  `emulator` / `device` targets are stubbed to point at F8.
+
+### Changed
+
+- **Qt simulator fidelity (box model).** The desktop simulator now renders the
+  style box far more faithfully: each node's box QSS is scoped to its own
+  `#objectName` (a bordered/backgrounded container no longer cascades its
+  decoration onto descendants), an over-large `border-radius` clips its
+  background and is clamped to the node size (pills/circles), a node with both
+  `width` and `height` fixed pins its size policy so a parent's cross-axis
+  stretch can't distort it, and common Material icon names (`photo_camera`,
+  `history`, `person`, …) map to curated glyphs instead of literal text.
+- **Compose device renderer fidelity.** Text now defaults to a contrast-aware
+  color over its background (no more dark-on-dark), the date/file pickers use
+  neutral buttons instead of the stock Material purple, and the tab bar renders
+  flush.
+- **Qt dev launchers** suppress the noisy wayland startup warnings, so
+  `tempest dev` / `make run` output stays clean.
+
+### Fixed
+
+- **`tempest serve` reclaims disk.** The code-push client now sweeps leftover
+  bundle directories from earlier `serve` sessions at startup, so a long run
+  (e.g. validating many apps) can no longer fill the device/emulator `/data`
+  partition and surface as a bogus extraction error on a good app.
+- The `brforms` example now renders on the Compose renderer (`ScrollView` takes
+  `children`, not a `child`).
+
+### Tooling (not shipped in the package)
+
+- **Trilho F5** — a drop-proof on-device validation harness (`toolchain/`):
+  every `adb` call is time-bounded, a USB/emulator drop aborts cleanly with
+  checkpoint/resume.
+- **Trilho F6 (phase 1)** — safe pruning of dead stdlib from the bundled CPython
+  in the APK assets stage.
+- **Trilho F7** — a hardware-free headless x86_64 **emulator target**
+  (`make emulator-verify`) plus **JVM screen tests** of the Compose renderer
+  (Roborazzi/deterministic asserts), pinning the Kotlin side of the
+  `Style → Compose` mapping in the gate.
+- **Trilho F8** — an emulator reliability layer (reproducible AVD, golden
+  snapshot boot, readiness gating, auto-recovery, an experimental parallel pool
+  and a Pillow visual-regression check), with a bilingual WSL runbook.
+- Docs: an on-device example gallery, the Trilho G (on-device ONNX inference)
+  and Trilho H (Material 3 design system) research/roadmaps.
+
 ## [0.13.0] — 2026-06-12
 
 ### Changed
