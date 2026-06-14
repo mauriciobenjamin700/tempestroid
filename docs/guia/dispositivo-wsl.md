@@ -254,6 +254,6 @@ de GPU distintos.
 |---|---|
 | `make emulator` faz cold-boot toda vez | Sem snapshot `golden` — rode `make emulator-snapshot` uma vez. |
 | AVD nunca fica pronto | `emulator-verify` auto-recupera uma vez; persistindo, `emulator -avd <AVD> -wipe-data` (destrutivo) e re-snapshot. |
-| `adb` trava sob carga | Helpers `device_loop.sh` dão *timeout* em toda chamada; recupere com `adb kill-server && adb start-server`. |
+| `adb` trava sob carga | Helpers `device_loop.sh` dão *timeout* em toda chamada; o `emulator-verify` chama `adb_unwedge` (mata o processo do server + reinicia *nodaemon*) — `adb kill-server` **também trava** quando o server está *wedged*, por isso não o use. |
 | snapshot save falha | Boot tem que ser **gravável** — `emulator-snapshot` já usa `EMU_READONLY=0`; não salve com `-read-only`. |
 | sem `/dev/kvm` | Sem aceleração — use farm na nuvem; não insista no emulador local. |
