@@ -245,7 +245,14 @@ _SAMPLES: dict[str, Any] = {
 #:                wrapping); Qt realizes wrapping imperatively inside its custom
 #:                ``Wrap`` flow-layout widget (reflowing children on resize), not via
 #:                QSS, so the ``Style → Qt`` translator does not react to it.
-#:   margin     — not wired on the Qt side yet (post-v1).
+#:   margin     — emitted as a QSS ``margin`` box-model rule by *both* translators,
+#:                so Qt reacts (parity with Compose). Qt honours a QSS ``margin`` on
+#:                a styled widget as true *outer* space — the background/border
+#:                paints inside the margin, leaving the margin zone transparent —
+#:                matching the Compose ``Modifier`` padding outside the background.
+#:                The renderer sets ``WA_StyledBackground`` when a margin is present
+#:                so the outer space renders even on a border/background-only box.
+#:                ``left``/``right`` mirror under ``rtl`` like ``padding``.
 #:   text_align — honored in the renderer (a leaf ``Text``'s ``_TextLabel`` gets
 #:                the alignment flag via ``_text_alignment`` →
 #:                ``QLabel.setAlignment``; LEFT/CENTER/RIGHT/JUSTIFY), not via QSS,
@@ -279,7 +286,6 @@ _SAMPLES: dict[str, Any] = {
 #:                via QSS.
 #:   aspect_ratio — Compose ``Modifier.aspectRatio``; Qt derives the missing fixed
 #:                dimension in the renderer (no QSS equivalent).
-#:   margin — emitted as a QSS box-model rule by both translators, so Qt reacts.
 #:   stack_align/position/top/right/bottom/left — stacking/overlay placement.
 #:                Compose lowers them into the spec (``Box`` alignment / inset
 #:                padding); Qt realizes them imperatively as ``QWidget`` geometry
@@ -301,7 +307,7 @@ _COVERAGE: dict[str, tuple[bool, bool]] = {
     "gap": (True, False),
     "flex_wrap": (True, False),
     "padding": (True, True),
-    "margin": (True, False),
+    "margin": (True, True),
     "border": (True, True),
     "radius": (True, True),
     "background": (True, True),
@@ -3087,43 +3093,29 @@ def test_e9_rtl_mirrors_padding_and_text_align() -> None:
 # RTL behaviour intentionally diverges for fields the Qt translator already
 # leaves to the renderer (not QSS):
 #
-# 1. margin — Compose mirrors ``margin.left``↔``margin.right`` because it emits
-#    the full margin spec into the serialized Compose props that the Kotlin
-#    ``Modifier.padding`` reads. Qt does NOT emit ``margin`` into QSS (A3 notes:
-#    "not wired yet") so the RTL parameter has no effect on Qt's margin output.
-#    Both are correct: Qt applies margin in the renderer, not the translator.
+# NOTE (feat/qt-fidelity-gradient-border-parity): ``margin`` is no longer a
+# divergence — the Qt translator now emits ``margin`` into QSS *and* mirrors
+# ``left``↔``right`` under ``rtl=True``, exactly like Compose. Its row was
+# removed from ``_E9_RTL_DIVERGENCES`` below and the parity is pinned by
+# ``test_e9_rtl_margin_parity`` / ``test_e9_rtl_mirrors_padding_and_text_align``.
 #
-# 2. text_align — Compose mirrors ``LEFT``→``RIGHT`` / ``RIGHT``→``LEFT`` because
+# 1. text_align — Compose mirrors ``LEFT``→``RIGHT`` / ``RIGHT``→``LEFT`` because
 #    the Compose ``TextAlign`` enum is passed as a prop. Qt does NOT emit
 #    ``text_align`` into QSS (A3 notes: "Qt would express this via a widget
 #    property"); the RTL flag is therefore a no-op in the Qt translator for
 #    ``text_align``. Both are correct.
 #
-# 3. text_scale / font_asset — these are RTL-neutral on both sides; RTL does not
+# 2. text_scale / font_asset — these are RTL-neutral on both sides; RTL does not
 #    change typography. Both translators handle them identically under both
 #    ``rtl=False`` and ``rtl=True``.
 #
 # Updating this table: if a divergence is resolved (e.g. Qt starts emitting
-# margin/text_align into QSS), set ``intentional=False``. The tripwire
+# text_align into QSS), set ``intentional=False``. The tripwire
 # ``test_e9_rtl_translator_divergences_complete`` will then fail until the row
 # is removed. Adding a new RTL divergence requires a new row AND an entry in the
 # pinned-key set.
 
 _E9_RTL_DIVERGENCES: list[dict[str, str | bool]] = [
-    {
-        "field": "margin",
-        "topic": "rtl_mirroring",
-        "compose_behaviour": (
-            "Mirrors margin.left↔margin.right under rtl=True because the full margin "
-            "spec is serialized into Compose props that Modifier.padding reads."
-        ),
-        "qt_behaviour": (
-            "Does NOT emit margin into QSS (A3 notes: not wired yet); the rtl "
-            "parameter has no effect on the Qt translator's margin output — margin "
-            "is applied imperatively by the renderer."
-        ),
-        "intentional": True,
-    },
     {
         "field": "text_align",
         "topic": "rtl_mirroring",
@@ -3172,36 +3164,37 @@ def test_e9_rtl_translator_divergences_complete() -> None:
     assert seen == _E9_RTL_DIVERGENCE_KEYS
 
 
-def test_e9_rtl_margin_divergence_is_real() -> None:
-    """Compose mirrors margin under RTL; Qt translator is a no-op for margin.
+def test_e9_rtl_margin_parity() -> None:
+    """Both translators emit margin and mirror left↔right under RTL (parity).
 
-    Pins the documented divergence so that the day Qt starts emitting margin
-    into QSS (post-v1 roadmap), this test fails loudly and the divergence table
-    is updated.
+    Resolved divergence (feat/qt-fidelity-gradient-border-parity): the Qt
+    translator now emits ``margin`` into QSS as true outer space and mirrors
+    ``left``↔``right`` under ``rtl=True``, exactly like Compose. The former
+    ``margin`` row in ``_E9_RTL_DIVERGENCES`` was removed; this test pins the
+    new parity so a regression on either side fails loudly.
     """
     style = Style(margin=Edge(left=4, right=8))
     # Compose: margin IS mirrored under rtl=True.
-    ltr_compose = to_compose(style)
-    rtl_compose = to_compose(style, rtl=True)
-    assert ltr_compose["margin"] == {
+    assert to_compose(style)["margin"] == {
         "top": 0.0,
         "right": 8.0,
         "bottom": 0.0,
         "left": 4.0,
     }
-    assert rtl_compose["margin"] == {
+    assert to_compose(style, rtl=True)["margin"] == {
         "top": 0.0,
         "right": 4.0,
         "bottom": 0.0,
         "left": 8.0,
     }
-    # Qt: margin is not emitted by the translator at all (rtl is irrelevant).
+    # Qt: margin is now emitted into QSS and mirrored the same way (top right
+    # bottom left, with left/right swapped under rtl).
     qss_ltr = to_qss(style, with_padding=True, rtl=False)
     qss_rtl = to_qss(style, with_padding=True, rtl=True)
-    assert qss_ltr == ""
-    assert qss_rtl == ""
-    # Both LTR and RTL Qt outputs are identical (divergence is real).
-    assert qss_ltr == qss_rtl
+    assert "margin: 0.0px 8.0px 0.0px 4.0px" in qss_ltr
+    assert "margin: 0.0px 4.0px 0.0px 8.0px" in qss_rtl
+    # The divergence is resolved: LTR and RTL Qt outputs differ (mirrored).
+    assert qss_ltr != qss_rtl
 
 
 def test_e9_rtl_text_align_divergence_is_real() -> None:
