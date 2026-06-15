@@ -63,6 +63,26 @@ async def test_start_sends_mount_message():
     assert _labels(bridge.sent[0]) == ["Count: 0"]
 
 
+async def test_mount_carries_theme_mode_default_system():
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
+    await device.start()
+    # The host maps theme_mode → Material colorScheme; default defers to the OS.
+    assert bridge.sent[0]["theme_mode"] == "system"
+
+
+async def test_dark_theme_propagates_to_mount():
+    from tempest_core import Theme, ThemeMode
+
+    bridge = LoopbackBridge()
+    device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
+    device.app.set_theme(Theme(mode=ThemeMode.DARK))
+    await device.start()
+    # A dark app forces the host's dark Material scheme, so Material primitives
+    # (TextField, dropdown, slider) match instead of falling to the OS-light scheme.
+    assert bridge.sent[0]["theme_mode"] == "dark"
+
+
 async def test_tap_event_round_trip_updates_and_patches():
     bridge = LoopbackBridge()
     device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)
