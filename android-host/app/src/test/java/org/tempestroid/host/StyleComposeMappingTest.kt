@@ -1,14 +1,19 @@
 package org.tempestroid.host
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -65,11 +70,185 @@ class StyleComposeMappingTest {
 
     @Test
     fun colorOfIgnoresNonStringBackground() {
-        // gradient.json emits `background` as a MAP, not a hex string. The current
-        // renderer's box-model path only consumes the hex form, so a gradient
-        // background is read as null here (documented Kotlin gap — see report).
+        // gradient.json emits `background` as a MAP, not a hex string. `colorOf`
+        // stays hex-only (a solid fill) — a gradient is consumed by the separate
+        // `backgroundBrushOf` path (see below), so `colorOf` reads null here.
         val style = mapOf("background" to mapOf("kind" to "gradient"))
         assertNull(colorOf(style, "background"))
+    }
+
+    // --- gradient background (gradient.json → Brush) ------------------------
+
+    @Test
+    fun backgroundBrushOfBuildsLinearGradient() {
+        // golden: gradient.json → background {kind:"gradient", direction:"leftRight",
+        // stops:[{color:"#ff0000",position:0.0},{color:"#0000ff",position:1.0}]}.
+        // The renderer now turns that into a Compose linear-gradient Brush
+        // (previously: ignored → null background).
+        val style = mapOf(
+            "background" to mapOf(
+                "kind" to "gradient",
+                "direction" to "leftRight",
+                "stops" to listOf(
+                    mapOf("color" to "#ff0000", "position" to 0.0),
+                    mapOf("color" to "#0000ff", "position" to 1.0),
+                ),
+            ),
+        )
+        assertNotNull(backgroundBrushOf(style))
+        assertTrue(backgroundBrushOf(style) is Brush)
+    }
+
+    @Test
+    fun backgroundBrushOfNullForSolidOrAbsent() {
+        // A plain hex background is a solid fill (handled by colorOf), not a Brush.
+        assertNull(backgroundBrushOf(mapOf("background" to "#ff0000")))
+        assertNull(backgroundBrushOf(emptyMap()))
+    }
+
+    @Test
+    fun backgroundBrushOfReadsEachDirection() {
+        fun brush(dir: String) = backgroundBrushOf(
+            mapOf(
+                "background" to mapOf(
+                    "kind" to "gradient",
+                    "direction" to dir,
+                    "stops" to listOf(
+                        mapOf("color" to "#ff0000", "position" to 0.0),
+                        mapOf("color" to "#0000ff", "position" to 1.0),
+                    ),
+                ),
+            ),
+        )
+        // Every serialized direction token resolves to a Brush (no crash / no null).
+        assertNotNull(brush("leftRight"))
+        assertNotNull(brush("rightLeft"))
+        assertNotNull(brush("topBottom"))
+        assertNotNull(brush("bottomTop"))
+    }
+
+    // --- border (box.json / corners_sides.json → BorderStroke) --------------
+
+    @Test
+    fun borderStrokeOfReadsUniformBorder() {
+        // golden: box.json → border {color:"#000000", width:2.0}. The renderer now
+        // consumes it as a BorderStroke (previously: ignored).
+        val style = mapOf("border" to mapOf("width" to 2.0, "color" to "#000000"))
+        val stroke = borderStrokeOf(style)
+        assertNotNull(stroke)
+        assertEquals(2.0f.dp, stroke?.width)
+    }
+
+    @Test
+    fun borderStrokeOfReadsSideBorderFirstPresentSide() {
+        // golden: corners_sides.json → border {bottom:{color:"#c8c8c8",width:1.0},
+        // top:null,right:null,left:null}. Compose paints one uniform stroke, so a
+        // per-side border collapses to the first present side (documented divergence).
+        val style = mapOf(
+            "border" to mapOf(
+                "top" to null,
+                "right" to null,
+                "bottom" to mapOf("color" to "#c8c8c8", "width" to 1.0),
+                "left" to null,
+            ),
+        )
+        val stroke = borderStrokeOf(style)
+        assertNotNull(stroke)
+        assertEquals(1.0f.dp, stroke?.width)
+    }
+
+    @Test
+    fun borderStrokeOfNullWhenAbsent() {
+        assertNull(borderStrokeOf(emptyMap()))
+        assertNull(borderStrokeOf(mapOf("border" to mapOf("top" to null))))
+    }
+
+    // --- corner shape (radius uniform OR Corners map) -----------------------
+
+    @Test
+    fun cornerShapeOfReadsUniformRadius() {
+        // golden: box.json → radius 6.0.
+        assertEquals(RoundedCornerShape(6.0f.dp), cornerShapeOf(mapOf("radius" to 6.0)))
+        assertEquals(RoundedCornerShape(0.dp), cornerShapeOf(emptyMap()))
+    }
+
+    @Test
+    fun cornerShapeOfReadsPerCornerRadius() {
+        // golden: corners_sides.json → radius {topLeft:12.0, topRight:12.0,
+        // bottomRight:0.0, bottomLeft:0.0}.
+        val shape = cornerShapeOf(
+            mapOf(
+                "radius" to mapOf(
+                    "topLeft" to 12.0,
+                    "topRight" to 12.0,
+                    "bottomRight" to 0.0,
+                    "bottomLeft" to 0.0,
+                ),
+            ),
+        )
+        assertEquals(
+            RoundedCornerShape(
+                topStart = 12.0f.dp,
+                topEnd = 12.0f.dp,
+                bottomEnd = 0.0f.dp,
+                bottomStart = 0.0f.dp,
+            ),
+            shape,
+        )
+    }
+
+    // --- margin (grow_margin.json → outer PaddingValues) --------------------
+
+    @Test
+    fun marginOfBuildsPaddingValues() {
+        // golden: grow_margin.json → margin {left,top,right,bottom = 16.0}. The
+        // renderer now consumes margin as the box-model's OUTER padding.
+        val style = mapOf(
+            "margin" to mapOf("left" to 16.0, "top" to 16.0, "right" to 16.0, "bottom" to 16.0),
+        )
+        val pv = marginOf(style)
+        assertEquals(16.0f.dp, pv?.calculateTopPadding())
+        assertEquals(16.0f.dp, pv?.calculateBottomPadding())
+        assertNull(marginOf(emptyMap()))
+    }
+
+    // --- min/max sizing (sizing.json → widthIn/heightIn constraints) --------
+
+    @Test
+    fun sizingConstraintsReadsAllFourBounds() {
+        // golden: sizing.json → minWidth 40, maxWidth 320, minHeight 20, maxHeight 80.
+        // The renderer now consumes these as widthIn/heightIn constraints.
+        val style = mapOf(
+            "minWidth" to 40.0,
+            "maxWidth" to 320.0,
+            "minHeight" to 20.0,
+            "maxHeight" to 80.0,
+        )
+        val c = sizingConstraints(style)
+        assertNotNull(c)
+        assertEquals(40.0f.dp, c?.minWidth)
+        assertEquals(320.0f.dp, c?.maxWidth)
+        assertEquals(20.0f.dp, c?.minHeight)
+        assertEquals(80.0f.dp, c?.maxHeight)
+    }
+
+    @Test
+    fun sizingConstraintsLeavesAbsentSidesUnspecified() {
+        // Only minWidth present → the other three are Dp.Unspecified (unbounded).
+        val c = sizingConstraints(mapOf("minWidth" to 40.0))
+        assertNotNull(c)
+        assertEquals(40.0f.dp, c?.minWidth)
+        assertEquals(Dp.Unspecified, c?.maxWidth)
+        assertEquals(Dp.Unspecified, c?.minHeight)
+        assertEquals(Dp.Unspecified, c?.maxHeight)
+    }
+
+    @Test
+    fun sizingConstraintsNullWhenNoneDeclared() {
+        // A fixed width/height alone (no min/max) does not produce constraints —
+        // baseModifier applies those via Modifier.width/height instead.
+        assertNull(sizingConstraints(mapOf("width" to 120.0, "height" to 48.0)))
+        assertNull(sizingConstraints(emptyMap()))
     }
 
     // --- arrangement (Column.verticalArrangement / Row.horizontalArrangement)

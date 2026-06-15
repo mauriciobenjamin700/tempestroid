@@ -26,8 +26,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -45,12 +47,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
@@ -75,6 +79,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.ModalBottomSheet
@@ -134,6 +140,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -143,6 +150,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1804,6 +1812,31 @@ private fun pickerButtonColors(style: Map<String, Any?>): androidx.compose.mater
     }
 }
 
+/**
+ * Neutral, contrast-aware colors for a read-only trigger [TextField] (Dropdown /
+ * Select). Mirrors [pickerButtonColors]/#80: honour the node's `Style.background`/
+ * `color` when given, otherwise fall back to the theme's neutral `surfaceVariant`
+ * container + a contrast-tracked text color (NOT the Material default lavender,
+ * which reads light-on-light over a dark app surface). Applied to BOTH the focused
+ * and unfocused states so the field never flashes the default tint.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun neutralTextFieldColors(style: Map<String, Any?>): androidx.compose.material3.TextFieldColors {
+    val container = colorOf(style, "background") ?: MaterialTheme.colorScheme.surfaceVariant
+    val text = colorOf(style, "color") ?: defaultTextColor()
+    return TextFieldDefaults.colors(
+        focusedContainerColor = container,
+        unfocusedContainerColor = container,
+        disabledContainerColor = container,
+        focusedTextColor = text,
+        unfocusedTextColor = text,
+        disabledTextColor = text,
+        focusedTrailingIconColor = text,
+        unfocusedTrailingIconColor = text,
+    )
+}
+
 /** Resolve a content URI's human-readable display name, or null. */
 private fun displayName(context: Context, uri: Uri): String? {
     val cursor = context.contentResolver.query(uri, null, null, null, null) ?: return null
@@ -1848,6 +1881,9 @@ private fun RenderDropdown(
             readOnly = true,
             leadingIcon = iconSlot(node, "leading_icon", "leadingIconPath"),
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            // Neutral + contrast-aware colors (NOT the Material lavender default,
+            // which reads light-on-light over a dark app surface). See #80.
+            colors = neutralTextFieldColors(style),
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
         ExposedDropdownMenu(
@@ -1954,6 +1990,12 @@ private fun RenderRangeSlider(
     var range by remember(low, high) {
         mutableStateOf(low.coerceIn(min, max)..high.coerceIn(min, max))
     }
+    // Neutral + contrast-aware track/thumb colors: honour the node's `Style.color`
+    // as the active accent when given, otherwise the theme primary; the inactive
+    // track follows the tracked contrast color so the slider stays visible over a
+    // dark app surface (NOT the Material lavender default). Mirrors #80.
+    val accent = colorOf(style, "color") ?: MaterialTheme.colorScheme.primary
+    val inactive = defaultTextColor().copy(alpha = 0.3f)
     RangeSlider(
         value = range,
         onValueChange = { range = it },
@@ -1967,6 +2009,11 @@ private fun RenderRangeSlider(
                 onEvent(it, payload.toString())
             }
         },
+        colors = SliderDefaults.colors(
+            thumbColor = accent,
+            activeTrackColor = accent,
+            inactiveTrackColor = inactive,
+        ),
         modifier = baseModifier(style),
     )
 }
@@ -2058,6 +2105,12 @@ private fun RenderPinInput(
         }
     }
     val focusRequesters = remember(length) { List(length) { FocusRequester() } }
+    // Neutral, contrast-aware cell colors: honour the node's `Style.background`/
+    // `color` when given, otherwise the theme's neutral `surfaceVariant` cell +
+    // a contrast-tracked glyph color — NOT a hardcoded light box, which over a
+    // dark app surface renders near-invisible light-on-light. Mirrors #80.
+    val cellBackground = colorOf(style, "background") ?: MaterialTheme.colorScheme.surfaceVariant
+    val cellTextColor = colorOf(style, "color") ?: defaultTextColor()
     Row(
         modifier = baseModifier(style),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2066,6 +2119,8 @@ private fun RenderPinInput(
         for (i in 0 until length) {
             BasicTextField(
                 value = digits[i],
+                textStyle = TextStyle(color = cellTextColor),
+                cursorBrush = SolidColor(cellTextColor),
                 onValueChange = { raw ->
                     // Keep only the last typed char; advance/retreat focus.
                     val ch = raw.takeLast(1).filter { it.isLetterOrDigit() }
@@ -2090,7 +2145,7 @@ private fun RenderPinInput(
                     if (secure) PasswordVisualTransformation() else VisualTransformation.None,
                 modifier = Modifier
                     .width(40.dp)
-                    .background(Color(0xFFEEEEEE), RoundedCornerShape(6.dp))
+                    .background(cellBackground, RoundedCornerShape(6.dp))
                     .padding(12.dp)
                     .focusRequester(focusRequesters[i]),
             )
@@ -3295,17 +3350,155 @@ private fun paddingModifier(style: Map<String, Any?>): Modifier {
     return m
 }
 
-/** Build the box-model Modifier chain (size → background+radius → padding). */
+/**
+ * Build the box-model Modifier chain, consuming the full `Style → Compose` spec
+ * `to_compose` emits (mirroring the Qt translator + the box-model contract pinned
+ * by `tests/conformance/`):
+ *
+ *  - `margin`  → outer [Modifier.padding] (the box-model's outer spacing),
+ *  - `minWidth`/`maxWidth`/`minHeight`/`maxHeight` → [Modifier.widthIn]/[heightIn],
+ *  - `width`/`height` → fixed [Modifier.width]/[height],
+ *  - `background` → a solid [Modifier.background] for a hex string, OR a
+ *    [Brush.linearGradient] when it is a gradient map (`{kind:"gradient",…}`),
+ *  - `radius` (uniform or per-corner) → the background/border [RoundedCornerShape],
+ *  - `border` (uniform or per-side) → [Modifier.border],
+ *  - `padding` → inner [Modifier.padding].
+ *
+ * Order matters: margin (outer) → sizing → background/border (clipped by radius) →
+ * padding (inner), the standard CSS-like box model.
+ */
 internal fun baseModifier(style: Map<String, Any?>): Modifier {
     var m: Modifier = Modifier
+    // Outer spacing first, so it sits OUTSIDE the painted box (mirrors the box model).
+    marginOf(style)?.let { m = m.padding(it) }
+    // Min/max constraints, then fixed size (a fixed dimension still respects the
+    // surrounding chain; both can coexist as the Python style allows).
+    sizingConstraints(style)?.let { (minW, maxW, minH, maxH) ->
+        m = m.widthIn(min = minW, max = maxW).heightIn(min = minH, max = maxH)
+    }
     (style["width"] as? Number)?.let { m = m.width(it.toFloat().dp) }
     (style["height"] as? Number)?.let { m = m.height(it.toFloat().dp) }
-    colorOf(style, "background")?.let { bg ->
-        val radius = (style["radius"] as? Number)?.toFloat() ?: 0f
-        m = m.background(bg, RoundedCornerShape(radius.dp))
+    val shape = cornerShapeOf(style)
+    val brush = backgroundBrushOf(style)
+    if (brush != null) {
+        m = m.background(brush = brush, shape = shape)
+    } else {
+        colorOf(style, "background")?.let { bg -> m = m.background(color = bg, shape = shape) }
     }
+    borderStrokeOf(style)?.let { stroke -> m = m.border(border = stroke, shape = shape) }
     edgeOf(style, "padding")?.let { m = m.padding(it) }
     return m
+}
+
+/** The Style `margin` (serialized as a four-side edge map) as [PaddingValues], or null. */
+internal fun marginOf(style: Map<String, Any?>): PaddingValues? = edgeOf(style, "margin")
+
+/**
+ * The `minWidth`/`maxWidth`/`minHeight`/`maxHeight` constraints (serialized px →
+ * dp) as a `(minW, maxW, minH, maxH)` tuple, or null when none is present. Absent
+ * sides default to the unbounded sentinel ([Dp.Unspecified]) so [Modifier.widthIn]
+ * / [Modifier.heightIn] leaves them unconstrained.
+ */
+internal fun sizingConstraints(style: Map<String, Any?>): SizingConstraints? {
+    val minW = (style["minWidth"] as? Number)?.toFloat()
+    val maxW = (style["maxWidth"] as? Number)?.toFloat()
+    val minH = (style["minHeight"] as? Number)?.toFloat()
+    val maxH = (style["maxHeight"] as? Number)?.toFloat()
+    if (minW == null && maxW == null && minH == null && maxH == null) return null
+    return SizingConstraints(
+        minWidth = minW?.dp ?: Dp.Unspecified,
+        maxWidth = maxW?.dp ?: Dp.Unspecified,
+        minHeight = minH?.dp ?: Dp.Unspecified,
+        maxHeight = maxH?.dp ?: Dp.Unspecified,
+    )
+}
+
+/** Resolved min/max width/height constraints from a Compose style spec. */
+internal data class SizingConstraints(
+    val minWidth: Dp,
+    val maxWidth: Dp,
+    val minHeight: Dp,
+    val maxHeight: Dp,
+)
+
+/**
+ * The corner [RoundedCornerShape] from `radius` — either a uniform number or a
+ * per-corner map `{topLeft, topRight, bottomRight, bottomLeft}` (the `Corners`
+ * shape `to_compose` emits). Defaults to a sharp (zero-radius) shape.
+ */
+internal fun cornerShapeOf(style: Map<String, Any?>): RoundedCornerShape {
+    val radius = style["radius"]
+    @Suppress("UNCHECKED_CAST")
+    val corners = radius as? Map<String, Any?>
+    if (corners != null) {
+        fun corner(name: String) = (corners[name] as? Number)?.toFloat()?.dp ?: 0.dp
+        return RoundedCornerShape(
+            topStart = corner("topLeft"),
+            topEnd = corner("topRight"),
+            bottomEnd = corner("bottomRight"),
+            bottomStart = corner("bottomLeft"),
+        )
+    }
+    val uniform = (radius as? Number)?.toFloat() ?: 0f
+    return RoundedCornerShape(uniform.dp)
+}
+
+/**
+ * The background as a [Brush] when `background` is a gradient map (`to_compose`
+ * emits `{kind:"gradient", direction, stops:[{color,position}]}`), else null (a
+ * plain hex background is handled by [colorOf]). The `direction` token picks the
+ * gradient axis; `stops` carry the colors and `[0,1]` positions.
+ */
+internal fun backgroundBrushOf(style: Map<String, Any?>): Brush? {
+    @Suppress("UNCHECKED_CAST")
+    val bg = style["background"] as? Map<String, Any?> ?: return null
+    if (bg["kind"] != "gradient") return null
+    @Suppress("UNCHECKED_CAST")
+    val rawStops = bg["stops"] as? List<*> ?: return null
+    val stops = rawStops.mapNotNull { entry ->
+        @Suppress("UNCHECKED_CAST")
+        val map = entry as? Map<String, Any?> ?: return@mapNotNull null
+        val color = (map["color"] as? String)?.let { parseHexColor(it) } ?: return@mapNotNull null
+        val position = (map["position"] as? Number)?.toFloat() ?: 0f
+        position to color
+    }
+    if (stops.isEmpty()) return null
+    val pairs = stops.toTypedArray()
+    return when (bg["direction"] as? String) {
+        "topBottom" -> Brush.verticalGradient(colorStops = pairs)
+        "bottomTop" -> Brush.verticalGradient(colorStops = pairs, startY = Float.POSITIVE_INFINITY, endY = 0f)
+        "rightLeft" -> Brush.horizontalGradient(colorStops = pairs, startX = Float.POSITIVE_INFINITY, endX = 0f)
+        else -> Brush.horizontalGradient(colorStops = pairs) // "leftRight" (default)
+    }
+}
+
+/**
+ * A [BorderStroke] from `border` — either a uniform `{width, color}` map, or a
+ * per-side `{top,right,bottom,left}` map (the `SideBorder` shape). Compose's
+ * [Modifier.border] paints a single uniform stroke, so a per-side border collapses
+ * to the first non-null side present (documented divergence: Qt paints each side
+ * independently; the device draws the dominant side around the whole box). Null
+ * when no border is declared or none of the sides carries a stroke.
+ */
+internal fun borderStrokeOf(style: Map<String, Any?>): BorderStroke? {
+    @Suppress("UNCHECKED_CAST")
+    val border = style["border"] as? Map<String, Any?> ?: return null
+    fun strokeFrom(spec: Map<String, Any?>?): BorderStroke? {
+        if (spec == null) return null
+        val width = (spec["width"] as? Number)?.toFloat() ?: return null
+        val color = (spec["color"] as? String)?.let { parseHexColor(it) } ?: return null
+        if (width <= 0f) return null
+        return BorderStroke(width.dp, color)
+    }
+    // Uniform border: a {width, color} map.
+    if (border.containsKey("width")) return strokeFrom(border)
+    // Per-side SideBorder: collapse to the first present side (top→right→bottom→left).
+    for (side in listOf("top", "right", "bottom", "left")) {
+        @Suppress("UNCHECKED_CAST")
+        val sideSpec = border[side] as? Map<String, Any?>
+        strokeFrom(sideSpec)?.let { return it }
+    }
+    return null
 }
 
 internal fun edgeOf(style: Map<String, Any?>, key: String): PaddingValues? {
