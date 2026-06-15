@@ -312,6 +312,13 @@ class MountMessage(BaseModel):
             once per frame to drive the animation clock; while ``False`` it idles
             the frame loop. Re-evaluated on every mount/patch so the host's frame
             loop tracks the live set of active controllers.
+        theme_mode: The app's E9 :class:`~tempest_core.ThemeMode` as a string
+            (``"light"`` / ``"dark"`` / ``"system"``). The host maps it to its
+            Material ``colorScheme`` — ``"dark"``/``"light"`` force the scheme so
+            Material primitives (TextField, dropdown, slider, surfaces) match a
+            dark/light app even when the OS theme differs, and ``"system"`` (the
+            default) defers to ``isSystemInDarkTheme()``. Re-sent on every
+            mount/patch so a runtime ``App.set_theme`` reaches the host.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -321,6 +328,7 @@ class MountMessage(BaseModel):
     overlays: list[dict[str, Any]] = []
     can_pop: bool = False
     has_animations: bool = False
+    theme_mode: str = "system"
 
 
 class PatchMessage(BaseModel):
@@ -336,6 +344,9 @@ class PatchMessage(BaseModel):
             :class:`MountMessage`). Re-sent on every patch batch so the host's
             ``withFrameNanos`` loop starts when an animation begins and stops once
             the last controller settles.
+        theme_mode: The app's E9 theme mode (see :class:`MountMessage`). Re-sent
+            on every patch batch so a runtime ``App.set_theme`` swaps the host's
+            Material ``colorScheme`` on the next rebuild.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -344,6 +355,7 @@ class PatchMessage(BaseModel):
     patches: list[dict[str, Any]]
     can_pop: bool = False
     has_animations: bool = False
+    theme_mode: str = "system"
 
 
 class EventMessage(BaseModel):

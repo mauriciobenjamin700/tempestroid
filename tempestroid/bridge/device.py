@@ -116,6 +116,7 @@ class DeviceApp(Generic[S]):
                 ],
                 can_pop=self._app.nav.can_pop,
                 has_animations=self._app.has_animations,
+                theme_mode=self._app.theme.mode.value,
             ).model_dump()
         )
 
@@ -172,6 +173,7 @@ class DeviceApp(Generic[S]):
             patches=[serialize_patch(p) for p in patches],
             can_pop=self._app.nav.can_pop,
             has_animations=self._app.has_animations,
+            theme_mode=self._app.theme.mode.value,
         ).model_dump()
         task = asyncio.get_running_loop().create_task(self._bridge.send(message))
         self._pending.add(task)
