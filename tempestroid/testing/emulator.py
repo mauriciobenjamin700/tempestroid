@@ -384,6 +384,24 @@ class EmulatorBackend:
         Args:
             port: The dev-server port the host's code-push client targets.
         """
+        # Pre-grant POST_NOTIFICATIONS: on a fresh/cleared install the system
+        # permission dialog (GrantPermissionsActivity) steals focus from
+        # MainActivity and blocks the first Compose mount, flaking the run.
+        # Best-effort — fails harmlessly on APIs that don't gate it.
+        subprocess.run(  # noqa: S603
+            [
+                self._adb,
+                "-s",
+                self._serial,
+                "shell",
+                "pm",
+                "grant",
+                _HOST_PACKAGE,
+                "android.permission.POST_NOTIFICATIONS",
+            ],
+            check=False,
+            capture_output=True,
+        )
         # Force-stop first: `am start` on an already-running host only delivers a
         # new-intent to the live instance, whose dev-client keeps polling the
         # previous (now-closed) server port and never re-mounts. Stopping it makes
