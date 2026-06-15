@@ -33,6 +33,7 @@ from tempestroid.bridge.protocol import (
 )
 from tempestroid.cli.app_loader import spec_from_project
 from tempestroid.cli.bundle import extract_bundle
+from tempestroid.devserver.harness import HarnessTransport, poll_commands
 from tempestroid.native.background import dispatch_background_task
 from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
@@ -111,8 +112,17 @@ async def run_dev_client(
     poll_interval: float = 1.0,
     log: Callable[[str], None] = print,
     max_polls: int | None = None,
+    post: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
 ) -> None:
     """Poll the dev server and hot-restart the app on every project change.
+
+    When the server advertises **harness mode** (``GET /version`` carries
+    ``"harness": true``) and a ``post`` callable was supplied, the client wraps
+    each fresh bridge in a :class:`~tempestroid.devserver.harness.HarnessTransport`
+    (mirroring every mount/patch back to the host) and starts a background
+    :func:`~tempestroid.devserver.harness.poll_commands` loop that feeds host→
+    device events to the same sink a real tap drives. Without harness mode the
+    loop is byte-for-byte the normal code-push loop.
 
     Args:
         url: The dev server base URL (e.g. ``http://localhost:8765``).
@@ -124,9 +134,16 @@ async def run_dev_client(
         poll_interval: Seconds between version polls.
         log: Sink for status lines.
         max_polls: Stop after this many polls (tests); ``None`` runs forever.
+        post: Async ``(path, body) -> None`` POSTing JSON to the dev server. Only
+            used in harness mode; ``None`` disables the harness mirror.
     """
     loop = asyncio.get_running_loop()
-    current: dict[str, Any] = {"device": None, "hash": None, "root": None}
+    current: dict[str, Any] = {
+        "device": None,
+        "hash": None,
+        "root": None,
+        "harness": False,
+    }
 
     # Reclaim disk left by earlier ``serve`` sessions before the first push, so
     # a long run (e.g. the whole example gallery) cannot fill ``/data`` with
@@ -191,15 +208,29 @@ async def run_dev_client(
 
     register_sink(on_event)
 
+    # In harness mode each fresh bridge is wrapped so its mount/patch is mirrored
+    # back to the host; resolved on the first /version that advertises harness.
+    effective_make_bridge = make_bridge
+
+    def _harness_make_bridge() -> Bridge:
+        """Build a real bridge wrapped to mirror renders to the host."""
+        assert post is not None  # guarded by the harness-enable check below
+        return HarnessTransport(make_bridge(), post)
+
     polls = 0
     while max_polls is None or polls < max_polls:
         polls += 1
         try:
             # Network zone: a transient fetch failure (timeout, reset) must NOT
             # commit the hash, so the next poll retries the same version.
-            version = json.loads((await fetch(f"{url}/version")).decode("utf-8")).get(
-                "hash"
-            )
+            meta = json.loads((await fetch(f"{url}/version")).decode("utf-8"))
+            version = meta.get("hash")
+            if not current["harness"] and meta.get("harness") and post is not None:
+                # First sight of harness mode: switch to the mirroring bridge and
+                # start the host→device command poll feeding the same event sink.
+                current["harness"] = True
+                effective_make_bridge = _harness_make_bridge
+                loop.create_task(poll_commands(url, sink=on_event, fetch=fetch))
             if version != current["hash"]:
                 data = await fetch(f"{url}/bundle")
                 # App zone: from here the bundle is in hand. Commit the hash up
@@ -207,7 +238,7 @@ async def run_dev_client(
                 # every poll — we wait for the next edit. The error is surfaced
                 # on-device as a red error screen instead of a blank window.
                 current["hash"] = version
-                await _apply_push(data, current, make_bridge, log)
+                await _apply_push(data, current, effective_make_bridge, log)
         except Exception as exc:  # noqa: BLE001 - keep the loop alive on any error
             log(f"[tempest] dev client error: {exc}")
         await asyncio.sleep(poll_interval)
@@ -320,6 +351,22 @@ def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
 
         return await asyncio.to_thread(_get)
 
+    async def _post(path: str, body: dict[str, Any]) -> None:
+        """POST a JSON body to the dev server off the event loop thread."""
+        data = json.dumps(body).encode("utf-8")
+
+        def _send() -> None:
+            request = urllib.request.Request(  # noqa: S310
+                f"{url}{path}",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=30):  # noqa: S310
+                return
+
+        await asyncio.to_thread(_send)
+
     asyncio.run(
         run_dev_client(
             url,
@@ -327,5 +374,6 @@ def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
             register_sink=host.set_event_sink,
             fetch=_fetch,
             poll_interval=poll_interval,
+            post=_post,
         )
     )

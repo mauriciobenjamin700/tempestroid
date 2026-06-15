@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Native UI test driver (F9, emulator backend)** — a third
+  `tempestroid.testing.TestBackend`: `EmulatorBackend` drives a REAL app through
+  the **Compose** renderer on an x86_64/arm64 Android emulator, plus
+  `EmulatorPool` to run N isolated emulators in parallel and
+  `tempest uitest --target emulator [-j N]`. The SAME Page/Locator/`expect_*`
+  script runs on `headless` and `emulator`. Transport reuses the existing dev
+  server over `adb reverse` in a new **harness mode** (no C/JNI change): the
+  device POSTs its serialized mount/patch JSON back (host keeps a `Scene`
+  **mirror** via `tempestroid.testing.mirror`), and the host enqueues events the
+  device pulls and feeds to `DeviceApp.handle_event` — the same path a real
+  Compose tap takes. Auto-wait polls the mirror revision (no fixed sleep);
+  `screenshot()` captures REAL Compose pixels via `adb screencap`. New exports:
+  `EmulatorBackend`, `EmulatorPool`, `running_emulators`,
+  `max_parallel_emulators`, `run_test_file_emulator`, `run_test_files_emulator`,
+  `deserialize_node`/`deserialize_scene`/`apply_patches` (mirror), and
+  `HarnessTransport`/`poll_commands` (devserver).
+
 ## [0.14.0] — 2026-06-14
 
 ### Added

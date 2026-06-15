@@ -7,11 +7,13 @@ loads the module, and for **each** test builds a fresh :class:`Page` over a fres
 backend (so tests never share state), mounts it, runs the coroutine in its own
 event loop, and records the outcome.
 
-This slice runs the ``"headless"`` target only: an in-process
+Two targets run today: ``"headless"`` (an in-process
 :class:`~tempestroid.testing.backend.HeadlessBackend` driving the IR/state/event
-core with no renderer. The ``"qt"`` / ``"emulator"`` / ``"device"`` targets are
-reserved — they require the stable simulator/emulator/device targets Trilho F8
-delivers — and selecting one raises :class:`NotImplementedError` for now.
+core with no renderer) and ``"emulator"`` (an
+:class:`~tempestroid.testing.emulator.EmulatorBackend` driving a REAL app through
+the Compose renderer on an Android emulator, sharded across N instances by
+:func:`run_test_files_emulator`). The ``"qt"`` / ``"device"`` targets are
+reserved and selecting one raises :class:`NotImplementedError` for now.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import sys
+import threading
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,16 +36,18 @@ __all__ = [
     "TestOutcome",
     "TestReport",
     "run_test_file",
+    "run_test_file_emulator",
+    "run_test_files_emulator",
     "SUPPORTED_TARGETS",
     "PLANNED_TARGETS",
 ]
 
-#: Targets this slice can run.
-SUPPORTED_TARGETS: frozenset[str] = frozenset({"headless"})
+#: Targets the runner can run.
+SUPPORTED_TARGETS: frozenset[str] = frozenset({"headless", "emulator"})
 
-#: Targets reserved for Trilho F8 (stable simulator/emulator/device). Selecting
-#: one raises :class:`NotImplementedError` with a pointer to F8.
-PLANNED_TARGETS: frozenset[str] = frozenset({"qt", "emulator", "device"})
+#: Targets reserved for a later slice (the Qt-window and on-hardware device
+#: backends). Selecting one raises :class:`NotImplementedError`.
+PLANNED_TARGETS: frozenset[str] = frozenset({"qt", "device"})
 
 
 def _empty_dump() -> dict[str, Any]:
@@ -159,9 +164,14 @@ def run_test_file(path: str | Path, target: str = "headless") -> TestReport:
     """
     if target in PLANNED_TARGETS:
         raise NotImplementedError(
-            f"target {target!r} arrives with Trilho F8 (stable simulator/"
-            "emulator/device targets). Only the headless target is supported "
-            "today."
+            f"target {target!r} is reserved for a later slice. Use "
+            "the headless (in-process) or emulator (real Compose render) target."
+        )
+    if target == "emulator":
+        raise ValueError(
+            "the emulator target runs per-serial; use "
+            "run_test_files_emulator(...) (the CLI `tempest uitest --target "
+            "emulator -j N` does this)."
         )
     if target not in SUPPORTED_TARGETS:
         raise ValueError(
@@ -222,6 +232,161 @@ def _load_test_module(
     if not callable(view) or not callable(make_state):
         raise TypeError(f"{file}: `view` and `make_state` must be callable")
     return make_state, view, _discover_tests(namespace)
+
+
+def run_test_file_emulator(
+    path: str | Path,
+    serial: str,
+    *,
+    screenshot_dir: str | Path | None = None,
+    launch: bool = True,
+) -> TestReport:
+    """Run a UI test file against a real app on one emulator serial.
+
+    Mounts the app once per test on an
+    :class:`~tempestroid.testing.emulator.EmulatorBackend` bound to ``serial``,
+    runs each ``test_*`` coroutine, and — when ``screenshot_dir`` is set —
+    captures a REAL Compose screenshot per test (named ``<test>.png``).
+
+    Args:
+        path: Path to the UI test file (app module + ``test_*`` functions).
+        serial: The ``adb`` serial of the target emulator.
+        screenshot_dir: Directory for per-test PNGs; ``None`` to skip capture.
+        launch: Auto ``adb reverse`` + launch the host in dev mode on mount.
+
+    Returns:
+        The :class:`TestReport` with one outcome per test (target ``"emulator"``).
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        AttributeError: If the file lacks ``view`` or ``make_state``.
+    """
+    file = Path(path).resolve()
+    if not file.is_file():
+        raise FileNotFoundError(f"UI test file not found: {file}")
+    _make_state, _view, tests = _load_test_module(file)
+    shot_dir = Path(screenshot_dir) if screenshot_dir is not None else None
+    outcomes = [
+        _run_one_emulator(name, func, file, serial, shot_dir, launch)
+        for name, func in tests
+    ]
+    return TestReport(path=str(file), target="emulator", outcomes=outcomes)
+
+
+def run_test_files_emulator(
+    paths: list[str | Path],
+    serials: list[str],
+    *,
+    screenshot_dir: str | Path | None = None,
+    launch: bool = True,
+) -> list[TestReport]:
+    """Shard test files across emulator serials and run each shard in parallel.
+
+    Round-robins ``paths`` across ``serials`` (each serial runs its shard on its
+    own thread + event loop), so N emulators cut wall-clock ~linearly. With one
+    serial it runs every file serially on it.
+
+    Args:
+        paths: The UI test files to run.
+        serials: The allocated emulator serials (at least one).
+        screenshot_dir: Directory for per-test PNGs; ``None`` to skip capture.
+        launch: Auto ``adb reverse`` + launch the host in dev mode on mount.
+
+    Returns:
+        One :class:`TestReport` per file (order matches ``paths``).
+
+    Raises:
+        ValueError: If ``serials`` is empty.
+    """
+    if not serials:
+        raise ValueError("run_test_files_emulator needs at least one serial")
+    # Round-robin shard: file i -> serial i % len(serials).
+    shards: dict[str, list[tuple[int, Path]]] = {serial: [] for serial in serials}
+    for index, raw in enumerate(paths):
+        serial = serials[index % len(serials)]
+        shards[serial].append((index, Path(raw).resolve()))
+
+    results: dict[int, TestReport] = {}
+    threads: list[threading.Thread] = []
+
+    def _drive(serial: str, files: list[tuple[int, Path]]) -> None:
+        """Run one serial's shard on its own event loop, recording reports."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            for index, file in files:
+                results[index] = run_test_file_emulator(
+                    file,
+                    serial,
+                    screenshot_dir=screenshot_dir,
+                    launch=launch,
+                )
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    for serial, files in shards.items():
+        if not files:
+            continue
+        thread = threading.Thread(target=_drive, args=(serial, files), daemon=True)
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
+    return [results[index] for index in sorted(results)]
+
+
+def _run_one_emulator(
+    name: str,
+    func: Callable[..., Any],
+    file: Path,
+    serial: str,
+    screenshot_dir: Path | None,
+    launch: bool,
+) -> TestOutcome:
+    """Run one test against a fresh emulator backend, capturing a screenshot.
+
+    Args:
+        name: The test function name.
+        func: The (async) test function taking a single ``page`` argument.
+        file: The app/test file to mount.
+        serial: The emulator serial to bind.
+        screenshot_dir: Directory for the per-test PNG, or ``None`` to skip.
+        launch: Auto ``adb reverse`` + launch on mount.
+
+    Returns:
+        The :class:`TestOutcome` for this test.
+    """
+    from tempestroid.testing.emulator import EmulatorBackend
+
+    backend = EmulatorBackend(file, serial, launch=launch)
+    page = Page(backend)
+
+    async def _body() -> None:
+        await page.mount()
+        result = func(page)
+        if inspect.iscoroutine(result):
+            await result
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_body())
+        passed, message, tb = True, "", ""
+    except BaseException as exc:  # noqa: BLE001 — capture any test failure
+        passed = False
+        message = f"{type(exc).__name__}: {exc}"
+        tb = "".join(traceback.format_exception(exc))
+    finally:
+        if screenshot_dir is not None:
+            try:
+                backend.screenshot(screenshot_dir / f"{name}.png")
+            except BaseException:  # noqa: BLE001 — screenshot is best-effort
+                pass
+        backend.close()
+        loop.close()
+        asyncio.set_event_loop(None)
+    return TestOutcome(name=name, passed=passed, message=message, traceback=tb)
 
 
 def _run_one(

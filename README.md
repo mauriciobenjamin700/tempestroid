@@ -336,7 +336,7 @@ surfaced and the happy path stays quiet.
 | `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only) |
 | `tempest type [path]` | ✅ | `pyright` on the target (strict type check) |
 | `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter) |
-| `tempest uitest <path>` | ✅ | Run a **Playwright-style native UI test** file (F9 driver): an app module + `async def test_*(page)` functions, driven against the renderer-agnostic IR with **auto-wait** (no `sleep`). `--target`/`-t`: `headless` (default, in-process, no renderer); `qt`/`emulator`/`device` arrive with F8 — the same script runs on them unchanged |
+| `tempest uitest <path>` | ✅ | Run a **Playwright-style native UI test** file (F9 driver): an app module + `async def test_*(page)` functions, driven against the renderer-agnostic IR with **auto-wait** (no `sleep`). `--target`/`-t`: `headless` (default, in-process, no renderer) or `emulator` (REAL Compose render on an Android emulator); `-j N` shards across N isolated emulators with a real screenshot per test. `qt`/`device` are reserved — the same script runs on every target unchanged |
 | `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test (stops at the first failure). Each tool is resolved on `PATH` or via `uv run` |
 
 ### Running on a device from WSL
@@ -785,23 +785,34 @@ its native engine — is pinned by the conformance suite).
 A Playwright-style driver that automates an app against the **renderer-agnostic
 IR** (not pixels): locate nodes, inject typed events, assert with **auto-wait**
 (no `sleep`). Because every backend speaks the same IR + typed events, the **same
-script runs on every target** — the headless backend now drives the IR/state/event
-core in-process, and the Qt/emulator/device backends slot in behind the same
-`TestBackend` protocol once Trilho F8 lands them. Drive it with `tempest uitest`.
+script runs on every target**: the **headless** backend drives the
+IR/state/event core in-process, and the **emulator** backend drives a REAL app
+through the **Compose** renderer on an Android emulator. Drive it with
+`tempest uitest` — `--target emulator -j N` shards across N isolated emulators and
+saves a real on-device screenshot per test.
 
 - **`Page`** — the top-level driver. Locators: `get_by_key` / `get_by_text` /
   `get_by_role` / `get_by_semantics` / `get_by_prop`. Actions: `tap` / `fill` /
   `back`. Auto-waiting assertions: `expect_text` / `expect_visible` /
-  `expect_count`. `snapshot()` returns a JSON-able tree dump (the headless analogue
-  of a screenshot; pixel screenshots arrive with the Qt/device backends, F8).
+  `expect_count`. `snapshot()` returns a JSON-able tree dump.
 - **`Locator`** — a lazy node query that resolves against the live scene at
   action/assert time (`first` / `all()` / `count()` / `resolve()`); raises
   `LocatorError` when zero or (for `resolve`) many nodes match.
 - **`TestBackend`** — the `Protocol` a renderer target implements (`mount` /
   `scene` / `dispatch` / `settle` / `patches`).
 - **`HeadlessBackend`** — the no-renderer reference backend (wraps an `App`).
+- **`EmulatorBackend(app_path, serial)`** — drives a real Compose render on an
+  emulator over the dev-server **harness** bridge (mount/patch mirrored back into
+  a host-side `Scene`; events fed through `DeviceApp.handle_event` — no C/JNI
+  change). `screenshot(path)` captures REAL Compose pixels via `adb screencap`.
+- **`EmulatorPool`** — allocate / recycle N isolated emulators (reusing running
+  ones, capped by CPU/RAM). `max_parallel_emulators()` / `running_emulators()`.
 - **`run_test_file(path, target="headless")`** — load + run a UI test file's
   `test_*` functions, returning a `TestReport` of `TestOutcome`s.
+- **`run_test_files_emulator(paths, serials)`** — shard files across emulator
+  serials and run each shard in parallel.
+- **`deserialize_scene` / `apply_patches`** (in `tempestroid.testing.mirror`) —
+  rebuild + patch the host-side scene mirror from the wire JSON.
 
 ```python
 from tempestroid.testing import HeadlessBackend, Page
