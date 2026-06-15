@@ -29,6 +29,28 @@ adbq() {
     timeout "${ADB_TIMEOUT}" "$ADB" "$@"
 }
 
+# adb_unwedge — recover a wedged adb server. Under sustained emulator load on WSL
+# the server can wedge so hard that even `adb kill-server` HANGS (observed
+# repeatedly), so the gentle reset in older code never returns. The reliable
+# recovery is to SIGKILL the server process directly and restart it as a
+# background nodaemon server (the WSL mirrored-networking workaround — see
+# docs/guia/dispositivo-wsl.md §3). Idempotent + bounded (never hangs).
+adb_unwedge() {
+    echo "==> adb wedged — killing the server process and restarting (nodaemon)"
+    pkill -9 -x adb >/dev/null 2>&1 || true
+    pkill -9 -f "adb -L tcp:5037" >/dev/null 2>&1 || true
+    sleep 1
+    setsid "$ADB" -L tcp:5037 nodaemon server >/tmp/tempest-adb-server.log 2>&1 &
+    sleep 3
+    adbq start-server >/dev/null 2>&1 || true
+}
+
+# adb_ensure — make sure the adb server answers; unwedge it if a probe times out.
+# Call before a batch of adb work so a wedged server is reset, not waited on.
+adb_ensure() {
+    adbq devices >/dev/null 2>&1 || adb_unwedge
+}
+
 # device_alive — true iff exactly the adb layer reports a device in 'device'
 # state. Returns non-zero (and never hangs) when the device dropped off USB,
 # went offline/unauthorized, or the adb server itself is wedged.
@@ -154,16 +176,16 @@ emu_stop() {
     adbq -s "$serial" emu kill >/dev/null 2>&1 || true
 }
 
-# emu_recover <avd> <serial> <port> [snapshot] — recover a wedged AVD: stop it,
-# reset a possibly-wedged adb server, and cold-boot fresh. A snapshot that fails
-# to restore is bypassed (cold-boot). As a last resort the caller wipes data
-# (`emulator -avd <avd> -wipe-data`) — destructive, so left manual + documented.
+# emu_recover <avd> <serial> <port> — recover a wedged AVD: stop it, hard-reset
+# the (possibly wedged) adb server via adb_unwedge — NOT `adb kill-server`, which
+# itself hangs when the server is wedged — and cold-boot fresh. As a last resort
+# the caller wipes data (`emulator -avd <avd> -wipe-data`) — destructive, so left
+# manual + documented.
 emu_recover() {
     local avd="$1" serial="$2" port="${3:-5554}"
     echo "==> recovering wedged emulator $serial (cold boot)"
     emu_stop "$serial"
-    timeout 15 "$ADB" kill-server >/dev/null 2>&1 || true
-    timeout 15 "$ADB" start-server >/dev/null 2>&1 || true
+    adb_unwedge
     emu_boot "$avd" "$serial" "$port" ""
     emu_wait_ready "$serial" 180
 }
