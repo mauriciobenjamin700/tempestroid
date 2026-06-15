@@ -17,7 +17,8 @@ All run headless under ``QT_QPA_PLATFORM=offscreen`` (see ``tests/conftest.py``)
 # These tests reach into the renderer's private helpers/widgets by design.
 # pyright: reportPrivateUsage=false
 import pytest
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 from tempestroid import (
@@ -26,6 +27,7 @@ from tempestroid import (
     Column,
     Container,
     Corners,
+    Edge,
     Icon,
     Style,
     Text,
@@ -199,6 +201,66 @@ def test_single_fixed_dimension_stays_flexible():
     assert boxes
     policy = boxes[0].sizePolicy()
     assert policy.horizontalPolicy() != QSizePolicy.Policy.Fixed
+
+
+# --- margin: emitted into QSS as true outer space --------------------------
+
+
+def test_margin_emitted_into_node_qss():
+    """A node with a ``margin`` carries a QSS ``margin`` rule (parity with Compose)."""
+    renderer = QtRenderer()
+    tree = build(
+        Container(
+            style=Style(
+                background=Color.from_hex("#3366ff"),
+                margin=Edge(top=10.0, right=20.0, bottom=30.0, left=40.0),
+            ),
+            child=Text(content="x"),
+        )
+    )
+    host = renderer.mount(tree)
+    styled = [w for w in host.findChildren(QWidget) if "margin:" in w.styleSheet()]
+    assert styled, "the box must carry a margin QSS rule"
+    sheet = styled[0].styleSheet()
+    # QSS shorthand order is top right bottom left.
+    assert "margin: 10.0px 20.0px 30.0px 40.0px" in sheet
+    # ``WA_StyledBackground`` must be set so the margin renders as outer space.
+    assert styled[0].testAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+
+
+def test_margin_renders_as_true_outer_space():
+    """The background paints *inside* the margin — the margin zone stays clear.
+
+    Pins the renderer realization: a QSS ``margin`` on a styled widget is true
+    outer space (the box decoration paints inset by the margin), matching the
+    Compose ``Modifier`` padding-outside-the-background semantics.
+    """
+    renderer = QtRenderer()
+    tree = build(
+        Container(
+            style=Style(
+                background=Color.from_hex("#ff0000"),
+                margin=Edge.all(20.0),
+            ),
+        )
+    )
+    host = renderer.host
+    renderer.mount(tree)
+    host.resize(120, 120)
+    host.show()
+    image = QImage(host.size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.white)
+    painter = QPainter(image)
+    host.render(painter, QPoint(0, 0))
+    painter.end()
+
+    def is_red(x: int, y: int) -> bool:
+        color = image.pixelColor(x, y)
+        return color.red() > 200 and color.green() < 60 and color.blue() < 60
+
+    # The 20px margin zone (corner) must not be red; the box centre must be red.
+    assert not is_red(5, 5), "margin zone must be clear of the box background"
+    assert is_red(60, 60), "the box background must paint inside the margin"
 
 
 # --- P2: Material-name alias resolves to a curated glyph -------------------

@@ -5167,11 +5167,16 @@ class QtRenderer:
         # acts as a universal selector in Qt and would tint/box every child.
         _scoped_stylesheet(node.widget, qss)
         if style is not None and (
-            style.background is not None or style.radius is not None
+            style.background is not None
+            or style.radius is not None
+            or style.margin is not None
         ):
             # Qt only clips a QSS ``background-color`` to ``border-radius`` when the
             # widget paints a styled background; without a border, a rounded
-            # background-only box renders square unless this attribute is set.
+            # background-only box renders square unless this attribute is set. The
+            # same styled-background pass is what makes a QSS ``margin`` render as
+            # true outer space (the box paints inside the margin), so set it when a
+            # margin is present too.
             node.widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._apply_custom_font(node.widget, custom_family)
         self._apply_accessibility(node)

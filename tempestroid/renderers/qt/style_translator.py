@@ -137,6 +137,17 @@ def to_qss(style: Style | None, *, with_padding: bool, rtl: bool = False) -> str
         edge = style.padding
         left, right = (edge.right, edge.left) if rtl else (edge.left, edge.right)
         rules.append(f"padding: {edge.top}px {right}px {edge.bottom}px {left}px")
+    if style.margin is not None:
+        # Qt honours a QSS ``margin`` on a styled widget as true *outer* space:
+        # the background/border paints inside the margin, leaving the margin zone
+        # transparent — exactly the box-model semantics Compose realizes via
+        # ``Modifier`` padding outside the background. Emitted for both leaves and
+        # containers (unlike ``padding``, which a container routes to its layout's
+        # ``contentsMargins`` to avoid double-counting). ``left``/``right`` mirror
+        # under ``rtl`` to match the Compose translator.
+        edge = style.margin
+        left, right = (edge.right, edge.left) if rtl else (edge.left, edge.right)
+        rules.append(f"margin: {edge.top}px {right}px {edge.bottom}px {left}px")
     if style.font_asset is not None:
         # The renderer loads the asset via ``QFontDatabase.addApplicationFont``
         # and registers it under this family name; the family is emitted here so

@@ -310,6 +310,22 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
   instead of the literal-text fallback; `register_icon` is still the escape hatch.
   All four are renderer-only — the `_COVERAGE` parity table and goldens are
   untouched. Tests: `tests/unit/test_qt_boxmodel.py`.
+- **Margin parity (`feat/qt-fidelity-gradient-border-parity`).** Audited the
+  box-model fields the Compose translator consumes: **gradient backgrounds**
+  (`to_qss` already emits `qlineargradient(...)`), **`Border`/`SideBorder`**, and
+  **`min`/`max` sizing** were already faithful and pinned (goldens
+  `gradient`/`corners_sides`/`sizing`, all `(True, True)`). The one real gap was
+  **`margin`**, which the Qt side rendered nowhere. Unlike the box-model items
+  above (imperative), `margin` is realized in the **translator** to match Compose:
+  `to_qss` now emits a QSS `margin: T R B L` rule (for both leaves and containers,
+  always — unlike `padding`, which a container routes to `contentsMargins`), with
+  `left`/`right` mirrored under `rtl`. Qt honours a QSS `margin` on a styled widget
+  as true *outer* space (the box paints inside it), so `_apply_visual` sets
+  `WA_StyledBackground` when a margin is present. This **deliberately touches
+  conformance**: `_COVERAGE["margin"]` is now `(True, True)`, the `grow_margin` and
+  `rtl_layout` goldens were regenerated, and the resolved `margin` row was removed
+  from the E9 `_E9_RTL_DIVERGENCES` tripwire (`test_e9_rtl_margin_parity` pins the
+  new both-sides-mirror parity). Tests: `tests/unit/test_qt_boxmodel.py`.
 - `QtRenderer` owns a *host* widget so a root `Replace` is a uniform child swap.
   Updates re-apply the full merged visual idempotently. Headless tests run under
   `QT_QPA_PLATFORM=offscreen` (see `tests/conftest.py`).

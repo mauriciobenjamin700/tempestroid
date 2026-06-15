@@ -81,10 +81,47 @@ rendered the name as text.
 consulted by `_icon_pixmap` before it gives up. `register_icon` remains the escape
 hatch for project-specific glyphs.
 
+## Parity — `margin` now reacts in the `Style → Qt` translator
+
+**Symptom.** `Style.margin` rendered nothing in the Qt simulator: the
+`Style → Qt` translator never emitted it and the renderer never applied it, so a
+margined box sat flush against its siblings. Compose, by contrast, lowers
+`margin` into its spec (mirrored under RTL), making the two renderers diverge —
+the only box-model field where Qt was silently inert.
+
+**Root cause.** `to_qss` emitted `padding`/`border`/`radius`/`min`/`max` but had
+no `margin` branch; no renderer code read `style.margin`.
+
+**Fix (translator, not imperative).** Unlike the four box-model items above —
+which stay imperative so `_COVERAGE` is untouched — `margin` is realized in the
+**translator** to keep parity with Compose (the Compose side consumes `margin`
+in its translator too). `to_qss` now emits a QSS `margin: T R B L` rule for both
+leaves and containers (always, unlike `padding`, which a container routes to its
+layout's `contentsMargins`), with `left`/`right` mirrored under `rtl`. Qt honours
+a QSS `margin` on a styled widget as true *outer* space: the background/border
+paints inside the margin, leaving the margin zone transparent — matching
+Compose's `Modifier` padding outside the background. `_apply_visual` sets
+`WA_StyledBackground` when a margin is present so the outer space renders even on
+a border/background-only box.
+
+**Conformance touched (deliberately).** `_COVERAGE["margin"]` flips
+`(True, False) → (True, True)`; the `grow_margin` and `rtl_layout` goldens were
+regenerated (`UPDATE_GOLDEN=1`) to include the new `margin` QSS; the resolved
+`margin` row was removed from the E9 `_E9_RTL_DIVERGENCES` tripwire table and
+`test_e9_rtl_margin_divergence_is_real` was rewritten as
+`test_e9_rtl_margin_parity` (both translators mirror margin under RTL). Gradient
+backgrounds, `Border`/`SideBorder`, and `min/max` sizing were audited and were
+already faithful (golden `gradient`/`corners_sides`/`sizing`, all `(True, True)`)
+— no change needed.
+
 ## Validation
 
 Headless tests under `QT_QPA_PLATFORM=offscreen` (`tests/unit/test_qt_boxmodel.py`):
 
+- **margin** — a margined `Container` carries a `margin: T R B L` QSS rule with
+  `WA_StyledBackground` set (`test_margin_emitted_into_node_qss`); a rendered
+  margined box leaves the margin zone clear and paints the background inside it
+  (`test_margin_renders_as_true_outer_space`).
 - **P0** — a bordered `Container` with a `Text` child: the child's stylesheet
   carries no `border`; the container's box QSS is `#objectName`-scoped.
 - **P1 (radius)** — a 96×96 styled `Container` with a `999` pill radius emits
@@ -95,6 +132,9 @@ Headless tests under `QT_QPA_PLATFORM=offscreen` (`tests/unit/test_qt_boxmodel.p
 - **P2** — `Icon(name="photo_camera")` resolves to a curated glyph pixmap instead
   of the literal-text fallback (`_resolve_icon_name` / `_icon_pixmap`).
 
-The `Style` translators (`to_qss` / `to_compose`) are **unchanged**, so the
-phase-D conformance goldens and the `_COVERAGE` parity table are untouched — all
-fixes are imperative in the renderer (the A3 pattern).
+The four box-model fixes above (P0–P2) are imperative in the renderer (the A3
+pattern), so the `Style → Qt` translator stays inert for them and the phase-D
+conformance goldens / `_COVERAGE` parity table are untouched. The **margin**
+parity fix is the one deliberate exception: it lives in the `to_qss` translator
+(to match Compose), so its `_COVERAGE` row, two goldens, and the E9 RTL tripwire
+were updated alongside it.
