@@ -2,6 +2,8 @@ package org.tempestroid.host
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -418,5 +420,42 @@ class StyleComposeMappingTest {
         assertNull(roleFor("heading"))
         assertNull(roleFor(null))
         assertNull(roleFor("unknown"))
+    }
+
+    // --- E9 Option B: theme_mode → Material colorScheme ---------------------
+    //
+    // ColorScheme has no value equals (mutable class, not a data class), so each
+    // factory call is a fresh reference. We compare a representative token color
+    // (`background`) — light vs dark schemes have distinct backgrounds — which
+    // uniquely identifies which scheme colorSchemeFor returned.
+
+    private val darkBackground = darkColorScheme().background
+    private val lightBackground = lightColorScheme().background
+
+    @Test
+    fun darkThemeModeForcesDarkSchemeRegardlessOfOs() {
+        // A dark app under a light OS renders dark (the bug this fixes).
+        assertEquals(darkBackground, colorSchemeFor("dark", systemDark = false).background)
+        assertEquals(darkBackground, colorSchemeFor("dark", systemDark = true).background)
+    }
+
+    @Test
+    fun lightThemeModeForcesLightSchemeRegardlessOfOs() {
+        assertEquals(lightBackground, colorSchemeFor("light", systemDark = true).background)
+        assertEquals(lightBackground, colorSchemeFor("light", systemDark = false).background)
+    }
+
+    @Test
+    fun systemThemeModeDefersToOsDarkMode() {
+        // "system" (default) keeps the prior OS-driven behaviour as the fallback.
+        assertEquals(darkBackground, colorSchemeFor("system", systemDark = true).background)
+        assertEquals(lightBackground, colorSchemeFor("system", systemDark = false).background)
+    }
+
+    @Test
+    fun unknownThemeModeFallsBackToSystem() {
+        // Any unrecognized value defers to the OS, like "system".
+        assertEquals(darkBackground, colorSchemeFor("nope", systemDark = true).background)
+        assertEquals(lightBackground, colorSchemeFor("nope", systemDark = false).background)
     }
 }
