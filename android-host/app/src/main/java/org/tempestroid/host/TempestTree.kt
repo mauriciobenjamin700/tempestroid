@@ -51,6 +51,22 @@ class TempestTree {
         private set
 
     /**
+     * The app's E9 theme mode, as Compose snapshot state.
+     *
+     * Set from the `theme_mode` field every mount/patch envelope carries
+     * (defaulting [DEFAULT_THEME_MODE] = "system" when absent). One of
+     * `"light"` / `"dark"` / `"system"`, mirroring the Python `App.theme.mode`.
+     * MainActivity observes this to pick the Material `colorScheme`: "dark"/"light"
+     * force the scheme so Material primitives (TextField, dropdown, slider,
+     * surfaces) match a dark/light app even when the OS theme differs; "system"
+     * defers to `isSystemInDarkTheme()`. Re-read on every mount/patch (like
+     * `has_animations` / `can_pop` in MainActivity), so a runtime `App.set_theme`
+     * sends a patch with the new `theme_mode` and recomposes the theme.
+     */
+    var themeMode by mutableStateOf(DEFAULT_THEME_MODE)
+        private set
+
+    /**
      * Apply one serialized message (`mount` or `patch`).
      *
      * @param message the parsed message envelope.
@@ -70,6 +86,10 @@ class TempestTree {
             }
             "patch" -> applyPatches(message.getJSONArray("patches"))
         }
+        // E9 (Option B): both mount and patch envelopes carry `theme_mode`
+        // (default "system" when absent). Re-read on every message so a runtime
+        // `App.set_theme` swaps the host's Material colorScheme on the next patch.
+        themeMode = message.optString("theme_mode", DEFAULT_THEME_MODE)
     }
 
     private fun applyPatches(patches: JSONArray) {
@@ -265,5 +285,13 @@ class TempestTree {
          * `reconciler.OVERLAY_STEP` ("overlay").
          */
         private const val OVERLAY_STEP = "overlay"
+
+        /**
+         * Default theme mode when the envelope omits `theme_mode` (older Python
+         * side, or a renderer-agnostic message). "system" defers the colorScheme
+         * choice to the OS — the pre-Option-B behaviour. Must stay in sync with
+         * the Python `ThemeMode.SYSTEM.value`.
+         */
+        const val DEFAULT_THEME_MODE = "system"
     }
 }

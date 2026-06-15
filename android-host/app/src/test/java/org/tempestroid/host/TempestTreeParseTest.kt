@@ -248,6 +248,77 @@ class TempestTreeParseTest {
         assertEquals("B!", tree.root!!.children[1].props["content"])
     }
 
+    // --- E9 Option B: theme_mode envelope field --------------------------------
+
+    @Test
+    fun themeModeDefaultsToSystemWhenAbsent() {
+        // A mount without theme_mode (older Python / renderer-agnostic) → "system".
+        val tree = TempestTree()
+        tree.apply(mount(node("Column")))
+        assertEquals("system", tree.themeMode)
+    }
+
+    @Test
+    fun mountWithDarkThemeModeSetsDark() {
+        val tree = TempestTree()
+        val envelope = JSONObject()
+            .put("kind", "mount")
+            .put("root", node("Column"))
+            .put("theme_mode", "dark")
+        tree.apply(envelope)
+        assertEquals("dark", tree.themeMode)
+    }
+
+    @Test
+    fun mountWithLightThemeModeSetsLight() {
+        val tree = TempestTree()
+        val envelope = JSONObject()
+            .put("kind", "mount")
+            .put("root", node("Column"))
+            .put("theme_mode", "light")
+        tree.apply(envelope)
+        assertEquals("light", tree.themeMode)
+    }
+
+    @Test
+    fun patchEnvelopeUpdatesThemeMode() {
+        // A runtime App.set_theme re-sends theme_mode on the next patch batch.
+        val tree = TempestTree()
+        tree.apply(
+            JSONObject()
+                .put("kind", "mount")
+                .put("root", node("Column"))
+                .put("theme_mode", "light"),
+        )
+        assertEquals("light", tree.themeMode)
+        tree.apply(
+            JSONObject()
+                .put("kind", "patch")
+                .put("patches", org.json.JSONArray())
+                .put("theme_mode", "dark"),
+        )
+        assertEquals("dark", tree.themeMode)
+    }
+
+    @Test
+    fun patchWithoutThemeModeFallsBackToSystem() {
+        // The field defaults per-message: a patch omitting it reads "system" (the
+        // Python serializer always emits it, so this only guards a degraded sender).
+        val tree = TempestTree()
+        tree.apply(
+            JSONObject()
+                .put("kind", "mount")
+                .put("root", node("Column"))
+                .put("theme_mode", "dark"),
+        )
+        tree.apply(
+            JSONObject()
+                .put("kind", "patch")
+                .put("patches", org.json.JSONArray()),
+        )
+        assertEquals("system", tree.themeMode)
+    }
+
     @Test
     fun mountWithOverlayLayerPopulatesOverlays() {
         // E2: a mount may carry a floating overlay layer (z-ordered). Each overlay

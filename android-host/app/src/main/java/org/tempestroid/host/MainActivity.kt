@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
@@ -39,6 +40,31 @@ import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.delay
 import java.io.File
 import org.json.JSONObject
+
+/**
+ * Map an app `theme_mode` (E9 Option B) to a Material [ColorScheme].
+ *
+ * The `theme_mode` rides every mount/patch envelope ([TempestTree.themeMode]):
+ *  - `"dark"`  → [darkColorScheme] (forced, ignoring the OS),
+ *  - `"light"` → [lightColorScheme] (forced, ignoring the OS),
+ *  - `"system"` (the default, and any unknown value) → defer to [systemDark]
+ *    (the OS dark-mode reading from `isSystemInDarkTheme()`).
+ *
+ * So a dark app under a light OS renders Material primitives (TextField, dropdown,
+ * slider, surfaces) dark — matching the app — instead of the prior OS-only mismatch.
+ *
+ * Pure (no Android framework, no composition) so the JVM unit test pins it.
+ *
+ * @param themeMode the app's theme mode (`"light"` / `"dark"` / `"system"`).
+ * @param systemDark whether the OS is in dark mode (the `"system"` fallback).
+ * @return the Material color scheme to install.
+ */
+internal fun colorSchemeFor(themeMode: String, systemDark: Boolean): ColorScheme =
+    when (themeMode) {
+        "dark" -> darkColorScheme()
+        "light" -> lightColorScheme()
+        else -> if (systemDark) darkColorScheme() else lightColorScheme()
+    }
 
 /**
  * Host activity: extracts the bundled Python tree, boots the interpreter on a
@@ -174,20 +200,22 @@ class MainActivity : FragmentActivity() {
         }
 
         setContent {
-            // E9 dark mode: the active palette follows the OS theme. Python tracks
-            // `Theme.mode = SYSTEM` by default, so the host reflects the system
-            // setting into the Material color scheme — a `darkColorScheme` /
-            // `lightColorScheme` swap that recomposes the whole tree when the user
-            // toggles dark mode. Material primitives (Button container/content,
-            // Surface, TextField) pick up these colors automatically; widgets that
-            // declare an explicit Style.background/color still override per-node.
+            // E9 dark mode (Option B): the active palette follows the APP's
+            // `Theme.mode`, which Python re-sends as the `theme_mode` field on every
+            // mount/patch envelope (TempestTree.themeMode, default "system"). The
+            // host maps it to the Material color scheme via colorSchemeFor():
+            // "dark"/"light" FORCE the scheme so Material primitives (TextField,
+            // dropdown, slider, surfaces) match a dark/light app even under the
+            // opposite OS theme; "system" (the default) defers to
+            // isSystemInDarkTheme() — the prior OS-driven behaviour, now only the
+            // fallback. A runtime App.set_theme pushes a patch with the new
+            // theme_mode, flips this snapshot read, and recomposes the whole tree.
+            // Material primitives pick up the scheme colors automatically; widgets
+            // that declare an explicit Style.background/color still override per-node.
             //
-            // Divergence: theme cadence is OS-driven here (isSystemInDarkTheme),
-            // NOT pushed from Python — the serializer emits no `theme_mode` envelope
-            // field (Option B context, currently un-emitted; see gaps). When the
-            // system flips, we additionally notify Python over the existing event
-            // channel under THEME_TOKEN ({"mode":"system"}), which routes to
-            // App.set_theme and rebuilds — so theme-conditional Python views react.
+            // The SYSTEM-mirror flow is preserved: when the OS dark mode flips, the
+            // LaunchedEffect below notifies Python over THEME_TOKEN ({"mode":"system"})
+            // so a `Theme.mode = SYSTEM` app rebuilds its theme-conditional tree.
             val systemDark = isSystemInDarkTheme()
             // RTL layout direction: Python mirrors padding/margin/text-align in the
             // serialized Style (to_compose(rtl=...)), so the box-model arrives already
@@ -232,7 +260,10 @@ class MainActivity : FragmentActivity() {
                         .toString(),
                 )
             }
-            val colorScheme = if (systemDark) darkColorScheme() else lightColorScheme()
+            // Option B: derive the scheme from the app's theme_mode (snapshot
+            // state, recomposes on a runtime App.set_theme patch), with the OS
+            // dark-mode reading as the fallback only for the "system" mode.
+            val colorScheme = colorSchemeFor(tree.themeMode, systemDark)
             MaterialTheme(colorScheme = colorScheme) {
                 // The host draws edge-to-edge (enableEdgeToEdge above), so the
                 // root content must inset itself off the system bars (status bar
