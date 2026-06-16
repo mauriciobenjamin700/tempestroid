@@ -20,6 +20,7 @@ from typing import Any, Generic, TypeVar
 from tempest_core.core.ir import Patch
 from tempest_core.core.state import App
 from tempest_core.navigation import NavStack
+from tempest_core.theme import Theme
 from tempest_core.widgets import Widget
 
 from tempestroid.bridge.handlers import HandlerRegistry
@@ -78,6 +79,8 @@ class DeviceApp(Generic[S]):
         view: Callable[[App[S]], Widget],
         bridge: Bridge,
         nav: NavStack | None = None,
+        *,
+        theme: Theme | None = None,
     ) -> None:
         """Initialize the device app.
 
@@ -87,10 +90,16 @@ class DeviceApp(Generic[S]):
             bridge: The transport to the device.
             nav: The initial navigation stack (e.g. from a deep link resolved on
                 boot). Defaults to a fresh stack with the root route.
+            theme: The app's initial :class:`~tempest_core.Theme` (e.g. a dark
+                theme). ``None`` inherits the platform theme. Carried to the host
+                in the mount/patch ``theme_mode`` so its Material color scheme
+                matches the app from the first frame.
         """
         self._bridge: Bridge = bridge
         self._registry: HandlerRegistry = HandlerRegistry()
-        self._app: App[S] = App(state, view, apply_patches=self._on_patches, nav=nav)
+        self._app: App[S] = App(
+            state, view, apply_patches=self._on_patches, nav=nav, theme=theme
+        )
         # Strong refs to in-flight send tasks so the loop does not GC them.
         self._pending: set[asyncio.Task[None]] = set()
 

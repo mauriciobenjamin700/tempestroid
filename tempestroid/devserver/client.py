@@ -271,12 +271,15 @@ async def _apply_push(
     except Exception:  # noqa: BLE001 - surface any load failure on-device
         await _mount_error(current, make_bridge, log, traceback.format_exc())
         return
+    # The app's declared initial theme (e.g. dark) rides each (re)load, so a
+    # fresh DeviceApp starts with the right Material color scheme on the host.
+    theme = spec.make_theme() if spec.make_theme is not None else None
     device: DeviceApp[Any] | None = current["device"]
     is_error = bool(current.get("error"))
     if device is None or is_error:
         # First push, or replacing an error screen: start clean.
         try:
-            device = DeviceApp(spec.make_state(), spec.view, make_bridge())
+            device = DeviceApp(spec.make_state(), spec.view, make_bridge(), theme=theme)
             current["device"] = device
             current["error"] = False
             await device.start()
@@ -291,7 +294,7 @@ async def _apply_push(
         log("[tempest] hot-reloaded (state preserved)")
     except Exception as reload_exc:  # noqa: BLE001
         try:
-            device = DeviceApp(spec.make_state(), spec.view, make_bridge())
+            device = DeviceApp(spec.make_state(), spec.view, make_bridge(), theme=theme)
             current["device"] = device
             await device.start()
             log(f"[tempest] hot-restarted (state reset: {reload_exc})")
