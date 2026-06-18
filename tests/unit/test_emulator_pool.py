@@ -7,12 +7,40 @@ already-running instances, and that a teardown only stops pool-booted serials.
 
 from __future__ import annotations
 
+import socket
 from typing import Any
 
 import pytest
 
 from tempestroid.testing import EmulatorPool
 from tempestroid.testing import pool as pool_mod
+
+#: The real ``_port_in_use`` captured before the autouse fixture stubs it, so the
+#: socket-level unit test can exercise the genuine implementation.
+_REAL_PORT_IN_USE = pool_mod._port_in_use  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.fixture()
+def stub_ports(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub port/serial probing so a boot-path test never touches adb or sockets.
+
+    Defaults to "nothing attached, every port free", so the boot-scheme tests
+    behave deterministically regardless of any emulator actually running on the
+    host. A test exercising the poisoned-port skip overrides one of these after
+    requesting the fixture.
+
+    Args:
+        monkeypatch: The pytest monkeypatcher.
+    """
+
+    def no_attached(adb: str = "adb") -> set[str]:
+        return set()
+
+    def all_free(port: int) -> bool:
+        return False
+
+    monkeypatch.setattr(pool_mod, "_attached_serials", no_attached)
+    monkeypatch.setattr(pool_mod, "_port_in_use", all_free)
 
 
 @pytest.fixture()
@@ -71,7 +99,9 @@ def test_allocate_reuses_running_first(
 
 
 def test_allocate_boots_to_fill_with_port_scheme(
-    monkeypatch: pytest.MonkeyPatch, captured_helpers: list[tuple[str, ...]]
+    monkeypatch: pytest.MonkeyPatch,
+    captured_helpers: list[tuple[str, ...]],
+    stub_ports: None,
 ) -> None:
     """With nothing running, instances boot at ports 5554, 5556, ... ."""
     _stub_running(monkeypatch, [])
@@ -88,7 +118,9 @@ def test_allocate_boots_to_fill_with_port_scheme(
 
 
 def test_allocate_caps_below_request_and_logs(
-    monkeypatch: pytest.MonkeyPatch, captured_helpers: list[tuple[str, ...]]
+    monkeypatch: pytest.MonkeyPatch,
+    captured_helpers: list[tuple[str, ...]],
+    stub_ports: None,
 ) -> None:
     """Requesting more than the hardware cap is capped, and the cap is logged."""
     _stub_running(monkeypatch, [])
@@ -119,7 +151,9 @@ def test_no_boot_mode_only_reuses(
 
 
 def test_teardown_only_stops_booted(
-    monkeypatch: pytest.MonkeyPatch, captured_helpers: list[tuple[str, ...]]
+    monkeypatch: pytest.MonkeyPatch,
+    captured_helpers: list[tuple[str, ...]],
+    stub_ports: None,
 ) -> None:
     """Teardown stops the instance the pool booted, not the reused one."""
     _stub_running(monkeypatch, ["emulator-5554"])
@@ -181,6 +215,79 @@ def test_running_emulators_parses_only_emulator_serials(
 
     monkeypatch.setattr(pool_mod.subprocess, "run", fake_run)
     assert pool_mod.running_emulators() == ["emulator-5554"]
+
+
+def test_allocate_skips_offline_ghost_serial(
+    monkeypatch: pytest.MonkeyPatch,
+    captured_helpers: list[tuple[str, ...]],
+    stub_ports: None,
+) -> None:
+    """An ``offline`` ghost on 5554 is skipped; the boot lands on the next port.
+
+    Reproduces the real-host failure where ``emulator-5554`` is stuck ``offline``
+    (a foreign process holds its adb port 5555). ``running_emulators`` omits it
+    (not ``device``), but ``_attached_serials`` reports it, so the pool must skip
+    5554 and boot 5556 instead of colliding with the ghost.
+    """
+    _stub_running(monkeypatch, [])
+    _stub_cap(monkeypatch, 4)
+
+    def ghost_5554(adb: str = "adb") -> set[str]:
+        return {"emulator-5554"}
+
+    monkeypatch.setattr(pool_mod, "_attached_serials", ghost_5554)
+    logs: list[str] = []
+    pool = EmulatorPool(log=logs.append)
+
+    serials = pool.allocate(1)
+
+    assert serials == ["emulator-5556"]
+    boots = [c for c in captured_helpers if c[0] == "emu_boot"]
+    assert boots[0][1:4] == ("pixel8_api34", "emulator-5556", "5556")
+    assert any("skipping emulator-5554" in line for line in logs)
+
+
+def test_allocate_skips_port_held_by_foreign_process(
+    monkeypatch: pytest.MonkeyPatch,
+    captured_helpers: list[tuple[str, ...]],
+    stub_ports: None,
+) -> None:
+    """A console/adb port held by a foreign process (e.g. Celery 5555) is skipped.
+
+    With nothing attached but port 5555 (emulator-5554's adb port) bound, the
+    pool must not boot onto 5554 — it skips to 5556.
+    """
+    _stub_running(monkeypatch, [])
+    _stub_cap(monkeypatch, 4)
+
+    def busy_5554(port: int) -> bool:
+        return port == 5554
+
+    # 5554's adb port (5555) is occupied -> _port_in_use(5554) is True.
+    monkeypatch.setattr(pool_mod, "_port_in_use", busy_5554)
+    logs: list[str] = []
+    pool = EmulatorPool(log=logs.append)
+
+    serials = pool.allocate(1)
+
+    assert serials == ["emulator-5556"]
+    assert any("skipping emulator-5554" in line for line in logs)
+
+
+def test_port_in_use_detects_a_bound_port() -> None:
+    """``_port_in_use`` reports True for a port a live listener holds, else False."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    bound_port = listener.getsockname()[1]
+    try:
+        # The helper tests `port` and `port + 1`; bound_port itself is held.
+        assert _REAL_PORT_IN_USE(bound_port) is True
+    finally:
+        listener.close()
+    # After close, the port is free again (both port and port+1 unbound).
+    assert _REAL_PORT_IN_USE(bound_port) is False
 
 
 def test_max_parallel_is_at_least_one() -> None:

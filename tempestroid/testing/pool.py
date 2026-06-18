@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import socket
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -66,6 +67,56 @@ def running_emulators(adb: str = "adb") -> list[str]:
         ):
             serials.append(parts[0])
     return serials
+
+
+def _attached_serials(adb: str = "adb") -> set[str]:
+    """List every ``emulator-*`` serial ``adb`` knows about, in **any** state.
+
+    Unlike :func:`running_emulators` (which keeps only ``device``-state serials),
+    this includes ``offline``/``unauthorized`` ghosts — e.g. an ``emulator-5554``
+    stuck ``offline`` because another process holds its adb port. The pool must
+    not pick such a serial's port for a fresh boot, so it consults this set.
+
+    Args:
+        adb: The ``adb`` executable.
+
+    Returns:
+        The set of attached ``emulator-*`` serials regardless of state.
+    """
+    try:
+        out = subprocess.run(  # noqa: S603
+            [adb, "devices"], check=False, capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {
+        parts[0]
+        for line in out.stdout.splitlines()[1:]
+        if (parts := line.split()) and parts[0].startswith("emulator-")
+    }
+
+
+def _port_in_use(port: int) -> bool:
+    """Whether a TCP port on localhost is already bound by some process.
+
+    A free even console port is not enough: the emulator also needs its odd adb
+    port (``port + 1``), and a foreign process (a stray emulator, or an unrelated
+    server such as Celery's default ``5555``) holding *either* will wedge the
+    boot. This checks both. Uses a short non-blocking connect, never a bind, so it
+    is safe to call repeatedly.
+
+    Args:
+        port: The console port to test (the adb port ``port + 1`` is tested too).
+
+    Returns:
+        ``True`` if the console or adb port is occupied.
+    """
+    for candidate in (port, port + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.25)
+            if sock.connect_ex(("127.0.0.1", candidate)) == 0:
+                return True
+    return False
 
 
 def _available_ram_mb() -> int:
@@ -180,15 +231,30 @@ class EmulatorPool:
                 f"[pool] only {len(serials)} running emulator(s); boot disabled, "
                 f"not starting more (wanted {want})"
             )
+        attached = _attached_serials(self._adb)
         index = 0
         while len(serials) < want and self._boot:
-            serial = f"emulator-{_BASE_PORT + index * 2}"
+            port = _BASE_PORT + index * 2
+            serial = f"emulator-{port}"
             index += 1
             if serial in serials or serial in running:
                 continue
-            self._boot_instance(serial, _BASE_PORT + (index - 1) * 2)
+            # Skip a poisoned port: a serial adb already knows about in ANY state
+            # (e.g. an `offline` ghost), or a console/adb port a foreign process
+            # holds (a stray emulator, or Celery's default 5555 colliding with
+            # emulator-5554's adb port). Booting onto it wedges the instance.
+            if serial in attached or _port_in_use(port):
+                self._log(
+                    f"[pool] skipping {serial}: port {port}/{port + 1} occupied "
+                    "(attached ghost or foreign process)"
+                )
+                continue
+            self._boot_instance(serial, port)
             serials.append(serial)
             self._booted.append(serial)
+            if index > _HARD_CAP * 4:  # guard against an all-occupied port range
+                self._log("[pool] no free emulator port found; stopping boot")
+                break
 
         self._allocated = serials
         return serials
