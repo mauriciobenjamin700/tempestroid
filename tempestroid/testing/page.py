@@ -56,6 +56,7 @@ class Page:
         get_by_prop: Locate a node by an exact prop value.
         tap: Inject a tap on a located node.
         fill: Inject a text-change on a located input node.
+        submit: Inject a submit on a located form (or completable input) node.
         back: Pop the navigation stack (a system back press).
         expect_text: Auto-wait until some node's visible text contains a string.
         expect_visible: Auto-wait until a locator matches at least one node.
@@ -189,6 +190,28 @@ class Page:
         _, node = locator.resolve()
         handler_name = _change_handler_name(node)
         await self._backend.dispatch(node, handler_name, {"value": text, **payload})
+
+    async def submit(self, locator: Locator, **values: str) -> None:
+        """Inject a submit on the form (or completable input) a locator resolves to.
+
+        Resolves the locator, picks its submit handler (``on_submit``), and
+        dispatches a :class:`~tempestroid.widgets.events.SubmitEvent` carrying
+        ``values`` (the field values captured at submit time); the backend
+        auto-waits for the resulting rebuild to settle. Use this for completions
+        that are not a tap — a :class:`~tempestroid.widgets.Form` (validate +
+        gate) or a fully-entered :class:`~tempestroid.widgets.PinInput`.
+
+        Args:
+            locator: A locator resolving to exactly one node with an ``on_submit``
+                handler.
+            **values: The captured field values (``name -> raw string``).
+
+        Raises:
+            LocatorError: If the locator matches zero or many nodes.
+            KeyError: If the node carries no submit handler.
+        """
+        _, node = locator.resolve()
+        await self._backend.dispatch(node, "on_submit", {"values": dict(values)})
 
     async def back(self) -> None:
         """Fire a system back action (pop the navigation stack), then auto-wait.
