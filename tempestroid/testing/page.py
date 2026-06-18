@@ -191,23 +191,16 @@ class Page:
         await self._backend.dispatch(node, handler_name, {"value": text, **payload})
 
     async def back(self) -> None:
-        """Pop the navigation stack (the headless analogue of a system back press).
+        """Fire a system back action (pop the navigation stack), then auto-wait.
 
-        Only a backend that exposes the underlying app (the headless one) supports
-        this directly; other backends will fire their platform back action. Settles
-        the tree afterwards.
-
-        Raises:
-            NotImplementedError: If the backend does not expose an app to pop.
+        Delegates to the backend's
+        :meth:`~tempestroid.testing.backend.TestBackend.back`, so the same script
+        pops correctly on every target: the headless backend
+        pops the in-process app, the emulator routes the reserved back token to
+        the real device (the same envelope the Android back button rides). A pop
+        at the root route is a no-op, matching the device.
         """
-        app = getattr(self._backend, "app", None)
-        if app is None or not hasattr(app, "pop"):
-            raise NotImplementedError(
-                "this backend does not support back(); it will arrive with the "
-                "Qt/device backends (F8)"
-            )
-        app.pop()
-        await self._backend.settle()
+        await self._backend.back()
 
     # -- Assertions (auto-waiting) -----------------------------------------
 
