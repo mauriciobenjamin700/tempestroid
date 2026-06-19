@@ -212,6 +212,9 @@ android {
     selectFeature("qr", "qr" in features)
     selectFeature("video", "video" in features)
     selectFeature("push", "push" in features)
+    // `vision` (Trilho G): real OnnxModule (onnxruntime-android AAR) in
+    // src/feat_vision, else the feature_not_built stub in src/stub_vision.
+    selectFeature("vision", "vision" in features)
 
     // The generated, feature-composed manifest replaces the lean base for `main`.
     sourceSets.getByName("main").manifest.srcFile(
@@ -644,6 +647,16 @@ dependencies {
         // ML Kit barcode scanning — decodes QR/barcodes off the CameraX
         // ImageAnalysis frames for the `QrScanner` widget (src/feat_qr).
         implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    }
+    if ("vision" in features) {
+        // ONNX Runtime Android (Trilho G) — the native inference engine the
+        // OnnxModule (src/feat_vision) drives over the request/response native
+        // channel for the Python AarBackend. The AAR bundles a per-ABI .so for
+        // all Android ABIs; the `defaultConfig { ndk { abiFilters += abi } }`
+        // above already restricts the packaged natives to the single target ABI
+        // (x86_64 on the emulator, arm64-v8a on device), so the AAR contributes
+        // only one ABI's library to the final APK (no all-ABI bloat).
+        implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
     }
 
     // E8 platform + system native --------------------------------------------

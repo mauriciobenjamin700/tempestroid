@@ -151,6 +151,10 @@ class NativeModules(private val activity: ComponentActivity) {
             // Gated by the `push` feature: real impl (FirebaseMessaging) in
             // src/feat_push, stub (replies feature_not_built) in src/stub_push.
             "push" -> handlePush(this, action, args, requestId)
+            // Gated by the `vision` feature: real impl (onnxruntime-android AAR)
+            // in src/feat_vision, stub (replies feature_not_built) in
+            // src/stub_vision. Same signature. (Trilho G — on-device ONNX.)
+            "onnx" -> handleOnnx(this, action, args, requestId)
             "background" -> handleBackground(action, args)
             else -> {
                 Log.w(TAG, "unknown native module: $module")

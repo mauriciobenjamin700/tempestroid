@@ -1,0 +1,12 @@
+# Project boundary for the ONNX vision spike (Trilho G).
+#
+# `tempest` resolves an app's project root to the nearest `pyproject.toml` and
+# bundles that whole tree to the device. Without this marker the spike would
+# resolve to the repository root and bundle the entire repo (incl. the ~1 GB
+# `toolchain/.src` build sources) — far too large to push over the dev server.
+# This marker scopes the bundle to just the example: app.py + the model + labels.
+[project]
+name = "tempestroid-visionspike"
+version = "0.0.0"
+description = "Trilho G — on-device ONNX classification spike (squeezenet1.1 via the AAR)."
+requires-python = ">=3.11"
