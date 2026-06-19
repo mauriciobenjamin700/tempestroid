@@ -176,6 +176,75 @@ def spec_cmd() -> None:
     raise typer.Exit(0)
 
 
+@app.command("optimize", rich_help_panel="Ship & install")
+def optimize_cmd(
+    model: Annotated[
+        str,
+        typer.Argument(help="Path to the .onnx model to optimize for the device."),
+    ],
+    quantize: Annotated[
+        str,
+        typer.Option(
+            "--quantize",
+            "-q",
+            help="Weight quantization: int8 (default, ~4x smaller), fp16, or none.",
+        ),
+    ] = "int8",
+    no_ort: Annotated[
+        bool,
+        typer.Option(
+            "--no-ort",
+            help="Skip the .ort mobile-format conversion (keep .onnx output).",
+        ),
+    ] = False,
+    out_dir: Annotated[
+        str | None,
+        typer.Option("--out", help="Output directory (default: next to the model)."),
+    ] = None,
+) -> None:
+    """Optimize an ONNX model for on-device inference (quantize + .ort).
+
+    Runs on the host (build time): INT8/fp16 quantization then conversion to the
+    ORT mobile format, shrinking the model the device ships. Needs the vision
+    extra (``pip install tempestroid[vision]``).
+    """
+    if quantize not in ("none", "int8", "fp16"):
+        typer.echo(
+            f"error: --quantize must be none|int8|fp16, got {quantize!r}", err=True
+        )
+        raise typer.Exit(2)
+
+    from tempestroid.cli.onnx_optimize import optimize_model
+
+    try:
+        # `quantize` is narrowed to the Quantization literal by the guard above.
+        result = optimize_model(
+            model,
+            out_dir=out_dir,
+            quantize=quantize,
+            to_ort=not no_ort,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    source_size = result.sizes["source"]
+    quantized_size = result.sizes.get("quantized", source_size)
+    ort_size = result.sizes.get("ort", quantized_size)
+    shipped_size = result.sizes.get("ort", quantized_size)
+    typer.echo(f"source:  {result.source}  ({source_size / 1024:.0f} KiB)")
+    if result.quantized is not None:
+        typer.echo(
+            f"quantized ({quantize}): {result.quantized}  "
+            f"({quantized_size / 1024:.0f} KiB)"
+        )
+    if result.ort is not None:
+        typer.echo(f"ort:     {result.ort}  ({ort_size / 1024:.0f} KiB)")
+    reduction = 100 * (1 - shipped_size / source_size) if source_size else 0.0
+    typer.echo(f"ship → {result.shipped.name}  ({reduction:.0f}% smaller)")
+    raise typer.Exit(0)
+
+
 @app.command("new", rich_help_panel="Create & develop")
 def new_cmd(
     name: Annotated[

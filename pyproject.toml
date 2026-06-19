@@ -56,6 +56,11 @@ icons = [
 # ort_vision_sdk + numpy + pillow are staged (inference goes to the AAR).
 vision = [
     "ort-vision-sdk>=0.4.0",
+    # `tempest optimize` (Trilho G3): .onnx → .ort + INT8 quantization run on the
+    # host (build time). onnx is the graph lib onnxruntime's quantization +
+    # ort-conversion tooling needs (fp16 additionally wants onnxconverter-common,
+    # lazily imported).
+    "onnx>=1.17",
 ]
 # Heavy device capabilities are gated at BUILD time, not pip time: the native
 # weight (CameraX, ML Kit, Firebase, media3, maps) lives in the Android host APK
@@ -101,6 +106,8 @@ dev = [
     # over a loopback). Pulls onnxruntime on the desktop for the integration test;
     # on the device inference goes to the native AAR instead.
     "ort-vision-sdk>=0.4.0",
+    # `tempest optimize` (G3) host tooling: .onnx → .ort + INT8 quantization.
+    "onnx>=1.17",
     # Documentation site (PT-BR). `uv sync` installs it; build with
     # `uv run mkdocs build --strict` / serve with `uv run mkdocs serve`.
     # Pinned <9.6: the 9.6.x line prints a non-suppressible MkDocs-2.0 protest
