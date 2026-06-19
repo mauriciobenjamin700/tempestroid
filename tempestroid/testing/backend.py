@@ -112,6 +112,7 @@ class TestBackend(Protocol):
         mount: Build and mount the app, recording the initial scene.
         scene: Return the current built scene.
         dispatch: Inject a typed event at a node's handler, then settle.
+        back: Fire a system back action (pop the navigation stack), then settle.
         settle: Auto-wait until the tree stops changing (no fixed sleep).
         patches: Return every patch batch applied since mount (newest last).
     """
@@ -137,6 +138,16 @@ class TestBackend(Protocol):
             node: The target node carrying the handler in its props.
             handler_name: The handler prop name (e.g. ``"on_click"``).
             payload: The raw event payload, validated into a typed event.
+        """
+        ...
+
+    async def back(self) -> None:
+        """Fire a system back action (pop the navigation stack), then settle.
+
+        The renderer-agnostic analogue of an Android back press: it pops the
+        framework navigation stack the same way the platform back button does
+        (headless pops the in-process app; the emulator routes the reserved
+        back token to the device), then auto-waits for the rebuild to settle.
         """
         ...
 
@@ -178,6 +189,7 @@ class HeadlessBackend:
         mount: Build and mount the app, recording the initial scene.
         scene: Return the current built scene.
         dispatch: Inject a typed event at a node's handler, then settle.
+        back: Pop the in-process navigation stack, then settle.
         settle: Auto-wait until the tree stops changing (no fixed sleep).
         patches: Return every applied patch in order.
         node_at: Resolve a node by its IR path in the current scene.
@@ -278,6 +290,17 @@ class HeadlessBackend:
             result = handler()
         if inspect.iscoroutine(result):
             await result
+        await self.settle()
+
+    async def back(self) -> None:
+        """Pop the in-process navigation stack, then auto-wait to settle.
+
+        Calls :meth:`~tempestroid.core.state.App.pop` directly — the headless
+        analogue of an Android back press — and settles the resulting rebuild.
+        A pop at the root route is a no-op (the app guards it), matching the
+        device, so the call is always safe.
+        """
+        self.app.pop()
         await self.settle()
 
     async def settle(self, timeout: float = _DEFAULT_SETTLE_TIMEOUT) -> None:

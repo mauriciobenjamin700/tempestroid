@@ -134,6 +134,7 @@ def _stack_screen(app: App[NavState]) -> Widget:
             ),
             Button(
                 label="Push next screen",
+                key="push",
                 on_click=lambda: app.push(Route(name=f"/stack/{depth}")),
                 style=Style(
                     background=_ACCENT,
@@ -144,6 +145,7 @@ def _stack_screen(app: App[NavState]) -> Widget:
             ),
             Button(
                 label="Pop back (or use system back)",
+                key="pop",
                 on_click=app.pop,
                 style=Style(
                     background=_SURFACE,

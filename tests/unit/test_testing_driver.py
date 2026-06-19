@@ -222,6 +222,104 @@ async def test_get_by_returns_locator() -> None:
     assert isinstance(page.get_by_role("heading"), Locator)
 
 
+# --- back() pops a real nav stack; submit() fires on_submit -----------------
+
+
+def _nav_view(app: App[CounterState]) -> Widget:
+    """A view that pushes onto ``app.nav`` and shows the current top route.
+
+    Args:
+        app: The running app.
+
+    Returns:
+        The root widget exposing the route name and a push button.
+    """
+    from tempestroid import Route
+
+    return Column(
+        children=[
+            Text(content=f"route: {app.nav.top.name}", key="route"),
+            Button(
+                label="push",
+                key="push",
+                on_click=lambda: app.push(Route(name="/stack/1")),
+            ),
+        ]
+    )
+
+
+async def test_back_pops_a_pushed_nav_screen() -> None:
+    """``back`` pops a screen pushed onto the nav stack (the positive case)."""
+    page = Page(HeadlessBackend(make_state, _nav_view))
+    await page.mount()
+    await page.expect_text("route: /")
+    await page.tap(page.get_by_key("push"))
+    await page.expect_text("route: /stack/1")
+    await page.back()
+    await page.expect_text("route: /")
+
+
+@dataclass
+class SubmitState:
+    """State for the submit-action test.
+
+    Attributes:
+        submitted: Whether the form's ``on_submit`` has fired.
+    """
+
+    submitted: bool = False
+
+
+def _form_view(app: App[SubmitState]) -> Widget:
+    """A view with a Form whose ``on_submit`` flips ``submitted``.
+
+    Args:
+        app: The running app.
+
+    Returns:
+        The root widget wrapping the form and a status line.
+    """
+    from tempestroid import Form, FormField, Input, SubmitEvent
+
+    def on_submit(_event: SubmitEvent) -> None:
+        app.set_state(lambda s: setattr(s, "submitted", True))
+
+    status = "done" if app.state.submitted else "idle"
+    return Column(
+        children=[
+            Text(content=f"status: {status}", key="status"),
+            Form(
+                fields=[
+                    FormField(
+                        name="email",
+                        child=Input(value="", key="email-input"),
+                        key="email-field",
+                    )
+                ],
+                on_submit=on_submit,
+                key="signup-form",
+            ),
+        ]
+    )
+
+
+async def test_submit_fires_on_submit_handler() -> None:
+    """``submit`` dispatches a ``SubmitEvent`` to the form's ``on_submit``."""
+    page = Page(HeadlessBackend(SubmitState, _form_view))
+    await page.mount()
+    await page.expect_text("status: idle")
+    await page.submit(page.get_by_key("signup-form"), email="a@b.com")
+    await page.expect_text("status: done")
+
+
+async def test_submit_on_node_without_handler_raises() -> None:
+    """``submit`` on a node lacking ``on_submit`` raises a clear ``KeyError``."""
+    page = _page()
+    await page.mount()
+    with pytest.raises(KeyError):
+        await page.submit(page.get_by_key("label"))
+
+
 def test_event_schema_resolution() -> None:
     """The schema index maps widget handlers to their typed events with fallbacks."""
     assert event_schema_for("Button", "on_click") is TapEvent

@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from tempest_core.core.ir import Node, Patch, Scene
 
+from tempestroid.bridge.protocol import BACK_TOKEN
 from tempestroid.testing.tree import node_at
 
 if TYPE_CHECKING:
@@ -82,6 +83,7 @@ class EmulatorBackend:
         mount: Serve the app, wire the device, and await the first mounted scene.
         scene: Return the host-side mirror of the device's live scene.
         dispatch: Enqueue a typed event at a node's handler token, then settle.
+        back: Enqueue the reserved back token (device pop), then settle.
         settle: Auto-wait until the mirror is quiet (no fixed sleep primary path).
         patches: Return every patch batch the device sent since mount.
         node_at: Resolve a node by its IR path in the mirror.
@@ -211,6 +213,24 @@ class EmulatorBackend:
         server = self._require_server()
         before = server.consumed_count()
         server.enqueue_event(token, dict(payload))
+        await self.settle(consumed_floor=before + 1)
+
+    async def back(self) -> None:
+        """Fire a system back action on the device, then auto-wait to settle.
+
+        Enqueues the reserved :data:`~tempestroid.bridge.protocol.BACK_TOKEN`
+        on the harness dev server — the *same* envelope the device's own back
+        button rides. The code-push client picks it up and routes it straight to
+        ``DeviceApp.app.pop`` (see :mod:`tempestroid.devserver.client`), so the
+        pop runs on the real Compose-rendered app and the resulting patch flows
+        back into the mirror. No C/JNI change: back reuses the event channel.
+
+        Raises:
+            TimeoutError: If the tree does not settle after the back runs.
+        """
+        server = self._require_server()
+        before = server.consumed_count()
+        server.enqueue_event(BACK_TOKEN, {})
         await self.settle(consumed_floor=before + 1)
 
     async def settle(

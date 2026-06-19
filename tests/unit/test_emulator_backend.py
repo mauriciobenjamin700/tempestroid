@@ -10,13 +10,15 @@ fake "client" that consumes enqueued events and drives a local
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
-from tempestroid import App, Button, Column, Text, Widget
+from tempestroid import App, Button, Column, Route, Text, Widget
 from tempestroid.bridge.device import DeviceApp, LoopbackBridge
+from tempestroid.bridge.protocol import BACK_TOKEN
 from tempestroid.devserver import HarnessTransport
 from tempestroid.testing import EmulatorBackend, Page
 
@@ -71,11 +73,19 @@ class _SimulatedDevice:
     the same process and with no HTTP/adb.
     """
 
-    def __init__(self, server: Any) -> None:
+    def __init__(
+        self,
+        server: Any,
+        *,
+        make_state_fn: Callable[[], Any] = make_state,
+        view_fn: Callable[[App[Any]], Widget] = view,
+    ) -> None:
         """Wire a simulated device to a harness server.
 
         Args:
             server: The backend's harness :class:`DevServer`.
+            make_state_fn: Factory for the device app's initial state.
+            view_fn: The device app's view builder.
         """
         self._server = server
 
@@ -87,8 +97,8 @@ class _SimulatedDevice:
                     body.get("patches", [])
                 )
 
-        self._device: DeviceApp[CounterState] = DeviceApp(
-            make_state(), view, HarnessTransport(LoopbackBridge(), post)
+        self._device: DeviceApp[Any] = DeviceApp(
+            make_state_fn(), view_fn, HarnessTransport(LoopbackBridge(), post)
         )
         self._pump_task: asyncio.Task[None] | None = None
 
@@ -98,14 +108,23 @@ class _SimulatedDevice:
         self._pump_task = asyncio.get_running_loop().create_task(self._pump())
 
     async def _pump(self) -> None:
-        """Continuously consume enqueued events into the device app."""
+        """Continuously consume enqueued events into the device app.
+
+        Mirrors the real code-push client: the reserved :data:`BACK_TOKEN` is
+        routed straight to ``app.pop`` (a system back press), not fed to
+        ``handle_event`` as a widget event.
+        """
         while True:
             command = self._server._next_command()  # pyright: ignore[reportPrivateUsage]
             if command is not None and command.get("token"):
+                token = command["token"]
                 payload = command["payload"]
-                await self._device.handle_event(
-                    {"kind": "event", "token": command["token"], "payload": payload}
-                )
+                if token == BACK_TOKEN:
+                    self._device.app.pop()
+                else:
+                    await self._device.handle_event(
+                        {"kind": "event", "token": token, "payload": payload}
+                    )
             await asyncio.sleep(0.01)
 
     def stop(self) -> None:
@@ -161,3 +180,73 @@ def test_scene_before_mount_raises(tmp_path: Any) -> None:
     backend = EmulatorBackend(tmp_path / "app.py", "emulator-test", launch=False)
     with pytest.raises(RuntimeError, match="no mirrored scene"):
         backend.scene()
+
+
+def _nav_state() -> CounterState:
+    """Build a fresh state for the navigation back() test.
+
+    Returns:
+        A new state (nav depth lives in ``app.nav``, not here).
+    """
+    return CounterState()
+
+
+def _nav_view(app: App[CounterState]) -> Widget:
+    """Build a view that pushes onto ``app.nav`` and shows the top route.
+
+    Args:
+        app: The running app.
+
+    Returns:
+        The root widget exposing the current route name and a push button.
+    """
+    return Column(
+        children=[
+            Text(content=f"route: {app.nav.top.name}", key="route"),
+            Button(
+                label="push",
+                key="push",
+                on_click=lambda: app.push(Route(name="/stack/1")),
+            ),
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_emulator_back_pops_the_nav_stack(tmp_path: Any) -> None:
+    """``page.back()`` routes the reserved back token → device ``app.pop``.
+
+    Proves the F9 emulator-backend back() gap is closed: a push deepens the real
+    device app's nav stack, and a back() (the same envelope the Android back
+    button rides) pops it, reflected in the host-side mirror.
+    """
+    app_file = tmp_path / "app.py"
+    app_file.write_text("def view(app): ...\ndef make_state(): ...\n")
+
+    backend = EmulatorBackend(app_file, "emulator-test", launch=False)
+    from tempestroid.devserver import DevServer
+
+    backend._server = DevServer(  # pyright: ignore[reportPrivateUsage]
+        app_file, host="127.0.0.1", port=0, log=lambda _l: None, harness=True
+    )
+    backend._server.start()  # pyright: ignore[reportPrivateUsage]
+    device = _SimulatedDevice(
+        backend._server,  # pyright: ignore[reportPrivateUsage]
+        make_state_fn=_nav_state,
+        view_fn=_nav_view,
+    )
+    await device.boot()
+
+    page = Page(backend)
+    await backend._await_first_mount()  # pyright: ignore[reportPrivateUsage]
+    backend._mounted = True  # pyright: ignore[reportPrivateUsage]
+
+    try:
+        await page.expect_text("route: /")
+        await page.tap(page.get_by_key("push"))
+        await page.expect_text("route: /stack/1")
+        await page.back()
+        await page.expect_text("route: /")
+    finally:
+        device.stop()
+        backend.close()

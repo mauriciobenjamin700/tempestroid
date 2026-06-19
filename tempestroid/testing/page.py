@@ -56,6 +56,7 @@ class Page:
         get_by_prop: Locate a node by an exact prop value.
         tap: Inject a tap on a located node.
         fill: Inject a text-change on a located input node.
+        submit: Inject a submit on a located form (or completable input) node.
         back: Pop the navigation stack (a system back press).
         expect_text: Auto-wait until some node's visible text contains a string.
         expect_visible: Auto-wait until a locator matches at least one node.
@@ -190,24 +191,39 @@ class Page:
         handler_name = _change_handler_name(node)
         await self._backend.dispatch(node, handler_name, {"value": text, **payload})
 
-    async def back(self) -> None:
-        """Pop the navigation stack (the headless analogue of a system back press).
+    async def submit(self, locator: Locator, **values: str) -> None:
+        """Inject a submit on the form (or completable input) a locator resolves to.
 
-        Only a backend that exposes the underlying app (the headless one) supports
-        this directly; other backends will fire their platform back action. Settles
-        the tree afterwards.
+        Resolves the locator, picks its submit handler (``on_submit``), and
+        dispatches a :class:`~tempestroid.widgets.events.SubmitEvent` carrying
+        ``values`` (the field values captured at submit time); the backend
+        auto-waits for the resulting rebuild to settle. Use this for completions
+        that are not a tap — a :class:`~tempestroid.widgets.Form` (validate +
+        gate) or a fully-entered :class:`~tempestroid.widgets.PinInput`.
+
+        Args:
+            locator: A locator resolving to exactly one node with an ``on_submit``
+                handler.
+            **values: The captured field values (``name -> raw string``).
 
         Raises:
-            NotImplementedError: If the backend does not expose an app to pop.
+            LocatorError: If the locator matches zero or many nodes.
+            KeyError: If the node carries no submit handler.
         """
-        app = getattr(self._backend, "app", None)
-        if app is None or not hasattr(app, "pop"):
-            raise NotImplementedError(
-                "this backend does not support back(); it will arrive with the "
-                "Qt/device backends (F8)"
-            )
-        app.pop()
-        await self._backend.settle()
+        _, node = locator.resolve()
+        await self._backend.dispatch(node, "on_submit", {"values": dict(values)})
+
+    async def back(self) -> None:
+        """Fire a system back action (pop the navigation stack), then auto-wait.
+
+        Delegates to the backend's
+        :meth:`~tempestroid.testing.backend.TestBackend.back`, so the same script
+        pops correctly on every target: the headless backend
+        pops the in-process app, the emulator routes the reserved back token to
+        the real device (the same envelope the Android back button rides). A pop
+        at the root route is a no-op, matching the device.
+        """
+        await self._backend.back()
 
     # -- Assertions (auto-waiting) -----------------------------------------
 
