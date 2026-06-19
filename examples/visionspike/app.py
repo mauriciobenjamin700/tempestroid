@@ -11,9 +11,12 @@ the execution provider the host used + the inference latency, or a red
 "inference FAILED" line with the traceback if anything along the path breaks — so
 the screenshot is self-describing either way.
 
-The model (``squeezenet1.1.onnx``, ImageNet, input ``1x3x224x224``) and the
-``imagenet_labels.txt`` labels ride along in the app bundle (``tempest`` ships the
-whole project tree to the device), so the app finds them next to ``__file__``.
+The model (``squeezenet1.1.onnx``, ImageNet, input ``1x3x224x224``), the
+``imagenet_labels.txt`` labels, and a real test photo (``banana.jpg``) ride along
+in the app bundle (``tempest`` ships the whole project tree to the device), so the
+app finds them next to ``__file__``. The photo is decoded **on device** via the
+host's ``BitmapFactory`` (``tempestroid.native.image.decode_image``) — no Pillow
+or OpenCV wheel in the APK — into a NumPy array fed straight to the SDK.
 
 This is intentionally renderer-agnostic (no top-level Qt import): it runs in the
 Qt simulator (with the in-process ``onnxruntime`` wheel) AND on the
@@ -46,8 +49,12 @@ from tempestroid.native.dispatch import on_device
 _HERE = Path(__file__).resolve().parent
 _MODEL = _HERE / "squeezenet1.1.onnx"
 _LABELS = _HERE / "imagenet_labels.txt"
+#: A real ImageNet object photo (squeezenet1.1 top-1 is a stable "banana").
+_IMAGE = _HERE / "banana.jpg"
 #: SqueezeNet 1.1 takes 224x224 RGB (ImageNet-normalised inside the SDK).
 _INPUT_SIZE = (224, 224)
+#: Cap the longest side on decode (BitmapFactory subsamples a large photo).
+_DECODE_MAX_SIZE = 640
 
 _BG = Color.from_hex("#0b0f14")
 _OK = Color.from_hex("#22c55e")
@@ -82,25 +89,28 @@ def make_state() -> SpikeState:
     return SpikeState()
 
 
-def _make_test_image() -> object:
-    """Build a deterministic 224x224 RGB test image as a NumPy array.
+async def _load_test_image() -> object:
+    """Decode the bundled test photo to a HWC uint8 RGB NumPy array.
 
-    A solid-ish gradient is enough to exercise the full classify path; the goal
-    of the spike is to prove the AAR inference round-trips, not classification
-    accuracy. Returns an ``np.ndarray`` so no image decoder (PIL) is needed.
+    On device the decode is bridged to the host's ``BitmapFactory`` via
+    :func:`tempestroid.native.image.decode_image` (no Pillow/OpenCV wheel in the
+    APK); in the Qt simulator the same file is decoded with the desktop ``Pillow``
+    (present in the dev environment). Both yield the identical ``(H, W, 3)``
+    ``uint8`` RGB array the SDK's ``predict`` accepts directly.
 
     Returns:
-        An ``(H, W, 3)`` ``uint8`` NumPy array.
+        An ``(H, W, 3)`` ``uint8`` NumPy array of the test photo.
     """
-    import numpy as np
+    if on_device():
+        from tempestroid.native.image import decode_image
 
-    h, w = _INPUT_SIZE[1], _INPUT_SIZE[0]
-    ramp = np.linspace(0, 255, w, dtype=np.uint8)
-    img = np.zeros((h, w, 3), dtype=np.uint8)
-    img[:, :, 0] = ramp[None, :]
-    img[:, :, 1] = ramp[None, :] // 2
-    img[:, :, 2] = 128
-    return img
+        return await decode_image(_IMAGE, max_size=_DECODE_MAX_SIZE)
+
+    # Desktop path: decode with Pillow (no host bridge in the simulator).
+    import numpy as np
+    from PIL import Image
+
+    return np.array(Image.open(_IMAGE).convert("RGB"))
 
 
 async def _classify(app: App[SpikeState]) -> None:
@@ -135,7 +145,7 @@ async def _classify(app: App[SpikeState]) -> None:
             # Desktop path: the in-process onnxruntime wheel.
             clf = Classifier(str(_MODEL), labels=labels, input_size=_INPUT_SIZE)
 
-        image = _make_test_image()
+        image = await _load_test_image()
         results = await clf.ort_async_predict(image)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         result = results[0]

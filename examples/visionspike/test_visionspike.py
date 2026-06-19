@@ -9,10 +9,12 @@ and on the emulator (the real proof — the native ``onnxruntime-android`` AAR v
 
     uv run tempest uitest examples/visionspike/test_visionspike.py --target emulator
 
-The app loads ``squeezenet1.1.onnx``, classifies a test image, and renders
-"inference OK" (green) plus the predicted ImageNet class + provider + latency, or
-"inference FAILED" (red) with the traceback. A passing test means a real
-``ort-vision-sdk`` ``Classifier`` ran on the target through the bridge.
+The app decodes a real test photo (``banana.jpg``) — on device via the host's
+``BitmapFactory`` (no Pillow/OpenCV wheel) — loads ``squeezenet1.1.onnx``,
+classifies it, and renders "inference OK" (green) plus the predicted ImageNet
+class + provider + latency, or "inference FAILED" (red) with the traceback. A
+passing test means a real ``ort-vision-sdk`` ``Classifier`` ran on the target
+through the bridge and predicted the bundled object (``banana``).
 """
 
 from __future__ import annotations
@@ -25,5 +27,7 @@ __all__ = ["make_state", "view"]
 
 
 async def test_classifier_runs_through_aar(page: Page) -> None:
-    """A real Classifier loads + classifies an image on the target."""
+    """A real Classifier decodes + classifies the bundled photo on the target."""
     await page.expect_text("inference OK")
+    # The bundled banana.jpg: squeezenet1.1's stable top-1 is "banana".
+    await page.expect_text("banana")
