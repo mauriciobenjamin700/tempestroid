@@ -140,7 +140,7 @@ inicial. Pesquisa fundamentada em
 
 | Fase | Escopo | Risco | Status |
 |---|---|---|---|
-| G0 | Spike de viabilidade: deps reais do SDK, decidir caminho CPython-puro vs inferência-nativa, levantar EPs do device-alvo, provar `numpy`+`onnxruntime` no device | médio | ⏳ planejado |
+| G0 | Spike de viabilidade: deps reais do SDK, decidir caminho CPython-puro vs inferência-nativa, levantar EPs do device-alvo, provar `numpy`+`onnxruntime` no device | médio | 🔬 investigação ✅ ([g0-feasibility.md](research/g0-feasibility.md)) — deps/A-B/EPs fechados; `import numpy` no device **bloqueado** num `$(BLDLIBRARY)` do sysconfig CPython-android (passa pro G1) |
 | G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta no device, fora da UI thread/loop + escolha de EP (NNAPI/XNNPACK/QNN, fallback CPU, latência medida) | **alto** | ⏳ planejado |
 | G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory`; cv2 → SDK nativo, não wheel) + pré/pós em `numpy` | médio | ⏳ planejado |
 | G3 | Otimização de execução: pipeline `.onnx`→`.ort` + quantização (INT8/fp16); avaliar `onnxruntime-extensions` (pré/pós no grafo) | médio | ⏳ planejado |
