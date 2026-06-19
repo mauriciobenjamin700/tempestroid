@@ -27,7 +27,14 @@ __all__ = ["make_state", "view"]
 
 
 async def test_classifier_runs_through_aar(page: Page) -> None:
-    """A real Classifier decodes + classifies the bundled photo on the target."""
+    """A real Classifier decodes + classifies the bundled photo on the target.
+
+    By default the app loads the G3 INT8-quantized ``.ort`` artifact
+    (``squeezenet1.1.int8.ort``, 72% smaller than the fp32 ``.onnx``); set
+    ``VISIONSPIKE_MODEL=fp32`` to exercise the baseline ``.onnx`` instead. The
+    ``.ort`` loads through the same AAR path as ``.onnx``.
+    """
     await page.expect_text("inference OK")
-    # The bundled banana.jpg: squeezenet1.1's stable top-1 is "banana".
+    # The bundled banana.jpg: squeezenet1.1's stable top-1 is "banana"
+    # (INT8 quantization shifts the confidence slightly but keeps the top-1).
     await page.expect_text("banana")

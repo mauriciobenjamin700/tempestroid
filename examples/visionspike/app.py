@@ -30,6 +30,7 @@ Runs in the Qt simulator (needs ``onnxruntime`` + ``ort-vision-sdk`` installed):
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,7 +48,17 @@ from tempestroid import (
 from tempestroid.native.dispatch import on_device
 
 _HERE = Path(__file__).resolve().parent
-_MODEL = _HERE / "squeezenet1.1.onnx"
+#: The fp32 baseline model (G1/G2 device-verify; ~4.8 MiB).
+_MODEL_FP32 = _HERE / "squeezenet1.1.onnx"
+#: The INT8-quantized ``.ort`` (G3; ~1.3 MiB, 72% smaller) — onnxruntime loads
+#: ``.ort`` the same as ``.onnx`` through the AAR.
+_MODEL_INT8_ORT = _HERE / "squeezenet1.1.int8.ort"
+#: Which model to load. Set ``VISIONSPIKE_MODEL=fp32`` to use the baseline
+#: ``.onnx``; the default is the G3 quantized ``.ort`` artifact (when present).
+_USE_INT8 = os.environ.get("VISIONSPIKE_MODEL", "int8").lower() != "fp32"
+_MODEL = (
+    _MODEL_INT8_ORT if (_USE_INT8 and _MODEL_INT8_ORT.exists()) else _MODEL_FP32
+)
 _LABELS = _HERE / "imagenet_labels.txt"
 #: A real ImageNet object photo (squeezenet1.1 top-1 is a stable "banana").
 _IMAGE = _HERE / "banana.jpg"
@@ -155,7 +166,10 @@ async def _classify(app: App[SpikeState]) -> None:
         app.state.done = True
         app.state.ok = True
         app.state.title_line = f"top-1: {top1_name}  ({top1_conf * 100:.1f}%)"
-        app.state.detail_line = f"provider={provider}  latency={elapsed_ms:.0f} ms"
+        app.state.detail_line = (
+            f"model={_MODEL.name}  provider={provider}  "
+            f"latency={elapsed_ms:.0f} ms"
+        )
     except Exception as exc:  # noqa: BLE001 — surface ANY failure on screen
         app.state.done = True
         app.state.ok = False
