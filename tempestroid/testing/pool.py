@@ -233,7 +233,14 @@ class EmulatorPool:
             )
         attached = _attached_serials(self._adb)
         index = 0
+        #: Most ports to probe before giving up — guards against an entirely
+        #: occupied port range (every candidate poisoned), so a skip-only loop
+        #: cannot spin forever. Checked at the top, so it fires on the skip path.
+        max_probes = _HARD_CAP * 4
         while len(serials) < want and self._boot:
+            if index >= max_probes:
+                self._log("[pool] no free emulator port found; stopping boot")
+                break
             port = _BASE_PORT + index * 2
             serial = f"emulator-{port}"
             index += 1
@@ -252,9 +259,6 @@ class EmulatorPool:
             self._boot_instance(serial, port)
             serials.append(serial)
             self._booted.append(serial)
-            if index > _HARD_CAP * 4:  # guard against an all-occupied port range
-                self._log("[pool] no free emulator port found; stopping boot")
-                break
 
         self._allocated = serials
         return serials

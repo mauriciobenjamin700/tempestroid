@@ -274,6 +274,35 @@ def test_allocate_skips_port_held_by_foreign_process(
     assert any("skipping emulator-5554" in line for line in logs)
 
 
+def test_allocate_terminates_when_every_port_is_poisoned(
+    monkeypatch: pytest.MonkeyPatch, captured_helpers: list[tuple[str, ...]]
+) -> None:
+    """With every probed port occupied, allocate stops (no infinite skip loop).
+
+    Guards the skip path: if no candidate port is ever free, the loop must hit
+    its probe ceiling and return without booting, not spin forever.
+    """
+    _stub_running(monkeypatch, [])
+    _stub_cap(monkeypatch, 4)
+
+    def all_busy(port: int) -> bool:
+        return True
+
+    def none_attached(adb: str = "adb") -> set[str]:
+        return set()
+
+    monkeypatch.setattr(pool_mod, "_attached_serials", none_attached)
+    monkeypatch.setattr(pool_mod, "_port_in_use", all_busy)
+    logs: list[str] = []
+    pool = EmulatorPool(log=logs.append)
+
+    serials = pool.allocate(2)
+
+    assert serials == []  # nothing could boot
+    assert [c for c in captured_helpers if c[0] == "emu_boot"] == []
+    assert any("no free emulator port" in line for line in logs)
+
+
 def test_port_in_use_detects_a_bound_port() -> None:
     """``_port_in_use`` reports True for a port a live listener holds, else False."""
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
