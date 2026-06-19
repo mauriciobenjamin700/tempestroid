@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication
 from tempest_core.core.ir import Patch
 from tempest_core.core.state import App
 from tempest_core.devices import DEFAULT_DEVICE, Device
+from tempest_core.theme import Theme
 from tempest_core.widgets import AppState, Widget
 
 from tempestroid.native.lifecycle import dispatch_lifecycle_event
@@ -162,6 +163,7 @@ def run_qt(
     title: str = "tempestroid",
     size: tuple[int, int] = DEFAULT_DEVICE.size,
     device: Device | None = None,
+    theme: Theme | None = None,
 ) -> int:
     """Mount an app in a Qt window and run the fused Qt/asyncio loop.
 
@@ -176,6 +178,9 @@ def run_qt(
             the simulator window to that device's logical viewport. When given it
             **wins over** ``size`` (the window resizes to ``device.size``), so a
             caller pinning a real device's viewport overrides the raw tuple.
+        theme: The app's initial :class:`~tempest_core.Theme` (e.g. a dark theme).
+            ``None`` inherits the platform theme. The renderer reads ``app.theme``
+            for its palette, so a dark theme paints the simulator dark.
 
     Returns:
         The process exit code (``0`` on a clean loop shutdown).
@@ -203,6 +208,7 @@ def run_qt(
         view,
         apply_patches=_apply_with_context(renderer),
         time_source=loop.time,
+        theme=theme,
     )
     # The app builds a `Scene` (root tree + floating overlay layer). The Qt
     # renderer mounts both; a host-owned overlay dismissal (dialog close, menu

@@ -42,11 +42,26 @@ from tempestroid import (
     SubmitEvent,
     Text,
     TextChangeEvent,
+    Theme,
+    ThemeMode,
     Widget,
 )
 
 #: The countries offered by the dropdown.
 _COUNTRIES: list[str] = ["Brazil", "Portugal", "United States", "Japan"]
+
+
+def make_theme() -> Theme:
+    """Start the app in dark mode.
+
+    The screen paints a dark background, so declaring a dark theme makes the
+    host's Material color scheme (and thus the Dropdown / PinInput surfaces)
+    match instead of falling back to the light platform scheme.
+
+    Returns:
+        A dark :class:`Theme`.
+    """
+    return Theme(mode=ThemeMode.DARK)
 
 
 @dataclass
@@ -228,5 +243,11 @@ if __name__ == "__main__":
     from tempestroid.renderers.qt import run_qt
 
     raise SystemExit(
-        run_qt(make_state(), view, title="tempestroid — forms", size=(400, 560))
+        run_qt(
+            make_state(),
+            view,
+            title="tempestroid — forms",
+            size=(400, 560),
+            theme=make_theme(),
+        )
     )

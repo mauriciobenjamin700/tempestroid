@@ -23,6 +23,7 @@ from typing import Any, Protocol, TypeVar, cast
 from tempest_core.core.state import App
 from tempest_core.i18n import Locale
 from tempest_core.navigation import NavStack, routes_from_path
+from tempest_core.theme import Theme
 from tempest_core.widgets import Widget
 from tempest_core.widgets.events import (
     LocaleChangeEvent,
@@ -261,7 +262,11 @@ def make_event_sink(
 
 
 def run_device(
-    state: S, view: Callable[[App[S]], Widget], route: str | None = None
+    state: S,
+    view: Callable[[App[S]], Widget],
+    route: str | None = None,
+    *,
+    theme: Theme | None = None,
 ) -> None:
     """Boot a :class:`DeviceApp` on a fresh asyncio loop and run it forever.
 
@@ -278,11 +283,14 @@ def run_device(
             extra). When given it is resolved via :func:`routes_from_path` into
             the initial navigation stack, so the app opens directly on the linked
             screen with its back stack already built.
+        theme: The app's initial :class:`~tempest_core.Theme` (e.g. dark). Carried
+            to the host in the mount ``theme_mode`` so its Material color scheme
+            matches from the first frame.
     """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     nav = NavStack(stack=routes_from_path(route)) if route else None
-    device: DeviceApp[S] = DeviceApp(state, view, JniBridge(), nav=nav)
+    device: DeviceApp[S] = DeviceApp(state, view, JniBridge(), nav=nav, theme=theme)
 
     native_host().set_event_sink(make_event_sink(loop, device))
     loop.create_task(device.start())
@@ -331,10 +339,11 @@ def run_device_file(path: str, route: str | None = None) -> None:
         source = Path(path).read_text(encoding="utf-8")
         spec = spec_from_source(source, filename=path)
         state, view = spec.make_state(), spec.view
+        theme = spec.make_theme() if spec.make_theme is not None else None
     except Exception:  # noqa: BLE001 - surface any load failure on-device
         run_device_error("App failed to load", traceback.format_exc())
         return
-    run_device(state, view, route=route)
+    run_device(state, view, route=route, theme=theme)
 
 
 def run_device_bundle(zip_path: str, route: str | None = None) -> None:
@@ -364,7 +373,8 @@ def run_device_bundle(zip_path: str, route: str | None = None) -> None:
         layout = extract_bundle(data, archive.parent / "tempest_app")
         spec = spec_from_project(layout.root, layout.entry)
         state, view = spec.make_state(), spec.view
+        theme = spec.make_theme() if spec.make_theme is not None else None
     except Exception:  # noqa: BLE001 - surface any load failure on-device
         run_device_error("App failed to load", traceback.format_exc())
         return
-    run_device(state, view, route=route)
+    run_device(state, view, route=route, theme=theme)

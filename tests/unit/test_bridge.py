@@ -83,6 +83,19 @@ async def test_dark_theme_propagates_to_mount():
     assert bridge.sent[0]["theme_mode"] == "dark"
 
 
+async def test_initial_theme_arg_reaches_mount():
+    from tempest_core import Theme, ThemeMode
+
+    bridge = LoopbackBridge()
+    # An app declaring its theme at construction (the `make_theme` contract,
+    # threaded by the device entry points) starts dark from the first mount.
+    device: DeviceApp[Counter] = DeviceApp(
+        Counter(), _counter_view, bridge, theme=Theme(mode=ThemeMode.DARK)
+    )
+    await device.start()
+    assert bridge.sent[0]["theme_mode"] == "dark"
+
+
 async def test_tap_event_round_trip_updates_and_patches():
     bridge = LoopbackBridge()
     device: DeviceApp[Counter] = DeviceApp(Counter(), _counter_view, bridge)

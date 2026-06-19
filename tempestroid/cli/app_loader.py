@@ -25,6 +25,7 @@ from types import ModuleType
 from typing import Any, cast
 
 from tempest_core.core.state import App
+from tempest_core.theme import Theme
 from tempest_core.widgets import Widget
 
 __all__ = ["AppSpec", "load_app_spec", "spec_from_project", "spec_from_source"]
@@ -37,10 +38,16 @@ class AppSpec:
     Attributes:
         make_state: Factory returning a fresh initial state.
         view: Builds the widget tree from the running app.
+        make_theme: Optional factory returning the app's initial
+            :class:`~tempest_core.Theme` (e.g. ``Theme(mode=ThemeMode.DARK)`` so
+            the app starts dark and the host's Material color scheme matches).
+            ``None`` (the default) means the app inherits the platform theme
+            (``ThemeMode.SYSTEM``).
     """
 
     make_state: Callable[[], Any]
     view: Callable[[App[Any]], Widget]
+    make_theme: Callable[[], Theme] | None = None
 
 
 def load_app_spec(path: str | Path) -> AppSpec:
@@ -167,7 +174,14 @@ def spec_from_source(
         raise TypeError(f"{filename}: `view` must be callable")
     if not callable(make_state):
         raise TypeError(f"{filename}: `make_state` must be callable")
+    # Optional: an app may declare its initial theme (e.g. start in dark mode) by
+    # exposing a `make_theme() -> Theme` factory, mirroring `make_state`. Absent →
+    # None (the app inherits the platform theme, ThemeMode.SYSTEM).
+    make_theme = module.__dict__.get("make_theme")
+    if make_theme is not None and not callable(make_theme):
+        raise TypeError(f"{filename}: `make_theme` must be callable")
     return AppSpec(
         make_state=cast("Callable[[], Any]", make_state),
         view=cast("Callable[[App[Any]], Widget]", view),
+        make_theme=cast("Callable[[], Theme] | None", make_theme),
     )

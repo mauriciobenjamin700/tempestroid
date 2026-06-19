@@ -61,7 +61,10 @@ class Simulator:
             spec: The app spec to instantiate.
         """
         app: App[Any] = App(
-            spec.make_state(), spec.view, apply_patches=self._apply_with_context
+            spec.make_state(),
+            spec.view,
+            apply_patches=self._apply_with_context,
+            theme=spec.make_theme() if spec.make_theme is not None else None,
         )
         # `App.start` builds a `Scene`; the Qt renderer mounts its root tree and
         # floating overlay layer, routing host-owned dismissals to `App.dismiss`.

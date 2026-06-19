@@ -59,3 +59,53 @@ def test_missing_view_raises(tmp_path: Path):
     app_file.write_text("def make_state():\n    return None\n", encoding="utf-8")
     with pytest.raises(AttributeError):
         load_app_spec(app_file)
+
+
+_THEMED_APP = """\
+from dataclasses import dataclass
+
+from tempestroid import App, Text, Theme, ThemeMode, Widget
+
+
+@dataclass
+class State:
+    pass
+
+
+def make_state() -> State:
+    return State()
+
+
+def make_theme() -> Theme:
+    return Theme(mode=ThemeMode.DARK)
+
+
+def view(app: "App[State]") -> Widget:
+    return Text(content="hi")
+"""
+
+_UNTHEMED_APP = _APP_TEMPLATE.format(label="x")
+
+
+def test_make_theme_is_loaded_when_declared():
+    from tempestroid import ThemeMode
+    from tempestroid.cli.app_loader import spec_from_source
+
+    spec = spec_from_source(_THEMED_APP)
+    assert spec.make_theme is not None
+    assert spec.make_theme().mode is ThemeMode.DARK
+
+
+def test_make_theme_defaults_to_none_when_absent():
+    from tempestroid.cli.app_loader import spec_from_source
+
+    spec = spec_from_source(_UNTHEMED_APP)
+    assert spec.make_theme is None
+
+
+def test_non_callable_make_theme_raises():
+    from tempestroid.cli.app_loader import spec_from_source
+
+    bad = _UNTHEMED_APP + "\nmake_theme = 123\n"
+    with pytest.raises(TypeError):
+        spec_from_source(bad)
