@@ -262,7 +262,11 @@ internal object OnnxModule {
         val shape = info.shape
         // The raw ByteBuffer is the contiguous little-endian buffer; ORT exposes
         // the underlying bytes via getByteBuffer(), already in native (LE) order.
+        // Rewind defensively: copy from position 0 regardless of the buffer's
+        // current position across ORT versions (else remaining()/get() would drop
+        // a leading slice and corrupt the output tensor).
         val byteBuffer = tensor.byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        byteBuffer.rewind()
         val bytes = ByteArray(byteBuffer.remaining())
         byteBuffer.get(bytes)
         val dtype = dtypeName(info.type)
