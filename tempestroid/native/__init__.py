@@ -64,6 +64,8 @@ from tempestroid.native.dispatch import (
 )
 from tempestroid.native.geolocation import Position, get_position
 from tempestroid.native.haptics import ImpactStyle, impact, vibrate
+from tempestroid.native.image import decode_image
+from tempestroid.native.inference import AarBackend, decode_tensor, encode_tensor
 from tempestroid.native.lifecycle import (
     LifecycleCallback,
     dispatch_lifecycle_event,
@@ -126,6 +128,11 @@ __all__ = [
     "send_native_request",
     "resolve_native_result",
     "on_device",
+    # onnx inference (Trilho G)
+    "AarBackend",
+    "encode_tensor",
+    "decode_tensor",
+    "decode_image",
     # notifications
     "notify",
     # geolocation

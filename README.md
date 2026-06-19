@@ -194,6 +194,7 @@ uv run tempest build release-apk    # release-signed standalone APK (distribute 
 uv run tempest build prd            # store-ready release AAB (Play); reads [tool.tempest] + keystore
 uv run tempest run                  # build + install on a device + stream logs (needs SDK/NDK)
 uv run tempest icon logo.png        # generate icon.png + splash.png from one image (needs [icons])
+uv run tempest optimize model.onnx  # quantize (INT8) + .ort for on-device ONNX (needs [vision])
 uv run tempest spec                 # print the typed contract (widgets/events) as JSON
 uv run tempest uitest test_app.py   # run a Playwright-style native UI test (headless)
 uv run tempest --version            # print the framework version (also: tempest version)

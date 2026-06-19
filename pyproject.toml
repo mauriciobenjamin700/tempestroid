@@ -48,6 +48,20 @@ qt = [
 icons = [
     "pillow>=10.0",
 ]
+# On-device ONNX vision inference (Trilho G). Brings the ort-vision-sdk with its
+# pluggable backend (>=0.4.0); `tempestroid.native.inference.AarBackend` runs the
+# SDK's inference through the native onnxruntime-android AAR over the bridge, so
+# the SDK's NumPy pre/post still runs in Python. On the desktop this pulls
+# onnxruntime (the SDK's own dep) for parity testing; on the device only
+# ort_vision_sdk + numpy + pillow are staged (inference goes to the AAR).
+vision = [
+    "ort-vision-sdk>=0.4.0",
+    # `tempest optimize` (Trilho G3): .onnx → .ort + INT8 quantization run on the
+    # host (build time). onnx is the graph lib onnxruntime's quantization +
+    # ort-conversion tooling needs (fp16 additionally wants onnxconverter-common,
+    # lazily imported).
+    "onnx>=1.17",
+]
 # Heavy device capabilities are gated at BUILD time, not pip time: the native
 # weight (CameraX, ML Kit, Firebase, media3, maps) lives in the Android host APK
 # and is bundled only when the app opts in. These extras carry no Python deps —
@@ -87,6 +101,13 @@ dev = [
     # Trilho G spike: `examples/onnxspike` imports numpy so the headless driver
     # can run it too (the device proof uses the cross-compiled android wheel).
     "numpy>=2.0",
+    # Trilho G: the vision SDK with the pluggable backend — lets the gate exercise
+    # the cross-repo contract (Detector driven through `native.inference.AarBackend`
+    # over a loopback). Pulls onnxruntime on the desktop for the integration test;
+    # on the device inference goes to the native AAR instead.
+    "ort-vision-sdk>=0.4.0",
+    # `tempest optimize` (G3) host tooling: .onnx → .ort + INT8 quantization.
+    "onnx>=1.17",
     # Documentation site (PT-BR). `uv sync` installs it; build with
     # `uv run mkdocs build --strict` / serve with `uv run mkdocs serve`.
     # Pinned <9.6: the 9.6.x line prints a non-suppressible MkDocs-2.0 protest

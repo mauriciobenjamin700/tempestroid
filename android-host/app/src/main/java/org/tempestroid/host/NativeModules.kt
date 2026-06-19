@@ -131,6 +131,9 @@ class NativeModules(private val activity: ComponentActivity) {
             "notifications" -> NotificationModule.handle(activity, action, args)
             "share" -> handleShare(action, args)
             "clipboard" -> handleClipboard(action, args, requestId)
+            // BitmapFactory image decode (Trilho G2): always present in src/main
+            // (android.graphics, no heavy dep), unlike the vision AAR.
+            "image" -> ImageModule.handle(this, action, args, requestId)
             "storage" -> handleStorage(action, args, requestId)
             "geolocation" -> handleGeolocation(args, requestId)
             // Gated by the `camera` feature: real impl in src/feat_camera, stub
@@ -151,6 +154,10 @@ class NativeModules(private val activity: ComponentActivity) {
             // Gated by the `push` feature: real impl (FirebaseMessaging) in
             // src/feat_push, stub (replies feature_not_built) in src/stub_push.
             "push" -> handlePush(this, action, args, requestId)
+            // Gated by the `vision` feature: real impl (onnxruntime-android AAR)
+            // in src/feat_vision, stub (replies feature_not_built) in
+            // src/stub_vision. Same signature. (Trilho G — on-device ONNX.)
+            "onnx" -> handleOnnx(this, action, args, requestId)
             "background" -> handleBackground(action, args)
             else -> {
                 Log.w(TAG, "unknown native module: $module")
