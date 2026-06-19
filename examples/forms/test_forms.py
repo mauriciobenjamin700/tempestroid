@@ -19,11 +19,15 @@ runs on the emulator/device (``--target emulator``).
 
 from __future__ import annotations
 
-from app import make_state, view  # noqa: F401 — the app contract the driver loads
+# Re-export the full app contract — including ``make_theme`` so the served module
+# carries the app's initial theme (dark). The driver loads THIS module as the app,
+# so without re-exporting ``make_theme`` the theme would silently fall back to
+# ``system`` and the device render would not match ``examples/forms/app.py``.
+from app import make_state, make_theme, view  # noqa: F401 — the app contract
 
 from tempestroid.testing import Page
 
-__all__ = ["make_state", "view"]
+__all__ = ["make_state", "make_theme", "view"]
 
 _PROMPT = "Fill the form and submit (invalid fields block it)."
 _EMAIL_ERROR = "E-mail inválido"
