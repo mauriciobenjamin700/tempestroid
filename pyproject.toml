@@ -84,6 +84,9 @@ dev = [
     "qasync>=0.27",
     # `tempest icon` asset generator (kept here so the test suite can exercise it).
     "pillow>=10.0",
+    # Trilho G spike: `examples/onnxspike` imports numpy so the headless driver
+    # can run it too (the device proof uses the cross-compiled android wheel).
+    "numpy>=2.0",
     # Documentation site (PT-BR). `uv sync` installs it; build with
     # `uv run mkdocs build --strict` / serve with `uv run mkdocs serve`.
     # Pinned <9.6: the 9.6.x line prints a non-suppressible MkDocs-2.0 protest

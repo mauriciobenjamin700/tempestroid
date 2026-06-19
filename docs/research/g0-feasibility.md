@@ -12,12 +12,14 @@
 | Árvore de deps do `ort-vision-sdk` classificada | ✅ feito (§1) |
 | Decisão (A) CPython-puro vs (B) inferência-nativa registrada | ✅ feito (§2) |
 | EPs do device-alvo listados | ✅ feito (§3) |
-| `import numpy` no aparelho | ⚠️ **bloqueado** — 3 blockers achados, 2 resolvidos, 1 preciso (§4) |
+| `import numpy` no aparelho | ✅ **FEITO** (2026-06-18, emulator-5556) — 3 blockers vencidos (§4) |
 
-O item 4 não fechou: o cross-compile do numpy esbarra num **vazamento de
-variável Makefile no sysconfig do CPython 3.14 android** que o cibuildwheel
-baixa. O blocker está **pinçado e reproduzível** (§4) — é trabalho de toolchain
-nível G1, não mais de spike.
+**Atualização (2026-06-18):** o item 4 **fechou**. O blocker do sysconfig
+(`$(BLDLIBRARY)`) era **bug do cibuildwheel 3.4.1**; subir para **4.1.0** o
+resolveu. A wheel `numpy-2.4.6-cp314-cp314-android_24_x86_64.whl` (9 MB) buildou,
+foi staged no site-packages do device e **`import numpy` + cálculo rodam no
+emulador** (`examples/onnxspike`, screenshot: `numpy 2.4.6 sum=55 mean=5.5
+dot=385`). Receita reprodutível em `toolchain/build_numpy_x86.sh`.
 
 ---
 
@@ -101,29 +103,28 @@ longdouble_format = 'INTEL_EXTENDED_16_BYTES_LE'   # x86_64 = 80-bit estendido, 
 passado via `setup-args=--cross-file=<arquivo>` (meson mescla múltiplos cross-files).
 Destravou o configure; compilou até **[66/479] objetos**.
 
-### Blocker 3 — sysconfig do CPython android vaza `$(BLDLIBRARY)` no link ✗ aberto
-No link de cada C-extension:
-```
+### Blocker 3 — sysconfig do CPython android vaza `$(BLDLIBRARY)` no link ✅ resolvido (cibuildwheel ≥4.0)
+
+No link de cada C-extension, com **cibuildwheel 3.4.1**:
+
+```text
 clang: error: no such file or directory: '$(BLDLIBRARY)'
 ```
-O **CPython 3.14 android x86_64 que o cibuildwheel baixa** expõe `$(BLDLIBRARY)`
-**não-expandido** no `LDSHARED`/flags de link que o meson repassa literalmente ao
-clang. (O prefixo arm64 oficial que staguei no Trilho B tem
-`BLDLIBRARY='-L. -lpython3.14'` corretamente expandido — então é específico do
-build x86_64 do cibuildwheel / da introspecção meson.)
 
-Afeta **qualquer C-extension** (numpy, onnxruntime-wheel, pillow), **não** só o
-numpy. O `pydantic-core` (B1) escapa porque é **Rust/maturin**, que linka de outro
-jeito — por isso o Trilho B nunca bateu nisso.
+O CPython 3.14 android x86_64 que o cibuildwheel 3.4.1 baixava expunha
+`$(BLDLIBRARY)` **não-expandido** no `LDSHARED`/flags que o meson repassava
+literalmente ao clang. Afetava **qualquer C-extension** (numpy, onnxruntime-wheel,
+pillow); o `pydantic-core` (B1) escapava por ser **Rust/maturin**.
 
-**Leads para fechar (G1):**
-1. **Subir cibuildwheel 3.4.1 → ≥4.0** — a 4.0 "amadureceu Android" (auditwheel,
-   pkg-config, Fortran); o vazamento de sysconfig pode já estar corrigido lá.
-   Tentar **primeiro**, é o de menor esforço.
-2. Sanear o `_sysconfigdata` do python android usado no build (expandir
-   `BLDLIBRARY`/`LDSHARED`) antes de invocar o meson.
-3. Estudar as **receitas do Chaquopy** (`server/pypi`, numpy+OpenBLAS android) — a
-   referência ★ da pesquisa; eles já resolveram isto.
+**Resolvido subindo cibuildwheel → 4.1.0** (lead nº1, menor esforço). A 4.x
+amadureceu o Android e não vaza mais a variável; o link passou e a wheel buildou.
+Dois ajustes a mais que a 4.x exigiu: numpy lista o enable-group
+`cpython-freethreading` que a 4.x removeu (retirar do `pyproject`), e a fase de
+teste do numpy tenta `pip install` no target (`CIBW_TEST_SKIP="*"`). Tudo
+capturado em `toolchain/build_numpy_x86.sh`.
+
+(Leads alternativos, não mais necessários: sanear o `_sysconfigdata` do python
+android; estudar as receitas do Chaquopy `server/pypi` — ★ da pesquisa.)
 
 ---
 
@@ -132,12 +133,17 @@ jeito — por isso o Trilho B nunca bateu nisso.
 - **Investigação fechada** (deps, A/B, EPs): núcleo de visão = numpy + onnxruntime
   + pillow; numpy é caminho crítico para A **e** B; EPs do emulador = NNAPI(sample)
   /XNNPACK/CPU, QNN só no Snapdragon físico.
-- **Derisk do numpy:** 2 dos 3 blockers de cross-compile resolvidos com fixes
-  documentados; o 3º (`$(BLDLIBRARY)`) pinçado e com 3 leads. **É o gargalo que
-  G1 tem que atacar primeiro — e destrava todas as wheels C.**
-- **Prova de `import numpy` no device: não atingida nesta rodada** (bloqueada pelo
-  item acima). Honestamente fora do escopo de spike — vira a primeira tarefa do G1.
+- **numpy no device: FEITO.** Os 3 blockers de cross-compile resolvidos
+  (OpenBLAS→noblas; longdouble→cross-prop; `$(BLDLIBRARY)`→cibuildwheel 4.1).
+  Wheel `numpy-2.4.6-cp314-cp314-android_24_x86_64.whl` staged no device e
+  `import numpy` + cálculo rodam no emulador (`examples/onnxspike`). A correção do
+  3º blocker (subir a cibuildwheel) **destrava todas as wheels C** — vale para
+  onnxruntime e pillow também.
+- **G0 fechado nos 4 done-when.** O que era o gargalo virou receita reprodutível.
 
-> **G1 abre por:** resolver o `$(BLDLIBRARY)` (lead 1: cibuildwheel ≥4.0) →
-> fechar a wheel do numpy x86_64 → `import numpy` no emulador → então a wheel/AAR
-> do onnxruntime + 1 modelo `.onnx` ponta-a-ponta.
+> **G1 continua por:** wheel/AAR do `onnxruntime` + 1 modelo `.onnx` ponta-a-ponta
+> no device (fora da UI thread/loop) + escolha de EP (latência medida). Para o
+> onnxruntime, **buildar a wheel** (`build.py --build_wheel --android`) reusando o
+> mesmo destravamento (cibuildwheel ≥4.0) **ou** o AAR `onnxruntime-android` (path
+> B). numpy já provado; pillow pelo mesmo caminho quando o decode de imagem entrar
+> (G2).
