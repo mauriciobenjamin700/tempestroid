@@ -60,6 +60,18 @@ uv run tempest serve examples/<nome>/app.py
 | [`sysverify`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/sysverify/app.py) | Harness de verificação on-device das capacidades que exigem hardware real. | Sensores / biometria / push (device-only). |
 | [`multifile`](https://github.com/mauriciobenjamin700/tempestroid/tree/main/examples/multifile) | Projeto **multi-arquivo** (`main.py` + pacote `widgets/`) — o que `tempest new --template multi` gera. | Bundle do projeto inteiro no `sys.path` (Trilho C). |
 
+## Trilho G — inferência ONNX no device
+
+Visão no aparelho com o [`ort-vision-sdk`](https://pypi.org/project/ort-vision-sdk/)
+(backend plugável), inferência pela AAR nativa `onnxruntime-android` — **sem
+OpenCV, sem wheel onnxruntime/Pillow**. Exigem o extra `[vision]` + o build com
+`--feature vision`; device-verificados no emulador x86_64.
+
+| App | O que mostra | Exercita |
+| --- | --- | --- |
+| [`onnxspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/onnxspike/app.py) | Prova mínima: `import numpy` + um cálculo rodam no interpretador embarcado (tela verde "numpy OK"). | numpy android no device (G0/G1). |
+| [`visionspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/visionspike/app.py) | Pipeline completo: imagem real (`banana.jpg`) → decode nativo (`BitmapFactory`) → `Classifier` do SDK via `AarBackend` → top-1 + latência. Modelo **embutido** ou **baixado** (`VISIONSPIKE_MODEL_URL`), `.onnx` fp32 ou `.int8.ort` quantizado (`VISIONSPIKE_MODEL`). | G1 (AAR) + G2 (imagem) + G3 (`tempest optimize`) + G4 (entrega). |
+
 ## Conjunto de widgets atual
 
 Os **dois renderizadores** — simulador Qt (desktop) e Compose (dispositivo) —
