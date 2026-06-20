@@ -6218,7 +6218,7 @@ class QtRenderer:
         # only on the indicator below). Mirror the imperative ``setMinimumHeight``
         # in QSS so the resting body declares it.
         row_qss = f"min-height: {float(_SELECTION_TOUCH_TARGET)}px"
-        base_body = f"{base.split('{', 1)[1].rsplit('}', 1)[0].strip()}" if base else ""
+        base_body = base.split("{", 1)[1].rsplit("}", 1)[0].strip() if base else ""
         merged = f"{base_body}; {row_qss}".strip("; ") if base_body else row_qss
         blocks: list[str] = [f"#{name} {{ {merged} }}"]
         if box:

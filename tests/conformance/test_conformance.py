@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -3953,4 +3954,57 @@ def test_h2_contrast_wcag_aa(color_scheme: str) -> None:
         f"OUTLINE field content vs surface for color_scheme={color_scheme!r} "
         f"has contrast {ratio:.2f} (< WCAG AA 4.5); the field resolver no longer "
         "guarantees legible content text on the surface"
+    )
+
+
+#: The Kotlin Compose renderer that mirrors the engine's icon-alias table. The
+#: device resolves `IconButton` glyph names through its own copy of
+#: ``MATERIAL_ALIASES`` (the serializer does not inline a path for IconButton),
+#: so the two tables MUST stay byte-for-byte equivalent or a device renders the
+#: wrong glyph / raw text for an aliased name.
+_KOTLIN_RENDERER = (
+    Path(__file__).parents[2]
+    / "android-host"
+    / "app"
+    / "src"
+    / "main"
+    / "java"
+    / "org"
+    / "tempestroid"
+    / "host"
+    / "TempestRenderer.kt"
+)
+
+
+def test_h2_icon_alias_table_matches_kotlin() -> None:
+    """The engine ``MATERIAL_ALIASES`` and the Kotlin copy are identical.
+
+    H2 promoted icon-alias resolution into the engine
+    (``tempest_core.icons.MATERIAL_ALIASES``) and the Compose renderer keeps a
+    hand-maintained Kotlin port (``MATERIAL_ALIASES`` in ``TempestRenderer.kt``)
+    because the serializer does not inline a resolved path for ``IconButton``.
+    The two tables must agree exactly; this tripwire fails if a future
+    ``tempest-core`` release adds, drops, or retargets an alias without the
+    Kotlin side being updated in lockstep, which would silently break device
+    icon rendering. Parses the Kotlin ``mapOf("a" to "b", …)`` block and
+    compares it to the engine dict.
+    """
+    from tempest_core.icons import MATERIAL_ALIASES
+
+    if not _KOTLIN_RENDERER.exists():
+        pytest.skip("android-host Kotlin renderer not present in this checkout")
+    source = _KOTLIN_RENDERER.read_text(encoding="utf-8")
+    marker = "MATERIAL_ALIASES: Map<String, String> = mapOf("
+    assert marker in source, (
+        "could not find the MATERIAL_ALIASES mapOf block in TempestRenderer.kt; "
+        "the engine-vs-Kotlin alias drift guard cannot run"
+    )
+    block = source.split(marker, 1)[1].split(")", 1)[0]
+    kotlin_aliases = dict(re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"', block))
+    assert kotlin_aliases == dict(MATERIAL_ALIASES), (
+        "icon-alias table drift: the Kotlin MATERIAL_ALIASES in TempestRenderer.kt "
+        "no longer matches tempest_core.icons.MATERIAL_ALIASES; sync the Kotlin "
+        "port (IconButton glyph resolution depends on it). "
+        f"engine-only={set(MATERIAL_ALIASES) - set(kotlin_aliases)}, "
+        f"kotlin-only={set(kotlin_aliases) - set(MATERIAL_ALIASES)}"
     )

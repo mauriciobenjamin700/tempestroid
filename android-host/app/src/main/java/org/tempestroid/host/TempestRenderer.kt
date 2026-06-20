@@ -685,8 +685,10 @@ private fun RenderButton(
  *   - `outline`       → [OutlinedIconButton] (transparent fill + border + ripple)
  *   - `ghost`/`link`  → [IconButton]         (transparent + role ripple) — the default
  *
- * The icon is the resolved curated glyph (`iconPath` inlined by the serializer, or
- * the `curatedIconPath`/`iconFor` fallback), drawn via [CuratedIcon]. The `label`
+ * The icon is the resolved curated glyph, drawn via [CuratedIcon]. Unlike `Icon`
+ * nodes, the serializer does NOT inline an `iconPath` for `IconButton`, so the
+ * device resolves the name itself: `curatedIconPath` (curated name, then a single
+ * [MATERIAL_ALIASES] hop) → `iconFor` (platform vector) → literal text. The `label`
  * prop is the accessible name → `contentDescription` (the button has no visible
  * text). The touch target is the resolved square `width`/`height` (≥48dp).
  *
