@@ -35,6 +35,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tempest_core import (
+    ComponentState,
+    Size,
+    Variant,
+    resolve_variant,
+)
 from tempest_core.style import (
     AlignItems,
     Border,
@@ -60,6 +66,7 @@ from tempest_core.style import (
     TextOverflow,
     Transition,
 )
+from tempest_core.theme import Theme
 
 from tempestroid import to_compose
 from tempestroid.renderers.qt.style_translator import layout_alignment, to_qss
@@ -3347,3 +3354,245 @@ def test_e9_text_scale_and_font_asset_in_coverage_table() -> None:
         "font_asset parity changed; both translators must react to it. "
         "Compose emits 'fontAsset'; Qt emits font-family: \"CustomAsset\"."
     )
+
+
+# ---------------------------------------------------------------------------
+# H1 conformance: Chakra-style variant API (Trilho H, phase H1)
+# ---------------------------------------------------------------------------
+#
+# Phase H1 ships the Chakra-style variant API in ``tempest-core>=0.3.0``
+# (``resolve_variant`` / ``resolve_variant_states`` / ``Variant`` / ``Size`` /
+# ``ComponentState``) plus its two renderers (Qt PR #112, Compose PR #113).
+#
+# KEY ARCHITECTURAL FACT — H1 adds *no* new ``Style`` fields. Variants resolve
+# onto the *existing* ``Style`` fields (background/color/padding/radius/border/
+# font_size/font_weight/min_height/opacity), so ``_SAMPLES`` / ``_COVERAGE`` and
+# ``len(Style.model_fields)`` are unchanged (pinned by
+# ``test_h1_no_style_field_added``).
+# ``resolve_variant`` is a *pure* function returning a plain ``Style``, so the
+# existing ``snapshot`` helper (``to_compose`` + ``to_qss`` / ``layout_alignment``)
+# works directly on its output, and the golden machinery pins that BOTH translators
+# emit a stable, reviewed lowering of every resolved-variant ``Style``.
+#
+# The Qt-vs-Compose divergence is therefore *renderer-level state layering*, not a
+# translator/field change — see ``_H1_WIDGET_DIVERGENCES`` below.
+
+#: Baseline theme used to resolve every H1 conformance sample.
+_H1_THEME: Theme = Theme()
+
+
+def _variant_style(
+    variant: Variant,
+    size: Size,
+    color_scheme: str,
+    *,
+    state: ComponentState = ComponentState.DEFAULT,
+) -> Style:
+    """Resolve a single variant ``Style`` against the baseline H1 theme.
+
+    Args:
+        variant: The Chakra variant (SOLID/OUTLINE/GHOST/LINK).
+        size: The Chakra size (XS/SM/MD/LG).
+        color_scheme: The theme color-scheme key (e.g. ``"primary"``).
+        state: The interaction state to resolve (defaults to ``DEFAULT``).
+
+    Returns:
+        The resolved ``Style`` produced by ``resolve_variant``.
+    """
+    return resolve_variant(
+        variant=variant,
+        size=size,
+        color_scheme=color_scheme,
+        theme=_H1_THEME,
+        state=state,
+    )
+
+
+#: Canonical resolved-variant matrix: the 4 variants at MD/primary (DEFAULT)
+#: plus size + color_scheme + non-default-state samples. Each value is the *pure*
+#: ``Style`` returned by ``resolve_variant`` — the golden pins that both
+#: translators lower it identically across releases.
+_H1_VARIANT_CASES: dict[str, Style] = {
+    "solid_md_primary": _variant_style(Variant.SOLID, Size.MD, "primary"),
+    "outline_md_primary": _variant_style(Variant.OUTLINE, Size.MD, "primary"),
+    "ghost_md_primary": _variant_style(Variant.GHOST, Size.MD, "primary"),
+    "link_md_primary": _variant_style(Variant.LINK, Size.MD, "primary"),
+    "solid_lg_error": _variant_style(Variant.SOLID, Size.LG, "error"),
+    "solid_sm_secondary": _variant_style(Variant.SOLID, Size.SM, "secondary"),
+    "solid_md_primary_pressed": _variant_style(
+        Variant.SOLID, Size.MD, "primary", state=ComponentState.PRESSED
+    ),
+    "solid_md_primary_disabled": _variant_style(
+        Variant.SOLID, Size.MD, "primary", state=ComponentState.DISABLED
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H1_VARIANT_CASES))
+def test_h1_variant_golden_snapshot(name: str) -> None:
+    """Each resolved-variant ``Style`` matches its committed golden snapshot.
+
+    Pins that *both* translators emit a stable, reviewed lowering of every
+    resolved variant ``Style``. A drift means either the ``tempest-core`` variant
+    resolution changed (different colors/sizing tokens) or one of the two
+    translators changed its lowering — both demand a conscious review.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h1``.
+    """
+    snap = snapshot(_H1_VARIANT_CASES[name])
+    path = _GOLDEN_DIR / f"h1_{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for h1_{name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"H1 variant conformance drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+def test_h1_no_style_field_added() -> None:
+    """Phase H1 adds no new ``Style`` fields — variants resolve onto existing ones.
+
+    H1 introduces the variant *resolution* layer in ``tempest-core`` (a pure
+    function mapping ``variant``/``size``/``color_scheme``/``state`` onto an
+    existing ``Style``); it adds no top-level field to ``Style``. The
+    ``_SAMPLES`` / ``_COVERAGE`` tables therefore stay complete without update.
+    If a new field appears, update ``_SAMPLES``, ``_COVERAGE``, regenerate goldens
+    (``UPDATE_GOLDEN=1``), and update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H1 widget-level behavioural divergences (variant state layering)
+# ---------------------------------------------------------------------------
+#
+# Because H1 adds no new ``Style`` fields, the golden/parity machinery above is
+# untouched and the per-resolved-Style goldens pin the *base* lowering. The real
+# Qt-vs-Compose divergence is in *how each renderer realizes the interaction
+# states* of a variant — pinned here as a named tripwire, exactly like the E1/E2/E3
+# divergence tables, so a renderer change that silently resolves or regresses one
+# is caught loudly. ``Button`` is the H1 pilot widget.
+#
+# Rationale for each divergence (mirrors the H1 architect contract):
+#
+# 1. state_layer_engine
+#    Qt resolves the full per-state ``Style`` set up front via
+#    ``resolve_variant_states`` (or the widget's ``state_styles()``) and paints
+#    each one into a *scoped* QSS pseudo-state block keyed on the node's object
+#    name: ``#name:hover`` / ``#name:pressed`` / ``#name:focus`` / ``#name:disabled``.
+#    The state visuals are baked into the stylesheet — Qt's QSS engine swaps them
+#    on the matching pseudo-state. Compose, by contrast, passes only the resolved
+#    BASE ``Style`` (its colors) into the M3 affordance and lets Material3's native
+#    ``InteractionSource`` overlay the state layers (ripple / hover / focus / press
+#    tints) on top — the overlay engine differs, the resolved base colors match.
+#
+# 2. variant_affordance
+#    Qt renders every variant as a single styled ``QPushButton``: the variant is
+#    realized purely through the resolved ``Style`` (background fill for solid,
+#    border for outline, transparent bg for ghost, transparent bg + underline for
+#    link). Compose dispatches each variant to a *distinct* M3 affordance:
+#    solid → ``Button``, outline → ``OutlinedButton``, ghost → ``TextButton``,
+#    link → ``TextButton`` + ``TextDecoration.Underline``. Same resolved colors,
+#    different host composable.
+#
+# 3. disabled_interactivity
+#    Both renderers apply the *same* resolved disabled visual (M3 disabled tokens:
+#    38% content / 12% container). Qt realizes it as the QSS ``:disabled`` block.
+#    On Compose the disabled visual is applied, BUT the M3 ``enabled=`` flag — which
+#    would ALSO block the tap — is NOT yet wired in H1: a disabled button is
+#    visually dimmed but remains tappable on the device. This is a tracked H1
+#    follow-up (not a translator bug); it is marked ``intentional=True`` here so the
+#    tripwire records the known gap until the Compose renderer wires ``enabled=``.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on the
+# same strategy), set ``intentional=False`` and explain why — the tripwire
+# ``test_h1_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new H1 component or topic is added, add a row here AND update the
+# pinned key set.
+
+_H1_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Button",
+        "topic": "state_layer_engine",
+        "qt_strategy": (
+            "Per-state Style from resolve_variant_states painted into scoped QSS "
+            "pseudo-state blocks (#name:hover / #name:pressed / #name:focus / "
+            "#name:disabled); the QSS engine swaps the baked state visuals."
+        ),
+        "compose_strategy": (
+            "Resolved BASE Style colors passed into the M3 affordance; Material3's "
+            "native InteractionSource overlays the state layers (hover/press/focus "
+            "tints + ripple) on top — same base colors, different overlay engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Button",
+        "topic": "variant_affordance",
+        "qt_strategy": (
+            "Single styled QPushButton; the variant is realized purely via the "
+            "resolved Style (solid bg / outline border / ghost transparent bg / "
+            "link transparent bg + underline)."
+        ),
+        "compose_strategy": (
+            "Variant dispatches to a distinct M3 affordance: solid->Button, "
+            "outline->OutlinedButton, ghost->TextButton, "
+            "link->TextButton + TextDecoration.Underline."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Button",
+        "topic": "disabled_interactivity",
+        "qt_strategy": (
+            "Disabled is visual-only via the resolved disabled Style (M3 38% "
+            "content / 12% container) painted into the QSS :disabled block."
+        ),
+        "compose_strategy": (
+            "Same disabled visual, BUT the M3 enabled= flag (which also blocks the "
+            "tap) is NOT yet wired in H1 — a disabled button is visually dimmed but "
+            "still tappable on the device. Tracked H1 follow-up, not a translator bug."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_H1_WIDGET_DIVERGENCES``.
+_H1_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"])) for row in _H1_WIDGET_DIVERGENCES
+}
+
+
+def test_h1_widget_divergences_complete() -> None:
+    """Every H1 variant divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves a state-layering
+    divergence (e.g. Compose wires the M3 ``enabled=`` flag for disabled buttons)
+    must update the table; one who adds a new H1 component or topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _H1_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate H1 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _H1_DIVERGENCE_KEYS
