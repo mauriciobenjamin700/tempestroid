@@ -416,8 +416,8 @@ __all__ = [
     "FieldVariant",
     "ComponentState",
     "CardVariant",
-    "BadgeVariant",
     "AlertVariant",
+    "BadgeVariant",
     # Theme + media-query context (phase E9) + design tokens (Trilho H)
     "Theme",
     "ThemeMode",
