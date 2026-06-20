@@ -95,9 +95,11 @@ from tempest_core.style import (
     AlignItems,
     Border,
     Color,
+    ComponentState,
     Corners,
     Curve,
     Edge,
+    FieldVariant,
     FlexDirection,
     FlexWrap,
     FontStyle,
@@ -109,14 +111,17 @@ from tempest_core.style import (
     Position,
     Shadow,
     SideBorder,
+    Size,
     StackAlign,
     Style,
     TextAlign,
     TextDecoration,
     TextOverflow,
     Transition,
+    Variant,
 )
 from tempest_core.theme import MediaQueryData, Theme, ThemeMode
+from tempest_core.tokens import ColorRole, TokenRef, TokenSet
 from tempest_core.validators import (
     EMAIL_PATTERN,
     validate_cnpj,
@@ -179,6 +184,7 @@ from tempest_core.widgets import (
     GestureDetector,
     Hero,
     Icon,
+    IconButton,
     Image,
     ImageFit,
     Input,
@@ -392,10 +398,18 @@ __all__ = [
     "Position",
     "StackAlign",
     "FlexWrap",
-    # Theme + media-query context (phase E9)
+    # Design system (Trilho H): variant API enums
+    "Variant",
+    "Size",
+    "FieldVariant",
+    "ComponentState",
+    # Theme + media-query context (phase E9) + design tokens (Trilho H)
     "Theme",
     "ThemeMode",
     "MediaQueryData",
+    "ColorRole",
+    "TokenSet",
+    "TokenRef",
     # i18n context (phase E9)
     "Locale",
     "translate",
@@ -469,6 +483,7 @@ __all__ = [
     "Image",
     "ImageFit",
     "Icon",
+    "IconButton",
     "Canvas",
     "DrawCommand",
     "MoveTo",
