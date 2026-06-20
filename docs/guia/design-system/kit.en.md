@@ -264,7 +264,7 @@ resolved colors.
 - The BR inputs (`EmailInput`/`PasswordInput`/`PhoneInput`/`CPFInput`/`CNPJInput`)
   hand the masked/validated string value straight to `on_change`.
 
-You've finished the design-system tour: [tokens](tokens.md) →
-[variants](variantes.md) → kit. For the full widget catalog and API reference,
-see the [widgets overview](../widgets.md) and the
-[public API](../../referencia/api.md).
+Next: [surface & layout](superficie.en.md) — `Card`, `Surface`, the stack helpers
+(`HStack`/`VStack`/`Spacer`), `Divider`/`ListTile`. For the full widget catalog
+and API reference, see the [widgets overview](../widgets.en.md) and the
+[public API](../../referencia/api.en.md).

@@ -265,7 +265,7 @@ sobre as cores resolvidas.
 - Os inputs BR (`EmailInput`/`PasswordInput`/`PhoneInput`/`CPFInput`/`CNPJInput`)
   entregam o valor string mascarado/validado direto ao `on_change`.
 
-Você completou o tour do design system: [tokens](tokens.md) →
-[variantes](variantes.md) → kit. Para o catálogo completo de widgets e a
-referência de API, veja a [visão geral de widgets](../widgets.md) e a
-[API pública](../../referencia/api.md).
+A seguir: [superfície e layout](superficie.md) — `Card`, `Surface`, os helpers de
+pilha (`HStack`/`VStack`/`Spacer`), `Divider`/`ListTile`. Para o catálogo completo
+de widgets e a referência de API, veja a [visão geral de widgets](../widgets.md) e
+a [API pública](../../referencia/api.md).

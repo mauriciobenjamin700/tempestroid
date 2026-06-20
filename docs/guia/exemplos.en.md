@@ -116,10 +116,11 @@ app design, not by a renderer limit.
 ## On-device screenshots (x86_64 emulator, no physical hardware)
 
 !!! note "Captured without a physical device"
-    Rendered by the **Compose** renderer on a **headless x86_64 emulator**
-    (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero hardware.
-    24 of the 25 examples; `stopwatch` (animated) is left for a GIF re-capture
-    (see [Animated](#animated)).
+    Most were rendered by the **Compose** renderer on a **headless x86_64
+    emulator** (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero
+    hardware; the design-system galleries (`h1buttons`–`h4gallery`) are Qt
+    simulator captures. `stopwatch` (animated) is left for a GIF re-capture (see
+    [Animated](#animated)).
 
 | | | |
 |---|---|---|
@@ -131,10 +132,12 @@ app design, not by a renderer limit.
 | ![native_caps](../assets/examples/native_caps.png){ width=200 }<br>`native_caps` | ![navigation](../assets/examples/navigation.png){ width=200 }<br>`navigation` | ![overlays](../assets/examples/overlays.png){ width=200 }<br>`overlays` |
 | ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
 | ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
-| ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | |
+| ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | ![h3gallery](../assets/examples/h3gallery.png){ width=200 }<br>`h3gallery` |
+| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | | |
 
-The `h1buttons` (`Button` variants) and `h2gallery` (the theme-adaptive action &
-entry kit) examples accompany the [design system](design-system/variantes.md).
+The `h1buttons` (`Button` variants), `h2gallery` (the action & entry kit),
+`h3gallery` (surface & layout) and `h4gallery` (data display & feedback) examples
+accompany the [design system](design-system/variantes.en.md).
 
 ### Animated
 

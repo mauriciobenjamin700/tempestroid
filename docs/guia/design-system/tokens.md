@@ -54,7 +54,14 @@ que os componentes escolhem pelo `color_scheme`:
 | `"error"` | `error` | `on_error` | erro / ação destrutiva |
 | `"neutral"` | `on_surface` | `surface` | tratamento neutro, baixa ênfase |
 
-Além desses, o esquema completo carrega os papéis de superfície que o app usa
+Além dessas famílias de ênfase, o design system promove **três papéis de
+status** a `color_scheme`s de primeira classe — `"success"`, `"warning"` e
+`"info"` (somando-se a `"error"`), cada um com seu par `on_*` e uma variante de
+*container* AA. Eles aparecem em qualquer componente que aceite `color_scheme`;
+o vocabulário de feedback está em
+[data display e feedback](feedback.md#os-color_schemes-de-status).
+
+O esquema completo também carrega os papéis de superfície que o app usa
 para o "chrome" da página — `surface` / `on_surface`, `background` /
 `on_background`, `outline`, `surface_variant` e seus `on_*`. Leia qualquer um
 deles pelo `ColorRole` ou pela string:
