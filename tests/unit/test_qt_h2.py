@@ -191,6 +191,26 @@ def test_checked_checkbox_indicator_has_accent_fill() -> None:
     assert "width:" in indicator and "height:" in indicator
 
 
+def test_checked_checkbox_body_has_no_accent_fill() -> None:
+    """The accent fill lands on the ``::indicator``, never the whole widget body.
+
+    Regression guard: the resolved selection style's ``background`` (accent when
+    checked) is meant for the box. If the renderer paints it onto the QCheckBox
+    body (the ``#name { … }`` block), the control renders as a solid accent BAR
+    instead of a box + label. The body block must carry no ``background-color``
+    (nor the ring ``border``); those belong to the ``::indicator`` only.
+    """
+    renderer = QtRenderer()
+    renderer.mount(build(Checkbox(checked=True, label="Aceito")))
+    cb = renderer.host.findChild(QCheckBox)
+    assert isinstance(cb, QCheckBox)
+    body = _blocks(cb.styleSheet())[""]
+    assert "background-color" not in body, (
+        f"checkbox body block has a background fill (renders as a bar): {body!r}"
+    )
+    assert "border:" not in body
+
+
 def test_unchecked_checkbox_indicator_has_ring_border() -> None:
     """An unchecked checkbox paints the ring border (no fill) on its indicator."""
     renderer = QtRenderer()
