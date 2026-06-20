@@ -18,6 +18,15 @@ app finds them next to ``__file__``. The photo is decoded **on device** via the
 host's ``BitmapFactory`` (``tempestroid.native.image.decode_image``) — no Pillow
 or OpenCV wheel in the APK — into a NumPy array fed straight to the SDK.
 
+**G4 model delivery.** By default the model is the **embedded** bundled asset
+(extracted with the app bundle). Set ``VISIONSPIKE_MODEL_URL`` to switch to the
+**download** strategy: :func:`tempestroid.native.ensure_model` fetches the model
+(off the loop, stdlib ``urllib``) into a writable on-device cache
+(``tempfile.gettempdir()/tempest_models`` → the app's ``cacheDir`` on Android),
+verifies an optional ``VISIONSPIKE_MODEL_SHA256``, and caches it so a second
+launch skips the network. The detail line reports ``source=download`` vs
+``source=embedded`` so the screenshot is self-describing.
+
 This is intentionally renderer-agnostic (no top-level Qt import): it runs in the
 Qt simulator (with the in-process ``onnxruntime`` wheel) AND on the
 emulator/device (with the AAR bridge), the import of which is decided at runtime.
@@ -31,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,6 +55,7 @@ from tempestroid import (
     Text,
     Widget,
 )
+from tempestroid.native import ensure_model
 from tempestroid.native.dispatch import on_device
 
 _HERE = Path(__file__).resolve().parent
@@ -60,6 +71,18 @@ _MODEL = (
     _MODEL_INT8_ORT if (_USE_INT8 and _MODEL_INT8_ORT.exists()) else _MODEL_FP32
 )
 _LABELS = _HERE / "imagenet_labels.txt"
+#: G4 download+cache demo: when set, the model is *fetched at runtime* from this
+#: URL into an on-device cache (instead of resolving the bundled asset above),
+#: proving the download delivery strategy end to end. Unset = embedded default.
+_MODEL_URL = os.environ.get("VISIONSPIKE_MODEL_URL", "").strip()
+#: Optional expected SHA-256 of the downloaded model (verifies the cached file).
+_MODEL_SHA256 = os.environ.get("VISIONSPIKE_MODEL_SHA256", "").strip() or None
+#: Writable on-device cache dir for downloaded models. ``tempfile.gettempdir()``
+#: resolves to the app's ``cacheDir`` on Android (the host sets ``TMPDIR`` to it
+#: in ``MainActivity``), and to the OS temp dir on the desktop — both writable
+#: without a permission grant. ONNX Runtime mmaps the file on load, so caching it
+#: here does not pull the whole model into RAM.
+_MODEL_CACHE_DIR = Path(tempfile.gettempdir()) / "tempest_models"
 #: A real ImageNet object photo (squeezenet1.1 top-1 is a stable "banana").
 _IMAGE = _HERE / "banana.jpg"
 #: SqueezeNet 1.1 takes 224x224 RGB (ImageNet-normalised inside the SDK).
@@ -140,21 +163,36 @@ async def _classify(app: App[SpikeState]) -> None:
         labels = str(_LABELS) if _LABELS.exists() else None
         start = time.perf_counter()
         provider = "in-process ORT"
+
+        # G4 delivery strategy: download+cache when a URL is given, else the
+        # embedded bundled asset. ``ensure_model`` is cache-first (a second launch
+        # returns the cached file without a network call) and runs off the loop.
+        if _MODEL_URL:
+            model_path = await ensure_model(
+                _MODEL_URL, _MODEL_CACHE_DIR, sha256=_MODEL_SHA256
+            )
+            source = "download"
+        else:
+            model_path = _MODEL
+            source = "embedded"
+
         if on_device():
             # Device path: bridge inference to the native AAR.
             from tempestroid.native.inference import AarBackend
 
-            backend = await AarBackend.create(_MODEL)
+            backend = await AarBackend.create(model_path)
             provider = "AAR"
             clf = Classifier(
-                str(_MODEL),
+                str(model_path),
                 backend=backend,
                 labels=labels,
                 input_size=_INPUT_SIZE,
             )
         else:
             # Desktop path: the in-process onnxruntime wheel.
-            clf = Classifier(str(_MODEL), labels=labels, input_size=_INPUT_SIZE)
+            clf = Classifier(
+                str(model_path), labels=labels, input_size=_INPUT_SIZE
+            )
 
         image = await _load_test_image()
         results = await clf.ort_async_predict(image)
@@ -167,7 +205,7 @@ async def _classify(app: App[SpikeState]) -> None:
         app.state.ok = True
         app.state.title_line = f"top-1: {top1_name}  ({top1_conf * 100:.1f}%)"
         app.state.detail_line = (
-            f"model={_MODEL.name}  provider={provider}  "
+            f"source={source}  model={model_path.name}  provider={provider}  "
             f"latency={elapsed_ms:.0f} ms"
         )
     except Exception as exc:  # noqa: BLE001 — surface ANY failure on screen

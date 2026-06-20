@@ -149,8 +149,12 @@ class MainActivity : FragmentActivity() {
         // which the framework forbids once the activity is STARTED.
         native = NativeModules(this)
 
-        // Android only sets TMPDIR on API 33+; CPython expects it.
-        Os.setenv("TMPDIR", cacheDir.absolutePath, false)
+        // Android only sets TMPDIR on API 33+; CPython expects it. Force the
+        // overwrite (was `false`): a stale/empty inherited TMPDIR otherwise
+        // sticks and `tempfile.gettempdir()` falls through to its non-writable
+        // fallback list (/tmp, /var/tmp, …) and raises FileNotFoundError on the
+        // app's first temp-dir use (serve bundle sweep, G4 model cache).
+        Os.setenv("TMPDIR", cacheDir.absolutePath, true)
 
         val pythonHome = File(filesDir, "python")
         extractAssets("python", pythonHome)
@@ -337,6 +341,19 @@ class MainActivity : FragmentActivity() {
         //     --es tempest_route /details
         val route = intent?.getStringExtra("tempest_route")
         val routeArg = if (route != null) ", route='$route'" else ""
+
+        // Env passthrough (G4 + general): a `tempest_env` extra carries
+        // `KEY=VALUE` pairs (newline- or comma-separated) that are set in the
+        // interpreter's `os.environ` BEFORE the app module imports — so an app
+        // can read a launch-time config (e.g. VISIONSPIKE_MODEL_URL to switch the
+        // G4 model-store from the embedded asset to a download) without a rebuild.
+        //   adb shell am start -n org.tempestroid.host/.MainActivity \
+        //     --es tempest_dev_url http://127.0.0.1:8765 \
+        //     --es tempest_env 'VISIONSPIKE_MODEL_URL=http://127.0.0.1:8000/squeezenet1.1.onnx'
+        // Only the reserved VISIONSPIKE_*/TEMPEST_* prefixes are honoured so an
+        // intent cannot set arbitrary process env. Values are passed through a
+        // single-quote-safe escape before being embedded in the `-c` source.
+        val envPrelude = buildEnvPrelude(intent?.getStringExtra("tempest_env"), cacheDir.absolutePath)
         val entry = when {
             // Dev mode wins: poll the dev server and hot-reload over LAN.
             devUrl != null ->
@@ -364,10 +381,13 @@ class MainActivity : FragmentActivity() {
 
         // Boot Python off the UI thread (plan §3.4 "regra de ouro"). The entry
         // blocks in the asyncio loop, so the interpreter stays alive for events.
+        // The env prelude (if any) runs first so launch-time config is visible to
+        // the app module's import-time `os.environ` reads.
+        val source = envPrelude + entry
         Thread({
             val rc = PythonRuntime.startPython(
                 pythonHome.absolutePath,
-                entryArgs = arrayOf("-c", entry),
+                entryArgs = arrayOf("-c", source),
             )
             Log.i(TAG, "python exited rc=$rc")
         }, "tempest-python").start()
@@ -430,6 +450,51 @@ class MainActivity : FragmentActivity() {
             ""
         }
         return parseHexColor(hex) ?: DEFAULT_SPLASH_BG
+    }
+
+    /**
+     * Build a Python `os.environ` prelude from a `tempest_env` intent extra.
+     *
+     * The extra is a list of `KEY=VALUE` assignments separated by newlines or
+     * commas (e.g. `VISIONSPIKE_MODEL_URL=http://127.0.0.1:8000/m.onnx`). Only
+     * keys with the reserved `VISIONSPIKE_`/`TEMPEST_` prefixes are honoured, so a
+     * launch intent cannot inject arbitrary process environment. Each value is
+     * passed through Python's own `os.environ` assignment with a single-quote-safe
+     * escape, then a trailing `;` so it prepends cleanly to the entry source.
+     *
+     * Always sets `TMPDIR` to [cacheDir] first: `android.system.Os.setenv` in
+     * `onCreate` does not reliably reach the embedded interpreter's `os.environ`
+     * (Python snapshots `environ` at init), so `tempfile.gettempdir()` would fall
+     * through to its non-writable fallback list (`/tmp`, …) and raise
+     * `FileNotFoundError` on the first temp-dir use (serve bundle extraction, the
+     * G4 model cache). Setting it from inside the live interpreter is authoritative.
+     *
+     * @param raw the `tempest_env` extra (may be null/empty).
+     * @param cacheDir the app cache dir to use as `TMPDIR` (always writable).
+     * @return Python source that sets `TMPDIR` + the honoured vars.
+     */
+    private fun buildEnvPrelude(raw: String?, cacheDir: String): String {
+        // Always pin TMPDIR to the writable app cache dir (see KDoc).
+        val safeCache = cacheDir.replace("\\", "\\\\").replace("'", "\\'")
+        val builder = StringBuilder("import os; os.environ['TMPDIR'] = '$safeCache'; ")
+        if (raw.isNullOrBlank()) return builder.toString()
+        for (pair in raw.split('\n', ',')) {
+            val trimmed = pair.trim()
+            if (trimmed.isEmpty()) continue
+            val eq = trimmed.indexOf('=')
+            if (eq <= 0) continue
+            val key = trimmed.substring(0, eq).trim()
+            if (!key.startsWith("VISIONSPIKE_") && !key.startsWith("TEMPEST_")) {
+                Log.w(TAG, "tempest_env: ignoring non-reserved key '$key'")
+                continue
+            }
+            val value = trimmed.substring(eq + 1).trim()
+            // Embed as a Python single-quoted literal; escape backslash + quote.
+            val safeKey = key.replace("\\", "\\\\").replace("'", "\\'")
+            val safeValue = value.replace("\\", "\\\\").replace("'", "\\'")
+            builder.append("os.environ['$safeKey'] = '$safeValue'; ")
+        }
+        return builder.toString()
     }
 
     /** Request POST_NOTIFICATIONS on API 33+ so the B6 demo can post. */
