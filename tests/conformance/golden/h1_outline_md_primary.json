@@ -1,0 +1,26 @@
+{
+  "compose": {
+    "background": "#fcfcfc",
+    "border": {
+      "color": "#584785",
+      "width": 1.0
+    },
+    "color": "#584785",
+    "fontSize": 14.0,
+    "fontWeight": 500,
+    "minHeight": 48.0,
+    "padding": {
+      "bottom": 10.0,
+      "left": 24.0,
+      "right": 24.0,
+      "top": 10.0
+    },
+    "radius": 999.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(252, 252, 252, 1.0); color: rgba(88, 71, 133, 1.0); border: 1.0px solid rgba(88, 71, 133, 1.0); border-radius: 999.0px; font-size: 14.0px; font-weight: 500; min-height: 48.0px",
+    "qss_leaf": "background-color: rgba(252, 252, 252, 1.0); color: rgba(88, 71, 133, 1.0); border: 1.0px solid rgba(88, 71, 133, 1.0); border-radius: 999.0px; padding: 10.0px 24.0px 10.0px 24.0px; font-size: 14.0px; font-weight: 500; min-height: 48.0px"
+  }
+}
