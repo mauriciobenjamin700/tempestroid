@@ -27,7 +27,7 @@ from tempest_core.style import (
     TextDecoration,
 )
 
-__all__ = ["to_qss", "layout_alignment", "self_alignment"]
+__all__ = ["to_qss", "state_layer_qss", "layout_alignment", "self_alignment"]
 
 _FONT_STYLE: dict[FontStyle, str] = {
     FontStyle.NORMAL: "normal",
@@ -182,6 +182,43 @@ def to_qss(style: Style | None, *, with_padding: bool, rtl: bool = False) -> str
         rules.append(f"min-height: {style.min_height}px")
     if style.max_height is not None:
         rules.append(f"max-height: {style.max_height}px")
+    return "; ".join(rules)
+
+
+def state_layer_qss(style: Style) -> str:
+    """Render only the paint-delta parts of a per-state style as a QSS body.
+
+    Material 3 state layers (hover/pressed/focus/disabled) change a component's
+    *paint* — its background (the composited state-layer color), content color and
+    (focus) border — while leaving the geometry (padding, radius, size) at the
+    resting value. Emitting a full :func:`to_qss` body inside a ``:hover`` /
+    ``:pressed`` pseudo-state block would re-declare padding/radius and risk
+    fighting the base block, so this renders **only** ``background``, ``color`` and
+    ``border`` — exactly the fields :func:`tempest_core.variants.resolve_variant`'s
+    state resolution mutates.
+
+    Used by the Qt renderer to build a styled :class:`Button`'s
+    ``#name:hover{…}`` / ``:pressed`` / ``:focus`` / ``:disabled`` blocks from the
+    per-state styles the engine resolves, so the simulator shows the same M3 state
+    layers the Compose renderer paints with native ``InteractionSource`` layers.
+
+    Args:
+        style: The per-state style resolved by the engine.
+
+    Returns:
+        A ``"; "``-joined QSS declaration body covering only the paint delta
+        (empty string when none of the paint fields are set).
+    """
+    rules: list[str] = []
+    if style.background is not None:
+        rules.append(f"background-color: {_qss_background(style.background)}")
+    if style.color is not None:
+        rules.append(f"color: {style.color.to_rgba_string()}")
+    if style.border is not None:
+        # ``rtl`` is irrelevant here: a button's focus indicator is a uniform
+        # ``Border`` (no per-side left/right to mirror), so a fixed LTR flag is
+        # correct and keeps the signature simple.
+        rules.extend(_qss_border_rules(style.border, rtl=False))
     return "; ".join(rules)
 
 
