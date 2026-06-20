@@ -118,11 +118,13 @@ from tempest_core.core.ir import (
     Scene,
     Update,
 )
-from tempest_core.icons import Icons, icon_path
+from tempest_core.icons import MATERIAL_ALIASES, Icons, icon_path
 from tempest_core.style import (
+    Border,
     ComponentState,
     Corners,
     Edge,
+    FieldVariant,
     JustifyContent,
     Position,
     Shadow,
@@ -134,7 +136,13 @@ from tempest_core.style import (
     Variant,
 )
 from tempest_core.theme import MediaQueryData, Theme, ThemeMode
-from tempest_core.variants import ResponsiveSize, resolve_variant_states
+from tempest_core.variants import (
+    ResponsiveSize,
+    resolve_field_variant_states,
+    resolve_selection_variant_states,
+    resolve_slider_variant_states,
+    resolve_variant_states,
+)
 from tempest_core.widgets import (
     DateChangeEvent,
     DismissEvent,
@@ -166,6 +174,7 @@ from tempest_core.widgets import (
 
 from tempestroid.renderers.qt.style_translator import (
     layout_alignment,
+    qss_background,
     self_alignment,
     state_layer_qss,
     to_qss,
@@ -314,6 +323,38 @@ _SAFE_AREA_INSETS: dict[str, float] = {
 #: Fallback edge set when a ``SafeArea`` carries no explicit ``edges`` prop.
 _SAFE_AREA_EDGES_ALL: frozenset[str] = frozenset({"top", "right", "bottom", "left"})
 _TOGGLE_TYPES = frozenset({"Checkbox", "Switch"})
+
+#: Field-family node types whose Chakra ``field_variant``/``size``/``color_scheme``
+#: props the renderer re-resolves into M3 hover/focus/disabled state layers via
+#: :func:`~tempest_core.variants.resolve_field_variant_states` (the input analogue
+#: of the ``Button`` variant path). Each bakes its resting box into ``style``; the
+#: renderer paints only the focus/invalid/hover/disabled paint deltas on top.
+_FIELD_TYPES = frozenset(
+    {
+        "Input",
+        "TextArea",
+        "Dropdown",
+        "Autocomplete",
+        "MaskedInput",
+        "PinInput",
+        "DatePicker",
+        "TimePicker",
+        "FilePicker",
+    }
+)
+
+#: Selection-family node types (checkbox/switch) whose accent tick, ring and box
+#: dimension come from :func:`~tempest_core.variants.resolve_selection_variant_states`.
+_SELECTION_TYPES = frozenset({"Checkbox", "Switch"})
+
+#: Slider-family node types whose active/inactive track + thumb colors come from
+#: :func:`~tempest_core.variants.resolve_slider_variant_states`.
+_SLIDER_TYPES = frozenset({"Slider", "RangeSlider"})
+
+#: Minimum M3 touch-target height (dp) the renderer pins on a checkbox/switch
+#: *row* (the box dimension stays ~20dp on the ``::indicator`` sub-control).
+_SELECTION_TOUCH_TARGET = 48
+
 _DATE_FORMAT = "yyyy-MM-dd"
 #: 24-hour display/parse format for ``TimePicker`` (matches ``"HH:MM"`` strings).
 _TIME_FORMAT = "HH:mm"
@@ -564,59 +605,17 @@ def _to_qt_input_mask(mask: str) -> str:
 #: action that asks for the same name/size/color.
 _ICON_PIXMAP_CACHE: dict[tuple[str, int, int], QPixmap] = {}
 
-#: Common Material-symbol names → the nearest curated tempestroid icon. Apps that
-#: reach for a familiar Material name (``Icon(name="photo_camera")``) resolve to a
-#: sensible curated glyph instead of falling back to the literal text. This is the
-#: Qt simulator's convenience layer only — a name with no curated equivalent (or a
-#: project-specific glyph) still goes through ``register_icon``.
-_ICON_ALIASES: dict[str, str] = {
-    # camera/lens names → "eye" (closest curated "view/lens" proxy; no camera
-    # glyph exists). Names with NO related curated glyph (image, photo, science…)
-    # are intentionally NOT aliased: a wrong glyph (a star for "image") misleads
-    # more than the honest raw-name text fallback.
-    "photo_camera": "eye",
-    "camera": "eye",
-    "camera_alt": "eye",
-    "history": "clock",
-    "schedule": "clock",
-    "access_time": "clock",
-    "person": "user",
-    "account_circle": "user",
-    "people": "user",
-    "help": "info",
-    "help_outline": "info",
-    "close": "x",
-    "cancel": "x",
-    "done": "check",
-    "check_circle": "check",
-    "add": "plus",
-    "remove": "minus",
-    "delete": "trash",
-    "delete_outline": "trash",
-    "email": "mail",
-    "notifications": "bell",
-    "notifications_none": "bell",
-    "favorite": "heart",
-    "favorite_border": "heart",
-    "settings_outlined": "settings",
-    "expand_more": "chevron-down",
-    "expand_less": "chevron-up",
-    "navigate_before": "chevron-left",
-    "navigate_next": "chevron-right",
-    "arrow_back": "arrow-left",
-    "arrow_forward": "arrow-right",
-    "call": "phone",
-    "date_range": "calendar",
-    "event": "calendar",
-}
-
-
 def _resolve_icon_name(name: str) -> str:
     """Map a Material-symbol alias to its curated icon name (else return as-is).
 
-    Consulted by :func:`_icon_pixmap` so common Material names render a curated
-    glyph rather than the literal text fallback. A name that is already curated
-    (or unknown) passes through unchanged.
+    Delegates to the engine's :data:`tempest_core.icons.MATERIAL_ALIASES` so the
+    Qt simulator and the device renderer share one alias table (no Qt-local
+    duplication) — a common Material name (``Icon(name="photo_camera")``) renders
+    a curated glyph rather than the literal text fallback. A name that is already
+    curated, registered via :func:`register_icon`, or unknown passes through
+    unchanged (``icon_path`` already resolves curated/registered/aliased names, so
+    this pre-resolution is a thin convenience for callers that build the SVG by
+    name).
 
     Args:
         name: The requested icon name (curated, Material alias, or custom).
@@ -624,7 +623,7 @@ def _resolve_icon_name(name: str) -> str:
     Returns:
         The curated name to render, or the original name when no alias matches.
     """
-    return _ICON_ALIASES.get(name, name)
+    return MATERIAL_ALIASES.get(name, name)
 
 
 def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
@@ -638,7 +637,8 @@ def _icon_pixmap(name: str, size: int, color: QColor) -> QPixmap | None:
 
     Args:
         name: A curated icon name (an :class:`Icons` member or raw string), or a
-            common Material-symbol alias (resolved via :data:`_ICON_ALIASES`).
+            common Material-symbol alias (resolved via the engine's
+            :data:`~tempest_core.icons.MATERIAL_ALIASES`).
         size: The target square pixel size of the pixmap.
         color: The stroke color (the surrounding foreground/text color).
 
@@ -3325,6 +3325,15 @@ class _RangeSliderWidget(QWidget):
         self._low_slider.valueChanged.connect(self._clamp_low)
         self._high_slider.valueChanged.connect(self._clamp_high)
 
+    def sliders(self) -> tuple[QSlider, QSlider]:
+        """Return the two backing handle sliders for track styling.
+
+        Returns:
+            The ``(low, high)`` :class:`QSlider` pair so the renderer can paint
+            the resolved active/inactive track QSS onto both handles.
+        """
+        return self._low_slider, self._high_slider
+
     def configure_range(self, minimum: int, maximum: int, step: int) -> None:
         """Set the shared bounds and step of both handles.
 
@@ -4884,6 +4893,8 @@ class QtRenderer:
             return _Rendered(node.type, node.key, _TextLabel(), None)
         if node.type == "Button":
             return _Rendered(node.type, node.key, QPushButton(), None)
+        if node.type == "IconButton":
+            return _Rendered(node.type, node.key, QPushButton(), None)
         if node.type == "Input":
             return _Rendered(node.type, node.key, QLineEdit(), None)
         if node.type == "TextArea":
@@ -5249,6 +5260,8 @@ class QtRenderer:
             button = cast("QPushButton", node.widget)
             button.setText(cast("str", node.props.get("label", "")))
             self._bind_click(button, node.props.get("on_click"))
+        elif node.type == "IconButton":
+            self._apply_icon_button(cast("QPushButton", node.widget), node.props)
         elif node.type == "GestureDetector":
             self._bind_gestures(cast("_GestureWidget", node.widget), node.props)
         elif node.type in _ADVANCED_GESTURE_TYPES:
@@ -5328,16 +5341,27 @@ class QtRenderer:
         # sentinel, circle) to ``min(w, h) / 2`` so the corners round fully
         # instead of leaving Qt's square-off of an out-of-range radius.
         self._clamp_node_radius(node.widget, style, custom_family, is_container)
-        if node.type == "Button":
+        if node.type in ("Button", "IconButton"):
             # Append the M3 state-layer pseudo-state blocks AFTER the radius clamp,
             # which re-sets the (single-block) scoped stylesheet from the
             # size-adjusted style — so the hover/pressed/focus/disabled blocks are
             # emitted onto the final, clamped base body and never get clobbered.
+            # ``IconButton`` is ``Variant``-based exactly like ``Button``, so it
+            # reuses the same state-layer pass.
             self._apply_button_states(
                 cast("QPushButton", node.widget),
                 node.props,
                 self._button_base_qss(node.widget, style, custom_family),
             )
+        elif node.type in _FIELD_TYPES:
+            # The field's resting box (OUTLINE/FILLED/FLUSHED) is already painted by
+            # the scoped base block above; append the focus/invalid/hover/disabled
+            # paint deltas the engine resolves for the field variant.
+            self._apply_field_states(node.widget, node.props)
+        elif node.type in _SELECTION_TYPES:
+            self._apply_selection_states(cast("QCheckBox", node.widget), node.props)
+        elif node.type in _SLIDER_TYPES:
+            self._apply_slider_track(node.widget, node.props)
         self._apply_effects(node.widget, style)
         if node.type in ("Blur", "BackdropFilter"):
             # Blur is the wrapper's whole purpose, so it owns the single Qt
@@ -6040,6 +6064,329 @@ class QtRenderer:
             if body:
                 blocks.append(f"#{name}:{pseudo} {{ {body} }}")
         button.setStyleSheet("\n".join(blocks))
+
+    def _theme_and_dark(self) -> tuple[Theme, bool]:
+        """Return the live app's theme + platform dark-mode flag (or baselines).
+
+        The variant resolvers need the live :class:`~tempest_core.theme.Theme` so a
+        dark app theme yields dark state layers (and the M3 disabled fade is exact).
+        With no app wired (a bare-node unit test) this falls back to the baseline
+        :class:`~tempest_core.theme.Theme` and light mode, so the simulator still
+        shows the right layers standalone — mirroring the ``Button`` path.
+
+        Returns:
+            A ``(theme, platform_dark_mode)`` pair.
+        """
+        if self._app is None:
+            return Theme(), False
+        return self._app.theme, self._app.media.platform_dark_mode
+
+    @staticmethod
+    def _variant_props(
+        props: dict[str, Any],
+    ) -> tuple[ResponsiveSize, str] | None:
+        """Extract a ``(size, color_scheme)`` pair from a field/selection/slider node.
+
+        Returns ``None`` when the node carries no resolvable Chakra variant props
+        (a hand-styled widget with no ``size``/``color_scheme``), so the caller
+        keeps just the baked resting style with no state-layer pass.
+
+        Args:
+            props: The node's current props.
+
+        Returns:
+            The ``(size, color_scheme)`` pair, or ``None`` when not resolvable.
+        """
+        size = props.get("size")
+        color_scheme = props.get("color_scheme")
+        if not isinstance(size, (Size, dict)) or not isinstance(color_scheme, str):
+            return None
+        return cast("ResponsiveSize", size), color_scheme
+
+    def _apply_field_states(self, widget: QWidget, props: dict[str, Any]) -> None:
+        """Emit M3 focus/invalid/hover/disabled state layers for a field widget.
+
+        The resting box (OUTLINE all-sides border, FILLED background, FLUSHED
+        bottom-only ``SideBorder`` + radius 0) is already painted by the scoped
+        base block :meth:`_apply_visual` set from the field's baked ``style``. This
+        augments that scoped stylesheet with ``#name:focus`` / ``:hover`` /
+        ``:disabled`` blocks re-resolved **exactly** via
+        :func:`~tempest_core.variants.resolve_field_variant_states`, so the
+        simulator shows the same focus ring (2px role border), invalid border
+        (error role — the resolver bakes ``invalid=bool(error)``), hover border
+        (on-surface-variant) and 38%-faded disabled state Compose paints natively.
+
+        A field carrying no resolvable variant props (hand-styled) keeps just the
+        base block. Pressed maps onto Qt's focus pseudo-state (a focused field is
+        the desktop analogue of the M3 pressed/active field), so no ``:pressed``
+        block is emitted.
+
+        Args:
+            widget: The field's backing Qt widget.
+            props: The field node's current props (carry ``field_variant``/``size``/
+                ``color_scheme``/``error``).
+        """
+        name = widget.objectName() or f"tw_{id(widget):x}"
+        widget.setObjectName(name)
+        base = widget.styleSheet()
+        variant_props = self._variant_props(props)
+        field_variant = props.get("field_variant")
+        if variant_props is None or not isinstance(field_variant, FieldVariant):
+            return
+        size, color_scheme = variant_props
+        theme, platform_dark = self._theme_and_dark()
+        invalid = bool(props.get("error"))
+        try:
+            states = resolve_field_variant_states(
+                variant=field_variant,
+                size=size,
+                color_scheme=color_scheme,
+                theme=theme,
+                invalid=invalid,
+                platform_dark_mode=platform_dark,
+            )
+        except ValueError:
+            # An out-of-scheme ``color_scheme`` has no variant table.
+            return
+        blocks: list[str] = [base] if base else []
+        # ``:focus`` first, then ``:hover``, ``:disabled`` last — equally-specific
+        # later blocks win in Qt, so a focused field reads as focused (not merely
+        # hovered) and a disabled field's fade overrides everything.
+        for state, pseudo in (
+            (ComponentState.FOCUS, "focus"),
+            (ComponentState.HOVER, "hover"),
+            (ComponentState.DISABLED, "disabled"),
+        ):
+            body = state_layer_qss(states[state])
+            if body:
+                blocks.append(f"#{name}:{pseudo} {{ {body} }}")
+        widget.setStyleSheet("\n".join(blocks))
+
+    def _apply_selection_states(
+        self, widget: QCheckBox, props: dict[str, Any]
+    ) -> None:
+        """Paint the resolved M3 accent/ring/box onto a checkbox or switch.
+
+        The engine resolves, per checked state: ``color`` = accent tick,
+        ``background`` = accent fill when checked, ``border`` = ring when unchecked,
+        ``width``/``height`` = box dimension. The renderer maps these onto the
+        ``::indicator`` sub-control (the box) — a checked indicator gets the accent
+        ``background-color``, an unchecked one the ring ``border`` — plus
+        ``:hover``/``:disabled`` state layers as the M3 state-layer halo. The
+        **≥48dp touch target stays on the row** (the widget's ``min-height`` from
+        the baked style), never the box; only the indicator carries the box dim.
+
+        A selection carrying no resolvable variant props keeps the baked base only.
+
+        Args:
+            widget: The Qt checkbox standing in for the checkbox/switch.
+            props: The node's current props (carry ``size``/``color_scheme``/
+                ``checked``).
+        """
+        name = widget.objectName() or f"tw_{id(widget):x}"
+        widget.setObjectName(name)
+        base = widget.styleSheet()
+        variant_props = self._variant_props(props)
+        if variant_props is None:
+            return
+        size, color_scheme = variant_props
+        theme, platform_dark = self._theme_and_dark()
+        checked = bool(props.get("checked", False))
+        # The baked selection style's ``width``/``height`` is the *box* dimension
+        # (~20dp), which ``_apply_sizing`` would otherwise pin onto the whole row —
+        # collapsing the touch target. Undo that here: the row flexes with a >=48dp
+        # minimum height (the M3 touch target stays on the row), while the box
+        # dimension lands only on the ``::indicator`` sub-control below.
+        widget.setMinimumWidth(0)
+        widget.setMaximumWidth(_QT_SIZE_MAX)
+        widget.setMaximumHeight(_QT_SIZE_MAX)
+        widget.setMinimumHeight(_SELECTION_TOUCH_TARGET)
+        widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        try:
+            states = resolve_selection_variant_states(
+                size=size,
+                color_scheme=color_scheme,
+                theme=theme,
+                checked=checked,
+                platform_dark_mode=platform_dark,
+            )
+        except ValueError:
+            return
+        default = states[ComponentState.DEFAULT]
+        box = self._selection_indicator_qss(default, checked)
+        # Pin the >=48dp M3 touch target on the *row* block (the box dimension goes
+        # only on the indicator below). Mirror the imperative ``setMinimumHeight``
+        # in QSS so the resting body declares it.
+        row_qss = f"min-height: {float(_SELECTION_TOUCH_TARGET)}px"
+        base_body = f"{base.split('{', 1)[1].rsplit('}', 1)[0].strip()}" if base else ""
+        merged = f"{base_body}; {row_qss}".strip("; ") if base_body else row_qss
+        blocks: list[str] = [f"#{name} {{ {merged} }}"]
+        if box:
+            blocks.append(f"#{name}::indicator {{ {box} }}")
+        for state, pseudo in (
+            (ComponentState.HOVER, "hover"),
+            (ComponentState.DISABLED, "disabled"),
+        ):
+            box = self._selection_indicator_qss(states[state], checked)
+            if box:
+                blocks.append(f"#{name}::indicator:{pseudo} {{ {box} }}")
+        widget.setStyleSheet("\n".join(blocks))
+
+    @staticmethod
+    def _selection_indicator_qss(style: Style, checked: bool) -> str:
+        """Render a selection box (``::indicator``) QSS body from a per-state style.
+
+        Maps the resolved accent/ring/box-dim onto the indicator: the accent
+        ``background`` fills a checked box, the ``border`` rings an unchecked one,
+        and ``width``/``height`` pin the box dimension (not the row). The accent
+        tick ``color`` is the indicator's foreground.
+
+        Args:
+            style: The per-state selection style from the engine.
+            checked: Whether the control is checked (drives fill vs ring).
+
+        Returns:
+            A ``"; "``-joined QSS declaration body for the indicator sub-control.
+        """
+        rules: list[str] = []
+        if style.width is not None:
+            rules.append(f"width: {style.width}px")
+        if style.height is not None:
+            rules.append(f"height: {style.height}px")
+        if checked and style.background is not None:
+            rules.append(f"background-color: {qss_background(style.background)}")
+        if style.border is not None and isinstance(style.border, Border):
+            color = (
+                style.border.color.to_rgba_string()
+                if style.border.color is not None
+                else "black"
+            )
+            rules.append(f"border: {style.border.width}px solid {color}")
+        if style.color is not None:
+            rules.append(f"color: {style.color.to_rgba_string()}")
+        return "; ".join(rules)
+
+    def _apply_slider_track(self, widget: QWidget, props: dict[str, Any]) -> None:
+        """Paint the resolved active/inactive track + thumb onto a slider.
+
+        The engine resolves ``color`` = active track + thumb, ``background`` =
+        inactive track, ``height`` = track thickness. The renderer maps these onto
+        the ``::sub-page`` (filled/active) + handle (active color) and
+        ``::add-page`` (inactive) sub-controls, plus a ``:disabled`` faded state.
+        Applied to both the single :class:`QSlider` and each handle of a
+        :class:`_RangeSliderWidget`.
+
+        Args:
+            widget: The slider widget (a ``QSlider`` or ``_RangeSliderWidget``).
+            props: The node's current props (carry ``size``/``color_scheme``).
+        """
+        variant_props = self._variant_props(props)
+        if variant_props is None:
+            return
+        size, color_scheme = variant_props
+        theme, platform_dark = self._theme_and_dark()
+        try:
+            states = resolve_slider_variant_states(
+                size=size,
+                color_scheme=color_scheme,
+                theme=theme,
+                platform_dark_mode=platform_dark,
+            )
+        except ValueError:
+            return
+        if isinstance(widget, _RangeSliderWidget):
+            for slider in widget.sliders():
+                self._paint_slider_track(slider, states)
+        else:
+            self._paint_slider_track(cast("QSlider", widget), states)
+
+    @staticmethod
+    def _paint_slider_track(
+        slider: QSlider, states: dict[ComponentState, Style]
+    ) -> None:
+        """Set a single ``QSlider``'s groove/sub-page/handle QSS from the states.
+
+        Args:
+            slider: The Qt slider to style.
+            states: The per-state slider styles resolved by the engine.
+        """
+        default = states[ComponentState.DEFAULT]
+        disabled = states[ComponentState.DISABLED]
+        active = default.color.to_rgba_string() if default.color is not None else None
+        inactive = (
+            qss_background(default.background)
+            if default.background is not None
+            else None
+        )
+        thickness = int(default.height) if default.height is not None else 4
+        name = slider.objectName() or f"tw_{id(slider):x}"
+        slider.setObjectName(name)
+        blocks: list[str] = []
+        if inactive is not None:
+            blocks.append(
+                f"#{name}::groove:horizontal {{ height: {thickness}px;"
+                f" background: {inactive}; border-radius: {thickness // 2}px }}"
+            )
+            blocks.append(f"#{name}::add-page:horizontal {{ background: {inactive} }}")
+        if active is not None:
+            blocks.append(f"#{name}::sub-page:horizontal {{ background: {active} }}")
+            handle = max(thickness * 3, 16)
+            blocks.append(
+                f"#{name}::handle:horizontal {{ background: {active};"
+                f" width: {handle}px; height: {handle}px;"
+                f" margin: -{handle // 2}px 0; border-radius: {handle // 2}px }}"
+            )
+        if disabled.color is not None:
+            faded = disabled.color.to_rgba_string()
+            blocks.append(
+                f"#{name}::sub-page:horizontal:disabled {{ background: {faded} }}"
+            )
+            blocks.append(
+                f"#{name}::handle:horizontal:disabled {{ background: {faded} }}"
+            )
+        slider.setStyleSheet("\n".join(blocks))
+
+    def _apply_icon_button(self, widget: QPushButton, props: dict[str, Any]) -> None:
+        """Apply props to an icon-only button (square, circular, glyph-only).
+
+        Renders the resolved curated glyph (``icon`` name → :func:`_icon_pixmap`,
+        engine alias-resolved) as the button's icon at the baked square size, in
+        the foreground ``color`` of the baked style, with no text. The ``label``
+        prop is the accessible name (a11y) — set so the icon-only control is still
+        announced. The M3 state-layer pass (``Variant``-based, shared with
+        ``Button``) runs from :meth:`_apply_visual` after sizing/radius clamp.
+
+        Args:
+            widget: The Qt button backing the icon button.
+            props: The node's current props (carry ``icon``/``label``/``variant``/
+                ``size``/``color_scheme``).
+        """
+        widget.setText("")
+        name = cast("str", props.get("icon", ""))
+        style = cast("Style | None", props.get("style"))
+        glyph_size = (
+            int(style.font_size) if style is not None and style.font_size is not None
+            else 20
+        )
+        color = (
+            _qcolor(style.color)
+            if style is not None and style.color is not None
+            else widget.palette().color(QPalette.ColorRole.ButtonText)
+        )
+        pixmap = _icon_pixmap(name, glyph_size, color) if name else None
+        if pixmap is not None:
+            widget.setIcon(QIcon(pixmap))
+            widget.setIconSize(pixmap.size())
+        else:
+            # Unknown glyph / no QtSvg: honest text fallback so the control is not
+            # invisible (mirrors ``_apply_icon``).
+            widget.setIcon(QIcon())
+            widget.setText(name)
+        label = cast("str", props.get("label", ""))
+        if label:
+            widget.setAccessibleName(label)
+            widget.setToolTip(label)
+        self._bind_click(widget, props.get("on_click"))
 
     def _apply_input(self, widget: QLineEdit, props: dict[str, Any]) -> None:
         """Apply props to a single-line text input and wire its change handler.

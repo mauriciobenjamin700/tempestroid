@@ -27,7 +27,13 @@ from tempest_core.style import (
     TextDecoration,
 )
 
-__all__ = ["to_qss", "state_layer_qss", "layout_alignment", "self_alignment"]
+__all__ = [
+    "qss_background",
+    "to_qss",
+    "state_layer_qss",
+    "layout_alignment",
+    "self_alignment",
+]
 
 _FONT_STYLE: dict[FontStyle, str] = {
     FontStyle.NORMAL: "normal",
@@ -47,7 +53,7 @@ _GRADIENT_COORDS: dict[GradientDirection, tuple[int, int, int, int]] = {
 }
 
 
-def _qss_background(background: Color | Gradient) -> str:
+def qss_background(background: Color | Gradient) -> str:
     """Render a background as a QSS ``background-color`` value (color or gradient)."""
     if isinstance(background, Gradient):
         x1, y1, x2, y2 = _GRADIENT_COORDS[background.direction]
@@ -126,7 +132,7 @@ def to_qss(style: Style | None, *, with_padding: bool, rtl: bool = False) -> str
         return ""
     rules: list[str] = []
     if style.background is not None:
-        rules.append(f"background-color: {_qss_background(style.background)}")
+        rules.append(f"background-color: {qss_background(style.background)}")
     if style.color is not None:
         rules.append(f"color: {style.color.to_rgba_string()}")
     if style.border is not None:
@@ -211,7 +217,7 @@ def state_layer_qss(style: Style) -> str:
     """
     rules: list[str] = []
     if style.background is not None:
-        rules.append(f"background-color: {_qss_background(style.background)}")
+        rules.append(f"background-color: {qss_background(style.background)}")
     if style.color is not None:
         rules.append(f"color: {style.color.to_rgba_string()}")
     if style.border is not None:
