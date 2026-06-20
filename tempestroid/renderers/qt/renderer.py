@@ -6627,9 +6627,11 @@ class QtRenderer:
             lambda value: SlideEvent(value=float(cast("int", value))),
         )
 
-    @staticmethod
-    def _apply_progressbar(widget: QProgressBar, props: dict[str, Any]) -> None:
+    def _apply_progressbar(self, widget: QProgressBar, props: dict[str, Any]) -> None:
         """Apply props to a progress bar (determinate fraction or looping bar).
+
+        The optional ``color_scheme`` (H4) tints the filled ``::chunk`` with the
+        resolved Material 3 accent, so a ``success`` bar reads green, etc.
 
         Args:
             widget: The Qt progress bar.
@@ -6637,13 +6639,16 @@ class QtRenderer:
         """
         if bool(props.get("indeterminate", False)):
             widget.setRange(0, 0)
-            return
-        widget.setRange(0, 100)
-        widget.setValue(int(cast("float", props.get("value", 0.0)) * 100))
+        else:
+            widget.setRange(0, 100)
+            widget.setValue(int(cast("float", props.get("value", 0.0)) * 100))
+        self._apply_indicator_accent(widget, props)
 
-    @staticmethod
-    def _apply_spinner(widget: QProgressBar, props: dict[str, Any]) -> None:
+    def _apply_spinner(self, widget: QProgressBar, props: dict[str, Any]) -> None:
         """Apply props to a spinner (an always-indeterminate progress bar).
+
+        The optional ``color_scheme`` (H4) tints the moving ``::chunk`` with the
+        resolved Material 3 accent.
 
         Args:
             widget: The Qt progress bar standing in for the spinner.
@@ -6652,8 +6657,47 @@ class QtRenderer:
         widget.setRange(0, 0)
         widget.setTextVisible(False)
         size = props.get("size")
-        if size is not None:
-            widget.setFixedHeight(int(cast("float", size)))
+        if isinstance(size, (int, float)):
+            widget.setFixedHeight(int(size))
+        self._apply_indicator_accent(widget, props)
+
+    def _apply_indicator_accent(
+        self, widget: QProgressBar, props: dict[str, Any]
+    ) -> None:
+        """Tint a progress bar / spinner ``::chunk`` with its ``color_scheme`` accent.
+
+        Resolves the Material 3 accent for the node's ``color_scheme`` against the
+        live app theme (via the shared slider resolver — a progress fill is the
+        same accent-on-track shape) and scopes it to the widget's ``::chunk``
+        sub-control. A node with no resolvable ``color_scheme`` keeps the Qt
+        default chunk color.
+
+        Args:
+            widget: The Qt progress bar (or spinner stand-in).
+            props: The node's current props (may carry ``color_scheme``).
+        """
+        color_scheme = props.get("color_scheme")
+        if not isinstance(color_scheme, str):
+            return
+        theme, platform_dark = self._theme_and_dark()
+        try:
+            states = resolve_slider_variant_states(
+                size=Size.MD,
+                color_scheme=color_scheme,
+                theme=theme,
+                platform_dark_mode=platform_dark,
+            )
+        except ValueError:
+            return
+        accent = states[ComponentState.DEFAULT].color
+        if accent is None:
+            return
+        name = widget.objectName() or f"tw_{id(widget):x}"
+        widget.setObjectName(name)
+        widget.setStyleSheet(
+            f"#{name}::chunk {{ background-color: {accent.to_rgba_string()}; "
+            "border-radius: 3px; }"
+        )
 
     @staticmethod
     def _apply_shimmer(node: _Rendered) -> None:

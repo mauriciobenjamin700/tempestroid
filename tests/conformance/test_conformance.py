@@ -37,11 +37,15 @@ from typing import Any
 
 import pytest
 from tempest_core import (
+    AlertVariant,
+    BadgeVariant,
     CardVariant,
     ComponentState,
     FieldVariant,
     Size,
     Variant,
+    resolve_alert_variant,
+    resolve_badge_variant,
     resolve_field_variant,
     resolve_selection_variant,
     resolve_slider_variant,
@@ -4274,3 +4278,313 @@ def test_h3_surface_contrast_wcag_aa(name: str) -> None:
         "(< WCAG AA 4.5); the surface resolver no longer guarantees legible "
         "content on the container"
     )
+
+
+# ---------------------------------------------------------------------------
+# H4 conformance: styled data-display & feedback kit (Trilho H, phase H4)
+# ---------------------------------------------------------------------------
+#
+# Phase H4 ships the styled data-display / feedback kit in
+# ``tempest-core>=0.6.0`` (``resolve_badge_variant`` + the ``BadgeVariant`` enum —
+# SOLID / SUBTLE / OUTLINE; ``resolve_alert_variant`` + the ``AlertVariant`` enum —
+# SUBTLE / SOLID / LEFT_ACCENT / TOP_ACCENT), the M3 treatments behind
+# Badge / Tag / Chip / Avatar / Alert / Banner / Progress / Spinner / Tooltip /
+# Stat / Rating / EmptyState / SegmentedControl / Stepper.
+#
+# KEY ARCHITECTURAL FACT — like H1/H2/H3, H4 adds *no* new ``Style`` fields. Status
+# flows through ``color_scheme`` (the kit gained the new ``success`` / ``warning`` /
+# ``info`` schemes and the twelve new token *roles* behind them — those are
+# *colors*, not ``Style`` fields). Badges/alerts resolve onto the *existing*
+# ``Style`` fields (background/color/border/radius/padding). So ``_SAMPLES`` /
+# ``_COVERAGE`` and ``len(Style.model_fields)`` are unchanged (pinned by
+# ``test_h4_no_style_field_added`` — the load-bearing guard).
+# ``resolve_badge_variant`` / ``resolve_alert_variant`` are *pure* functions
+# returning a plain ``Style``, so the existing ``snapshot`` helper (``to_compose``
+# + ``to_qss`` / ``layout_alignment``) works directly on their output and the golden
+# machinery pins that BOTH translators emit a stable, reviewed lowering of every
+# resolved badge / alert ``Style``.
+#
+# A11Y DECISION (A1) — the SUBTLE badge / SUBTLE alert use the M3 *container* pair
+# (``*_container`` / ``on_*_container``) for the status schemes, which clears WCAG
+# AA (~13.7) because the raw saturated ``success`` role on white is only ~3.02
+# (FAILS AA). ``test_h4_contrast_wcag_aa`` asserts the pair the resolvers ACTUALLY
+# emit (the SUBTLE container pair for status), parametrized over
+# success/warning/info/error — the gate that proves A1. The Qt-vs-Compose
+# divergences are the progress/spinner indicator engine, tooltip anchoring, and the
+# alert LEFT_ACCENT/TOP_ACCENT accent affordance — see ``_H4_WIDGET_DIVERGENCES``
+# below.
+
+#: Baseline theme used to resolve every H4 conformance sample.
+_H4_THEME: Theme = Theme()
+
+
+#: Canonical resolved badge-variant matrix — a representative slice of the
+#: ``BadgeVariant`` x color_scheme space: a solid status badge, a subtle status
+#: badge (the container pair), an outline status badge, a solid brand badge, and a
+#: subtle error badge. Each value is the *pure* ``Style`` returned by
+#: ``resolve_badge_variant`` — the golden pins that both translators lower it
+#: identically across releases.
+_H4_BADGE_CASES: dict[str, Style] = {
+    "badge_solid_success": resolve_badge_variant(
+        variant=BadgeVariant.SOLID, size=Size.MD, color_scheme="success",
+        theme=_H4_THEME,
+    ),
+    "badge_subtle_warning": resolve_badge_variant(
+        variant=BadgeVariant.SUBTLE, size=Size.MD, color_scheme="warning",
+        theme=_H4_THEME,
+    ),
+    "badge_outline_info": resolve_badge_variant(
+        variant=BadgeVariant.OUTLINE, size=Size.MD, color_scheme="info",
+        theme=_H4_THEME,
+    ),
+    "badge_solid_primary": resolve_badge_variant(
+        variant=BadgeVariant.SOLID, size=Size.MD, color_scheme="primary",
+        theme=_H4_THEME,
+    ),
+    "badge_subtle_error": resolve_badge_variant(
+        variant=BadgeVariant.SUBTLE, size=Size.MD, color_scheme="error",
+        theme=_H4_THEME,
+    ),
+}
+
+
+#: Canonical resolved alert-variant matrix — a representative slice of the
+#: ``AlertVariant`` x color_scheme space: the four variant treatments at status
+#: schemes (subtle info, solid error, left-accent success, top-accent warning) and a
+#: neutral subtle alert. Each value is the *pure* ``Style`` returned by
+#: ``resolve_alert_variant`` — the golden pins that both translators lower it
+#: identically across releases.
+_H4_ALERT_CASES: dict[str, Style] = {
+    "alert_subtle_info": resolve_alert_variant(
+        variant=AlertVariant.SUBTLE, color_scheme="info", theme=_H4_THEME,
+    ),
+    "alert_solid_error": resolve_alert_variant(
+        variant=AlertVariant.SOLID, color_scheme="error", theme=_H4_THEME,
+    ),
+    "alert_left_accent_success": resolve_alert_variant(
+        variant=AlertVariant.LEFT_ACCENT, color_scheme="success", theme=_H4_THEME,
+    ),
+    "alert_top_accent_warning": resolve_alert_variant(
+        variant=AlertVariant.TOP_ACCENT, color_scheme="warning", theme=_H4_THEME,
+    ),
+    "alert_subtle_neutral": resolve_alert_variant(
+        variant=AlertVariant.SUBTLE, color_scheme="neutral", theme=_H4_THEME,
+    ),
+}
+
+
+#: The combined H4 resolved-Style matrix (badges + alerts), keyed for goldens.
+_H4_VARIANT_CASES: dict[str, Style] = {
+    **_H4_BADGE_CASES,
+    **_H4_ALERT_CASES,
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H4_VARIANT_CASES))
+def test_h4_variant_golden_snapshot(name: str) -> None:
+    """Each resolved H4 badge / alert ``Style`` matches its committed golden.
+
+    Pins that *both* translators emit a stable, reviewed lowering of every
+    resolved badge / alert ``Style`` (background/color/border/radius/padding). A
+    drift means either the ``tempest-core`` H4 resolution changed (different
+    tokens / status mapping) or one of the two translators changed its lowering —
+    both demand a conscious review.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h4``.
+    """
+    snap = snapshot(_H4_VARIANT_CASES[name])
+    path = _GOLDEN_DIR / f"h4_{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for h4_{name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"H4 conformance drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+def test_h4_no_style_field_added() -> None:
+    """Phase H4 adds no new ``Style`` fields — status flows via ``color_scheme``.
+
+    H4 introduces the badge / alert *resolution* layer in ``tempest-core`` (pure
+    functions mapping ``variant``/``color_scheme`` onto an existing ``Style``) and
+    twelve new token *roles* (success/warning/info containers + on-colors). Those
+    are *colors* reached through the new ``success`` / ``warning`` / ``info``
+    ``color_scheme``s — not top-level fields on ``Style``. Badges/alerts resolve
+    onto the existing background/color/border/radius/padding fields, so the
+    ``_SAMPLES`` / ``_COVERAGE`` tables stay complete without update. This is the
+    load-bearing guard: if a new field appears, update ``_SAMPLES``,
+    ``_COVERAGE``, regenerate goldens (``UPDATE_GOLDEN=1``), and update this
+    sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H4 widget-level behavioural divergences (data-display / feedback)
+# ---------------------------------------------------------------------------
+#
+# Because H4 adds no new ``Style`` fields, the golden/parity machinery above is
+# untouched and the per-resolved-Style goldens pin the *base* lowering (the same
+# resolved colors/border/radius/padding flow through both translators). The real
+# Qt-vs-Compose divergences are in *how each renderer realizes* the progress
+# indicator, the tooltip, and the alert side/top accent — pinned here as a named
+# tripwire, exactly like the E1/E2/E3/H1/H2/H3 divergence tables, so a renderer
+# change that silently resolves or regresses one is caught loudly.
+#
+# Rationale for each divergence (mirrors the H4 architect contract):
+#
+# 1. ProgressBar / indicator_engine
+#    Qt realizes the determinate/indeterminate progress affordance with a native
+#    ``QProgressBar`` whose accent is painted via a scoped-QSS ``::chunk`` rule
+#    (and the spinner via a busy ``QProgressBar``/spinner widget). Compose uses the
+#    M3 ``LinearProgressIndicator`` / ``CircularProgressIndicator`` with explicit
+#    ``color`` / ``trackColor`` from the resolved accent. Same resolved accent
+#    color, different indicator engine.
+#
+# 2. Tooltip / anchoring
+#    Qt presents a tooltip as a frameless floating ``QLabel`` positioned at the
+#    anchor widget's global point (the same floating-pill surface used for toasts).
+#    Compose uses the M3 ``PlainTooltip`` / ``RichTooltip`` via
+#    ``TooltipBox`` + ``rememberTooltipState()``, anchored by composition. Same
+#    resolved surface ``Style``, different anchoring engine.
+#
+# 3. Alert / accent_affordance
+#    The LEFT_ACCENT / TOP_ACCENT alert variants resolve a coloured ``SideBorder``
+#    on the existing ``Style.border``. Qt paints it as a scoped-QSS ``SideBorder``
+#    (``border-left`` / ``border-top`` on the ``#objectName`` selector), mirroring
+#    the physical left side under the renderer's ``rtl`` flag like every other
+#    side. Compose realizes the same accent via a ``Modifier`` border / drawn line,
+#    also mirroring start/end under its own ``rtl`` flag. Same resolved
+#    ``SideBorder``, different accent affordance.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on the
+# same strategy), set ``intentional=False`` and explain why — the tripwire
+# ``test_h4_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new H4 component or topic is added, add a row here AND update the
+# pinned key set.
+
+_H4_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "ProgressBar",
+        "topic": "indicator_engine",
+        "qt_strategy": (
+            "Native QProgressBar whose accent is painted via a scoped-QSS "
+            "::chunk rule (spinner via a busy QProgressBar); to_qss carries only "
+            "the resolved accent color, the indicator geometry is native Qt."
+        ),
+        "compose_strategy": (
+            "M3 LinearProgressIndicator / CircularProgressIndicator with explicit "
+            "color / trackColor from the SAME resolved accent — same accent color, "
+            "different indicator engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Tooltip",
+        "topic": "anchoring",
+        "qt_strategy": (
+            "Frameless floating QLabel positioned at the anchor widget's global "
+            "point (the same floating-pill surface used for toasts)."
+        ),
+        "compose_strategy": (
+            "M3 PlainTooltip / RichTooltip via TooltipBox + rememberTooltipState(), "
+            "anchored by composition — same resolved surface Style, different "
+            "anchoring engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Alert",
+        "topic": "accent_affordance",
+        "qt_strategy": (
+            "LEFT_ACCENT / TOP_ACCENT resolve a coloured SideBorder on Style.border; "
+            "Qt paints it as a scoped-QSS SideBorder (border-left / border-top on the "
+            "#objectName selector), mirroring the physical left side under the "
+            "renderer's rtl flag."
+        ),
+        "compose_strategy": (
+            "Realizes the same resolved SideBorder via a Modifier border / drawn "
+            "line, mirroring start/end under its own rtl flag — same resolved "
+            "SideBorder, different accent affordance."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_H4_WIDGET_DIVERGENCES``.
+_H4_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"])) for row in _H4_WIDGET_DIVERGENCES
+}
+
+
+def test_h4_widget_divergences_complete() -> None:
+    """Every H4 data-display divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves a divergence (e.g.
+    both renderers converge on the same indicator / tooltip / accent strategy)
+    must update the table; one who adds a new H4 component or topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _H4_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate H4 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _H4_DIVERGENCE_KEYS
+
+
+@pytest.mark.parametrize("color_scheme", ["success", "warning", "info", "error"])
+def test_h4_contrast_wcag_aa(color_scheme: str) -> None:
+    """The SUBTLE container pair the resolvers emit clears WCAG AA (proves A1).
+
+    H4's a11y gate: the raw saturated status role (``success``) on white is only
+    ~3.02 (FAILS AA), so the SUBTLE badge / SUBTLE alert resolve onto the M3
+    *container* pair (``*_container`` background / ``on_*_container`` content),
+    which clears AA (~13.7). This asserts the pair the resolvers ACTUALLY emit —
+    parametrized over the status schemes — proving the A1 contrast fix rather than
+    a forced failing pair.
+    """
+    badge = resolve_badge_variant(
+        variant=BadgeVariant.SUBTLE,
+        size=Size.MD,
+        color_scheme=color_scheme,
+        theme=_H4_THEME,
+    )
+    alert = resolve_alert_variant(
+        variant=AlertVariant.SUBTLE,
+        color_scheme=color_scheme,
+        theme=_H4_THEME,
+    )
+    for label, style in (("badge", badge), ("alert", alert)):
+        assert style.color is not None, (
+            f"SUBTLE {label} resolver must set a content color"
+        )
+        assert isinstance(style.background, Color), (
+            f"SUBTLE {label} resolver must set a solid container background Color "
+            "for the contrast pair"
+        )
+        ratio = contrast_ratio(style.color, style.background)
+        assert ratio >= 4.5, (
+            f"SUBTLE {label} container pair for color_scheme={color_scheme!r} has "
+            f"contrast {ratio:.2f} (< WCAG AA 4.5); the resolver no longer uses the "
+            "container pair (the A1 fix regressed — the raw status role fails AA)"
+        )

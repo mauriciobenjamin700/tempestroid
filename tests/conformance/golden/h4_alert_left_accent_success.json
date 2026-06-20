@@ -1,0 +1,28 @@
+{
+  "compose": {
+    "background": "#dcefe3",
+    "border": {
+      "bottom": null,
+      "left": {
+        "color": "#22aa54",
+        "width": 4.0
+      },
+      "right": null,
+      "top": null
+    },
+    "color": "#102317",
+    "padding": {
+      "bottom": 16.0,
+      "left": 16.0,
+      "right": 16.0,
+      "top": 16.0
+    },
+    "radius": 8.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(220, 239, 227, 1.0); color: rgba(16, 35, 23, 1.0); border-left: 4.0px solid rgba(34, 170, 84, 1.0); border-radius: 8.0px",
+    "qss_leaf": "background-color: rgba(220, 239, 227, 1.0); color: rgba(16, 35, 23, 1.0); border-left: 4.0px solid rgba(34, 170, 84, 1.0); border-radius: 8.0px; padding: 16.0px 16.0px 16.0px 16.0px"
+  }
+}

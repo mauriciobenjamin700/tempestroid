@@ -498,6 +498,13 @@ The Chakra-style variant API and Material 3 token surface, all re-exported from
   `UNDERLINE`).
 - **`CardVariant`** — the surface flavor for cards/surfaces (`ELEVATED`/`FILLED`/
   `OUTLINED`), M3 — elevation resolves to a `Shadow`, no new `Style` field.
+- **`BadgeVariant`** — the badge/chip/tag flavor (`SOLID`/`SUBTLE`/`OUTLINE`); the
+  `SUBTLE` treatment uses the tonal container pair (WCAG-AA safe for status).
+- **`AlertVariant`** — the alert/banner flavor (`SUBTLE`/`SOLID`/`LEFT_ACCENT`/
+  `TOP_ACCENT`); accents use a directional `SideBorder` (RTL-mirrored).
+- **Status `color_scheme`s** — beyond the brand roles, `success`/`warning`/`info`
+  (+ `error`) are first-class color schemes (M3 tonal families generated from
+  fixed seeds), so `Alert`/`Badge`/`ProgressBar` take `color_scheme="success"` etc.
 - **`ComponentState`** — the visual state a resolved `Style` targets
   (`DEFAULT`/`HOVER`/`PRESSED`/`FOCUS`/`DISABLED`) — the M3 state layers.
 - **`ColorRole`** — a semantic Material 3 color role (`PRIMARY`/`SECONDARY`/
@@ -742,6 +749,12 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`Banner`** — inline status bar (`tone`: info/success/warning/error) with an
   optional `action`; **`Badge`** — small status pill; **`EmptyState`** — centered
   glyph + title + subtitle + action placeholder.
+- Data-display & feedback (Trilho H4, status-themed) — **`Alert`** (glyph + title +
+  body + optional dismiss; `variant`=`AlertVariant`, `color_scheme` status),
+  **`Stat`** (label + value + up/down-tinted `delta`), **`ProgressStepper`** (a
+  wizard step indicator: `steps` + `current`, accent from `color_scheme`), and
+  **`Tag`** (a closed, non-selectable `Chip` preset). `Badge`/`Chip`/`ProgressBar`/
+  `Spinner` take `variant`/`color_scheme` too.
 - **`Breadcrumb`** — path trail (`items` + `separator`, optional `on_select`).
 - **`Grid`** — equal-width `columns` grid of `children`.
 

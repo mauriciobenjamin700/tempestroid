@@ -121,6 +121,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.Canvas
@@ -2836,25 +2837,87 @@ private fun RenderSlider(
     )
 }
 
-/** A linear progress bar: indeterminate, or determinate over `value` in `[0, 1]`. */
+/**
+ * A linear progress bar: indeterminate, or determinate over `value` in `[0, 1]`.
+ *
+ * H4: the leaf carries a `color_scheme` STRING (not a baked accent, unlike the
+ * variant-baked widgets). The device resolves it to the Material 3 role accent via
+ * [schemeAccentColor] (theme-aware for the standard roles, engine-aligned hex for
+ * the status families `success`/`warning`/`info`), passed as the indicator `color`
+ * with a muted [trackColor]. Mirrors the Qt `::chunk` accent (which resolves the
+ * same accent via `resolve_slider_variant_states`).
+ *
+ * Qt-vs-Compose divergence (pinned by conformance `("ProgressBar","indicator_engine")`):
+ * Qt tints a `QProgressBar::chunk`; the device paints a Material `LinearProgressIndicator`
+ * with `color` + `trackColor`.
+ */
 @Composable
 private fun RenderProgressBar(node: TempestNode, style: Map<String, Any?>) {
+    val accent = schemeAccentColor(node.props["color_scheme"] as? String)
+    val track = accent.copy(alpha = 0.24f)
     val indeterminate = node.props["indeterminate"] as? Boolean ?: false
     if (indeterminate) {
-        LinearProgressIndicator(modifier = baseModifier(style))
+        LinearProgressIndicator(modifier = baseModifier(style), color = accent, trackColor = track)
     } else {
         val value = ((node.props["value"] as? Number)?.toFloat() ?: 0f).coerceIn(0f, 1f)
-        LinearProgressIndicator(progress = { value }, modifier = baseModifier(style))
+        LinearProgressIndicator(
+            progress = { value },
+            modifier = baseModifier(style),
+            color = accent,
+            trackColor = track,
+        )
     }
 }
 
-/** An indeterminate activity spinner, optionally sized to `size` dp. */
+/**
+ * An indeterminate activity spinner, optionally sized to `size` dp. The `color_scheme`
+ * STRING (H4) resolves to the Material 3 role accent via [schemeAccentColor] (same
+ * resolution as [RenderProgressBar]).
+ */
 @Composable
 private fun RenderSpinner(node: TempestNode, style: Map<String, Any?>) {
+    val accent = schemeAccentColor(node.props["color_scheme"] as? String)
     val size = (node.props["size"] as? Number)?.toFloat()
     val modifier =
         if (size != null) baseModifier(style).size(size.dp) else baseModifier(style)
-    CircularProgressIndicator(modifier = modifier)
+    CircularProgressIndicator(modifier = modifier, color = accent)
+}
+
+/**
+ * Resolve a H4 `color_scheme` STRING (e.g. `"success"`, default `"primary"`) to the
+ * Material 3 role accent the device paints a `ProgressBar`/`Spinner` with.
+ *
+ * Unlike the variant-baked widgets (`Button`/`Slider`/…), the engine does NOT bake a
+ * resolved accent into these leaves — it sends only the scheme NAME — so the renderer
+ * resolves it here. Theme-aware standard M3 roles read off [MaterialTheme.colorScheme]
+ * (so a dark app yields the dark-palette accent); the design-system status families
+ * (`success`/`warning`/`info`) are not part of Compose's `ColorScheme`, so they map to
+ * the engine's default status palette (`tempest_core.tokens`), picking the light/dark
+ * variant by the active Material scheme's surface luminance.
+ *
+ * The default (`null`/unknown scheme) is the primary role.
+ */
+@Composable
+private fun schemeAccentColor(scheme: String?): Color {
+    val cs = MaterialTheme.colorScheme
+    // Detect the active palette mode from the Material surface luminance so the
+    // status-family hex (which Compose's ColorScheme lacks) matches dark/light.
+    val dark = run {
+        val s = cs.surface
+        (0.299f * s.red + 0.587f * s.green + 0.114f * s.blue) < 0.5f
+    }
+    return when (scheme) {
+        "secondary" -> cs.secondary
+        "tertiary" -> cs.tertiary
+        "error" -> cs.error
+        // Design-system status families: not in Compose's ColorScheme. Use the
+        // engine's default status accents (tempest_core.tokens), light/dark variant.
+        "success" -> if (dark) Color(0xFFB4E4C6) else Color(0xFF22AA54)
+        "warning" -> if (dark) Color(0xFFE9CEAF) else Color(0xFFBA6C12)
+        "info" -> if (dark) Color(0xFFB2C2E6) else Color(0xFF1C4AB0)
+        // "primary" and any unknown/absent scheme → the primary role.
+        else -> cs.primary
+    }
 }
 
 /** An image loaded from `src` (URL/asset) via Coil, scaled per `fit`. */
@@ -3923,9 +3986,86 @@ internal fun baseModifier(style: Map<String, Any?>): Modifier {
     } else {
         colorOf(style, "background")?.let { bg -> m = m.background(color = bg, shape = shape) }
     }
-    borderStrokeOf(style)?.let { stroke -> m = m.border(border = stroke, shape = shape) }
+    // Border: a uniform `{width,color}` paints a real stroke around the box shape;
+    // a per-side `SideBorder` (`{top,right,bottom,left}`, e.g. the H4 Alert
+    // LEFT_ACCENT/TOP_ACCENT 4px accent or the H2 FLUSHED bottom rule) draws ONLY
+    // the present sides via [sideBorderModifier] (not collapsed to a uniform box).
+    if (isSideBorder(style)) {
+        sideBorderModifier(style)?.let { m = m.then(it) }
+    } else {
+        borderStrokeOf(style)?.let { stroke -> m = m.border(border = stroke, shape = shape) }
+    }
     edgeOf(style, "padding")?.let { m = m.padding(it) }
     return m
+}
+
+/** Whether the Style `border` is a per-side [SideBorder] map (vs a uniform `{width,color}`). */
+internal fun isSideBorder(style: Map<String, Any?>): Boolean {
+    @Suppress("UNCHECKED_CAST")
+    val border = style["border"] as? Map<String, Any?> ?: return false
+    if (border.containsKey("width")) return false
+    return border.keys.any { it in setOf("top", "right", "bottom", "left") }
+}
+
+/**
+ * Draw a per-side [SideBorder] (`{top,right,bottom,left}`, each `{width,color}` or
+ * null) as individual edges, the way the H4 `Alert` LEFT_ACCENT/TOP_ACCENT accent
+ * and the H2 field FLUSHED bottom rule expect — NOT collapsed to a uniform box.
+ *
+ * RTL: the physical `left`/`right` sides are mirrored (start↔end) when the layout
+ * direction is right-to-left, matching the box-model values Python already mirrors
+ * in `to_compose(rtl)` (padding/margin/flushed-border). So a LEFT_ACCENT alert paints
+ * its accent on the visual right under RTL.
+ *
+ * Qt-vs-Compose divergence (pinned by conformance `("Alert","accent_affordance")`):
+ * Qt paints a one-sided `SideBorder` via QSS `border-left`/`border-top`; the device
+ * strokes the same edges in a `Modifier.drawBehind`.
+ */
+internal fun sideBorderModifier(style: Map<String, Any?>): Modifier? {
+    @Suppress("UNCHECKED_CAST")
+    val border = style["border"] as? Map<String, Any?> ?: return null
+    fun edge(name: String): Pair<Float, Color>? {
+        @Suppress("UNCHECKED_CAST")
+        val spec = border[name] as? Map<String, Any?> ?: return null
+        val width = (spec["width"] as? Number)?.toFloat() ?: return null
+        val color = (spec["color"] as? String)?.let { parseHexColor(it) } ?: return null
+        if (width <= 0f) return null
+        return width to color
+    }
+    val top = edge("top")
+    val bottom = edge("bottom")
+    val physLeft = edge("left")
+    val physRight = edge("right")
+    if (top == null && bottom == null && physLeft == null && physRight == null) return null
+    return Modifier.drawBehind {
+        // RTL mirrors the physical left/right edges (start↔end), like the box-model
+        // (read off the DrawScope's own layoutDirection, so no @Composable needed).
+        val rtl = layoutDirection == LayoutDirection.Rtl
+        val left = if (rtl) physRight else physLeft
+        val right = if (rtl) physLeft else physRight
+        top?.let { (w, c) ->
+            val px = w.dp.toPx()
+            drawLine(c, Offset(0f, px / 2f), Offset(size.width, px / 2f), strokeWidth = px)
+        }
+        bottom?.let { (w, c) ->
+            val px = w.dp.toPx()
+            drawLine(
+                c, Offset(0f, size.height - px / 2f),
+                Offset(size.width, size.height - px / 2f), strokeWidth = px,
+            )
+        }
+        left?.let { (w, c) ->
+            val px = w.dp.toPx()
+            drawLine(c, Offset(px / 2f, 0f), Offset(px / 2f, size.height), strokeWidth = px)
+        }
+        right?.let { (w, c) ->
+            val px = w.dp.toPx()
+            drawLine(
+                c, Offset(size.width - px / 2f, 0f),
+                Offset(size.width - px / 2f, size.height), strokeWidth = px,
+            )
+        }
+    }
 }
 
 /** The Style `margin` (serialized as a four-side edge map) as [PaddingValues], or null. */
