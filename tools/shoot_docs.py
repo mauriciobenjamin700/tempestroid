@@ -81,6 +81,7 @@ from tempestroid import (  # noqa: E402
     Header,
     Hero,
     Icon,
+    IconButton,
     Image,
     ImagePicker,
     ImagePicture,
@@ -423,6 +424,9 @@ def _build_specimens() -> dict[str, Widget]:
         # --- media ----------------------------------------------------------
         "Image": Image(src="https://example.com/foto.png", alt="Foto", key="img"),
         "Icon": Icon(name="star", size=32.0, key="ic"),
+        "IconButton": IconButton(
+            icon="settings", label="Settings", on_click=_noop, key="ib"
+        ),
         "Svg": Svg(src="https://example.com/logo.svg", key="svg"),
         "Canvas": Canvas(
             commands=[

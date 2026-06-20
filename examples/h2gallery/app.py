@@ -27,31 +27,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from tempest_core import FieldVariant, IconButton, Size, Variant
-from tempest_core.tokens import ColorRole
-from tempest_core.widgets.events import (
-    SlideEvent,
-    TextChangeEvent,
-    ToggleEvent,
-)
-
 from tempestroid import (
     AlignItems,
     App,
     Button,
     Checkbox,
     Color,
+    ColorRole,
     Column,
     Edge,
+    FieldVariant,
     FontWeight,
+    IconButton,
     Input,
     RadioGroup,
     Row,
     ScrollView,
+    Size,
+    SlideEvent,
     Slider,
     Style,
     Switch,
     Text,
+    TextChangeEvent,
+    ToggleEvent,
+    Variant,
     Widget,
 )
 

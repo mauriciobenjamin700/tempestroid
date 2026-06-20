@@ -153,9 +153,19 @@ WCAG-AA contrast, ≥ 48dp touch targets) comes for free. It is **additive**: ra
 variant.
 
 ```python
-from tempest_core import FieldVariant, IconButton, Size, Variant
-
-from tempestroid import Button, Color, Column, Input, Style, Theme, Widget
+from tempestroid import (
+    Button,
+    Color,
+    Column,
+    FieldVariant,
+    IconButton,
+    Input,
+    Size,
+    Style,
+    Theme,
+    Variant,
+    Widget,
+)
 
 # One brand seed → a full Material 3 theme (light + dark).
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
@@ -474,6 +484,31 @@ rebuild (no new patch kind).
 - **`translate(key, locale, translations, **kwargs)`** / alias **`t`**
   (`tempestroid.i18n`) — a dependency-free table lookup with `str.format`
   interpolation; a missing key/language degrades to the key itself.
+
+### Design system (M3 variants + tokens)
+
+The Chakra-style variant API and Material 3 token surface, all re-exported from
+`tempestroid` (the underlying engine is `tempest_core`).
+
+- **`Variant`** — the visual emphasis of a styled component (`SOLID`/`OUTLINE`/
+  `GHOST`/`SOFT`/`LINK`), Chakra-style.
+- **`Size`** — the size scale (`XS`/`SM`/`MD`/`LG`/`XL`) driving padding,
+  typography and touch-target sizing.
+- **`FieldVariant`** — the field-family flavor for inputs (`OUTLINE`/`FILLED`/
+  `UNDERLINE`).
+- **`ComponentState`** — the visual state a resolved `Style` targets
+  (`DEFAULT`/`HOVER`/`PRESSED`/`FOCUS`/`DISABLED`) — the M3 state layers.
+- **`ColorRole`** — a semantic Material 3 color role (`PRIMARY`/`SECONDARY`/
+  `SURFACE`/`ERROR`/…) resolved against the active `Theme`.
+- **`TokenSet`** — the resolved bundle of M3 tonal/spacing/shape/typography/
+  elevation/motion tokens a `Theme` exposes.
+- **`TokenRef`** — a typed reference to a single token within a `TokenSet`, so a
+  `Style` can point at a theme token instead of a raw literal.
+
+> 💡 The low-level resolver functions (`resolve_variant`, `resolve_field_variant`,
+> `resolve_selection_variant`, `resolve_slider_variant`) and `merge_styles` /
+> `VALID_COLOR_SCHEMES` are NOT re-exported here — import them from `tempest_core`
+> when you need the raw `variant → Style` machinery.
 
 ### Widgets (`tempestroid.widgets`)
 

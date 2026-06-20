@@ -13,10 +13,10 @@ contra o `theme` que você passa. Esta página percorre o kit.
 app — claro à esquerda, escuro à direita.*
 
 !!! info "Onde os nomes moram"
-    Os widgets (`Input`, `Checkbox`, `Switch`, `Slider`, `RadioGroup`, os inputs
-    BR) e `Theme`/`Color` vêm de **`tempestroid`**. Os enums `Size`/`Variant`/
-    `FieldVariant` e o `IconButton` vêm de **`tempest_core`**. Cada bloco mostra
-    o import certo.
+    Tudo do kit é importado de **`tempestroid`**: os widgets (`Input`, `Checkbox`,
+    `Switch`, `Slider`, `RadioGroup`, `IconButton`, os inputs BR), os enums
+    `Size`/`Variant`/`FieldVariant` e o `Theme`/`Color`. `tempest_core` é apenas
+    o motor por baixo — você não precisa importá-lo.
 
 ## O padrão `theme=app.theme`
 
@@ -26,9 +26,7 @@ recebe, entregar `theme=app.theme` faz o kit inteiro seguir o tema do app —
 inclusive o dark mode trocado em runtime via `App.set_theme`.
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import App, Button, Widget
+from tempestroid import App, Button, Variant, Widget
 
 
 def view(app: App) -> Widget:
@@ -51,9 +49,7 @@ menor ênfase, focado no ícone). O `label` carrega o **nome acessível**
 (`contentDescription`), já que não há texto visível.
 
 ```python
-from tempest_core import IconButton, Variant
-
-from tempestroid import Color, Theme
+from tempestroid import Color, IconButton, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -87,9 +83,7 @@ foco/cursor/borda:
 | `FLUSHED` | apenas uma régua inferior |
 
 ```python
-from tempest_core import FieldVariant, Size
-
-from tempestroid import Color, Column, Input, Style, Theme, Widget
+from tempestroid import Color, Column, FieldVariant, Input, Size, Style, Theme, Widget
 from tempestroid.widgets import TextChangeEvent
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
@@ -130,10 +124,8 @@ Toda a família de campos compartilha essas props: `Input`, `TextArea`,
 `variant` — o Material 3 dá a cada controle de seleção uma única *affordance*):
 
 ```python
-from tempest_core import Size
-
 from tempestroid import (
-    Checkbox, Color, Column, RadioGroup, Style, Switch, Theme, Widget,
+    Checkbox, Color, Column, RadioGroup, Size, Style, Switch, Theme, Widget,
 )
 from tempestroid.widgets import ToggleEvent
 
@@ -178,9 +170,7 @@ O slider pinta a faixa ativa + o thumb no acento do `color_scheme`; `size`
 controla a espessura da faixa:
 
 ```python
-from tempest_core import Size
-
-from tempestroid import Color, Slider, Theme
+from tempestroid import Color, Size, Slider, Theme
 from tempestroid.widgets import SlideEvent
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))

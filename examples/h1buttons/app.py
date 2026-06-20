@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tempest_core.style import Size, Variant
-
 from tempestroid import (
     AlignItems,
     App,
@@ -29,8 +27,10 @@ from tempestroid import (
     Edge,
     FontWeight,
     Row,
+    Size,
     Style,
     Text,
+    Variant,
     Widget,
 )
 

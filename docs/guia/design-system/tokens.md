@@ -9,10 +9,12 @@ elevação, movimento), e os componentes leem esses tokens em vez de valores
 crus.
 
 !!! info "De onde vêm os tokens"
-    O motor de design (`Theme`, `TokenSet`, variantes) mora no pacote
-    **`tempest-core`**, instalado junto com o tempestroid. Por isso alguns nomes
-    desta página importam de `tempest_core` e outros de `tempestroid` — cada
-    bloco de código mostra o caminho correto. `Theme` está disponível nos dois.
+    O motor de design (`Theme`, `TokenSet`, variantes) é implementado no pacote
+    **`tempest-core`**, instalado junto com o tempestroid. Mas você não precisa
+    importá-lo: todo o conjunto do design system — `Theme`, `ThemeMode`,
+    `ColorRole`, `TokenSet`, `TokenRef`, `Variant` e companhia — é
+    **re-exportado por `tempestroid`**, então você importa tudo de um único
+    lugar, como qualquer outro widget ou enum.
 
 ## Um `Theme` em uma linha
 
@@ -58,9 +60,7 @@ para o "chrome" da página — `surface` / `on_surface`, `background` /
 deles pelo `ColorRole` ou pela string:
 
 ```python
-from tempest_core import ColorRole
-
-from tempestroid import Color, Theme
+from tempestroid import Color, ColorRole, Theme
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -87,9 +87,7 @@ São três opções:
 === "Forçar claro/escuro"
 
     ```python
-    from tempest_core import ThemeMode
-
-    from tempestroid import Color, Theme
+    from tempestroid import Color, Theme, ThemeMode
 
     light = Theme.from_seed(Color.from_hex("#2563eb"), mode=ThemeMode.LIGHT)
     dark = Theme.from_seed(Color.from_hex("#2563eb"), mode=ThemeMode.DARK)
@@ -101,9 +99,7 @@ São três opções:
 === "Seguir o sistema"
 
     ```python
-    from tempest_core import ThemeMode
-
-    from tempestroid import Color, Theme
+    from tempestroid import Color, Theme, ThemeMode
 
     # SYSTEM resolve contra o dark mode da plataforma em tempo de build.
     theme = Theme.from_seed(Color.from_hex("#2563eb"), mode=ThemeMode.SYSTEM)
@@ -156,9 +152,7 @@ você entrega a ele.** Os componentes estilizados (`Button`, `Input`, `Checkbox`
 adapta a aparência — incluindo o dark mode — sem você reescrever uma cor:
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 

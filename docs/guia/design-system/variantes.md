@@ -9,15 +9,14 @@ calcula os pixels.
 
 !!! info "Onde os nomes moram"
     `variant`/`size`/`color_scheme` são props comuns; os **enums** `Variant`,
-    `Size` e o `IconButton` vêm de **`tempest_core`**. Os widgets (`Button`, …) e
-    `Theme`/`Color` vêm de **`tempestroid`**. Cada bloco mostra o import certo.
+    `Size`, `ComponentState` e o widget `IconButton` são re-exportados por
+    **`tempestroid`**, junto com `Button`, `Theme` e `Color`. Importe tudo de um
+    único lugar — `tempest_core` é só o motor por baixo.
 
 ## O `Button` em uma linha
 
 ```python
-from tempest_core import Size, Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Size, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -52,9 +51,7 @@ Material 3:
 | `LINK` | igual ao `ghost`, mais um sublinhado (parece um link de texto) |
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Row, Theme
+from tempestroid import Button, Color, Row, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -97,9 +94,7 @@ componente pinta — uma das cinco: `"primary"`, `"secondary"`, `"tertiary"`,
 `"error"` ou `"neutral"` (veja a [tabela de papéis](tokens.md#os-papeis-de-cor-color-schemes)).
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -120,9 +115,7 @@ fundo nas opacidades M3). O componente entrega essa tabela ao renderizador, que
 aplica o estilo certo nos eventos reais de ponteiro/foco:
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 botao = Button(label="Salvar", variant=Variant.SOLID, color_scheme="primary", theme=theme)
@@ -145,9 +138,7 @@ print(sorted(s.value for s in states))
 *mobile-first* contra os breakpoints do tema e a largura atual da viewport:
 
 ```python
-from tempest_core import Size
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Size, Theme
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -175,10 +166,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tempest_core import Size, Variant
-
-from tempestroid import App, Color, Column, Row, Style, Text, Theme, Widget
-from tempestroid.widgets import Button
+from tempestroid import (
+    App,
+    Button,
+    Color,
+    Column,
+    Row,
+    Size,
+    Style,
+    Text,
+    Theme,
+    Variant,
+    Widget,
+)
 
 
 @dataclass
