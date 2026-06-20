@@ -1262,14 +1262,14 @@ wheels = [
 
 [[package]]
 name = "tempest-core"
-version = "0.4.0"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/23/de/776edb3639454228bfb36cea64c10d9a39fa07b51174caeb571e4ed7243e/tempest_core-0.4.0.tar.gz", hash = "sha256:212cbe1756b1edd28e620698c8dc08991cb9f076bf5e6362e7e96a3be5e0069e", size = 206949, upload-time = "2026-06-20T14:28:18.401Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/2c/5b7aebae78e84304019e2e49176dddbc4e21b1c564d529e7949acfce6a81/tempest_core-0.5.0.tar.gz", hash = "sha256:3230baecc143bd48ad9dc5167a567f88525a7bfe7c2b80054a1b3bb332780643", size = 221381, upload-time = "2026-06-20T19:08:26.57Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/09/1512a16aa86051a7cf7ba8ec3009b449a039014637c8b29b599b23307ab4/tempest_core-0.4.0-py3-none-any.whl", hash = "sha256:7c25daeec29cc20f7aba3d6e25f1f70e9a6d75db7e2c2e63bda624a6baa86fe1", size = 155286, upload-time = "2026-06-20T14:28:16.766Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/96/5ff4bbd92af2ac63f4da57922fe36fdeb74878f352b80fce985b665f8769/tempest_core-0.5.0-py3-none-any.whl", hash = "sha256:2fd4baa80cf33c6dc27eecb54c94aee3cf54a7799450d98bbde8271336c4bea5", size = 164081, upload-time = "2026-06-20T19:08:24.924Z" },
 ]
 
 [[package]]
@@ -1319,7 +1319,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyside6", marker = "extra == 'qt'", specifier = ">=6.7" },
     { name = "qasync", marker = "extra == 'qt'", specifier = ">=0.27" },
-    { name = "tempest-core", specifier = ">=0.4.0" },
+    { name = "tempest-core", specifier = ">=0.5.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 provides-extras = ["qt", "icons", "vision", "camera", "qr", "push", "video", "maps", "features"]

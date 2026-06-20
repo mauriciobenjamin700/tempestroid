@@ -37,6 +37,7 @@ from typing import Any
 
 import pytest
 from tempest_core import (
+    CardVariant,
     ComponentState,
     FieldVariant,
     Size,
@@ -44,6 +45,7 @@ from tempest_core import (
     resolve_field_variant,
     resolve_selection_variant,
     resolve_slider_variant,
+    resolve_surface_variant,
     resolve_variant,
 )
 from tempest_core.style import (
@@ -4007,4 +4009,268 @@ def test_h2_icon_alias_table_matches_kotlin() -> None:
         "port (IconButton glyph resolution depends on it). "
         f"engine-only={set(MATERIAL_ALIASES) - set(kotlin_aliases)}, "
         f"kotlin-only={set(kotlin_aliases) - set(MATERIAL_ALIASES)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H3 conformance: styled surface & layout kit (Trilho H, phase H3)
+# ---------------------------------------------------------------------------
+#
+# Phase H3 ships the styled surface & layout kit in ``tempest-core>=0.5.0``
+# (``resolve_surface_variant`` + the ``CardVariant`` enum — ELEVATED / FILLED /
+# OUTLINED), the M3 surface treatments behind Card / Surface and the layout
+# helpers.
+#
+# KEY ARCHITECTURAL FACT — like H1/H2, H3 adds *no* new ``Style`` fields. Surfaces
+# resolve onto the *existing* ``Style`` fields: M3 elevation lowers to a ``Shadow``
+# on the existing ``Style.shadow``, and the surface treatment resolves onto
+# background/color/border/radius/padding. So ``_SAMPLES`` / ``_COVERAGE`` and
+# ``len(Style.model_fields)`` are unchanged (pinned by
+# ``test_h3_no_style_field_added`` — the load-bearing guard).
+# ``resolve_surface_variant`` is a *pure* function returning a plain ``Style``, so
+# the existing ``snapshot`` helper (``to_compose`` + ``to_qss`` /
+# ``layout_alignment``) works directly on its output and the golden machinery pins
+# that BOTH translators emit a stable, reviewed lowering of every resolved surface
+# ``Style``.
+#
+# Surfaces are *non-interactive* (no state layers — decision D5), unlike H1/H2
+# which carried per-state tables; there is therefore no per-state golden matrix
+# here. The Qt-vs-Compose divergence is the *elevation engine*: both consume the
+# SAME resolved base colors, but realize elevation differently (decision D2) —
+# see ``_H3_WIDGET_DIVERGENCES`` below.
+
+#: Baseline theme used to resolve every H3 conformance sample.
+_H3_THEME: Theme = Theme()
+
+
+#: Canonical resolved surface-variant matrix — a representative slice of the
+#: ``CardVariant`` x color_scheme x elevation space: the three variant treatments
+#: at neutral, a tinted-container primary card (``*_container`` roles), an explicit
+#: M3 level-3 elevation, a secondary filled surface, and an outlined error card.
+#: Each value is the *pure* ``Style`` returned by ``resolve_surface_variant`` — the
+#: golden pins that both translators lower it identically across releases.
+_H3_SURFACE_CASES: dict[str, Style] = {
+    "card_elevated_neutral": resolve_surface_variant(
+        variant=CardVariant.ELEVATED, color_scheme="neutral", theme=_H3_THEME,
+    ),
+    "card_filled_neutral": resolve_surface_variant(
+        variant=CardVariant.FILLED, color_scheme="neutral", theme=_H3_THEME,
+    ),
+    "card_outlined_neutral": resolve_surface_variant(
+        variant=CardVariant.OUTLINED, color_scheme="neutral", theme=_H3_THEME,
+    ),
+    "card_elevated_primary": resolve_surface_variant(
+        variant=CardVariant.ELEVATED, color_scheme="primary", theme=_H3_THEME,
+    ),
+    "card_elevated_lvl3": resolve_surface_variant(
+        variant=CardVariant.ELEVATED, color_scheme="neutral", theme=_H3_THEME,
+        elevation=3,
+    ),
+    "surface_filled_secondary": resolve_surface_variant(
+        variant=CardVariant.FILLED, color_scheme="secondary", theme=_H3_THEME,
+    ),
+    "card_outlined_error": resolve_surface_variant(
+        variant=CardVariant.OUTLINED, color_scheme="error", theme=_H3_THEME,
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H3_SURFACE_CASES))
+def test_h3_surface_golden_snapshot(name: str) -> None:
+    """Each resolved H3 surface ``Style`` matches its committed golden snapshot.
+
+    Pins that *both* translators emit a stable, reviewed lowering of every
+    resolved surface ``Style`` (background/color/border/radius/padding/shadow). A
+    drift means either the ``tempest-core`` H3 surface resolution changed
+    (different tokens / elevation mapping) or one of the two translators changed
+    its lowering — both demand a conscious review.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h3``.
+    """
+    snap = snapshot(_H3_SURFACE_CASES[name])
+    path = _GOLDEN_DIR / f"h3_{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for h3_{name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"H3 surface conformance drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+def test_h3_no_style_field_added() -> None:
+    """Phase H3 adds no new ``Style`` fields — surfaces resolve onto existing ones.
+
+    H3 introduces the surface *resolution* layer in ``tempest-core`` (a pure
+    function mapping ``variant``/``color_scheme``/``elevation`` onto an existing
+    ``Style``); M3 elevation lowers to a ``Shadow`` on the existing
+    ``Style.shadow`` and the surface treatment resolves onto background/color/
+    border/radius/padding — no top-level field is added to ``Style``. The
+    ``_SAMPLES`` / ``_COVERAGE`` tables therefore stay complete without update.
+    This is the load-bearing guard: if a new field appears, update ``_SAMPLES``,
+    ``_COVERAGE``, regenerate goldens (``UPDATE_GOLDEN=1``), and update this
+    sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H3 widget-level behavioural divergences (surface elevation engine)
+# ---------------------------------------------------------------------------
+#
+# Because H3 adds no new ``Style`` fields, the golden/parity machinery above is
+# untouched and the per-resolved-Style goldens pin the *base* lowering (the same
+# resolved colors/border/radius/padding flow through both translators). The real
+# Qt-vs-Compose divergence is in *how each renderer realizes M3 elevation* from the
+# resolved ``Shadow`` — pinned here as a named tripwire, exactly like the
+# E1/E2/E3/H1/H2 divergence tables, so a renderer change that silently resolves or
+# regresses one is caught loudly.
+#
+# Rationale for each divergence (mirrors the H3 architect contract, decisions
+# D2/D5):
+#
+# 1. Card / elevation_engine
+#    The surface resolver lowers M3 elevation to a ``Shadow`` on the existing
+#    ``Style.shadow`` (blur/offset derived from the M3 level). ``to_qss`` is
+#    shadow-inert (``_COVERAGE["shadow"] == (True, False)``), so the Qt renderer
+#    applies the shadow *imperatively* as a ``QGraphicsDropShadowEffect`` built
+#    from the resolved ``Style.shadow`` (blur radius + offset). Compose derives a
+#    ``Modifier.shadow`` / ``tonalElevation`` dp from the SAME resolved ``Shadow``
+#    (decision D2). Same resolved base colors and ``Shadow``, different elevation
+#    engine.
+#
+# 2. Card / variant_affordance
+#    Qt renders every surface variant as a single styled ``Container`` (the
+#    resolved background / border / shadow), lowered from the ``Card`` Component —
+#    one styled box + the drop-shadow effect for all three variants. Compose MAY
+#    dispatch each variant to a distinct M3 surface affordance
+#    (elevated -> ``ElevatedCard``, filled -> ``Card``, outlined -> ``OutlinedCard``)
+#    or render the uniform styled box; which one is the Compose specialist's call.
+#    The pinned divergence is that Qt uses one styled box + a drop-shadow effect
+#    while Compose owns the choice of native M3 surface composable.
+#
+# 3. Surface / tonal_surface
+#    Qt has no tonal-surface tint: surface elevation is shadow-only (the
+#    ``QGraphicsDropShadowEffect`` is the entire elevation affordance). Compose can
+#    use ``Surface(tonalElevation=…)`` — M3 native tonal elevation, which tints the
+#    container by the elevation overlay in addition to (or instead of) a cast
+#    shadow. Same resolved base background, different elevation overlay.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on the
+# same strategy), set ``intentional=False`` and explain why — the tripwire
+# ``test_h3_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new H3 component or topic is added, add a row here AND update the
+# pinned key set.
+
+_H3_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Card",
+        "topic": "elevation_engine",
+        "qt_strategy": (
+            "QGraphicsDropShadowEffect built from the resolved Style.shadow "
+            "(blur radius + offset from the M3 level); to_qss is shadow-inert "
+            "(_COVERAGE['shadow'] == (True, False)) so the renderer applies it "
+            "imperatively."
+        ),
+        "compose_strategy": (
+            "Derives a Modifier.shadow / tonalElevation dp from the SAME resolved "
+            "Shadow (decision D2) — same resolved base colors and Shadow, different "
+            "elevation engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Card",
+        "topic": "variant_affordance",
+        "qt_strategy": (
+            "Single styled Container (resolved bg / border / shadow) for all three "
+            "variants, lowered from the Card Component — one styled box + the "
+            "drop-shadow effect."
+        ),
+        "compose_strategy": (
+            "May dispatch each variant to a distinct M3 surface "
+            "(elevated->ElevatedCard, filled->Card, outlined->OutlinedCard) or "
+            "render the uniform styled box; the Compose specialist owns the choice. "
+            "The pinned divergence is that Qt uses one styled box + a drop-shadow "
+            "effect."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Surface",
+        "topic": "tonal_surface",
+        "qt_strategy": (
+            "No tonal-surface tint: surface elevation is shadow-only (the "
+            "QGraphicsDropShadowEffect is the entire elevation affordance)."
+        ),
+        "compose_strategy": (
+            "Surface(tonalElevation=…) — M3 native tonal elevation, tinting the "
+            "container by the elevation overlay; same resolved base background, "
+            "different elevation overlay."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_H3_WIDGET_DIVERGENCES``.
+_H3_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"])) for row in _H3_WIDGET_DIVERGENCES
+}
+
+
+def test_h3_widget_divergences_complete() -> None:
+    """Every H3 surface divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves an elevation-engine
+    divergence (e.g. both renderers converge on the same elevation surface) must
+    update the table; one who adds a new H3 component or topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _H3_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate H3 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _H3_DIVERGENCE_KEYS
+
+
+@pytest.mark.parametrize("name", sorted(_H3_SURFACE_CASES))
+def test_h3_surface_contrast_wcag_aa(name: str) -> None:
+    """Each surface's resolved content color clears WCAG AA against its background.
+
+    H3's a11y gate: a styled surface must remain legible. The surface resolver
+    paints the content (``Style.color``) on the resolved container
+    (``Style.background``) — for every variant/scheme the resolved pair must clear
+    ``contrast_ratio(color, background) >= 4.5``. Surfaces resolve a solid
+    background ``Color`` (not a gradient) for every case in the matrix, so the pair
+    is well-defined for all of them.
+    """
+    style = _H3_SURFACE_CASES[name]
+    assert style.color is not None, "surface resolver must set a content color"
+    assert isinstance(style.background, Color), (
+        "surface resolver must set a solid background Color for the contrast pair"
+    )
+    ratio = contrast_ratio(style.color, style.background)
+    assert ratio >= 4.5, (
+        f"surface {name!r} content vs background has contrast {ratio:.2f} "
+        "(< WCAG AA 4.5); the surface resolver no longer guarantees legible "
+        "content on the container"
     )

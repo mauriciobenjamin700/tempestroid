@@ -496,6 +496,8 @@ The Chakra-style variant API and Material 3 token surface, all re-exported from
   typography and touch-target sizing.
 - **`FieldVariant`** — the field-family flavor for inputs (`OUTLINE`/`FILLED`/
   `UNDERLINE`).
+- **`CardVariant`** — the surface flavor for cards/surfaces (`ELEVATED`/`FILLED`/
+  `OUTLINED`), M3 — elevation resolves to a `Shadow`, no new `Style` field.
 - **`ComponentState`** — the visual state a resolved `Style` targets
   (`DEFAULT`/`HOVER`/`PRESSED`/`FOCUS`/`DISABLED`) — the M3 state layers.
 - **`ColorRole`** — a semantic Material 3 color role (`PRIMARY`/`SECONDARY`/
@@ -533,6 +535,12 @@ The declarative IR — bare-noun widgets.
   it; Compose `HorizontalPager`, Qt `QStackedWidget` + prev/next) and
   **`AspectRatio`** (a single-child box fixing the `ratio` = width / height;
   Compose `Modifier.aspectRatio`, Qt derives the missing dimension).
+- Design-system layout (Trilho H3) — **`Surface`** (a theme-resolved M3 surface
+  box, the primitive `Card` builds on; `variant`=`CardVariant`), **`Card`** styled
+  with `CardVariant` (elevated/filled/outlined), **`StyledContainer`** (token-step
+  padding over `Container`), **`HStack`**/**`VStack`** (`Row`/`Column` presets with
+  a token-step `gap`), and **`Spacer`** (a flexible gap whose `grow` pushes
+  siblings apart; Compose `Modifier.weight`, Qt layout stretch).
 - Platform layout (phase E8) — **`KeyboardAvoidingView`** (a vertical container
   that insets its `children` when the on-screen keyboard appears; Compose
   `Modifier.imePadding()` via `WindowInsets.ime`, Qt listens on

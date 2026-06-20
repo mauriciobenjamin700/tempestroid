@@ -38,6 +38,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowColumn
 import androidx.compose.foundation.layout.FlowRow
@@ -119,6 +122,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
@@ -393,7 +397,7 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
             verticalArrangement = verticalArrangement(style),
             horizontalAlignment = horizontalAlignment(style),
         ) {
-            node.children.forEach { RenderNode(it, onEvent) }
+            node.children.forEach { RenderColumnChild(it, onEvent) }
         }
 
         "Row" -> Row(
@@ -401,8 +405,16 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
             horizontalArrangement = horizontalArrangement(style),
             verticalAlignment = verticalAlignment(style),
         ) {
-            node.children.forEach { RenderNode(it, onEvent) }
+            node.children.forEach { RenderRowChild(it, onEvent) }
         }
+
+        // H3: a flexible gap leaf that DOES cross the bridge (it does not lower).
+        // Its baked `style.weight` (from `Style.grow`, default 1.0) is the flex
+        // weight; outside a Row/Column scope it cannot claim weight, so it renders
+        // as a zero-size Box. Inside a Row/Column it is intercepted by
+        // [RenderRowChild]/[RenderColumnChild], which give it the weight that pushes
+        // its siblings apart (mirrors the Qt stretch-spacer).
+        "Spacer" -> Spacer(modifier = Modifier)
 
         "SafeArea" -> {
             // Inset the child away from the real system intrusions (status bar,
@@ -559,6 +571,46 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
         }
+    }
+}
+
+/**
+ * The flex `weight` a Row/Column child claims from its baked `style.weight` (the
+ * serialized `Style.grow`), or null when it declares none. H3's `Spacer` carries
+ * `weight = 1.0` by default; any container/leaf with a `grow` also reaches here.
+ */
+private fun childWeight(node: TempestNode): Float? =
+    (styleOf(node)["weight"] as? Number)?.toFloat()?.takeIf { it > 0f }
+
+/**
+ * Render a [Column] child, honouring its flex `weight` (H3). A child carrying a
+ * `weight` (a `Spacer`, or any node with `Style.grow`) is wrapped in a weighted
+ * [Box] so it expands to fill the free vertical space — the device counterpart of
+ * the Qt layout stretch factor. A `Spacer` thus becomes a flexible gap that pushes
+ * its siblings apart; an unweighted child renders inline as before.
+ */
+@Composable
+private fun ColumnScope.RenderColumnChild(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val weight = childWeight(node)
+    if (weight != null) {
+        Box(modifier = Modifier.weight(weight)) { RenderNode(node, onEvent) }
+    } else {
+        RenderNode(node, onEvent)
+    }
+}
+
+/**
+ * Render a [Row] child, honouring its flex `weight` (H3) — the horizontal twin of
+ * [RenderColumnChild]. A weighted child (a `Spacer`, or any `Style.grow` node)
+ * expands to fill the free horizontal space, pushing siblings to the trailing edge.
+ */
+@Composable
+private fun RowScope.RenderRowChild(node: TempestNode, onEvent: (String, String) -> Unit) {
+    val weight = childWeight(node)
+    if (weight != null) {
+        Box(modifier = Modifier.weight(weight)) { RenderNode(node, onEvent) }
+    } else {
+        RenderNode(node, onEvent)
     }
 }
 
@@ -3855,6 +3907,16 @@ internal fun baseModifier(style: Map<String, Any?>): Modifier {
     (style["width"] as? Number)?.let { m = m.width(it.toFloat().dp) }
     (style["height"] as? Number)?.let { m = m.height(it.toFloat().dp) }
     val shape = cornerShapeOf(style)
+    // H3 (decision D2): a surface that carries a resolved `shadow` spec (the engine
+    // maps an M3 elevation level 0-5 → a Shadow) casts a real Material elevation
+    // shadow. We derive a dp elevation back from the shadow blur (the inverse of the
+    // engine's level→blur table) and apply it via Modifier.shadow clipped to the
+    // box shape — so an elevated Card reads as a lifted M3 surface, while filled/
+    // outlined surfaces (whose resolved shadow is absent) stay flat. Placed before
+    // the background so the shadow is drawn under the painted fill.
+    shadowElevationOf(style)?.let { elevation ->
+        m = m.shadow(elevation = elevation, shape = shape)
+    }
     val brush = backgroundBrushOf(style)
     if (brush != null) {
         m = m.background(brush = brush, shape = shape)
@@ -3896,6 +3958,39 @@ internal data class SizingConstraints(
     val minHeight: Dp,
     val maxHeight: Dp,
 )
+
+/**
+ * H3 (decision D2): the M3 dp elevation derived from a resolved `shadow` spec, or
+ * null when the surface declares no shadow (filled/outlined surfaces — they stay
+ * flat). `to_compose` emits `shadow = {color, blur, offsetX, offsetY}` where the
+ * engine produced the blur/offset from an M3 elevation level (0-5) via the
+ * `_ELEVATION_SHADOW` table (level → (blur, offset_y): 1→(3,1), 2→(6,2), 3→(8,4),
+ * 4→(10,6), 5→(12,8)). We invert it: the `blur` selects the level, and the level
+ * maps back to the canonical M3 elevation dp scale (0/1/3/6/8/12 dp). This keeps
+ * the device shadow on the M3 elevation ladder rather than re-deriving variant
+ * logic. Falls back to mapping the raw blur to the nearest dp when an unrecognised
+ * blur arrives, so a hand-set `Style.shadow` still casts something.
+ *
+ * Qt-vs-Compose divergence (pinned by conformance `("Card","elevation_engine")`):
+ * Qt realizes the same Shadow with a `QGraphicsDropShadowEffect`; the device maps
+ * it back to a native `Modifier.shadow` dp elevation.
+ */
+internal fun shadowElevationOf(style: Map<String, Any?>): Dp? {
+    @Suppress("UNCHECKED_CAST")
+    val shadow = style["shadow"] as? Map<String, Any?> ?: return null
+    val blur = (shadow["blur"] as? Number)?.toFloat() ?: return null
+    if (blur <= 0f) return null
+    // blur → M3 elevation dp (the inverse of the engine's level→blur mapping; the
+    // canonical M3 dp scale per level is 0/1/3/6/8/12).
+    val dp = when {
+        blur <= 3f -> 1f
+        blur <= 6f -> 3f
+        blur <= 8f -> 6f
+        blur <= 10f -> 8f
+        else -> 12f
+    }
+    return dp.dp
+}
 
 /**
  * The corner [RoundedCornerShape] from `radius` — either a uniform number or a
