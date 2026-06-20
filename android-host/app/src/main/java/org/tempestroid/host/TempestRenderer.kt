@@ -67,6 +67,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -185,6 +186,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -213,7 +215,10 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -380,6 +385,8 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
         )
 
         "Button" -> RenderButton(node, style, onEvent)
+
+        "IconButton" -> RenderIconButton(node, style, onEvent)
 
         "Column" -> Column(
             modifier = baseModifier(style),
@@ -659,6 +666,110 @@ private fun RenderButton(
             },
             contentPadding = contentPadding,
             content = { label() },
+        )
+    }
+}
+
+/**
+ * Render an icon-only [IconButton] (Trilho H / H2 — Chakra-style variant API).
+ *
+ * Like [RenderButton], the engine has already resolved `variant`/`size`/
+ * `color_scheme` into a concrete `Style` baked into the serialized `style` spec
+ * (`background` container fill, `color` content/role, `radius` — pinned circular,
+ * `width`/`height`/`minHeight` — the square ≥48dp touch target). Those resolved
+ * colors are the source of truth; the device does NOT re-derive variant logic.
+ *
+ * `variant` selects the M3 affordance so the native [InteractionSource] state
+ * layer sits on the right surface:
+ *   - `solid`         → [FilledIconButton]   (container + onContainer ripple)
+ *   - `outline`       → [OutlinedIconButton] (transparent fill + border + ripple)
+ *   - `ghost`/`link`  → [IconButton]         (transparent + role ripple) — the default
+ *
+ * The icon is the resolved curated glyph (`iconPath` inlined by the serializer, or
+ * the `curatedIconPath`/`iconFor` fallback), drawn via [CuratedIcon]. The `label`
+ * prop is the accessible name → `contentDescription` (the button has no visible
+ * text). The touch target is the resolved square `width`/`height` (≥48dp).
+ *
+ * Qt-vs-Compose divergence (to pin in conformance): Compose uses M3's native
+ * interaction state layers (ripple + hover/press overlays + disabled alpha) on the
+ * chosen IconButton affordance, whereas Qt paints the per-state `Style` from
+ * `IconButton.state_styles()` via scoped QSS pseudo-states — same resolved base
+ * colors, different overlay engine.
+ */
+@Composable
+private fun RenderIconButton(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val variant = node.props["variant"] as? String ?: "ghost"
+    val container = colorOf(style, "background")
+    val content = colorOf(style, "color")
+    val label = node.props["label"] as? String
+    val name = node.props["icon"] as? String ?: ""
+    val d = (node.props["iconPath"] as? String) ?: curatedIconPath(name)
+    // The resolved square hit area (width == height == the ≥48dp touch target).
+    val dim = (style["width"] as? Number)?.toFloat()
+        ?: (style["minHeight"] as? Number)?.toFloat()
+        ?: 48f
+    val modifier = Modifier.size(dim.dp)
+    val onClick = { handlerToken(node, "on_click")?.let { onEvent(it, "{}") } ?: Unit }
+    // The glyph (or the platform vector / literal-name fallback) drawn inside.
+    val glyph: @Composable () -> Unit = {
+        if (d != null) {
+            CuratedIcon(name = name, d = d, tint = null)
+        } else {
+            val vector = iconFor(name)
+            if (vector != null) {
+                Icon(imageVector = vector, contentDescription = label ?: name)
+            } else {
+                Text(text = name)
+            }
+        }
+    }
+    // The accessible name (the button has no visible text) lives on the wrapper's
+    // semantics; CuratedIcon's own contentDescription is the icon name, so a label
+    // override here makes the whole control announce the intended action.
+    val outer = if (label != null) {
+        modifier.semantics { contentDescription = label }
+    } else {
+        modifier
+    }
+    when (variant) {
+        "outline" -> OutlinedIconButton(
+            onClick = onClick,
+            modifier = outer,
+            colors = IconButtonDefaults.outlinedIconButtonColors(
+                contentColor = content ?: MaterialTheme.colorScheme.primary,
+            ),
+            border = borderStrokeOf(style)
+                ?: IconButtonDefaults.outlinedIconButtonBorder(enabled = true),
+            content = { glyph() },
+        )
+
+        "solid" -> FilledIconButton(
+            onClick = onClick,
+            modifier = outer,
+            colors = if (container != null) {
+                IconButtonDefaults.filledIconButtonColors(
+                    containerColor = container,
+                    contentColor = content ?: Color.White,
+                )
+            } else {
+                IconButtonDefaults.filledIconButtonColors()
+            },
+            content = { glyph() },
+        )
+
+        // "ghost"/"link" (and any unknown variant) → a plain transparent IconButton
+        // tinted with the resolved role color; M3 supplies the role ripple.
+        else -> IconButton(
+            onClick = onClick,
+            modifier = outer,
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = content ?: MaterialTheme.colorScheme.primary,
+            ),
+            content = { glyph() },
         )
     }
 }
@@ -1711,15 +1822,37 @@ private fun snapshotIsClosedThenReport(
 }
 
 /**
- * A controlled text field: the value lives in Python; each edit sends a
- * `TextChangeEvent`. Renders the curated `leading_icon`/`trailing_icon` slots.
+ * A controlled text field (Trilho H / H2 — Chakra-style variant API): the value
+ * lives in Python; each edit sends a `TextChangeEvent`. Renders the curated
+ * `leading_icon`/`trailing_icon` slots.
+ *
+ * The engine has resolved `variant`/`size`/`color_scheme` into the serialized
+ * `style` spec: `color` is the role/focus color, `background` the filled fill,
+ * `border` the outline/flushed stroke (a bottom-only [SideBorder] for `flushed`,
+ * already carrying the role/error color). The `field_variant` prop selects the M3
+ * affordance:
+ *   - `outline` → [OutlinedTextField]    (boxed outline, the M3 default)
+ *   - `filled`  → [TextField] (filled)   (tinted container, bottom indicator)
+ *   - `flushed` → [TextField] with a transparent container so only the indicator
+ *                 line shows (the bottom-rule look)
+ *
+ * The resolved `color` drives the focused/unfocused border + label + cursor via
+ * [fieldColors] so M3's own focus-animation supplies the state layer; the engine
+ * already bakes focus = role color and invalid = error role into `color`/`border`,
+ * so no per-state style crosses the bridge.
  *
  * A `secure` field masks its text via [PasswordVisualTransformation] and shows a
  * modern eye / eye-off reveal toggle (the curated `eye`/`eye-off` icons) that
  * flips to [VisualTransformation.None] locally — the visibility is host-side UI
  * state only and never crosses the bridge. An explicit `trailing_icon` wins over
  * the reveal toggle when both are set.
+ *
+ * Qt-vs-Compose divergence (to pin in conformance): Compose dispatches to the M3
+ * Outlined/Filled `TextField` per `field_variant` and lets M3 animate the focus
+ * state layer from the resolved role `color`; Qt paints the resolved per-state
+ * `Style` via scoped QSS — same base colors, different focus-overlay engine.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RenderInput(
     node: TempestNode,
@@ -1748,30 +1881,179 @@ private fun RenderInput(
         }
         else -> null
     }
-    OutlinedTextField(
-        value = node.props["value"] as? String ?: "",
-        onValueChange = { text ->
-            handlerToken(node, "on_change")?.let {
-                onEvent(it, JSONObject().put("value", text).toString())
-            }
-        },
-        placeholder = { Text(text = node.props["placeholder"] as? String ?: "") },
-        singleLine = true,
-        leadingIcon = leading,
-        trailingIcon = trailing,
-        visualTransformation =
-            if (secure && !revealed) PasswordVisualTransformation() else VisualTransformation.None,
-        modifier = baseModifier(style),
+    val value = node.props["value"] as? String ?: ""
+    val placeholder = node.props["placeholder"] as? String ?: ""
+    val onValueChange: (String) -> Unit = { text ->
+        handlerToken(node, "on_change")?.let {
+            onEvent(it, JSONObject().put("value", text).toString())
+        }
+    }
+    val transformation =
+        if (secure && !revealed) PasswordVisualTransformation() else VisualTransformation.None
+    when (node.props["field_variant"] as? String) {
+        "filled" -> TextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(text = placeholder) },
+            singleLine = true,
+            leadingIcon = leading,
+            trailingIcon = trailing,
+            visualTransformation = transformation,
+            // A filled field keeps its tinted container; the role color drives the
+            // focused indicator + label + cursor.
+            colors = filledFieldColors(style),
+            modifier = baseModifier(style),
+        )
+
+        "flushed" -> TextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(text = placeholder) },
+            singleLine = true,
+            leadingIcon = leading,
+            trailingIcon = trailing,
+            visualTransformation = transformation,
+            // Transparent container → only the bottom indicator line shows (the
+            // flushed bottom-rule look); the role color drives the indicator.
+            colors = flushedFieldColors(style),
+            modifier = baseModifier(style),
+        )
+
+        // "outline" (and any unset variant) → the boxed M3 OutlinedTextField.
+        else -> OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(text = placeholder) },
+            singleLine = true,
+            leadingIcon = leading,
+            trailingIcon = trailing,
+            visualTransformation = transformation,
+            // The role color drives the focused border/label; M3 animates the focus
+            // state layer over it.
+            colors = outlinedFieldColors(style),
+            modifier = baseModifier(style),
+        )
+    }
+}
+
+/**
+ * The role color the engine baked into the resolved `Style.color` for a field
+ * (focus/border/label/cursor accent), or the Material primary when absent. The
+ * resolver already folds focus = role color and invalid = error role into this
+ * value, so the device just reads it and lets M3 animate the focus state layer.
+ */
+@Composable
+private fun fieldAccent(style: Map<String, Any?>): Color =
+    colorOf(style, "color") ?: MaterialTheme.colorScheme.primary
+
+/**
+ * [TextFieldColors] for an `outline` field: feed the resolved role color into the
+ * focused border/label and the cursor; the unfocused border follows the resolved
+ * `border` color when present (the engine bakes a neutral outline there) so the
+ * field stays visible over any app surface, falling back to a dimmed accent.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun outlinedFieldColors(style: Map<String, Any?>): androidx.compose.material3.TextFieldColors {
+    val accent = fieldAccent(style)
+    val unfocused = borderColorOf(style) ?: accent.copy(alpha = 0.5f)
+    val text = colorOf(style, "color") ?: defaultTextColor()
+    return TextFieldDefaults.colors(
+        focusedIndicatorColor = accent,
+        unfocusedIndicatorColor = unfocused,
+        focusedLabelColor = accent,
+        unfocusedLabelColor = unfocused,
+        cursorColor = accent,
+        focusedTextColor = text,
+        unfocusedTextColor = text,
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
     )
 }
 
-/** A labelled checkbox; each toggle sends a `ToggleEvent`. */
+/**
+ * [TextFieldColors] for a `filled` field: keep the resolved tinted container
+ * (`Style.background`, the M3 filled fill), with the role color on the focused
+ * indicator/label/cursor.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun filledFieldColors(style: Map<String, Any?>): androidx.compose.material3.TextFieldColors {
+    val accent = fieldAccent(style)
+    val container = colorOf(style, "background") ?: MaterialTheme.colorScheme.surfaceVariant
+    val text = colorOf(style, "color") ?: defaultTextColor()
+    return TextFieldDefaults.colors(
+        focusedContainerColor = container,
+        unfocusedContainerColor = container,
+        disabledContainerColor = container,
+        focusedIndicatorColor = accent,
+        unfocusedIndicatorColor = accent.copy(alpha = 0.5f),
+        focusedLabelColor = accent,
+        cursorColor = accent,
+        focusedTextColor = text,
+        unfocusedTextColor = text,
+    )
+}
+
+/**
+ * [TextFieldColors] for a `flushed` field: a transparent container so only the
+ * bottom indicator line shows (the resolved bottom-side [SideBorder] color drives
+ * the unfocused rule; the role color drives the focused rule).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun flushedFieldColors(style: Map<String, Any?>): androidx.compose.material3.TextFieldColors {
+    val accent = fieldAccent(style)
+    val rule = borderColorOf(style) ?: accent.copy(alpha = 0.5f)
+    val text = colorOf(style, "color") ?: defaultTextColor()
+    return TextFieldDefaults.colors(
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+        disabledContainerColor = Color.Transparent,
+        focusedIndicatorColor = accent,
+        unfocusedIndicatorColor = rule,
+        focusedLabelColor = accent,
+        cursorColor = accent,
+        focusedTextColor = text,
+        unfocusedTextColor = text,
+    )
+}
+
+/**
+ * The resolved `border` color (uniform `{width,color}` or the first present side
+ * of a [SideBorder] `{top,right,bottom,left}` — the `flushed` bottom rule), or
+ * null when no border is declared. Mirrors [borderStrokeOf]'s side-collapse.
+ */
+internal fun borderColorOf(style: Map<String, Any?>): Color? {
+    @Suppress("UNCHECKED_CAST")
+    val border = style["border"] as? Map<String, Any?> ?: return null
+    (border["color"] as? String)?.let { return parseHexColor(it) }
+    for (side in listOf("bottom", "top", "right", "left")) {
+        @Suppress("UNCHECKED_CAST")
+        val sideSpec = border[side] as? Map<String, Any?>
+        (sideSpec?.get("color") as? String)?.let { return parseHexColor(it) }
+    }
+    return null
+}
+
+/**
+ * A labelled checkbox; each toggle sends a `ToggleEvent` (Trilho H / H2 — the
+ * Chakra-style variant API). The engine resolves `color_scheme` into the
+ * serialized `Style.color`, which the device feeds into [CheckboxDefaults.colors]
+ * as the checked box color so M3's native check renders in the role accent.
+ *
+ * Constraint (documented divergence): M3 [Checkbox] accepts only
+ * [CheckboxDefaults.colors] — no arbitrary geometry (size/shape) — so ONLY the
+ * accent color crosses; the box geometry stays M3-native. Qt paints the resolved
+ * `Style` more literally (a colored box), but both share the resolved accent.
+ */
 @Composable
 private fun RenderCheckbox(
     node: TempestNode,
     style: Map<String, Any?>,
     onEvent: (String, String) -> Unit,
 ) {
+    val accent = colorOf(style, "color")
     Row(
         modifier = baseModifier(style),
         verticalAlignment = Alignment.CenterVertically,
@@ -1782,6 +2064,11 @@ private fun RenderCheckbox(
                 handlerToken(node, "on_change")?.let {
                     onEvent(it, JSONObject().put("checked", checked).toString())
                 }
+            },
+            colors = if (accent != null) {
+                CheckboxDefaults.colors(checkedColor = accent)
+            } else {
+                CheckboxDefaults.colors()
             },
         )
         // The label carries no per-label color in the IR, so paint it with the
@@ -2075,7 +2362,7 @@ private fun RenderRangeSlider(
     // track follows the tracked contrast color so the slider stays visible over a
     // dark app surface (NOT the Material lavender default). Mirrors #80.
     val accent = colorOf(style, "color") ?: MaterialTheme.colorScheme.primary
-    val inactive = defaultTextColor().copy(alpha = 0.3f)
+    val inactive = colorOf(style, "background") ?: defaultTextColor().copy(alpha = 0.3f)
     RangeSlider(
         value = range,
         onValueChange = { range = it },
@@ -2406,13 +2693,23 @@ private fun RenderTextArea(
     )
 }
 
-/** A labelled boolean switch; toggling sends a `ToggleEvent`. */
+/**
+ * A labelled boolean switch; toggling sends a `ToggleEvent` (Trilho H / H2 — the
+ * Chakra-style variant API). The engine resolves `color_scheme` into the
+ * serialized `Style.color`, fed into [SwitchDefaults.colors] as the checked track
+ * + thumb color so M3's native switch renders in the role accent.
+ *
+ * Constraint (documented divergence): M3 [Switch] accepts only
+ * [SwitchDefaults.colors] — no arbitrary geometry — so ONLY the accent color
+ * crosses; the track/thumb geometry stays M3-native (matching [RenderCheckbox]).
+ */
 @Composable
 private fun RenderSwitch(
     node: TempestNode,
     style: Map<String, Any?>,
     onEvent: (String, String) -> Unit,
 ) {
+    val accent = colorOf(style, "color")
     Row(
         modifier = baseModifier(style),
         verticalAlignment = Alignment.CenterVertically,
@@ -2424,6 +2721,14 @@ private fun RenderSwitch(
                     onEvent(it, JSONObject().put("checked", checked).toString())
                 }
             },
+            colors = if (accent != null) {
+                SwitchDefaults.colors(
+                    checkedTrackColor = accent,
+                    checkedThumbColor = contrastColorFor(accent),
+                )
+            } else {
+                SwitchDefaults.colors()
+            },
         )
         // No per-label color in the IR → tracked contrast color (see RenderCheckbox).
         Text(
@@ -2433,7 +2738,13 @@ private fun RenderSwitch(
     }
 }
 
-/** A numeric slider over `[min_value, max_value]`; moving it sends a `SlideEvent`. */
+/**
+ * A numeric slider over `[min_value, max_value]`; moving it sends a `SlideEvent`
+ * (Trilho H / H2 — the Chakra-style variant API). The engine resolves
+ * `color_scheme` into the serialized `Style.color` (active track + thumb accent)
+ * and `Style.background` (inactive track), fed into [SliderDefaults.colors] so the
+ * M3 slider paints in the role accent. Mirrors [RenderRangeSlider].
+ */
 @Composable
 private fun RenderSlider(
     node: TempestNode,
@@ -2448,6 +2759,11 @@ private fun RenderSlider(
     val steps =
         if (step > 0f && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0)
         else 0
+    // Resolved accent (active track + thumb); the inactive track follows the
+    // resolved `background`, falling back to a dimmed contrast color so the rail
+    // stays visible over any app surface.
+    val accent = colorOf(style, "color") ?: MaterialTheme.colorScheme.primary
+    val inactive = colorOf(style, "background") ?: defaultTextColor().copy(alpha = 0.3f)
     Slider(
         value = value.coerceIn(min, max),
         onValueChange = { v ->
@@ -2458,6 +2774,11 @@ private fun RenderSlider(
         modifier = baseModifier(style),
         valueRange = min..max,
         steps = steps,
+        colors = SliderDefaults.colors(
+            thumbColor = accent,
+            activeTrackColor = accent,
+            inactiveTrackColor = inactive,
+        ),
     )
 }
 
@@ -2608,24 +2929,97 @@ private fun iconFor(name: String): ImageVector? = when (name.lowercase()) {
 }
 
 /**
+ * Resolve an icon `name` to its curated SVG `d` path, mirroring
+ * `tempest_core.icons.icon_path`: first the curated table ([curatedGlyphPath]),
+ * then a single hop through the [MATERIAL_ALIASES] map (a Material name → curated
+ * glyph), then null.
+ *
+ * The Python serializer normally inlines the already-resolved path as the node's
+ * `iconPath`/`*IconPath` prop (the single source of truth), so this is only
+ * consulted when no path crosses the bridge — chiefly an `Update` patch that
+ * changes an icon name but, lacking the node type, cannot inline a path, or a node
+ * type the serializer does not resolve icons for (e.g. `IconButton`). Keeping the
+ * alias hop here means `Icon(name="photo_camera")` still draws the curated `eye`
+ * glyph on device rather than falling through to literal text.
+ */
+private fun curatedIconPath(name: String): String? =
+    curatedGlyphPath(name) ?: MATERIAL_ALIASES[name]?.let { curatedGlyphPath(it) }
+
+/**
+ * The Material-name → curated-glyph alias table, a port of
+ * `tempest_core.icons.MATERIAL_ALIASES`. An alias only ever points at a curated
+ * name (never another alias), so [curatedIconPath] resolves in a single hop. Keep
+ * it in sync with `icons.py` — the engine is the source of truth.
+ *
+ * Regenerate (paste the output into the map literal below):
+ * ```
+ * uv run python -c "
+ * from tempest_core.icons import MATERIAL_ALIASES
+ * for k, v in MATERIAL_ALIASES.items():
+ *     print(f'    \"{k}\" to \"{v}\",')
+ * "
+ * ```
+ */
+private val MATERIAL_ALIASES: Map<String, String> = mapOf(
+    "photo_camera" to "eye",
+    "camera" to "eye",
+    "camera_alt" to "eye",
+    "visibility" to "eye",
+    "visibility_off" to "eye-off",
+    "history" to "clock",
+    "schedule" to "clock",
+    "access_time" to "clock",
+    "person" to "user",
+    "account_circle" to "user",
+    "email" to "mail",
+    "email_outlined" to "mail",
+    "lock_outline" to "lock",
+    "lock_open" to "unlock",
+    "edit" to "settings",
+    "create" to "settings",
+    "tune" to "settings",
+    "content_copy" to "check",
+    "done" to "check",
+    "close" to "x",
+    "cancel" to "x",
+    "add" to "plus",
+    "remove" to "minus",
+    "delete" to "trash",
+    "delete_outline" to "trash",
+    "favorite" to "heart",
+    "favorite_border" to "heart",
+    "notifications" to "bell",
+    "notifications_none" to "bell",
+    "expand_more" to "chevron-down",
+    "expand_less" to "chevron-up",
+    "navigate_before" to "chevron-left",
+    "navigate_next" to "chevron-right",
+    "arrow_back" to "arrow-left",
+    "arrow_forward" to "arrow-right",
+    "call" to "phone",
+    "phone_in_talk" to "phone",
+    "event" to "calendar",
+    "date_range" to "calendar",
+    "grade" to "star",
+    "info_outline" to "info",
+)
+
+/**
  * The curated icon `name -> SVG d` path table, a port of
- * `tempestroid/icons.py:ICON_PATHS`. The Python serializer normally inlines the
- * resolved path as the node's `iconPath` prop (the single source of truth), so
- * this table is only consulted when no path crosses the bridge — chiefly an
- * `Update` patch that changes an icon name but, lacking the node type, cannot
- * inline a path. Keep it in sync with `icons.py`.
+ * `tempest_core.icons.ICON_PATHS`. Consulted by [curatedIconPath] (which adds the
+ * [MATERIAL_ALIASES] hop). Keep it in sync with `icons.py`.
  *
  * Regenerate (paste the output into the `when` body below):
  * ```
  * uv run python -c "
- * from tempestroid.icons import ICON_PATHS
+ * from tempest_core.icons import ICON_PATHS
  * for name, d in ICON_PATHS.items():
  *     esc = d.replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))
  *     print(f'    \"{name}\" -> \"{esc}\"')
  * "
  * ```
  */
-private fun curatedIconPath(name: String): String? = when (name) {
+private fun curatedGlyphPath(name: String): String? = when (name) {
     "eye" -> "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0 M15 12 a3 3 0 1 1-6 0 3 3 0 0 1 6 0 Z"
     "eye-off" -> "M10.733 5.076 a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49 M14.084 14.158 a3 3 0 0 1-4.242-4.242 M17.479 17.499 a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143 M2 2 l20 20"
     "lock" -> "M5 11 a2 2 0 0 1 2-2 h10 a2 2 0 0 1 2 2 v8 a2 2 0 0 1-2 2 H7 a2 2 0 0 1-2-2 Z M7 11 V7 a5 5 0 0 1 10 0 v4"
