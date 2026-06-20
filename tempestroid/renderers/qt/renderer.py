@@ -120,17 +120,21 @@ from tempest_core.core.ir import (
 )
 from tempest_core.icons import Icons, icon_path
 from tempest_core.style import (
+    ComponentState,
     Corners,
     Edge,
     JustifyContent,
     Position,
     Shadow,
+    Size,
     StackAlign,
     Style,
     TextAlign,
     TextOverflow,
+    Variant,
 )
-from tempest_core.theme import MediaQueryData, ThemeMode
+from tempest_core.theme import MediaQueryData, Theme, ThemeMode
+from tempest_core.variants import ResponsiveSize, resolve_variant_states
 from tempest_core.widgets import (
     DateChangeEvent,
     DismissEvent,
@@ -163,6 +167,7 @@ from tempest_core.widgets import (
 from tempestroid.renderers.qt.style_translator import (
     layout_alignment,
     self_alignment,
+    state_layer_qss,
     to_qss,
 )
 
@@ -5323,6 +5328,16 @@ class QtRenderer:
         # sentinel, circle) to ``min(w, h) / 2`` so the corners round fully
         # instead of leaving Qt's square-off of an out-of-range radius.
         self._clamp_node_radius(node.widget, style, custom_family, is_container)
+        if node.type == "Button":
+            # Append the M3 state-layer pseudo-state blocks AFTER the radius clamp,
+            # which re-sets the (single-block) scoped stylesheet from the
+            # size-adjusted style — so the hover/pressed/focus/disabled blocks are
+            # emitted onto the final, clamped base body and never get clobbered.
+            self._apply_button_states(
+                cast("QPushButton", node.widget),
+                node.props,
+                self._button_base_qss(node.widget, style, custom_family),
+            )
         self._apply_effects(node.widget, style)
         if node.type in ("Blur", "BackdropFilter"):
             # Blur is the wrapper's whole purpose, so it owns the single Qt
@@ -5909,6 +5924,122 @@ class QtRenderer:
         self._click_conns[id(button)] = button.clicked.connect(
             lambda: self._invoke(callback)
         )
+
+    def _button_base_qss(
+        self, widget: QWidget, style: Style | None, custom_family: str | None
+    ) -> str:
+        """Rebuild a button's resting QSS body, matching the radius-clamp pass.
+
+        :meth:`_clamp_node_radius` may re-render the scoped base block from a
+        radius-clamped style copy (a pill/circle button). This recomputes the same
+        body so :meth:`_apply_button_states` appends its pseudo-state blocks onto
+        the exact resting body the widget currently shows. A button is a leaf, so
+        padding is part of the body (``is_container=False``).
+
+        Args:
+            widget: The button widget (for its current geometry, used to clamp).
+            style: The button's style, or ``None``.
+            custom_family: The loaded custom-font family name, or ``None``.
+
+        Returns:
+            The bare (unscoped, radius-clamped) QSS body.
+        """
+        effective = style
+        if style is not None and style.radius is not None:
+            w = int(style.width) if style.width is not None else widget.width()
+            h = int(style.height) if style.height is not None else widget.height()
+            if w > 0 and h > 0:
+                clamped = _clamp_radius(style.radius, w, h)
+                if clamped != style.radius:
+                    effective = style.model_copy(update={"radius": clamped})
+        return self._node_qss(
+            effective, is_container=False, custom_family=custom_family
+        )
+
+    def _apply_button_states(
+        self, button: QPushButton, props: dict[str, Any], base_qss: str
+    ) -> None:
+        """Emit M3 hover/pressed/focus/disabled state layers as QSS pseudo-states.
+
+        The resting (``DEFAULT``) style is already painted by the scoped base block
+        :meth:`_apply_visual` set. This augments that scoped stylesheet with
+        ``#name:hover`` / ``:pressed`` / ``:focus`` / ``:disabled`` blocks so the
+        button shows the Material 3 state layers on real pointer/focus events —
+        the desktop analogue of the Compose renderer's ``InteractionSource`` state
+        layers.
+
+        The per-state styles are re-resolved **exactly** via
+        :func:`~tempest_core.variants.resolve_variant_states`, using the node's
+        ``variant`` / ``size`` / ``color_scheme`` props and the live app's
+        :class:`~tempest_core.theme.Theme` (so a dark app theme yields dark state
+        layers, and the M3 disabled *container* fade — which needs the theme's
+        surface color, not recoverable from the baked base alone — is exact). With
+        no app wired (a bare-node unit test) it falls back to the baseline
+        :class:`~tempest_core.theme.Theme`, so the simulator still shows the right
+        layers standalone. A button carrying only a hand-set ``style`` (no variant
+        API, e.g. a custom ``color_scheme`` outside
+        :data:`~tempest_core.variants.VALID_COLOR_SCHEMES`) keeps just the base
+        block — there is no variant table to resolve.
+
+        Note: the resting block is the button's *baked* ``style`` (resolved at
+        build time against the button's own ``theme`` prop); the layers are
+        resolved against the app theme. These agree in the common case (both the
+        baseline theme, or the app sets a theme the buttons inherit). A divergence
+        documented for conformance: a button hand-pinned to a theme different from
+        the live app theme paints its base from the former and its layers from the
+        latter.
+
+        Args:
+            button: The Qt button to style.
+            props: The button node's current props (carry ``variant``/``size``/
+                ``color_scheme``; ``theme``/``media`` are excluded from the IR).
+            base_qss: The resting QSS body already scoped onto the widget, kept as
+                the ``#name { … }`` block the pseudo-state blocks append to.
+        """
+        variant = props.get("variant")
+        size = props.get("size")
+        color_scheme = props.get("color_scheme")
+        name = button.objectName() or f"tw_{id(button):x}"
+        button.setObjectName(name)
+        blocks: list[str] = [f"#{name} {{ {base_qss} }}"] if base_qss else []
+        if (
+            not isinstance(variant, Variant)
+            or not isinstance(size, (Size, dict))
+            or not isinstance(color_scheme, str)
+        ):
+            button.setStyleSheet("\n".join(blocks))
+            return
+        theme = self._app.theme if self._app is not None else Theme()
+        platform_dark = (
+            self._app.media.platform_dark_mode if self._app is not None else False
+        )
+        try:
+            states = resolve_variant_states(
+                variant=variant,
+                size=cast("ResponsiveSize", size),
+                color_scheme=color_scheme,
+                theme=theme,
+                platform_dark_mode=platform_dark,
+            )
+        except ValueError:
+            # An out-of-scheme ``color_scheme`` (or malformed responsive size) has
+            # no variant table — keep just the resting base block.
+            button.setStyleSheet("\n".join(blocks))
+            return
+        # Qt selector ordering: later, equally-specific blocks win, so the focus
+        # block is emitted before pressed/hover (a pressed/hovered button reads as
+        # active rather than merely focused). ``:disabled`` last so it overrides
+        # the lot when the button is disabled.
+        for state, pseudo in (
+            (ComponentState.FOCUS, "focus"),
+            (ComponentState.HOVER, "hover"),
+            (ComponentState.PRESSED, "pressed"),
+            (ComponentState.DISABLED, "disabled"),
+        ):
+            body = state_layer_qss(states[state])
+            if body:
+                blocks.append(f"#{name}:{pseudo} {{ {body} }}")
+        button.setStyleSheet("\n".join(blocks))
 
     def _apply_input(self, widget: QLineEdit, props: dict[str, Any]) -> None:
         """Apply props to a single-line text input and wire its change handler.
