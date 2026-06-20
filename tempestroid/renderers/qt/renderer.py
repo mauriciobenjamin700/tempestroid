@@ -5077,6 +5077,11 @@ class QtRenderer:
             return _Rendered(
                 node.type, node.key, avoiding, cast("QBoxLayout", avoiding.layout())
             )
+        if node.type == "Spacer":
+            # A flexible gap: a bare leaf whose baked ``style.grow`` drives the
+            # parent layout's stretch factor (the generic ``grow`` path), pushing
+            # the siblings apart. No children, no layout.
+            return _Rendered(node.type, node.key, QWidget(), None)
         if node.type in _CONTAINER_TYPES:
             widget = QWidget()
             layout: QBoxLayout = (

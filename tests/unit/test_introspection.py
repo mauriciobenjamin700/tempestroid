@@ -38,6 +38,7 @@ def test_widget_catalog_lists_all_widgets():
         "ProgressBar",
         "Spinner",
         "Stack",
+        "Spacer",
         "Wrap",
         "PageView",
         "AspectRatio",
