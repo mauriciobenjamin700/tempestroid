@@ -86,6 +86,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SwipeToDismissBox
@@ -140,6 +141,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -377,37 +379,7 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
             modifier = baseModifier(style),
         )
 
-        "Button" -> {
-            // Map Style → Material button: background/color become the button's
-            // own container/content colors (NOT a Modifier.background box behind
-            // it, which would let the Material default paint over the declared
-            // background), radius → shape, padding → contentPadding.
-            val container = colorOf(style, "background")
-            val content = colorOf(style, "color")
-            val radius = (style["radius"] as? Number)?.toFloat() ?: 0f
-            val colors = if (container != null) {
-                ButtonDefaults.buttonColors(
-                    containerColor = container,
-                    contentColor = content ?: Color.White,
-                )
-            } else {
-                ButtonDefaults.buttonColors()
-            }
-            Button(
-                onClick = { handlerToken(node, "on_click")?.let { onEvent(it, "{}") } },
-                modifier = sizeModifier(style),
-                shape = RoundedCornerShape(radius.dp),
-                colors = colors,
-                contentPadding = edgeOf(style, "padding") ?: ButtonDefaults.ContentPadding,
-            ) {
-                Text(
-                    text = node.props["label"] as? String ?: "",
-                    fontSize = scaledFontSize(style),
-                    fontWeight = (style["fontWeight"] as? Number)?.let { FontWeight(it.toInt()) },
-                    fontFamily = fontFamilyOf(style),
-                )
-            }
-        }
+        "Button" -> RenderButton(node, style, onEvent)
 
         "Column" -> Column(
             modifier = baseModifier(style),
@@ -580,6 +552,114 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
         else -> Box(modifier = baseModifier(style)) {
             node.children.forEach { RenderNode(it, onEvent) }
         }
+    }
+}
+
+/**
+ * Render a [Button] (Trilho H / H1 — Chakra-style variant API).
+ *
+ * The engine (`tempest_core.variants.resolve_variant`) has already resolved the
+ * `variant`/`size`/`color_scheme` props into a concrete `Style`, baked into the
+ * serialized `style` spec: `background` (container fill), `color` (content),
+ * `radius`, `padding`, `fontSize`/`fontWeight`, `minHeight` (the ≥48dp touch
+ * target), plus `border` (outline) and `textDecoration` (link underline). Those
+ * resolved colors are the **source of truth** — the device does NOT re-derive the
+ * variant logic.
+ *
+ * State layers are delegated to Material3: rather than re-deriving hover/press/
+ * focus overlays (the engine exposes them via `Button.state_styles()` for the Qt
+ * leaf, which has no native state layers), the device renders the styled button as
+ * a Material3 affordance that applies its own M3 state layers via its
+ * `InteractionSource`. `variant` selects the affordance so the ripple/overlay sits
+ * on the right surface:
+ *   - `solid`  → filled [Button]      (container + onContainer ripple)
+ *   - `outline`→ [OutlinedButton]     (transparent fill + border + role ripple)
+ *   - `ghost`  → [TextButton]         (transparent fill + role ripple)
+ *   - `link`   → [TextButton] + underline label
+ *
+ * The resolved `style` colors still drive container/content; Material3 handles the
+ * hover/pressed/focus overlays AND the disabled treatment natively. The touch
+ * target is pinned to the resolved `minHeight` (≥48dp) via [heightIn].
+ *
+ * Qt-vs-Compose divergence (to pin in conformance): Compose uses Material3's native
+ * interaction state layers (ripple + the ~8%/12% hover/press overlays + disabled
+ * alpha), whereas Qt paints the per-state `Style` from `Button.state_styles()` via
+ * QSS pseudo-states (`:hover`/`:pressed`/`:disabled`) — same resolved base colors,
+ * different overlay engine.
+ */
+@Composable
+private fun RenderButton(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
+    val variant = node.props["variant"] as? String ?: "solid"
+    val container = colorOf(style, "background")
+    val content = colorOf(style, "color")
+    val radius = (style["radius"] as? Number)?.toFloat() ?: 0f
+    val shape = RoundedCornerShape(radius.dp)
+    val contentPadding = edgeOf(style, "padding") ?: ButtonDefaults.ContentPadding
+    // The resolved minHeight is the M3 ≥48dp touch target; pin it so an `xs`/`sm`
+    // density button stays accessible even with a smaller visual padding/font.
+    val minHeight = (style["minHeight"] as? Number)?.toFloat() ?: 48f
+    val modifier = sizeModifier(style).heightIn(min = minHeight.dp)
+    val underline = style["textDecoration"] == "underline"
+    val onClick = { handlerToken(node, "on_click")?.let { onEvent(it, "{}") } ?: Unit }
+    val label: @Composable () -> Unit = {
+        Text(
+            text = node.props["label"] as? String ?: "",
+            fontSize = scaledFontSize(style),
+            fontWeight = (style["fontWeight"] as? Number)?.let { FontWeight(it.toInt()) },
+            fontFamily = fontFamilyOf(style),
+            textDecoration = if (underline) TextDecoration.Underline else null,
+        )
+    }
+    when (variant) {
+        "outline" -> OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            // Transparent container; the role color is the content. M3 supplies the
+            // role-tinted ripple/state layer over this transparent surface.
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = content ?: MaterialTheme.colorScheme.primary,
+            ),
+            // The resolved `border` (role-colored stroke) is the source of truth;
+            // fall back to the M3 outlined default when absent.
+            border = borderStrokeOf(style) ?: ButtonDefaults.outlinedButtonBorder(enabled = true),
+            contentPadding = contentPadding,
+            content = { label() },
+        )
+
+        "ghost", "link" -> TextButton(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = content ?: MaterialTheme.colorScheme.primary,
+            ),
+            contentPadding = contentPadding,
+            content = { label() },
+        )
+
+        // "solid" (and any unknown variant) → a filled M3 Button with the resolved
+        // container/content colors. Material3 paints its own pressed/hover/focus
+        // state layer over the container and dims it when disabled.
+        else -> Button(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            colors = if (container != null) {
+                ButtonDefaults.buttonColors(
+                    containerColor = container,
+                    contentColor = content ?: Color.White,
+                )
+            } else {
+                ButtonDefaults.buttonColors()
+            },
+            contentPadding = contentPadding,
+            content = { label() },
+        )
     }
 }
 
