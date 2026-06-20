@@ -31,14 +31,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 from tempest_core import (
     ComponentState,
+    FieldVariant,
     Size,
     Variant,
+    resolve_field_variant,
+    resolve_selection_variant,
+    resolve_slider_variant,
     resolve_variant,
 )
 from tempest_core.style import (
@@ -67,6 +72,8 @@ from tempest_core.style import (
     Transition,
 )
 from tempest_core.theme import Theme
+from tempest_core.tokens import ColorRole, contrast_ratio
+from tempest_core.variants import VALID_COLOR_SCHEMES
 
 from tempestroid import to_compose
 from tempestroid.renderers.qt.style_translator import layout_alignment, to_qss
@@ -3596,3 +3603,408 @@ def test_h1_widget_divergences_complete() -> None:
         )
     # All pinned keys are present (both directions).
     assert seen == _H1_DIVERGENCE_KEYS
+
+
+# ---------------------------------------------------------------------------
+# H2 conformance: base action/entry kit variant API (Trilho H, phase H2)
+# ---------------------------------------------------------------------------
+#
+# Phase H2 ships three more *pure* resolvers in ``tempest-core>=0.4.0``
+# (``resolve_field_variant`` / ``resolve_selection_variant`` /
+# ``resolve_slider_variant``) plus a ``FieldVariant`` enum and the ``IconButton``
+# widget, raising the base action/entry kit (Button/IconButton/Input/Checkbox/
+# RadioGroup/Switch/Select/Slider) to the Chakra-style variant API.
+#
+# KEY ARCHITECTURAL FACT — like H1, H2 adds *no* new ``Style`` fields. The three
+# resolvers map onto the *existing* ``Style`` fields (background/color/border/
+# radius/padding/min_height/width/height/font_*), so ``_SAMPLES`` / ``_COVERAGE``
+# and ``len(Style.model_fields)`` are unchanged (pinned by
+# ``test_h2_no_style_field_added``). Each resolver is a pure function returning a
+# plain ``Style``, so the existing ``snapshot`` helper (``to_compose`` + ``to_qss``
+# / ``layout_alignment``) works directly on its output and the golden machinery
+# pins that BOTH translators emit a stable, reviewed lowering of every resolved
+# field/selection/slider ``Style``.
+#
+# The Qt-vs-Compose divergences are therefore *renderer-level* affordance/state
+# engine differences, not translator/field changes — see ``_H2_WIDGET_DIVERGENCES``.
+
+#: Baseline theme used to resolve every H2 conformance sample.
+_H2_THEME: Theme = Theme()
+
+
+#: Canonical resolved field-variant matrix — a representative slice (NOT the
+#: full FieldVariant x Size x scheme x state cartesian): the three field
+#: treatments, a focus state, an invalid state, and a smaller-size sample.
+_H2_FIELD_CASES: dict[str, Style] = {
+    "field_outline_md_primary": resolve_field_variant(
+        variant=FieldVariant.OUTLINE, size=Size.MD, color_scheme="primary",
+        theme=_H2_THEME,
+    ),
+    "field_filled_md_neutral": resolve_field_variant(
+        variant=FieldVariant.FILLED, size=Size.MD, color_scheme="neutral",
+        theme=_H2_THEME,
+    ),
+    "field_flushed_md_primary": resolve_field_variant(
+        variant=FieldVariant.FLUSHED, size=Size.MD, color_scheme="primary",
+        theme=_H2_THEME,
+    ),
+    "field_outline_md_focus": resolve_field_variant(
+        variant=FieldVariant.OUTLINE, size=Size.MD, color_scheme="primary",
+        theme=_H2_THEME, state=ComponentState.FOCUS,
+    ),
+    "field_outline_md_invalid": resolve_field_variant(
+        variant=FieldVariant.OUTLINE, size=Size.MD, color_scheme="primary",
+        theme=_H2_THEME, invalid=True,
+    ),
+    "field_outline_sm_secondary": resolve_field_variant(
+        variant=FieldVariant.OUTLINE, size=Size.SM, color_scheme="secondary",
+        theme=_H2_THEME,
+    ),
+}
+
+#: Canonical resolved selection-variant matrix (checkbox/switch/radio share the
+#: selection resolver): checked/unchecked, a secondary scheme, and a disabled
+#: state.
+_H2_SELECTION_CASES: dict[str, Style] = {
+    "checkbox_md_primary_checked": resolve_selection_variant(
+        size=Size.MD, color_scheme="primary", theme=_H2_THEME, checked=True,
+    ),
+    "checkbox_md_primary_unchecked": resolve_selection_variant(
+        size=Size.MD, color_scheme="primary", theme=_H2_THEME, checked=False,
+    ),
+    "switch_md_secondary_checked": resolve_selection_variant(
+        size=Size.MD, color_scheme="secondary", theme=_H2_THEME, checked=True,
+    ),
+    "selection_md_primary_disabled": resolve_selection_variant(
+        size=Size.MD, color_scheme="primary", theme=_H2_THEME,
+        state=ComponentState.DISABLED,
+    ),
+}
+
+#: Canonical resolved slider-variant matrix: a default, a larger error-scheme
+#: slider, and a disabled slider.
+_H2_SLIDER_CASES: dict[str, Style] = {
+    "slider_md_primary": resolve_slider_variant(
+        size=Size.MD, color_scheme="primary", theme=_H2_THEME,
+    ),
+    "slider_lg_error": resolve_slider_variant(
+        size=Size.LG, color_scheme="error", theme=_H2_THEME,
+    ),
+    "slider_md_primary_disabled": resolve_slider_variant(
+        size=Size.MD, color_scheme="primary", theme=_H2_THEME,
+        state=ComponentState.DISABLED,
+    ),
+}
+
+#: All H2 resolved-variant cases, merged for one parametrized golden test.
+_H2_VARIANT_CASES: dict[str, Style] = {
+    **_H2_FIELD_CASES,
+    **_H2_SELECTION_CASES,
+    **_H2_SLIDER_CASES,
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H2_VARIANT_CASES))
+def test_h2_variant_golden_snapshot(name: str) -> None:
+    """Each resolved H2 variant ``Style`` matches its committed golden snapshot.
+
+    Pins that *both* translators emit a stable, reviewed lowering of every
+    resolved field/selection/slider ``Style``. A drift means either the
+    ``tempest-core`` H2 resolution changed (different colors/sizing tokens) or one
+    of the two translators changed its lowering — both demand a conscious review.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h2``.
+    """
+    snap = snapshot(_H2_VARIANT_CASES[name])
+    path = _GOLDEN_DIR / f"h2_{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for h2_{name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"H2 variant conformance drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+def test_h2_no_style_field_added() -> None:
+    """Phase H2 adds no new ``Style`` fields — resolvers map onto existing ones.
+
+    H2 introduces three more variant *resolvers* in ``tempest-core`` (pure
+    functions mapping field/selection/slider props onto an existing ``Style``); it
+    adds no top-level field to ``Style``. The ``_SAMPLES`` / ``_COVERAGE`` tables
+    therefore stay complete without update. If a new field appears, update
+    ``_SAMPLES``, ``_COVERAGE``, regenerate goldens (``UPDATE_GOLDEN=1``), and
+    update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H2 widget-level behavioural divergences (field/selection/slider engines)
+# ---------------------------------------------------------------------------
+#
+# Because H2 adds no new ``Style`` fields, the golden/parity machinery above is
+# untouched and the per-resolved-Style goldens pin the *base* lowering. The real
+# Qt-vs-Compose divergences are in *how each renderer realizes the field/selection/
+# slider affordances and their interaction states* — pinned here as a named
+# tripwire, exactly like the E1/E2/E3/H1 divergence tables, so a renderer change
+# that silently resolves or regresses one is caught loudly.
+#
+# Rationale for each divergence (mirrors the H2 architect contract):
+#
+# 1. Input / field_state_engine
+#    Qt re-resolves the full per-state field ``Style`` set up front via
+#    ``resolve_field_variant_states`` and paints each into a *scoped* QSS
+#    pseudo-state block keyed on the node's object name (``#name:focus`` /
+#    ``#name:hover`` / ``#name:disabled``) — the QSS engine swaps the baked state
+#    visuals on the matching pseudo-state. Compose, by contrast, feeds the resolved
+#    base colors into ``TextFieldDefaults.colors(...)`` and lets M3's native focus
+#    animation (the indicator-line / label motion) drive the focus transition; the
+#    resolved base colors match, the focus-overlay engine differs.
+#
+# 2. Input / field_variant_affordance
+#    Qt renders every field variant as a single styled ``QLineEdit`` honoring the
+#    baked OUTLINE/FILLED/FLUSHED box (full border / tonal fill / single bottom
+#    rule). Compose dispatches each ``FieldVariant`` to a *distinct* M3 affordance:
+#    outline -> ``OutlinedTextField``, filled -> ``TextField`` (filled container),
+#    flushed -> ``TextField`` + a custom bottom indicator. Same resolved colors,
+#    different host composable.
+#
+# 3. Checkbox / selection_color_only
+#    The selection resolver emits a ``width``/``height`` (the M3 checkbox box
+#    dimension, e.g. 20dp) alongside the checked/unchecked color. Qt paints the
+#    ``::indicator`` QSS including that resolved box dimension (it honors
+#    ``width``/``height``). Compose's M3 ``Checkbox`` accepts only
+#    ``CheckboxDefaults.colors(checkedColor=…/uncheckedColor=…)`` — the box geometry
+#    is M3-fixed and the resolved ``width``/``height`` are ignored. The
+#    ``_COVERAGE`` table already records ``width``/``height`` as ``(True, False)``
+#    at the translator level; this row pins the *selection-widget* manifestation.
+#
+# 4. Switch / selection_color_only
+#    Same engine split as the checkbox: Qt paints the track/thumb ``::indicator``
+#    QSS with the resolved color and box dimension; Compose feeds
+#    ``SwitchDefaults.colors(...)`` with M3-fixed switch geometry, ignoring the
+#    resolved ``width``/``height``.
+#
+# 5. Slider / track_color_only
+#    Qt styles the groove with the resolved track color via ``::sub-page`` (active
+#    track) / ``::add-page`` (inactive track) / ``::handle`` QSS. Compose feeds
+#    ``SliderDefaults.colors(activeTrackColor=…/inactiveTrackColor=…/thumbColor=…)``
+#    — same resolved colors, M3-native track/thumb geometry.
+#
+# 6. IconButton / variant_affordance
+#    Qt renders a styled ``QPushButton`` plus a glyph pixmap, reusing the button
+#    variant state-layer machinery (the resolved per-state Style painted into
+#    scoped QSS pseudo-state blocks). Compose dispatches each variant to a distinct
+#    M3 icon-button affordance: solid -> ``FilledIconButton``,
+#    outline -> ``OutlinedIconButton``, ghost/link -> ``IconButton``.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on the
+# same strategy), set ``intentional=False`` and explain why — the tripwire
+# ``test_h2_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new H2 component or topic is added, add a row here AND update the
+# pinned key set.
+
+_H2_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "Input",
+        "topic": "field_state_engine",
+        "qt_strategy": (
+            "Per-state Style from resolve_field_variant_states painted into scoped "
+            "QSS pseudo-state blocks (#name:focus / #name:hover / #name:disabled); "
+            "the QSS engine swaps the baked state visuals."
+        ),
+        "compose_strategy": (
+            "Resolved base colors fed into TextFieldDefaults.colors(...); M3's "
+            "native focus animation (indicator-line / label motion) drives the "
+            "focus transition — same base colors, different overlay engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Input",
+        "topic": "field_variant_affordance",
+        "qt_strategy": (
+            "Single styled QLineEdit honoring the baked OUTLINE/FILLED/FLUSHED box "
+            "(full border / tonal fill / single bottom rule)."
+        ),
+        "compose_strategy": (
+            "Variant dispatches to a distinct M3 affordance: "
+            "outline->OutlinedTextField, filled->TextField (filled container), "
+            "flushed->TextField + custom bottom indicator."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Checkbox",
+        "topic": "selection_color_only",
+        "qt_strategy": (
+            "::indicator QSS painted with the resolved checked/unchecked color AND "
+            "the resolved width/height box dimension (Qt honors the box size)."
+        ),
+        "compose_strategy": (
+            "M3 Checkbox accepts only CheckboxDefaults.colors(checkedColor=…); the "
+            "box geometry is M3-fixed and the resolved width/height are ignored."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Switch",
+        "topic": "selection_color_only",
+        "qt_strategy": (
+            "track/thumb ::indicator QSS painted with the resolved color and box "
+            "dimension (Qt honors width/height)."
+        ),
+        "compose_strategy": (
+            "SwitchDefaults.colors(...) with M3-fixed switch geometry; the resolved "
+            "width/height are ignored."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Slider",
+        "topic": "track_color_only",
+        "qt_strategy": (
+            "groove styled with the resolved track color via ::sub-page (active) / "
+            "::add-page (inactive) / ::handle QSS."
+        ),
+        "compose_strategy": (
+            "SliderDefaults.colors(activeTrackColor=…/inactiveTrackColor=…/"
+            "thumbColor=…) with M3-native track/thumb geometry — same resolved "
+            "colors, different host."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "IconButton",
+        "topic": "variant_affordance",
+        "qt_strategy": (
+            "Styled QPushButton + glyph pixmap, reusing the button variant "
+            "state-layer machinery (per-state Style in scoped QSS pseudo-states)."
+        ),
+        "compose_strategy": (
+            "Variant dispatches to a distinct M3 icon-button affordance: "
+            "solid->FilledIconButton, outline->OutlinedIconButton, "
+            "ghost/link->IconButton."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_H2_WIDGET_DIVERGENCES``.
+_H2_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"])) for row in _H2_WIDGET_DIVERGENCES
+}
+
+
+def test_h2_widget_divergences_complete() -> None:
+    """Every H2 variant divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves a field/selection/
+    slider divergence (e.g. both renderers converge on the same affordance) must
+    update the table; one who adds a new H2 component or topic must add a row.
+    Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _H2_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate H2 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _H2_DIVERGENCE_KEYS
+
+
+@pytest.mark.parametrize("color_scheme", sorted(VALID_COLOR_SCHEMES))
+def test_h2_contrast_wcag_aa(color_scheme: str) -> None:
+    """An OUTLINE field's content color clears WCAG AA against the surface.
+
+    H2's a11y gate: for every valid ``color_scheme`` the field resolver guarantees
+    legible typed text. The resolver paints the field *content* (typed text) with
+    ``ON_SURFACE`` on the ``SURFACE`` background (a pair Material 3 designs to clear
+    AA), so this asserts ``contrast_ratio(content, surface) >= 4.5`` — the
+    role-vs-surface pair the resolver actually guarantees, not a forced failing one.
+    """
+    style = resolve_field_variant(
+        variant=FieldVariant.OUTLINE,
+        size=Size.MD,
+        color_scheme=color_scheme,
+        theme=_H2_THEME,
+    )
+    assert style.color is not None, "field resolver must set a content color"
+    surface = _H2_THEME.scheme().role(ColorRole.SURFACE)
+    ratio = contrast_ratio(style.color, surface)
+    assert ratio >= 4.5, (
+        f"OUTLINE field content vs surface for color_scheme={color_scheme!r} "
+        f"has contrast {ratio:.2f} (< WCAG AA 4.5); the field resolver no longer "
+        "guarantees legible content text on the surface"
+    )
+
+
+#: The Kotlin Compose renderer that mirrors the engine's icon-alias table. The
+#: device resolves `IconButton` glyph names through its own copy of
+#: ``MATERIAL_ALIASES`` (the serializer does not inline a path for IconButton),
+#: so the two tables MUST stay byte-for-byte equivalent or a device renders the
+#: wrong glyph / raw text for an aliased name.
+_KOTLIN_RENDERER = (
+    Path(__file__).parents[2]
+    / "android-host"
+    / "app"
+    / "src"
+    / "main"
+    / "java"
+    / "org"
+    / "tempestroid"
+    / "host"
+    / "TempestRenderer.kt"
+)
+
+
+def test_h2_icon_alias_table_matches_kotlin() -> None:
+    """The engine ``MATERIAL_ALIASES`` and the Kotlin copy are identical.
+
+    H2 promoted icon-alias resolution into the engine
+    (``tempest_core.icons.MATERIAL_ALIASES``) and the Compose renderer keeps a
+    hand-maintained Kotlin port (``MATERIAL_ALIASES`` in ``TempestRenderer.kt``)
+    because the serializer does not inline a resolved path for ``IconButton``.
+    The two tables must agree exactly; this tripwire fails if a future
+    ``tempest-core`` release adds, drops, or retargets an alias without the
+    Kotlin side being updated in lockstep, which would silently break device
+    icon rendering. Parses the Kotlin ``mapOf("a" to "b", …)`` block and
+    compares it to the engine dict.
+    """
+    from tempest_core.icons import MATERIAL_ALIASES
+
+    if not _KOTLIN_RENDERER.exists():
+        pytest.skip("android-host Kotlin renderer not present in this checkout")
+    source = _KOTLIN_RENDERER.read_text(encoding="utf-8")
+    marker = "MATERIAL_ALIASES: Map<String, String> = mapOf("
+    assert marker in source, (
+        "could not find the MATERIAL_ALIASES mapOf block in TempestRenderer.kt; "
+        "the engine-vs-Kotlin alias drift guard cannot run"
+    )
+    block = source.split(marker, 1)[1].split(")", 1)[0]
+    kotlin_aliases = dict(re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"', block))
+    assert kotlin_aliases == dict(MATERIAL_ALIASES), (
+        "icon-alias table drift: the Kotlin MATERIAL_ALIASES in TempestRenderer.kt "
+        "no longer matches tempest_core.icons.MATERIAL_ALIASES; sync the Kotlin "
+        "port (IconButton glyph resolution depends on it). "
+        f"engine-only={set(MATERIAL_ALIASES) - set(kotlin_aliases)}, "
+        f"kotlin-only={set(kotlin_aliases) - set(MATERIAL_ALIASES)}"
+    )

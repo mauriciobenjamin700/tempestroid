@@ -1,0 +1,17 @@
+{
+  "compose": {
+    "border": {
+      "color": "#7d7a85",
+      "width": 2.0
+    },
+    "color": "#584785",
+    "height": 20.0,
+    "width": 20.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "color: rgba(88, 71, 133, 1.0); border: 2.0px solid rgba(125, 122, 133, 1.0)",
+    "qss_leaf": "color: rgba(88, 71, 133, 1.0); border: 2.0px solid rgba(125, 122, 133, 1.0)"
+  }
+}
