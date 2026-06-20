@@ -5348,11 +5348,34 @@ class QtRenderer:
             # emitted onto the final, clamped base body and never get clobbered.
             # ``IconButton`` is ``Variant``-based exactly like ``Button``, so it
             # reuses the same state-layer pass.
+            # IconButton is a fixed square (``width==height``): strip the inherited
+            # text-button ``padding`` + ``min_height`` from the resting QSS body so
+            # Qt does not compute a ``min-height: content + padding`` larger than the
+            # ``setFixedHeight`` square (min > max → min wins, ovalling the disc).
+            # The glyph is centered by the QPushButton regardless of padding; the
+            # state-layer blocks only paint bg/color/border, so they need no change.
+            base_style = style
+            if (
+                node.type == "IconButton"
+                and style is not None
+                and style.width is not None
+                and style.height is not None
+            ):
+                base_style = style.model_copy(
+                    update={"padding": None, "min_height": None}
+                )
             self._apply_button_states(
                 cast("QPushButton", node.widget),
                 node.props,
-                self._button_base_qss(node.widget, style, custom_family),
+                self._button_base_qss(node.widget, base_style, custom_family),
             )
+            if (
+                node.type == "IconButton"
+                and style is not None
+                and style.width is not None
+                and style.height is not None
+            ):
+                node.widget.setFixedSize(int(style.width), int(style.height))
         elif node.type in _FIELD_TYPES:
             # The field's resting box (OUTLINE/FILLED/FLUSHED) is already painted by
             # the scoped base block above; append the focus/invalid/hover/disabled

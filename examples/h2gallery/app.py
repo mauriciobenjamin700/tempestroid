@@ -16,6 +16,11 @@ each component maps to its Material 3 affordance (OutlinedTextField / filled
 TextField / Checkbox / Switch / Slider / FilledIconButton …) over the resolved
 ``Style`` colors. The screen is wrapped in a ``ScrollView`` so the full kit is
 reachable on a phone.
+
+Each styled component is built with ``theme=app.theme`` so the whole kit follows
+the app's theme (e.g. dark mode via ``make_theme``/``App.set_theme``): a component
+resolves its base ``Style`` against the ``theme`` it is given, so passing the live
+app theme makes the resting look — not just the interaction state layers — adapt.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from tempest_core import FieldVariant, IconButton, Size, Variant
+from tempest_core.tokens import ColorRole
 from tempest_core.widgets.events import (
     SlideEvent,
     TextChangeEvent,
@@ -121,6 +127,13 @@ def view(app: App[GalleryState]) -> Widget:
     Returns:
         The root widget: a scrollable column of titled component sections.
     """
+    # Pull the page chrome (surface / on-surface / accent) from the active theme
+    # so the showcase itself adapts to dark mode — the components already do, and
+    # a design-system gallery that stayed white in dark mode would contradict them.
+    scheme = app.theme.scheme()
+    surface = scheme.role(ColorRole.SURFACE)
+    on_surface = scheme.role(ColorRole.ON_SURFACE)
+    accent = scheme.role(ColorRole.PRIMARY)
 
     def bump() -> None:
         """Increment the tap counter (the button/icon-button tap-path proof)."""
@@ -138,6 +151,7 @@ def view(app: App[GalleryState]) -> Widget:
                     variant=variant,
                     size=Size.MD,
                     color_scheme="primary",
+                    theme=app.theme,
                     key=f"btn:{variant.value}",
                 )
                 for variant in Variant
@@ -156,6 +170,7 @@ def view(app: App[GalleryState]) -> Widget:
                     variant=variant,
                     size=Size.MD,
                     color_scheme="primary",
+                    theme=app.theme,
                     label=f"add ({variant.value})",
                     key=f"iconbtn:{variant.value}",
                 )
@@ -178,6 +193,7 @@ def view(app: App[GalleryState]) -> Widget:
                 field_variant=fv,
                 size=Size.MD,
                 color_scheme="primary",
+                theme=app.theme,
                 key=f"input:{fv.value}",
             )
             for fv in FieldVariant
@@ -202,6 +218,7 @@ def view(app: App[GalleryState]) -> Widget:
                 on_change=toggle_agreed,
                 size=Size.MD,
                 color_scheme="primary",
+                theme=app.theme,
                 key="checkbox",
             ),
             Switch(
@@ -210,6 +227,7 @@ def view(app: App[GalleryState]) -> Widget:
                 on_change=toggle_enabled,
                 size=Size.MD,
                 color_scheme="secondary",
+                theme=app.theme,
                 key="switch",
             ),
         ]
@@ -228,6 +246,7 @@ def view(app: App[GalleryState]) -> Widget:
             on_select=pick_plan,
             size=Size.MD,
             color_scheme="primary",
+            theme=app.theme,
             key="radio-group",
         )
 
@@ -245,6 +264,7 @@ def view(app: App[GalleryState]) -> Widget:
             on_change=set_volume,
             size=Size.MD,
             color_scheme="primary",
+            theme=app.theme,
             key="slider",
         )
 
@@ -252,13 +272,13 @@ def view(app: App[GalleryState]) -> Widget:
         style=Style(
             gap=20.0,
             padding=Edge.all(24.0),
-            background=Color.from_hex("#ffffff"),
+            background=surface,
         ),
         children=[
             Text(
                 content="H2 base kit",
                 style=Style(
-                    color=Color.from_hex("#111827"),
+                    color=on_surface,
                     font_size=22.0,
                     font_weight=FontWeight.BOLD,
                 ),
@@ -270,7 +290,7 @@ def view(app: App[GalleryState]) -> Widget:
                     f"plan: {app.state.plans[app.state.plan_index]}  ·  "
                     f"vol: {int(app.state.volume)}"
                 ),
-                style=Style(color=Color.from_hex("#2563eb"), font_size=14.0),
+                style=Style(color=accent, font_size=14.0),
                 key="status",
             ),
             _section("BUTTONS", key="sec-buttons", children=[buttons_section()]),
