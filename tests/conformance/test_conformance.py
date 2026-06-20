@@ -4588,3 +4588,321 @@ def test_h4_contrast_wcag_aa(color_scheme: str) -> None:
             f"contrast {ratio:.2f} (< WCAG AA 4.5); the resolver no longer uses the "
             "container pair (the A1 fix regressed — the raw status role fails AA)"
         )
+
+
+# ---------------------------------------------------------------------------
+# H5 conformance: styled navigation kit (Trilho H, phase H5)
+# ---------------------------------------------------------------------------
+#
+# Phase H5 ships the styled navigation kit in ``tempest-core>=0.7.0`` (M3 skins for
+# AppBar / CollapsingAppBar / NavBar / Drawer / Sidebar / Breadcrumb / Burger /
+# Footer / Header / Scaffold / SearchBar / Tabs over the E0 navigation hosts).
+#
+# KEY ARCHITECTURAL FACT — like H1/H2/H3/H4, H5 is a *skin pass* that adds *no* new
+# resolver, no new enum, and no new ``Style`` field. The nav components reuse the
+# EXISTING resolvers:
+#   * AppBar / Footer / Sidebar / Drawer / NavBar-bar / Tabs-strip
+#     -> ``resolve_surface_variant`` (the H3 surface resolver);
+#   * NavBar active item -> ``resolve_badge_variant(SOLID, …)`` (the H4 badge pill);
+#   * NavBar inactive item + Tabs tabs -> ``resolve_variant(GHOST, …)`` (the H1
+#     ghost text affordance);
+#   * SearchBar inner input -> ``resolve_field_variant`` (the H2 field resolver).
+# So ``_SAMPLES`` / ``_COVERAGE`` and ``len(Style.model_fields)`` are unchanged
+# (pinned by ``test_h5_no_style_field_added`` — the load-bearing guard). Each
+# resolver is a *pure* function returning a plain ``Style``, so the existing
+# ``snapshot`` helper (``to_compose`` + ``to_qss`` / ``layout_alignment``) works
+# directly on its output.
+#
+# What H5 pins here is therefore NOT a re-test of the resolvers themselves (H1/H3/H4
+# already pin those) but the *nav-specific combinations* — the representative
+# resolved ``Style``s for the navigation use-cases — proving the nav skins lower to
+# stable, reviewed ``Style``s across both translators. The Qt-vs-Compose divergences
+# are the nav affordances (bar / selected indicator / tab indicator / drawer / search
+# field), pinned below in ``_H5_WIDGET_DIVERGENCES``; they extend the E0b/H3
+# divergence prose (E0b owns the nav-host animation/back-button split, H3 owns the
+# surface elevation engine).
+
+#: Baseline theme used to resolve every H5 conformance sample.
+_H5_THEME: Theme = Theme()
+
+
+#: Canonical resolved nav use-case matrix — the nav-specific combinations of the
+#: existing resolvers (NOT a re-test of the resolvers, which H1/H3/H4 already pin):
+#: the AppBar surface (an elevated primary bar + an elevated neutral bar), the
+#: NavBar active pill (SOLID badge) and inactive item (GHOST text), the Tabs active
+#: tab text (GHOST primary), the SearchBar inner field (OUTLINE), and the Drawer
+#: panel surface (FILLED neutral). Each value is the *pure* ``Style`` returned by
+#: the reused resolver — the golden pins that both translators lower it identically
+#: across releases.
+_H5_NAV_CASES: dict[str, Style] = {
+    "appbar_elevated_primary": resolve_surface_variant(
+        variant=CardVariant.ELEVATED, color_scheme="primary", theme=_H5_THEME,
+    ),
+    "appbar_surface_neutral": resolve_surface_variant(
+        variant=CardVariant.ELEVATED, color_scheme="neutral", theme=_H5_THEME,
+    ),
+    "navbar_active_pill": resolve_badge_variant(
+        variant=BadgeVariant.SOLID, size=Size.MD, color_scheme="primary",
+        theme=_H5_THEME,
+    ),
+    "navbar_inactive_ghost": resolve_variant(
+        variant=Variant.GHOST, size=Size.MD, color_scheme="neutral",
+        theme=_H5_THEME,
+    ),
+    "tab_active": resolve_variant(
+        variant=Variant.GHOST, size=Size.MD, color_scheme="primary",
+        theme=_H5_THEME,
+    ),
+    "searchbar_field": resolve_field_variant(
+        variant=FieldVariant.OUTLINE, size=Size.MD, color_scheme="primary",
+        theme=_H5_THEME,
+    ),
+    "drawer_surface": resolve_surface_variant(
+        variant=CardVariant.FILLED, color_scheme="neutral", theme=_H5_THEME,
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H5_NAV_CASES))
+def test_h5_nav_golden_snapshot(name: str) -> None:
+    """Each resolved H5 nav-use-case ``Style`` matches its committed golden.
+
+    Pins that *both* translators emit a stable, reviewed lowering of every nav
+    skin's resolved ``Style`` (background/color/border/radius/padding/shadow). A
+    drift means either the ``tempest-core`` resolver the nav component reuses
+    changed (different tokens / mapping) or one of the two translators changed its
+    lowering — both demand a conscious review.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h5``.
+    """
+    snap = snapshot(_H5_NAV_CASES[name])
+    path = _GOLDEN_DIR / f"h5_{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for h5_{name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"H5 nav conformance drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+def test_h5_no_style_field_added() -> None:
+    """Phase H5 adds no new ``Style`` fields — nav skins reuse existing resolvers.
+
+    H5 is a skin pass: it introduces NO new resolver, enum, or ``Style`` field. The
+    nav components reuse the existing ``resolve_surface_variant`` (H3),
+    ``resolve_badge_variant`` / ``resolve_variant`` (H1/H4) and
+    ``resolve_field_variant`` (H2), each of which resolves onto the existing
+    background/color/border/radius/padding/shadow fields. The ``_SAMPLES`` /
+    ``_COVERAGE`` tables therefore stay complete without update. This is the
+    load-bearing guard: if a new field appears, update ``_SAMPLES``, ``_COVERAGE``,
+    regenerate goldens (``UPDATE_GOLDEN=1``), and update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H5 widget-level behavioural divergences (styled navigation affordances)
+# ---------------------------------------------------------------------------
+#
+# Because H5 adds no new ``Style`` fields (it reuses the H1/H2/H3/H4 resolvers), the
+# golden/parity machinery above is untouched and the per-resolved-Style goldens pin
+# the *base* lowering (the same resolved colors/border/radius/padding/shadow flow
+# through both translators). The real Qt-vs-Compose divergences are in *how each
+# renderer realizes* the nav affordances — pinned here as a named tripwire, exactly
+# like the E1/E2/E3/H1/H2/H3/H4 divergence tables, so a renderer change that silently
+# resolves or regresses one is caught loudly. These rows EXTEND the E0b nav-host
+# divergence prose (E0b owns the screen-transition animation + Android back-button
+# split) and the H3 surface elevation engine — H5 is the *skin* layered on the E0
+# hosts.
+#
+# Rationale for each divergence (mirrors the H5 architect contract):
+#
+# 1. AppBar / bar_affordance
+#    Qt renders the bar as one styled Row/Container (the resolved surface
+#    background/border) plus a ``QGraphicsDropShadowEffect`` for the bar elevation
+#    (``to_qss`` is shadow-inert, ``_COVERAGE["shadow"] == (True, False)``, so the
+#    shadow is imperative). Compose MAY use the native M3 ``TopAppBar`` with its
+#    ``tonalElevation`` / ``scrolledContainerColor`` from the SAME resolved surface
+#    colors, or render the uniform styled box; the Compose specialist owns the
+#    choice. Same resolved surface ``Style``, different bar engine.
+#
+# 2. NavBar / selected_indicator
+#    Qt paints the active item as the resolved accent pill *background* on the item
+#    (the SOLID-badge ``Style`` from ``resolve_badge_variant``), with inactive items
+#    as the GHOST text affordance. Compose MAY use the native M3 ``NavigationBar``
+#    whose selected ``NavigationBarItem`` draws its own pill ``indicatorColor`` from
+#    the SAME resolved accent. Same resolved pill ``Style``, different indicator
+#    engine.
+#
+# 3. Tabs / tab_indicator
+#    Qt draws the active-tab underline as a bottom ``SideBorder`` on a styled
+#    Container (the tab text is the GHOST ``Style``). Compose MAY use the native M3
+#    ``TabRow`` indicator slot, drawing the underline in the indicator composable
+#    from the SAME resolved accent. Same resolved tab ``Style``, different indicator
+#    surface.
+#
+# 4. Drawer / drawer_affordance
+#    Qt renders the drawer as a styled Column panel (the FILLED-surface ``Style``)
+#    that slides over the content with NO scrim — the E0b nav-host limit (desktop
+#    has no modal scrim for the route drawer). Compose MAY use the native M3
+#    ``ModalNavigationDrawer``, which supplies its own scrim and slide animation from
+#    the SAME resolved surface colors. Same resolved drawer ``Style``, different
+#    drawer host (and Qt has no scrim — extends the E0b drawer divergence).
+#
+# 5. SearchBar / field_affordance
+#    Qt renders the search field as an ``Input`` / ``QLineEdit`` skinned by the
+#    OUTLINE field ``Style`` (``resolve_field_variant``). Compose MAY use the native
+#    M3 ``SearchBar`` / ``OutlinedTextField`` whose colors come from the SAME
+#    resolved field ``Style``. Same resolved field ``Style``, different field engine.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on the
+# same strategy), set ``intentional=False`` and explain why — the tripwire
+# ``test_h5_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new H5 component or topic is added, add a row here AND update the
+# pinned key set.
+
+_H5_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "AppBar",
+        "topic": "bar_affordance",
+        "qt_strategy": (
+            "One styled Row/Container (resolved surface background/border) plus a "
+            "QGraphicsDropShadowEffect for bar elevation (to_qss is shadow-inert, "
+            "_COVERAGE['shadow'] == (True, False), so the shadow is imperative)."
+        ),
+        "compose_strategy": (
+            "May use the native M3 TopAppBar with its tonalElevation / "
+            "scrolledContainerColor from the SAME resolved surface colors, or the "
+            "uniform styled box — the Compose specialist owns the choice; same "
+            "resolved surface Style, different bar engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "NavBar",
+        "topic": "selected_indicator",
+        "qt_strategy": (
+            "Active item painted as the resolved accent pill background on the item "
+            "(the SOLID-badge Style from resolve_badge_variant); inactive items use "
+            "the GHOST text affordance."
+        ),
+        "compose_strategy": (
+            "May use the native M3 NavigationBar whose selected NavigationBarItem "
+            "draws its own pill indicatorColor from the SAME resolved accent — same "
+            "resolved pill Style, different indicator engine."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Tabs",
+        "topic": "tab_indicator",
+        "qt_strategy": (
+            "Active-tab underline drawn as a bottom SideBorder on a styled Container "
+            "(the tab text is the GHOST Style)."
+        ),
+        "compose_strategy": (
+            "May use the native M3 TabRow indicator slot, drawing the underline in "
+            "the indicator composable from the SAME resolved accent — same resolved "
+            "tab Style, different indicator surface."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "Drawer",
+        "topic": "drawer_affordance",
+        "qt_strategy": (
+            "Styled Column panel (the FILLED-surface Style) sliding over the content "
+            "with NO scrim — the E0b nav-host limit (desktop has no modal scrim for "
+            "the route drawer)."
+        ),
+        "compose_strategy": (
+            "May use the native M3 ModalNavigationDrawer, which supplies its own "
+            "scrim and slide animation from the SAME resolved surface colors — same "
+            "resolved drawer Style, different drawer host (Qt has no scrim)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "SearchBar",
+        "topic": "field_affordance",
+        "qt_strategy": (
+            "Search field rendered as an Input / QLineEdit skinned by the OUTLINE "
+            "field Style (resolve_field_variant)."
+        ),
+        "compose_strategy": (
+            "May use the native M3 SearchBar / OutlinedTextField whose colors come "
+            "from the SAME resolved field Style — same resolved field Style, "
+            "different field engine."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_H5_WIDGET_DIVERGENCES``.
+_H5_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"])) for row in _H5_WIDGET_DIVERGENCES
+}
+
+
+def test_h5_widget_divergences_complete() -> None:
+    """Every H5 navigation divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves a nav-affordance
+    divergence (e.g. both renderers converge on the same bar / indicator / drawer /
+    field strategy) must update the table; one who adds a new H5 component or topic
+    must add a row. Either omission fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _H5_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate H5 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _H5_DIVERGENCE_KEYS
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["appbar_elevated_primary", "appbar_surface_neutral", "drawer_surface",
+     "navbar_active_pill"],
+)
+def test_h5_contrast_wcag_aa(name: str) -> None:
+    """The resolved nav SURFACE / active-pill content pair clears WCAG AA.
+
+    H5's a11y gate: the styled AppBar / Drawer surfaces and the NavBar active pill
+    paint content (``Style.color``) on a resolved solid container
+    (``Style.background``). For every such nav use-case the resolved pair must clear
+    ``contrast_ratio(color, background) >= 4.5`` so nav labels stay legible. (The
+    GHOST inactive item / tab text and the OUTLINE search field carry no solid
+    background — they paint on the bar surface already pinned here — so they are not
+    part of this content-on-container pair.)
+    """
+    style = _H5_NAV_CASES[name]
+    assert style.color is not None, "nav resolver must set a content color"
+    assert isinstance(style.background, Color), (
+        "nav resolver must set a solid background Color for the contrast pair"
+    )
+    ratio = contrast_ratio(style.color, style.background)
+    assert ratio >= 4.5, (
+        f"nav use-case {name!r} content vs background has contrast {ratio:.2f} "
+        "(< WCAG AA 4.5); the reused resolver no longer guarantees legible content "
+        "on the nav container"
+    )
