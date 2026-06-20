@@ -39,6 +39,11 @@ SECTIONS: list[tuple[str, list[str]]] = [
         [
             "guia/widgets.md",
             "guia/estilos.md",
+            "guia/design-system/tokens.md",
+            "guia/design-system/variantes.md",
+            "guia/design-system/kit.md",
+            "guia/design-system/superficie.md",
+            "guia/design-system/feedback.md",
             "guia/eventos.md",
             "guia/cli.md",
             "guia/exemplos.md",

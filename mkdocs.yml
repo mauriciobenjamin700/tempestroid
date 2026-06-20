@@ -76,6 +76,8 @@ plugins:
             Tema e tokens: Theme and tokens
             Variantes ao estilo Chakra: Chakra-style variants
             Kit de ação e entrada: Action and entry kit
+            Superfície e layout: Surface and layout
+            Data display e feedback: Data display and feedback
             Eventos: Events
             CLI (tempest): CLI (tempest)
             Galeria de exemplos: Example gallery
@@ -141,6 +143,8 @@ nav:
           - Tema e tokens: guia/design-system/tokens.md
           - Variantes ao estilo Chakra: guia/design-system/variantes.md
           - Kit de ação e entrada: guia/design-system/kit.md
+          - Superfície e layout: guia/design-system/superficie.md
+          - Data display e feedback: guia/design-system/feedback.md
       - Eventos: guia/eventos.md
       - Testes de UI: guia/testing.md
       - CLI (tempest): guia/cli.md

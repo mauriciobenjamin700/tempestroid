@@ -117,10 +117,11 @@ teclado numérico por *design* do app, não por limite do renderizador.
 ## Capturas no dispositivo (emulador x86_64, sem hardware físico)
 
 !!! note "Geradas sem aparelho físico"
-    Renderizadas pelo renderizador **Compose** num **emulador x86_64 headless**
-    (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero hardware.
-    24 dos 25 exemplos; `stopwatch` (animado) fica para uma recaptura como GIF
-    (ver [Animados](#animados)).
+    A maioria foi renderizada pelo renderizador **Compose** num **emulador x86_64
+    headless** (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero
+    hardware; as galerias do design system (`h1buttons`–`h4gallery`) são capturas
+    do simulador Qt. `stopwatch` (animado) fica para uma recaptura como GIF (ver
+    [Animados](#animados)).
 
 | | | |
 |---|---|---|
@@ -132,10 +133,12 @@ teclado numérico por *design* do app, não por limite do renderizador.
 | ![native_caps](../assets/examples/native_caps.png){ width=200 }<br>`native_caps` | ![navigation](../assets/examples/navigation.png){ width=200 }<br>`navigation` | ![overlays](../assets/examples/overlays.png){ width=200 }<br>`overlays` |
 | ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
 | ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
-| ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | |
+| ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | ![h3gallery](../assets/examples/h3gallery.png){ width=200 }<br>`h3gallery` |
+| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | | |
 
-Os exemplos `h1buttons` (variantes de `Button`) e `h2gallery` (o kit de ação e
-entrada, com tema adaptável) acompanham o [design system](design-system/variantes.md).
+Os exemplos `h1buttons` (variantes de `Button`), `h2gallery` (o kit de ação e
+entrada), `h3gallery` (superfície e layout) e `h4gallery` (data display e
+feedback) acompanham o [design system](design-system/variantes.md).
 
 ### Animados
 

@@ -53,7 +53,13 @@ which components pick via `color_scheme`:
 | `"error"` | `error` | `on_error` | error / destructive action |
 | `"neutral"` | `on_surface` | `surface` | low-emphasis, neutral treatment |
 
-Beyond those, the full scheme carries the surface roles your app uses for the
+Beyond these emphasis families, the design system promotes **three status roles**
+to first-class `color_scheme`s — `"success"`, `"warning"` and `"info"` (added to
+`"error"`), each with its `on_*` pair and an AA *container* variant. They appear
+in any component that accepts `color_scheme`; the feedback vocabulary lives in
+[data display & feedback](feedback.en.md#the-status-color_schemes).
+
+The full scheme also carries the surface roles your app uses for the
 page chrome — `surface` / `on_surface`, `background` / `on_background`,
 `outline`, `surface_variant` and their `on_*`. Read any of them by `ColorRole`
 or by string:

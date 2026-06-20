@@ -90,8 +90,11 @@ de fonte vêm das escalas do tema:
 ## Esquema de cor
 
 A prop `color_scheme` escolhe a família de papéis Material 3 com que o
-componente pinta — uma das cinco: `"primary"`, `"secondary"`, `"tertiary"`,
-`"error"` ou `"neutral"` (veja a [tabela de papéis](tokens.md#os-papeis-de-cor-color-schemes)).
+componente pinta — uma das de ênfase (`"primary"`, `"secondary"`, `"tertiary"`,
+`"error"`, `"neutral"`) ou de **status** (`"success"`, `"warning"`, `"info"`,
+adicionadas pelo design system — veja
+[data display e feedback](feedback.md#os-color_schemes-de-status)) (a
+[tabela de papéis](tokens.md#os-papeis-de-cor-color-schemes) tem o resumo).
 
 ```python
 from tempestroid import Button, Color, Theme, Variant
@@ -103,8 +106,8 @@ cancelar = Button(label="Cancelar", variant=Variant.OUTLINE, color_scheme="neutr
 ```
 
 !!! warning "Esquema inválido falha cedo"
-    Passar um `color_scheme` fora das cinco famílias levanta `ValueError` na
-    construção do componente — você descobre o erro na hora, não na renderização.
+    Passar um `color_scheme` fora das famílias conhecidas falha na construção do
+    componente — você descobre o erro na hora, não na renderização.
 
 ## Estados de interação (state layers M3)
 
@@ -253,7 +256,8 @@ resolvidas.
 ## Recapitulando
 
 - A API de variantes é **três props**: `variant` (`SOLID`/`OUTLINE`/`GHOST`/
-  `LINK`), `size` (`XS`/`SM`/`MD`/`LG`) e `color_scheme` (as cinco famílias M3).
+  `LINK`), `size` (`XS`/`SM`/`MD`/`LG`) e `color_scheme` (as famílias de ênfase
+  M3 + as de status `success`/`warning`/`info`).
 - O motor resolve, a partir do `theme`, um `Style` M3 completo — você descreve a
   intenção, não os pixels.
 - O **alvo de toque ≥ 48dp** e o **contraste WCAG-AA** são garantidos; um `size`

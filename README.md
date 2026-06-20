@@ -206,6 +206,8 @@ and the Button variant matrix in [`examples/h1buttons/app.py`](examples/h1button
 > 📖 Tutorial-first guide: **[Theme and tokens](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/tokens/)**
 > · **[Chakra-style variants](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/variantes/)**
 > · **[Action and entry kit](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/kit/)**
+> · **[Surface & layout](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/superficie/)**
+> · **[Data display & feedback](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/feedback/)**
 > (in-repo: [`docs/guia/design-system/`](docs/guia/design-system/tokens.md)).
 
 ---

@@ -90,8 +90,11 @@ size come from the theme's scales:
 ## Color scheme
 
 The `color_scheme` prop picks the Material 3 role family the component paints
-with — one of five: `"primary"`, `"secondary"`, `"tertiary"`, `"error"` or
-`"neutral"` (see the [roles table](tokens.md#the-color-roles-color-schemes)).
+with — one of the emphasis roles (`"primary"`, `"secondary"`, `"tertiary"`,
+`"error"`, `"neutral"`) or a **status** role (`"success"`, `"warning"`, `"info"`,
+added by the design system — see
+[data display & feedback](feedback.en.md#the-status-color_schemes)) (the
+[roles table](tokens.en.md#the-color-roles-color-schemes) has the summary).
 
 ```python
 from tempestroid import Button, Color, Theme, Variant
@@ -103,8 +106,8 @@ cancel = Button(label="Cancel", variant=Variant.OUTLINE, color_scheme="neutral",
 ```
 
 !!! warning "An invalid scheme fails fast"
-    Passing a `color_scheme` outside the five families raises `ValueError` when
-    the component is built — you catch the mistake right away, not at render time.
+    Passing a `color_scheme` outside the known families fails when the component
+    is built — you catch the mistake right away, not at render time.
 
 ## Interaction states (M3 state layers)
 
@@ -253,7 +256,8 @@ colors.
 ## Recap
 
 - The variant API is **three props**: `variant` (`SOLID`/`OUTLINE`/`GHOST`/
-  `LINK`), `size` (`XS`/`SM`/`MD`/`LG`) and `color_scheme` (the five M3 families).
+  `LINK`), `size` (`XS`/`SM`/`MD`/`LG`) and `color_scheme` (the M3 emphasis
+  families + the status ones `success`/`warning`/`info`).
 - The engine resolves, from the `theme`, a complete M3 `Style` — you describe the
   intent, not the pixels.
 - The **touch target ≥ 48dp** and **WCAG-AA contrast** are guaranteed; a smaller
