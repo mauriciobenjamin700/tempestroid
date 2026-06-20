@@ -71,6 +71,7 @@ from tempestroid.native.lifecycle import (
     dispatch_lifecycle_event,
     on_app_state_change,
 )
+from tempestroid.native.model_store import ModelStoreError, ensure_model
 from tempestroid.native.notifications import notify
 from tempestroid.native.permissions import (
     PermissionResult,
@@ -133,6 +134,8 @@ __all__ = [
     "encode_tensor",
     "decode_tensor",
     "decode_image",
+    "ensure_model",
+    "ModelStoreError",
     # notifications
     "notify",
     # geolocation
