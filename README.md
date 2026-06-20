@@ -142,6 +142,64 @@ Full example with sync **and** `async` handlers:
 
 ---
 
+## Design system (M3 variants + Chakra-style API)
+
+The styled components carry a **Chakra-ergonomics variant API** — `variant` /
+`size` / `color_scheme` — and resolve a complete **Material 3** `Style` from a
+`Theme` (tonal color schemes, spacing/shape/typography/elevation scales). Seed
+one brand color with `Theme.from_seed(...)` and the whole palette (light + dark,
+WCAG-AA contrast, ≥ 48dp touch targets) comes for free. It is **additive**: raw
+`Style` still works, and an explicit `style=` is merged on top of the resolved
+variant.
+
+```python
+from tempest_core import FieldVariant, IconButton, Size, Variant
+
+from tempestroid import Button, Color, Column, Input, Style, Theme, Widget
+
+# One brand seed → a full Material 3 theme (light + dark).
+theme = Theme.from_seed(Color.from_hex("#2563eb"))
+
+
+def panel() -> Widget:
+    return Column(
+        style=Style(gap=12.0),
+        children=[
+            # variant / size / color_scheme resolve a Material 3 Style:
+            Button(
+                label="Save",
+                variant=Variant.SOLID,
+                size=Size.MD,
+                color_scheme="primary",
+                theme=theme,
+                key="save",
+            ),
+            IconButton(icon="add", label="Add", color_scheme="primary", theme=theme, key="add"),
+            # The field family adds field_variant; pass the live theme so the
+            # whole kit follows dark mode:
+            Input(
+                value="",
+                placeholder="Name",
+                field_variant=FieldVariant.OUTLINE,
+                color_scheme="primary",
+                theme=theme,
+                key="name",
+            ),
+        ],
+    )
+```
+
+The full kit (Buttons + IconButtons, the field family, selection controls,
+slider, the BR inputs) is shown in [`examples/h2gallery/app.py`](examples/h2gallery/app.py)
+and the Button variant matrix in [`examples/h1buttons/app.py`](examples/h1buttons/app.py).
+
+> 📖 Tutorial-first guide: **[Theme and tokens](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/tokens/)**
+> · **[Chakra-style variants](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/variantes/)**
+> · **[Action and entry kit](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/kit/)**
+> (in-repo: [`docs/guia/design-system/`](docs/guia/design-system/tokens.md)).
+
+---
+
 ## Gallery
 
 A set of runnable example apps lives in [`examples/`](examples/README.md). Each

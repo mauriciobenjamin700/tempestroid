@@ -9,6 +9,12 @@ corpos de requisição.
 > Ambos os renderizadores — **simulador Qt** (desktop) e **Compose no
 > dispositivo** (Android arm64) — renderizam esses inputs nativamente.
 
+!!! tip "Estilo Material 3 com variantes"
+    Todo input também aceita a API de variantes ao estilo Chakra — `field_variant`
+    / `size` / `color_scheme` + `theme` —, que resolve um `Style` Material 3 a
+    partir do tema (estados de foco/inválido incluídos). Veja o
+    [Kit de ação e entrada](../design-system/kit.md).
+
 ---
 
 ## Input

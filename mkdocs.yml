@@ -72,6 +72,10 @@ plugins:
             Guia do usuário: User guide
             Widgets: Widgets
             Estilos: Styles
+            Design system: Design system
+            Tema e tokens: Theme and tokens
+            Variantes ao estilo Chakra: Chakra-style variants
+            Kit de ação e entrada: Action and entry kit
             Eventos: Events
             CLI (tempest): CLI (tempest)
             Galeria de exemplos: Example gallery
@@ -133,6 +137,10 @@ nav:
           - Componentes compostos: guia/widgets/components.md
       - Navegação entre telas: guia/navegacao.md
       - Estilos: guia/estilos.md
+      - Design system:
+          - Tema e tokens: guia/design-system/tokens.md
+          - Variantes ao estilo Chakra: guia/design-system/variantes.md
+          - Kit de ação e entrada: guia/design-system/kit.md
       - Eventos: guia/eventos.md
       - Testes de UI: guia/testing.md
       - CLI (tempest): guia/cli.md
