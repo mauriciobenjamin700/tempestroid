@@ -75,7 +75,12 @@ outline = theme.color("outline")  # a string resolves too
 
 ## Light and dark with `ThemeMode`
 
-The theme's mode decides which scheme (light or dark) the roles resolve to.
+The theme's mode decides which scheme (light or dark) the roles resolve to. The
+same app, just swapping the `ThemeMode`, becomes:
+
+![Kit with the light theme](../../assets/design-system/kit-light.png){ width=280 }
+![The same kit with the dark theme](../../assets/design-system/kit-dark.png){ width=280 }
+
 There are three options:
 
 === "Force light/dark"

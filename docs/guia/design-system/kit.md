@@ -6,6 +6,12 @@ controles de seleção e os sliders. Cada um carrega `size` / `color_scheme` (a
 família de campos adiciona `field_variant`) e resolve seu `Style` Material 3
 contra o `theme` que você passa. Esta página percorre o kit.
 
+![O kit H2 no simulador Qt, tema claro](../../assets/design-system/kit-light.png){ width=300 }
+![O mesmo kit em dark mode](../../assets/design-system/kit-dark.png){ width=300 }
+
+*O exemplo `examples/h2gallery` no simulador Qt: o mesmo código segue o tema do
+app — claro à esquerda, escuro à direita.*
+
 !!! info "Onde os nomes moram"
     Os widgets (`Input`, `Checkbox`, `Switch`, `Slider`, `RadioGroup`, os inputs
     BR) e `Theme`/`Color` vêm de **`tempestroid`**. Os enums `Size`/`Variant`/

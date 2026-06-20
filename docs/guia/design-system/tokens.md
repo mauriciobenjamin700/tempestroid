@@ -76,8 +76,13 @@ outline = theme.color("outline")  # string também resolve
 
 ## Claro e escuro com `ThemeMode`
 
-O modo do tema decide qual esquema (claro ou escuro) os papéis resolvem. São
-três opções:
+O modo do tema decide qual esquema (claro ou escuro) os papéis resolvem. O mesmo
+app, só trocando o `ThemeMode`, vira:
+
+![Kit com tema claro](../../assets/design-system/kit-light.png){ width=280 }
+![O mesmo kit com tema escuro](../../assets/design-system/kit-dark.png){ width=280 }
+
+São três opções:
 
 === "Forçar claro/escuro"
 
