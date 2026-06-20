@@ -283,6 +283,24 @@ def test_icon_button_geometry_is_square() -> None:
     assert button.style.radius == 24.0  # circular (half the side)
 
 
+def test_icon_button_renders_as_a_fixed_square() -> None:
+    """The mounted IconButton widget is pinned to a true square (not ovalled).
+
+    Regression guard: the resolved style carries the inherited text-button
+    ``padding`` + ``min_height``, which a QPushButton turns into a QSS
+    ``min-height = content + padding`` larger than the ``setFixedHeight`` square —
+    so without stripping them (and re-pinning ``setFixedSize``) the disc renders
+    taller than it is wide. Assert the widget's fixed min == max == 48 on BOTH
+    axes (this checks the rendered widget, not just the baked style).
+    """
+    renderer = QtRenderer()
+    renderer.mount(build(IconButton(icon="settings", label="Settings")))
+    btn = renderer.host.findChild(QPushButton)
+    assert isinstance(btn, QPushButton)
+    assert btn.minimumWidth() == btn.maximumWidth() == 48
+    assert btn.minimumHeight() == btn.maximumHeight() == 48
+
+
 def test_icon_button_reuses_button_state_layers() -> None:
     """An IconButton carries the Variant-based M3 :hover/:pressed state blocks."""
     renderer = QtRenderer()
