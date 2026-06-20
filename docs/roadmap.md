@@ -111,8 +111,8 @@ inferência ONNX) com pouco esforço e visual profissional. Plano fase-a-fase em
 
 | Fase | Escopo | Risco | Status |
 |---|---|---|---|
-| H0 | Sistema de tokens: paleta tonal M3 + `color_scheme`s, escalas de espaçamento/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | **alto** | ⏳ planejado |
-| H1 | API de variantes (Chakra): `variant`/`size`/`color_scheme` → `Style` via tema + estados (hover/press/disabled/focus); `Button` piloto | **alto** | ⏳ planejado |
+| H0 | Sistema de tokens: paleta tonal M3 + `color_scheme`s, escalas de espaçamento/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | **alto** | ✅ done (tempest-core 0.2.0, #109) |
+| H1 | API de variantes (Chakra): `variant`/`size`/`color_scheme` → `Style` via tema + estados (hover/press/disabled/focus); `Button` piloto | **alto** | ✅ done (tempest-core 0.3.0 + Qt #112 + Compose #113 + conformância #114) |
 | H2 | Kit base ação/entrada estilizado: Button/IconButton (+ sistema de ícones)/Input/Checkbox/RadioGroup/Switch/Select/Slider + inputs BR | médio | ⏳ planejado |
 | H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | baixo | ⏳ planejado |
 | H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton, Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | baixo | ⏳ planejado |
