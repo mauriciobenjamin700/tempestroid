@@ -239,7 +239,8 @@ def test_component_style_overrides_default() -> None:
 def test_burger_renders_button_and_fires() -> None:
     fired: list[bool] = []
     node = build(Burger(on_click=lambda: fired.append(True)))
-    assert node.type == "Button"
+    # H5: Burger lowers to a (ghost) IconButton rather than a bare Button.
+    assert node.type == "IconButton"
     node.props["on_click"]()
     assert fired == [True]
 
@@ -399,8 +400,10 @@ def test_searchbar_clear_button_only_when_nonempty() -> None:
     def bar(value: str) -> SearchBar:
         return SearchBar(value=value, on_change=lambda _e: None, on_clear=lambda: None)
 
-    assert any(n.type == "Button" for n in _walk(build(bar("hi"))))
-    assert all(n.type != "Button" for n in _walk(build(bar(""))))
+    # H5: the clear affordance is now a (ghost) IconButton, shown only when the
+    # field is non-empty.
+    assert any(n.type == "IconButton" for n in _walk(build(bar("hi"))))
+    assert all(n.type != "IconButton" for n in _walk(build(bar(""))))
 
 
 # --- Accordion --------------------------------------------------------------

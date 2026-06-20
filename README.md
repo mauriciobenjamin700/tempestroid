@@ -717,7 +717,12 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`Scaffold`** — page frame stacking `app_bar`, a growing `body` and an
   optional `bottom_bar` (set `scroll=True` to wrap the body in a `ScrollView`).
 - **`NavBar`** — selectable navigation/tab bar: `items` labels, an `active`
-  index and an `on_select(index)` callback (generalises the `tabs` example).
+  index and an `on_select(index)` callback (generalises the `tabs` example). The
+  active destination paints the `color_scheme` accent pill (Trilho H5).
+- **`Tabs`** (Trilho H5) — a styled M3 tab strip: `tabs` labels + `active` index +
+  `on_select`; the active tab gets the `color_scheme` accent + an underline
+  indicator. The H5 nav skins (AppBar/Footer/Sidebar/Drawer/SearchBar/Breadcrumb)
+  resolve their surfaces/fields from the theme — no hand-set colors.
 - **`Burger`** / **`Drawer`** — a hamburger menu button (`on_click`) and a
   controlled lateral panel (`open` lives in app state; toggle it from the burger).
 - **`Calendar`** — month grid of selectable day cells: `month` (`"YYYY-MM"`),
