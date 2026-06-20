@@ -9,6 +9,12 @@ importáveis do nível do pacote:
 from tempestroid import AlignItems, FontWeight, JustifyContent, Style
 ```
 
+!!! tip "Enums do design system"
+    Os enums da API de variantes — `Variant` (solid/outline/ghost/link), `Size`
+    (xs/sm/md/lg), `FieldVariant` (outline/filled/flushed) e `ComponentState` —
+    vêm do pacote `tempest_core` e são descritos no
+    [guia do design system](../guia/design-system/variantes.md).
+
 Cada membro expõe um atributo `.value` com o valor string (ou inteiro) que cruza
 a fronteira; use sempre o nome de membro (`AlignItems.CENTER`), não o `.value`
 cru.

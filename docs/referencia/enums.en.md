@@ -9,6 +9,12 @@ from the top-level package:
 from tempestroid import AlignItems, FontWeight, JustifyContent, Style
 ```
 
+!!! tip "Design-system enums"
+    The variant-API enums — `Variant` (solid/outline/ghost/link), `Size`
+    (xs/sm/md/lg), `FieldVariant` (outline/filled/flushed) and `ComponentState` —
+    come from the `tempest_core` package and are described in the
+    [design-system guide](../guia/design-system/variantes.md).
+
 Each member exposes a `.value` attribute holding the string (or integer) that
 crosses the boundary; always use the member name (`AlignItems.CENTER`), not the
 raw `.value`.
