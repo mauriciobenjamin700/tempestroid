@@ -9,16 +9,14 @@ the design system computes the pixels.
 
 !!! info "Where the names live"
     `variant`/`size`/`color_scheme` are plain props; the **enums** `Variant`,
-    `Size` and `IconButton` come from **`tempest_core`**. The widgets (`Button`,
-    …) and `Theme`/`Color` come from **`tempestroid`**. Each block shows the right
-    import.
+    `Size`, `ComponentState` and the `IconButton` widget are re-exported by
+    **`tempestroid`**, alongside `Button`, `Theme` and `Color`. Import everything
+    from one place — `tempest_core` is just the engine underneath.
 
 ## The `Button` in one line
 
 ```python
-from tempest_core import Size, Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Size, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -53,9 +51,7 @@ Material 3:
 | `LINK` | same as `ghost`, plus an underline (reads as a text link) |
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Row, Theme
+from tempestroid import Button, Color, Row, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -98,9 +94,7 @@ with — one of five: `"primary"`, `"secondary"`, `"tertiary"`, `"error"` or
 `"neutral"` (see the [roles table](tokens.md#the-color-roles-color-schemes)).
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -121,9 +115,7 @@ the M3 opacities). The component hands that table to the renderer, which applies
 the matching style on real pointer/focus events:
 
 ```python
-from tempest_core import Variant
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Theme, Variant
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 button = Button(label="Save", variant=Variant.SOLID, color_scheme="primary", theme=theme)
@@ -146,9 +138,7 @@ print(sorted(s.value for s in states))
 against the theme's breakpoints and the current viewport width:
 
 ```python
-from tempest_core import Size
-
-from tempestroid import Button, Color, Theme
+from tempestroid import Button, Color, Size, Theme
 
 theme = Theme.from_seed(Color.from_hex("#2563eb"))
 
@@ -176,10 +166,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tempest_core import Size, Variant
-
-from tempestroid import App, Color, Column, Row, Style, Text, Theme, Widget
-from tempestroid.widgets import Button
+from tempestroid import (
+    App,
+    Button,
+    Color,
+    Column,
+    Row,
+    Size,
+    Style,
+    Text,
+    Theme,
+    Variant,
+    Widget,
+)
 
 
 @dataclass
