@@ -1,0 +1,14 @@
+{
+  "compose": {
+    "background": "#e5e5e6",
+    "color": "#584785",
+    "height": 4.0,
+    "radius": 999.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(229, 229, 230, 1.0); color: rgba(88, 71, 133, 1.0); border-radius: 999.0px",
+    "qss_leaf": "background-color: rgba(229, 229, 230, 1.0); color: rgba(88, 71, 133, 1.0); border-radius: 999.0px"
+  }
+}
