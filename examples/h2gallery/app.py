@@ -1,232 +1,306 @@
-"""H2 gallery — the Chakra-style input/selection/slider kit on both renderers.
+"""H2 base action/entry kit showcase (Trilho H, phase H2).
 
-Exercises the Trilho H phase H2 widgets, each with a couple of
-``variant``/``size``/``color_scheme`` permutations, so the Compose device
-renderer can be visually verified against the resolved ``Style`` the engine
-bakes:
+Renders the H2 styled base kit across a few variant / size / color_scheme
+combinations so both renderers have something to draw: Buttons + IconButtons
+(SOLID/OUTLINE/GHOST/LINK), Inputs in OUTLINE/FILLED/FLUSHED, a Checkbox, a
+Switch, a RadioGroup, and a Slider. State is wired so the device-verify can
+exercise the tap / change paths (tap counter, toggles, slider value).
 
-* :class:`~tempest_core.widgets.button.IconButton` in its three variants
-  (solid / outline / ghost) — each renders a curated glyph and routes taps;
-* :class:`~tempest_core.widgets.inputs.Input` in its three ``field_variant``s
-  (outline / filled / flushed), with a focus-colored role border;
-* :class:`~tempest_core.widgets.inputs.Checkbox` / ``Switch`` painted with the
-  ``color_scheme`` accent;
-* a :class:`~tempest_core.widgets.inputs.Slider` with a colored track;
-* an :class:`~tempest_core.widgets.inputs.Icon` using a Material alias name
-  (``photo_camera``) to confirm alias parity resolves a glyph (not raw text).
-
-Validation/handlers run entirely in Python; both renderers receive an already
-resolved tree, so the device leaf only reads the baked ``Style`` colors.
-
-Runs in the Qt simulator::
+Run it in the Qt simulator with the ``qt`` extra installed::
 
     uv run python examples/h2gallery/app.py
-    uv run tempest dev examples/h2gallery/app.py     # + hot restart on save
+    # or: make run APP=examples/h2gallery/app.py
 
-Exposes ``view(app) -> Widget`` and ``make_state() -> S`` for ``tempest dev``.
+On the device the same ``view``/``make_state`` are loaded by the Compose host;
+each component maps to its Material 3 affordance (OutlinedTextField / filled
+TextField / Checkbox / Switch / Slider / FilledIconButton …) over the resolved
+``Style`` colors. The screen is wrapped in a ``ScrollView`` so the full kit is
+reachable on a phone.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from tempest_core import FieldVariant, IconButton, Variant
+from tempest_core import FieldVariant, IconButton, Size, Variant
+from tempest_core.widgets.events import (
+    SlideEvent,
+    TextChangeEvent,
+    ToggleEvent,
+)
 
 from tempestroid import (
+    AlignItems,
     App,
+    Button,
     Checkbox,
     Color,
     Column,
     Edge,
-    Icon,
+    FontWeight,
     Input,
+    RadioGroup,
     Row,
-    SlideEvent,
+    ScrollView,
     Slider,
     Style,
     Switch,
     Text,
-    TextChangeEvent,
-    ToggleEvent,
     Widget,
 )
 
 
 @dataclass
 class GalleryState:
-    """Mutable state backing the H2 gallery.
+    """The showcase's mutable state.
 
     Attributes:
-        name: The current text of the controlled inputs.
-        agree: Whether the checkbox is checked.
-        wifi: Whether the switch is on.
-        volume: The current slider value in ``[0, 100]``.
-        taps: How many times any icon button was tapped.
+        taps: How many times any showcase button/icon-button has been tapped.
+        name: The current value of the demo text input.
+        agreed: Whether the demo checkbox is checked.
+        enabled: Whether the demo switch is on.
+        plan_index: The index of the selected radio option.
+        volume: The current slider value.
+        plans: The radio option labels, in order.
     """
 
-    name: str = ""
-    agree: bool = True
-    wifi: bool = False
-    volume: float = 40.0
     taps: int = 0
+    name: str = ""
+    agreed: bool = False
+    enabled: bool = True
+    plan_index: int = 0
+    volume: float = 40.0
+    plans: list[str] = field(default_factory=lambda: ["Free", "Pro", "Team"])
 
 
 def make_state() -> GalleryState:
-    """Build the initial gallery state.
+    """Build a fresh initial state (used on every hot restart).
 
     Returns:
-        A fresh :class:`GalleryState`.
+        A new gallery state with default values.
     """
     return GalleryState()
 
 
-def _section(title: str, *children: Widget) -> Column:
-    """Wrap labelled children in a spaced section.
+def _section(title: str, *, key: str, children: list[Widget]) -> Widget:
+    """Build a titled section block.
 
     Args:
-        title: The section heading.
-        *children: The widgets to stack under the heading.
+        title: The section heading text.
+        key: The stable diff key for the section.
+        children: The widgets shown under the heading.
 
     Returns:
-        A :class:`~tempestroid.Column` with a heading and the children.
+        A ``Column`` with a heading label above the section content.
     """
     return Column(
-        style=Style(gap=8, padding=Edge.all(4)),
+        style=Style(gap=8.0),
+        key=key,
         children=[
             Text(
                 content=title,
-                style=Style(font_size=16, color=Color.from_hex("#444444")),
+                style=Style(
+                    color=Color.from_hex("#6b7280"),
+                    font_size=12.0,
+                    font_weight=FontWeight.BOLD,
+                ),
+                key="heading",
             ),
             *children,
         ],
     )
 
 
-def view(app: App[GalleryState]) -> Column:
-    """Build the H2 gallery tree.
+def view(app: App[GalleryState]) -> Widget:
+    """Build the H2 base-kit showcase UI for the current state.
 
     Args:
-        app: The owning application (read ``app.state``, wire handlers).
+        app: The running app (read ``app.state``, wire handlers to
+            ``app.set_state``).
 
     Returns:
-        The root :class:`~tempestroid.Column` for the gallery screen.
+        The root widget: a scrollable column of titled component sections.
     """
-    state = app.state
 
     def bump() -> None:
+        """Increment the tap counter (the button/icon-button tap-path proof)."""
         app.set_state(lambda s: setattr(s, "taps", s.taps + 1))
 
-    def set_name(event: TextChangeEvent) -> None:
-        app.set_state(lambda s: setattr(s, "name", event.value))
+    def buttons_section() -> Widget:
+        """Build a row of Buttons across the four variants at MD/primary."""
+        return Row(
+            style=Style(gap=12.0, align=AlignItems.CENTER),
+            key="buttons-row",
+            children=[
+                Button(
+                    label=variant.value,
+                    on_click=bump,
+                    variant=variant,
+                    size=Size.MD,
+                    color_scheme="primary",
+                    key=f"btn:{variant.value}",
+                )
+                for variant in Variant
+            ],
+        )
 
-    def set_agree(event: ToggleEvent) -> None:
-        app.set_state(lambda s: setattr(s, "agree", event.checked))
+    def icon_buttons_section() -> Widget:
+        """Build a row of IconButtons across the four variants."""
+        return Row(
+            style=Style(gap=12.0, align=AlignItems.CENTER),
+            key="iconbtn-row",
+            children=[
+                IconButton(
+                    icon="add",
+                    on_click=bump,
+                    variant=variant,
+                    size=Size.MD,
+                    color_scheme="primary",
+                    label=f"add ({variant.value})",
+                    key=f"iconbtn:{variant.value}",
+                )
+                for variant in Variant
+            ],
+        )
 
-    def set_wifi(event: ToggleEvent) -> None:
-        app.set_state(lambda s: setattr(s, "wifi", event.checked))
+    def inputs_section() -> Widget:
+        """Build the three field variants over the demo text value."""
 
-    def set_volume(event: SlideEvent) -> None:
-        app.set_state(lambda s: setattr(s, "volume", event.value))
+        def set_name(event: TextChangeEvent) -> None:
+            """Mirror the input value into state."""
+            app.set_state(lambda s: setattr(s, "name", event.value))
 
-    return Column(
-        style=Style(gap=16, padding=Edge.all(16)),
+        inputs: list[Widget] = [
+            Input(
+                value=app.state.name,
+                placeholder=f"{fv.value} field",
+                on_change=set_name,
+                field_variant=fv,
+                size=Size.MD,
+                color_scheme="primary",
+                key=f"input:{fv.value}",
+            )
+            for fv in FieldVariant
+        ]
+        return Column(style=Style(gap=8.0), key="inputs-col", children=inputs)
+
+    def toggles_section() -> Widget:
+        """Build the checkbox + switch toggles."""
+
+        def toggle_agreed(event: ToggleEvent) -> None:
+            """Mirror the checkbox state."""
+            app.set_state(lambda s: setattr(s, "agreed", event.checked))
+
+        def toggle_enabled(event: ToggleEvent) -> None:
+            """Mirror the switch state."""
+            app.set_state(lambda s: setattr(s, "enabled", event.checked))
+
+        toggles: list[Widget] = [
+            Checkbox(
+                label="I agree to the terms",
+                checked=app.state.agreed,
+                on_change=toggle_agreed,
+                size=Size.MD,
+                color_scheme="primary",
+                key="checkbox",
+            ),
+            Switch(
+                label="Notifications enabled",
+                checked=app.state.enabled,
+                on_change=toggle_enabled,
+                size=Size.MD,
+                color_scheme="secondary",
+                key="switch",
+            ),
+        ]
+        return Column(style=Style(gap=8.0), key="toggles-col", children=toggles)
+
+    def radio_section() -> Widget:
+        """Build the radio group over the plan options."""
+
+        def pick_plan(index: int) -> None:
+            """Mirror the selected plan index."""
+            app.set_state(lambda s: setattr(s, "plan_index", index))
+
+        return RadioGroup(
+            options=app.state.plans,
+            selected=app.state.plan_index,
+            on_select=pick_plan,
+            size=Size.MD,
+            color_scheme="primary",
+            key="radio-group",
+        )
+
+    def slider_section() -> Widget:
+        """Build the slider over the volume value."""
+
+        def set_volume(event: SlideEvent) -> None:
+            """Mirror the slider value."""
+            app.set_state(lambda s: setattr(s, "volume", event.value))
+
+        return Slider(
+            value=app.state.volume,
+            min_value=0.0,
+            max_value=100.0,
+            on_change=set_volume,
+            size=Size.MD,
+            color_scheme="primary",
+            key="slider",
+        )
+
+    body = Column(
+        style=Style(
+            gap=20.0,
+            padding=Edge.all(24.0),
+            background=Color.from_hex("#ffffff"),
+        ),
         children=[
-            Text(content=f"H2 gallery — taps: {state.taps}", style=Style(font_size=20)),
-            _section(
-                "IconButton (solid / outline / ghost)",
-                Row(
-                    style=Style(gap=12),
-                    children=[
-                        IconButton(
-                            icon="heart",
-                            variant=Variant.SOLID,
-                            color_scheme="primary",
-                            label="Like",
-                            on_click=bump,
-                        ),
-                        IconButton(
-                            icon="star",
-                            variant=Variant.OUTLINE,
-                            color_scheme="secondary",
-                            label="Favorite",
-                            on_click=bump,
-                        ),
-                        IconButton(
-                            icon="settings",
-                            variant=Variant.GHOST,
-                            color_scheme="primary",
-                            label="Settings",
-                            on_click=bump,
-                        ),
-                    ],
+            Text(
+                content="H2 base kit",
+                style=Style(
+                    color=Color.from_hex("#111827"),
+                    font_size=22.0,
+                    font_weight=FontWeight.BOLD,
                 ),
+                key="title",
             ),
-            _section(
-                "Input (outline / filled / flushed)",
-                Input(
-                    value=state.name,
-                    placeholder="Outline (primary)",
-                    field_variant=FieldVariant.OUTLINE,
-                    color_scheme="primary",
-                    on_change=set_name,
+            Text(
+                content=(
+                    f"taps: {app.state.taps}  ·  name: {app.state.name or '—'}  ·  "
+                    f"plan: {app.state.plans[app.state.plan_index]}  ·  "
+                    f"vol: {int(app.state.volume)}"
                 ),
-                Input(
-                    value=state.name,
-                    placeholder="Filled (secondary)",
-                    field_variant=FieldVariant.FILLED,
-                    color_scheme="secondary",
-                    on_change=set_name,
-                ),
-                Input(
-                    value=state.name,
-                    placeholder="Flushed (error)",
-                    field_variant=FieldVariant.FLUSHED,
-                    color_scheme="error",
-                    on_change=set_name,
-                ),
+                style=Style(color=Color.from_hex("#2563eb"), font_size=14.0),
+                key="status",
             ),
+            _section("BUTTONS", key="sec-buttons", children=[buttons_section()]),
             _section(
-                "Selection + slider (accent color)",
-                Checkbox(
-                    checked=state.agree,
-                    label="I agree (secondary)",
-                    color_scheme="secondary",
-                    on_change=set_agree,
-                ),
-                Switch(
-                    checked=state.wifi,
-                    label="Wi-Fi (tertiary)",
-                    color_scheme="tertiary",
-                    on_change=set_wifi,
-                ),
-                Slider(
-                    value=state.volume,
-                    min_value=0,
-                    max_value=100,
-                    color_scheme="primary",
-                    on_change=set_volume,
-                ),
+                "ICON BUTTONS", key="sec-iconbtns", children=[icon_buttons_section()]
             ),
-            _section(
-                "Icon alias parity",
-                Row(
-                    style=Style(gap=12),
-                    children=[
-                        Icon(name="photo_camera", size=28),
-                        Text(content="photo_camera -> eye glyph"),
-                    ],
-                ),
-            ),
+            _section("INPUTS", key="sec-inputs", children=[inputs_section()]),
+            _section("TOGGLES", key="sec-toggles", children=[toggles_section()]),
+            _section("RADIO GROUP", key="sec-radio", children=[radio_section()]),
+            _section("SLIDER", key="sec-slider", children=[slider_section()]),
         ],
+    )
+    return ScrollView(children=[body], key="scroll")
+
+
+def main() -> int:
+    """Run the showcase in the Qt simulator.
+
+    Returns:
+        The process exit code.
+    """
+    # Import the Qt renderer lazily so this module stays renderer-agnostic: the
+    # Android device loads ``view``/``make_state`` from this same file and has no
+    # PySide6, so a top-level Qt import would crash the on-device load.
+    from tempestroid.renderers.qt import run_qt
+
+    return run_qt(
+        make_state(), view, title="tempestroid — H2 base kit", size=(440, 640)
     )
 
 
-def main() -> None:
-    """Run the gallery in the Qt simulator (lazy import keeps the file device-safe)."""
-    from tempestroid.renderers.qt import run_qt
-
-    run_qt(make_state(), view, title="tempestroid — H2 gallery", size=(420, 760))
-
-
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
