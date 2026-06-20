@@ -5175,8 +5175,20 @@ class QtRenderer:
         # loaded font to the ``"CustomAsset"`` family ``to_qss`` references, so the
         # widget font is the faithful channel for the custom typeface.
         custom_family = self._ensure_font_asset(style)
+        qss_style = style
+        if node.type in _SELECTION_TYPES and style is not None:
+            # A selection control's resolved ``background`` (accent fill when
+            # checked) / ``border`` (the empty ring) / ``color`` (the tick) belong
+            # to the ``::indicator`` box, painted by ``_apply_selection_states`` —
+            # NOT to the whole QCheckBox body, where ``background`` would fill the
+            # entire row with the accent (a solid bar instead of a box + label).
+            # Strip them from the widget's resting QSS; the label then uses the
+            # default palette color and the accent lands only on the indicator.
+            qss_style = style.model_copy(
+                update={"background": None, "border": None, "color": None}
+            )
         qss = self._node_qss(
-            style, is_container=is_container, custom_family=custom_family
+            qss_style, is_container=is_container, custom_family=custom_family
         )
         # Scope the QSS to the widget itself (``#objectName``) so box decoration
         # (border/background/radius) never cascades onto descendants — a bare body
