@@ -67,6 +67,11 @@ Row(
 )
 ```
 
+![As quatro variantes de Button no simulador Qt](../../assets/design-system/variants-buttons.png){ width=320 }
+
+*As quatro variantes (`examples/h1buttons`) nos tamanhos `md`/`lg`, renderizadas
+no simulador Qt.*
+
 ## Tamanhos e o alvo de toque de 48dp
 
 A prop `size` (enum `Size`) controla a **densidade visual** — padding e tamanho
