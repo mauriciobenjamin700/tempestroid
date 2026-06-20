@@ -8,6 +8,7 @@ def test_widget_catalog_lists_all_widgets():
     assert set(catalog) == {
         "Text",
         "Button",
+        "IconButton",
         "Column",
         "Row",
         "Container",
