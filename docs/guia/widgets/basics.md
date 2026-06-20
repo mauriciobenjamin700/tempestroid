@@ -76,6 +76,12 @@ def view(app) -> Column:
 | `label` | `str` | *(obrigatório)* | Texto exibido no botão. |
 | `on_click` | `handler → TapEvent` | `None` | Chamado ao tocar no botão. O handler pode ser zero-argumento ou receber um `TapEvent`. |
 
+!!! tip "Estilo Material 3 com variantes"
+    O `Button` também aceita a API de variantes ao estilo Chakra
+    (`variant`/`size`/`color_scheme` + `theme`), que resolve um `Style` Material 3
+    completo a partir do tema. Veja
+    [Variantes ao estilo Chakra](../design-system/variantes.md).
+
 !!! note "Handler zero-argumento vs TapEvent"
     O `on_click` aceita qualquer das duas assinaturas abaixo — use a que for
     mais conveniente:

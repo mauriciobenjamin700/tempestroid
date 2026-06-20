@@ -8,6 +8,12 @@ before it reaches your handler — the same way FastAPI validates request bodies
 > Both renderers — the **Qt simulator** (desktop) and **Compose on device**
 > (Android arm64) — render these inputs natively.
 
+!!! tip "Material 3 styling with variants"
+    Every input also accepts the Chakra-style variant API — `field_variant` /
+    `size` / `color_scheme` + `theme` — which resolves a Material 3 `Style` from
+    the theme (focus/invalid states included). See the
+    [Action and entry kit](../design-system/kit.md).
+
 ---
 
 ## Input

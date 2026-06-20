@@ -76,6 +76,12 @@ def view(app) -> Column:
 | `label` | `str` | *(required)* | Text shown on the button. |
 | `on_click` | `handler → TapEvent` | `None` | Called when the button is tapped. The handler may be zero-argument or accept a `TapEvent`. |
 
+!!! tip "Material 3 styling with variants"
+    `Button` also accepts the Chakra-style variant API
+    (`variant`/`size`/`color_scheme` + `theme`), which resolves a complete
+    Material 3 `Style` from the theme. See
+    [Chakra-style variants](../design-system/variantes.md).
+
 !!! note "Zero-argument handler vs TapEvent"
     `on_click` accepts either of the two signatures below — use whichever is
     most convenient:
