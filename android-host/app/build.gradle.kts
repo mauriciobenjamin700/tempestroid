@@ -530,8 +530,12 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
                 // AGP's asset merger chokes on real .gz assets ("Not in GZIP
                 // format"), so the stdlib task renames .gz -> .gz- and MainActivity
                 // reverses it on extraction. Mirror that here so sklearn's bundled
-                // .csv.gz datasets survive packaging + restore on device.
-                rename("""(.*)\.gz$""", "$1.gz-")
+                // .csv.gz datasets survive packaging + restore on device. Guarded
+                // like the stdlib task: a prebuilt host's site-packages already
+                // carry .gz- (renamed by that build), so only rename in source mode.
+                if (!isPrebuilt) {
+                    rename("""(.*)\.gz$""", "$1.gz-")
+                }
                 if (isPrebuilt) {
                     exclude("tempestroid/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo")
                 }

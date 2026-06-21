@@ -33,7 +33,9 @@ STAGE="$DIST/site-packages-x86_64"
 
 unzip_wheel() {
     local glob="$1" whl
-    whl="$(ls "$WHEELS"/$glob 2>/dev/null | head -1 || true)"
+    # Pick the highest version if several match (sort -V), not the first
+    # alphabetically — so scipy-1.18 wins over a stale scipy-1.13.
+    whl="$(ls "$WHEELS"/$glob 2>/dev/null | sort -V | tail -1 || true)"
     if [ -z "$whl" ] || [ ! -f "$whl" ]; then
         echo "ERROR: no wheel matching $glob under $WHEELS — run build_${glob%%-*}_x86.sh" >&2
         exit 1
