@@ -438,17 +438,27 @@ val targetAbi = abi
 // ~11.6 MB foreign payload in the x86_64 emulator APK. The fix excludes every
 // non-target ABI's extension at the copy step, so only the target ABI's .so are
 // ever staged regardless of how the source dir got populated.
+val knownPyAbiTags = listOf("aarch64", "x86_64", "arm", "i686")
 val targetPyAbiTag = when (targetAbi) {
     "arm64-v8a" -> "aarch64"
     "x86_64" -> "x86_64"
     "armeabi-v7a" -> "arm"
     "x86" -> "i686"
-    else -> targetAbi
+    else -> ""
 }
+// Fail-safe: only strip foreign ABIs when the target tag is RECOGNIZED. A typo'd
+// `-Ptempest.abi` (e.g. "arm64" instead of "arm64-v8a") would otherwise leave the
+// target tag unmatched, and excluding "everything except an unknown tag" would
+// drop the REAL target's extensions too — a blank-screen APK. Unknown ABI =>
+// strip nothing (ship as-is) rather than risk that.
 val foreignAbiSoGlobsValue: List<String> =
-    listOf("aarch64", "x86_64", "arm", "i686")
-        .filter { it != targetPyAbiTag }
-        .map { "**/*-$it-linux-android.so" }
+    if (targetPyAbiTag in knownPyAbiTags) {
+        knownPyAbiTags
+            .filter { it != targetPyAbiTag }
+            .map { "**/*-$it-linux-android.so" }
+    } else {
+        emptyList()
+    }
 
 /**
  * Stage the device site-packages: the pre-built deps (pydantic + pydantic_core
