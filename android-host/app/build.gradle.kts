@@ -393,13 +393,14 @@ abstract class CopyPythonStdlibTask @Inject constructor(
                         // the frozen "hello" example modules.
                         "config-*/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
                         "pydoc_data/**", "**/__phello__/**", "__hello__.py",
-                        // F6: pure-Python modules with no device use — the new
-                        // interactive REPL (_pyrepl), the WSGI reference server
-                        // (wsgiref), the doctest framework and the pydoc CLI. None
-                        // are imported by the framework / pydantic runtime (verified
-                        // off-device with an import trace); apps run headless with no
-                        // REPL, no WSGI, no doctest. ~0.4 MB.
-                        "_pyrepl/**", "wsgiref/**", "doctest.py", "pydoc.py",
+                        // NOTE: pure-Python stdlib modules that LOOK dev-only
+                        // (pydoc, _pyrepl, wsgiref, doctest) are NOT trimmed. The
+                        // framework hosts ARBITRARY libraries, and the science stack
+                        // proves the risk: scipy/scikit-learn `import pydoc`, which
+                        // in 3.14 pulls `_pyrepl` (+ transitively doctest) during
+                        // their own import — a blank-screen ModuleNotFoundError on
+                        // device when dropped (G6). They total ~0.5 MB; keeping them
+                        // is worth not breaking any importer.
                         // F6: lib-dynload test/example extension modules. These are
                         // CPython's own C-API test harnesses + the "xx" example
                         // extensions — never importable by an app at runtime. ~0.9 MB.
@@ -507,17 +508,30 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
                 // Drop every non-target ABI's compiled extensions (G7 trim).
                 exclude(foreignSo)
                 // G7 trim — runtime-dead payload in the science deps. numpy ships
-                // its test suites (~7.7 MB), the f2py Fortran-wrapper generator and
-                // PyInstaller hooks; none run during inference. Type stubs (*.pyi)
-                // and bytecode caches are never imported at runtime either. Pure
-                // Python, so this is zero-risk for an app that only does ndarray ops
-                // (numpy/typing/__init__.py — the real runtime module — is kept; only
-                // its .pyi stubs go).
+                // its test suites (~7.7 MB), PyInstaller hooks and type stubs
+                // (*.pyi); none run at runtime. Pure Python, zero-risk
+                // (numpy/typing/__init__.py — the real runtime module — is kept;
+                // only its .pyi stubs go).
+                // NOTE: numpy/f2py is NOT dropped — it LOOKS build-only, but scipy
+                // (and thus scikit-learn) `import numpy.f2py` during their own
+                // import (G6 device test proved a blank-screen ModuleNotFoundError
+                // when it was excluded). It is only ~1.5 MB; keep it.
                 exclude(
                     "numpy/tests/**", "numpy/**/tests/**",
-                    "numpy/f2py/**", "numpy/_pyinstaller/**",
+                    "numpy/_pyinstaller/**",
+                    // Science-stack test suites are runtime-dead and big (they also
+                    // carry the .gz fixtures that trip the asset merger). The real
+                    // bundled datasets under sklearn/datasets/data/ are NOT tests
+                    // and are kept (load_digits/load_diabetes read them at runtime).
+                    "scipy/**/tests/**", "sklearn/**/tests/**",
+                    "joblib/test/**", "joblib/**/test/**",
                     "**/*.pyi", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
                 )
+                // AGP's asset merger chokes on real .gz assets ("Not in GZIP
+                // format"), so the stdlib task renames .gz -> .gz- and MainActivity
+                // reverses it on extraction. Mirror that here so sklearn's bundled
+                // .csv.gz datasets survive packaging + restore on device.
+                rename("""(.*)\.gz$""", "$1.gz-")
                 if (isPrebuilt) {
                     exclude("tempestroid/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo")
                 }
