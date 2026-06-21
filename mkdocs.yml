@@ -81,6 +81,7 @@ plugins:
             Componentes de pesquisa: Research components
             Storybook (galeria): Storybook (gallery)
             Eventos: Events
+            Dados e ML no dispositivo: Data & ML on device
             CLI (tempest): CLI (tempest)
             Galeria de exemplos: Example gallery
             Rodar no dispositivo (WSL): Running on a device (WSL)
@@ -151,6 +152,7 @@ nav:
           - Componentes de pesquisa: guia/design-system/pesquisa.md
           - Storybook (galeria): guia/design-system/storybook.md
       - Eventos: guia/eventos.md
+      - Dados e ML no dispositivo: guia/dados-ml.md
       - Testes de UI: guia/testing.md
       - CLI (tempest): guia/cli.md
       - Galeria de exemplos: guia/exemplos.md
