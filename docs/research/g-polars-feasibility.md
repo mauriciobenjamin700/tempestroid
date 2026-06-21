@@ -79,6 +79,21 @@ pipelines tabulares no device. Próximo passo: `toolchain/build_polars_x86.sh`
 (features sem `fast_alloc`/`nightly`, sem `rust-toolchain.toml` pin), e provar
 `examples/polarsspike` no emulador.
 
+## Resultado do build (2026-06-21)
+
+A wheel **compila** (`toolchain/build_polars_x86.sh`): `polars_runtime_32-1.41.2-cp310-abi3-android_24_x86_64.whl`, 15 min de compile do engine Rust inteiro, **abi3** (uma wheel p/ todo CPython ≥3.10). Confirmou a tese: maturin/Rust→Android fecha, o calcanhar era só feature-tuning. Blockers resolvidos no script (3 seds):
+
+1. **`cp310-*` → `cp314-*`** — cibuildwheel só oferece o CPython android 3.14 (a wheel sai abi3 igual).
+2. **Feature surgery** — um subset mínimo de IO quebra os `match` exaustivos do polars-python (`IRFunctionExpr`/`IRStringFunction`/…); usar o set coerente `full_functionality`, dropando só `nightly` (SIMD/rustc instável) + `fast_alloc` (jemalloc/mimalloc não buildam p/ android) + remover o pin nightly do `rust-toolchain.toml`.
+3. **`clipboard`** — o feature `io` puxa `arboard` (sem backend android, `cannot find Clipboard in platform`); removida a linha `"clipboard"` do feature `io` do polars-python.
+
+Dois fixes de packaging do lado tempestroid:
+
+- **strip** — a `.so` unstripped é ~**2.4 GB** (debug do workspace Rust), que estoura o compressor de assets do AGP (limite de array de 2 GB do Java) **e** incha o APK. `CARGO_PROFILE_RELEASE_STRIP=symbols` no build → ~200 MB.
+- **`noCompress("so")`** em `android-host/app/build.gradle.kts` — não comprimir as `.so` de assets (são extraídas em runtime; comprimir uma `.so` grande crasha o compressor). Correto + independente (ajuda qualquer `.so` grande, incl. G6).
+
+**No device (emulador x86_64):** `import polars` **funciona** (o core `.so` carrega, `_plr` resolve, a versão bate, o app renderiza). **Pendente:** um `NameError: PySeries` num path de op específico (DataFrame/group_by/csv) — quirk de símbolo do build de features reduzidas; o diagnóstico on-device ficou bloqueado pela instabilidade crônica do adb no WSL (não pelo polars). Próximo: tentar `default = ["full_functionality"]` direto (o set coerente do maintainer, menos clipboard) em vez do subset à mão — capturar o traceback com adb saudável.
+
 ## Enforcement no framework
 
 O loader de app (`tempestroid.cli.app_loader.spec_from_source` — o funil do

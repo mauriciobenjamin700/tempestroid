@@ -249,6 +249,10 @@ stage-x86: ## Stage the x86_64 CPython prefix + site-packages for the emulator (
 stage-science: ## Add scipy + scikit-learn (+ deps) to the x86_64 staging (G6; opt-in, heavy)
 	bash toolchain/stage_science_x86.sh
 
+.PHONY: stage-polars
+stage-polars: ## Add polars (Rust core + wrapper) to the x86_64 staging (G; opt-in)
+	bash toolchain/stage_polars_x86.sh
+
 .PHONY: apk-x86
 apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
 	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug \
