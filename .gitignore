@@ -82,3 +82,4 @@ tempestroid/_assets/*.apk
 # Runtime lock for scheduled tasks — per-session (sessionId/pid), not source.
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+docs/assets/emulator/pool/

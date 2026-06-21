@@ -80,6 +80,37 @@ def test_resolve_project_missing_app_raises(tmp_path: Path) -> None:
         resolve_project(tmp_path / "nope.py")
 
 
+def test_resolve_project_skips_framework_pyproject(tmp_path: Path) -> None:
+    """An example under the framework repo anchors to its OWN dir, not the repo.
+
+    The framework's ``pyproject.toml`` (``name = "tempestroid"``) must be skipped
+    as a project-root anchor — otherwise ``tree_signature``/``build_bundle`` would
+    walk the entire framework repo (docs assets, android-host, every example),
+    blowing the code-push poll timeout and shipping a wrong, huge bundle.
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "tempestroid"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    example = tmp_path / "examples" / "counter"
+    example.mkdir(parents=True)
+    app = example / "app.py"
+    app.write_text(_MULTI_FILE_APP, encoding="utf-8")
+    layout = resolve_project(app)
+    # Anchors to the example dir (no own pyproject) — NOT the framework root.
+    assert layout.root == example.resolve()
+    assert layout.entry == "app.py"
+
+
+def test_resolve_project_uses_non_framework_pyproject(tmp_path: Path) -> None:
+    """A user project's own (non-framework) pyproject is still the anchor."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "my-app"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    app = tmp_path / "app.py"
+    app.write_text(_MULTI_FILE_APP, encoding="utf-8")
+    assert resolve_project(app).root == tmp_path.resolve()
+
+
 def test_build_bundle_contains_tree_and_manifest(tmp_path: Path) -> None:
     app = _make_project(tmp_path)
     data = build_bundle(resolve_project(app))
