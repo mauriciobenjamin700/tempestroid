@@ -6,8 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-06-21
+
 ### Added
 
+- **On-device data & ML stack (Trilho G).** Python's scientific stack now runs
+  inside the app on the embedded CPython: **`numpy`**, **`scipy` +
+  `scikit-learn`** (cross-compiled clang-only, zero Fortran; `fit`/`predict` +
+  `scipy.linalg` verified on the x86_64 emulator), and **ONNX inference** via the
+  `ort-vision-sdk` over the native `onnxruntime-android` AAR. Each heavy lib is
+  opt-in through a per-ABI recipe (`make stage-science`, `toolchain/build_*_x86.sh`).
+  New guide: **Data & ML on device** (`docs/guia/dados-ml.md`, PT-BR + EN-US).
+- **Polars cross-compiles to an Android `abi3` wheel** — `polars-runtime-32`
+  (the Rust core) built via `cibuildwheel` + `maturin`
+  (`toolchain/build_polars_x86.sh`, `make stage-polars`); one wheel for all
+  CPython ≥3.10, dependency-free core, native CSV/JSON/Parquet. Example
+  `examples/polarsspike`. (Builds + `import polars` works on the emulator; one
+  op-path symbol issue is tracked.)
+- **`pandas` → `polars` advisory** — the app loader (`spec_from_source`, the
+  funnel for the Qt sim **and** the device code-push) emits a
+  `DiscouragedImportWarning` when an app imports `pandas`, steering to Polars.
+  New module `tempestroid.cli.advisories` (`DISCOURAGED_IMPORTS`,
+  `advisories_for_source`, `warn_discouraged_imports`).
+- **Per-agent adb-server isolation** (`tempestroid.testing.adb_server`:
+  `allocate_adb_server_port`, `current_adb_server_port`) — a private
+  `ANDROID_ADB_SERVER_PORT` per agent so parallel emulator runs never contend on,
+  nor wedge, one another's adb server. `tempest uitest --isolate-adb`; threaded
+  through `EmulatorPool`/`EmulatorBackend` + `device_loop.sh` (scoped recovery).
 - **Native UI test driver (F9, emulator backend)** — a third
   `tempestroid.testing.TestBackend`: `EmulatorBackend` drives a REAL app through
   the **Compose** renderer on an x86_64/arm64 Android emulator, plus
@@ -24,6 +49,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `max_parallel_emulators`, `run_test_file_emulator`, `run_test_files_emulator`,
   `deserialize_node`/`deserialize_scene`/`apply_patches` (mirror), and
   `HarnessTransport`/`poll_commands` (devserver).
+
+### Changed
+
+- **APK size trims (Trilho G7).** The Android host no longer compresses `.so`
+  assets (`androidResources { noCompress("so") }`) — AGP's asset compressor
+  crashes on a large `.so` (e.g. a Rust/science core), and they are extracted at
+  first launch anyway. The site-packages staging drops the **non-target ABI's**
+  compiled extensions (they can never load — the generated dir used to accumulate
+  them across ABI switches) and `numpy`'s runtime-dead payload (`tests`,
+  `f2py`-when-unused, `*.pyi` stubs). Measured −16 MB on the x86_64 emulator APK;
+  no functional change.
 
 ## [0.14.0] — 2026-06-14
 
