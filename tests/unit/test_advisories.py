@@ -81,8 +81,12 @@ def test_spec_from_source_warns_on_pandas() -> None:
     """
     from tempestroid.cli.app_loader import spec_from_source
 
+    # pandas is imported inside an UNCALLED function: the AST scan still detects
+    # it (it walks nested imports), so the advisory fires — but the exec never
+    # runs the import, so the test does NOT require pandas to be installed (it
+    # isn't — pandas is the discouraged dep this whole feature steers away from).
     source = (
-        "import pandas as pd\n"
+        "def _uses_pandas():\n    import pandas  # noqa: F401\n"
         "def make_state():\n    return 0\n"
         "def view(app):\n"
         "    from tempestroid import Text\n"
