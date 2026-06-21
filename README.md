@@ -762,6 +762,16 @@ renderer changes and are fully device-ready. Every component takes an optional
   wizard step indicator: `steps` + `current`, accent from `color_scheme`), and
   **`Tag`** (a closed, non-selectable `Chip` preset). `Badge`/`Chip`/`ProgressBar`/
   `Spinner` take `variant`/`color_scheme` too.
+- Research / data-science (Trilho H6, ties to the `ort-vision-sdk`) — **`MetricCard`**
+  / **`StatCard`** (label + value + tinted delta over a themed `Card`),
+  **`ConfidenceBadge`** (a confidence pill colored by `confidence_scheme` —
+  success/warning/error, WCAG-AA via the tonal container), **`LineChart`** /
+  **`BarChart`** (lower to the `Canvas`: data → themed draw commands; data shape is
+  **`ChartSeries`**), **`DetectionOverlay`** (an image + labeled bounding boxes from
+  a list of **`DetectionBox`** — normalized `[0,1]` xyxy, conf-colored), and
+  **`ResultView`** (an `ImagePicker` → result flow). `DataTable` gains sort/paginate;
+  `Calendar`/`Clock` are theme-styled. `confidence_scheme(conf)` is the shared
+  success/warning/error threshold picker.
 - **`Breadcrumb`** — path trail (`items` + `separator`, optional `on_select`).
 - **`Grid`** — equal-width `columns` grid of `children`.
 

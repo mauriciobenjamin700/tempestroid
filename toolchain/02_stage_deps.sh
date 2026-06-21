@@ -32,7 +32,7 @@ else
 fi
 
 PYDANTIC_VERSION="2.12.5"
-TEMPEST_CORE_VERSION="0.7.0"
+TEMPEST_CORE_VERSION="0.8.1"
 PYDANTIC_CORE_WHEEL="$WHEELS/pydantic_core-2.41.5-cp314-cp314-android_24_${ABI//-/_}.whl"
 
 echo "==> staging site-packages for ABI=$ABI at $STAGE"

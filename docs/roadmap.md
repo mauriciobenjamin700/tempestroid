@@ -117,7 +117,7 @@ inferência ONNX) com pouco esforço e visual profissional. Plano fase-a-fase em
 | H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | baixo | ✅ done (tempest-core 0.5.0 + Qt + Compose + conformância) |
 | H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton, Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | baixo | ✅ done (tempest-core 0.6.0 + Qt + Compose + conformância) |
 | H5 | Navegação estilizada: AppBar/CollapsingAppBar, NavBar, Drawer/Sidebar, Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs (skins M3 sobre os hosts do E0) | médio | ✅ done (tempest-core 0.7.0 + skin pass + conformância) |
-| H6 | Componentes de pesquisa (liga ao G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | médio | ⏳ planejado |
+| H6 | Componentes de pesquisa (liga ao G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | médio | ✅ done (tempest-core 0.8.1 + Qt + conformância) |
 | H7 | Galeria (storybook) + docs tutorial-first bilíngues + dark/RTL verificados + conformância (matriz representativa) de tokens/variants | baixo | ⏳ planejado |
 
 !!! warning "Trilho cross-repo — três camadas, dois repositórios"
