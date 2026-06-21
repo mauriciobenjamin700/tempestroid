@@ -19,9 +19,14 @@
 #   SNAPSHOT    snapshot to restore       (default golden)
 #   APPS        space-separated app list  (default: every examples/*/app.py)
 #   READY_WAIT  per-instance boot timeout (default 180)
+#   ANDROID_ADB_SERVER_PORT  private adb server port for PER-AGENT isolation
+#               (default 5037, the shared server). device_loop.sh honors + scopes
+#               it, so two agents each running this pool with a DISTINCT port get
+#               fully isolated adb servers and never wedge one another.
 #
 # Usage: bash toolchain/emulator_pool.sh           # default apps
 #        N=3 APPS="examples/counter/app.py …" bash toolchain/emulator_pool.sh
+#        ANDROID_ADB_SERVER_PORT=5139 bash toolchain/emulator_pool.sh  # isolated
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

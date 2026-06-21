@@ -33,7 +33,7 @@ def stub_ports(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch: The pytest monkeypatcher.
     """
 
-    def no_attached(adb: str = "adb") -> set[str]:
+    def no_attached(adb: str = "adb", **_kw: object) -> set[str]:
         return set()
 
     def all_free(port: int) -> bool:
@@ -69,7 +69,10 @@ def _stub_running(monkeypatch: pytest.MonkeyPatch, serials: list[str]) -> None:
         monkeypatch: The pytest monkeypatcher.
         serials: The serials to report as running.
     """
-    monkeypatch.setattr(pool_mod, "running_emulators", lambda adb="adb": list(serials))
+    def fake_running(adb: str = "adb", **_kw: object) -> list[str]:
+        return list(serials)
+
+    monkeypatch.setattr(pool_mod, "running_emulators", fake_running)
 
 
 def _stub_cap(monkeypatch: pytest.MonkeyPatch, ceiling: int) -> None:
@@ -281,7 +284,7 @@ def test_allocate_skips_offline_ghost_serial(
     _stub_running(monkeypatch, [])
     _stub_cap(monkeypatch, 4)
 
-    def ghost_5554(adb: str = "adb") -> set[str]:
+    def ghost_5554(adb: str = "adb", **_kw: object) -> set[str]:
         return {"emulator-5554"}
 
     monkeypatch.setattr(pool_mod, "_attached_serials", ghost_5554)
@@ -337,7 +340,7 @@ def test_allocate_terminates_when_every_port_is_poisoned(
     def all_busy(port: int) -> bool:
         return True
 
-    def none_attached(adb: str = "adb") -> set[str]:
+    def none_attached(adb: str = "adb", **_kw: object) -> set[str]:
         return set()
 
     monkeypatch.setattr(pool_mod, "_attached_serials", none_attached)
@@ -371,3 +374,57 @@ def test_port_in_use_detects_a_bound_port() -> None:
 def test_max_parallel_is_at_least_one() -> None:
     """The hardware cap is always >= 1, whatever the host reports."""
     assert pool_mod.max_parallel_emulators() >= 1
+
+
+def test_pool_pins_adb_server_port_into_probe_env(
+    monkeypatch: pytest.MonkeyPatch, captured_helpers: list[tuple[str, ...]]
+) -> None:
+    """A pool with an isolated server pins ``ANDROID_ADB_SERVER_PORT`` on probes.
+
+    The cross-agent footgun was every pool talking to the shared 5037 server. A
+    pool given ``adb_server_port`` must pass an env carrying that port to its
+    ``adb`` probes, so it only ever reaches its own agent's emulators.
+    """
+    seen_env: list[dict[str, str] | None] = []
+
+    def capture_env(adb: str = "adb", **kw: object) -> list[str]:
+        seen_env.append(kw.get("env"))  # type: ignore[arg-type]
+        return []
+
+    def no_attached(adb: str = "adb", **_kw: object) -> set[str]:
+        return set()
+
+    def all_busy(port: int) -> bool:
+        return True
+
+    monkeypatch.setattr(pool_mod, "running_emulators", capture_env)
+    monkeypatch.setattr(pool_mod, "_attached_serials", no_attached)
+    monkeypatch.setattr(pool_mod, "_port_in_use", all_busy)  # boot nothing
+    _stub_cap(monkeypatch, 4)
+
+    pool = EmulatorPool(adb_server_port=5139, log=lambda _line: None)
+    pool.allocate(1)
+
+    assert pool.adb_server_port == 5139
+    assert seen_env and seen_env[0] is not None
+    assert seen_env[0]["ANDROID_ADB_SERVER_PORT"] == "5139"
+
+
+def test_pool_without_isolation_inherits_env(
+    monkeypatch: pytest.MonkeyPatch, captured_helpers: list[tuple[str, ...]]
+) -> None:
+    """With no server port the probe env is ``None`` (inherits the shared server)."""
+    seen_env: list[dict[str, str] | None] = []
+
+    def capture_env(adb: str = "adb", **kw: object) -> list[str]:
+        seen_env.append(kw.get("env"))  # type: ignore[arg-type]
+        return ["emulator-5554"]
+
+    monkeypatch.setattr(pool_mod, "running_emulators", capture_env)
+    _stub_cap(monkeypatch, 4)
+
+    pool = EmulatorPool(log=lambda _line: None)
+    pool.allocate(1)
+
+    assert pool.adb_server_port is None
+    assert seen_env == [None]

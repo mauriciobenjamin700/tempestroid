@@ -23,6 +23,17 @@ if [ -z "${ADB:-}" ]; then
     fi
 fi
 
+# Per-agent adb-server isolation (Trilho F). The emulator *instances* in a pool
+# are isolated by port/userdata, but the single adb server (default tcp:5037) is
+# shared: two agents driving emulators at once both hammer it, it wedges, and the
+# recovery used to SIGKILL every adb — taking out the sibling agent's server too.
+# Both adb and the emulator binary honor ANDROID_ADB_SERVER_PORT, so an agent that
+# sets it gets a PRIVATE server. We resolve the port once and EXPORT it so every
+# adb/emulator child this harness spawns talks to — and only ever resets — this
+# agent's own server. Unset → the shared default 5037 (single-agent behaviour).
+: "${ADB_SERVER_PORT:=${ANDROID_ADB_SERVER_PORT:-5037}}"
+export ANDROID_ADB_SERVER_PORT="$ADB_SERVER_PORT"
+
 # adbq — every adb call, time-bounded. A wedged adb returns 124 (timeout's
 # exit code) instead of hanging the whole harness forever.
 adbq() {
@@ -35,12 +46,19 @@ adbq() {
 # recovery is to SIGKILL the server process directly and restart it as a
 # background nodaemon server (the WSL mirrored-networking workaround — see
 # docs/guia/dispositivo-wsl.md §3). Idempotent + bounded (never hangs).
+#
+# Per-agent isolation: scope the kill to THIS agent's server port only. The old
+# `pkill -9 -x adb` matched every adb process by name, so it dropped a parallel
+# agent's server on another port too — the exact footgun that wedged the 2-agent
+# run. fuser kills only the holder of ${ADB_SERVER_PORT}; the pattern kill mops up
+# a matching nodaemon/fork-server form on that same port.
 adb_unwedge() {
-    echo "==> adb wedged — killing the server process and restarting (nodaemon)"
-    pkill -9 -x adb >/dev/null 2>&1 || true
-    pkill -9 -f "adb -L tcp:5037" >/dev/null 2>&1 || true
+    echo "==> adb server on tcp:${ADB_SERVER_PORT} wedged — restarting it (nodaemon)"
+    fuser -k "${ADB_SERVER_PORT}/tcp" >/dev/null 2>&1 || true
+    pkill -9 -f "adb -L tcp:${ADB_SERVER_PORT}" >/dev/null 2>&1 || true
     sleep 1
-    setsid "$ADB" -L tcp:5037 nodaemon server >/tmp/tempest-adb-server.log 2>&1 &
+    setsid "$ADB" -L "tcp:${ADB_SERVER_PORT}" nodaemon server \
+        >"/tmp/tempest-adb-server-${ADB_SERVER_PORT}.log" 2>&1 &
     sleep 3
     adbq start-server >/dev/null 2>&1 || true
 }

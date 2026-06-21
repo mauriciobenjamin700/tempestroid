@@ -849,6 +849,26 @@ def uitest_cmd(
             "only). Capped by the host's CPU/RAM.",
         ),
     ] = 1,
+    isolate_adb: Annotated[
+        bool,
+        typer.Option(
+            "--isolate-adb/--no-isolate-adb",
+            help="Run against a PRIVATE adb server (`--target emulator` only) so "
+            "this invocation never contends on — nor wedges — another agent's "
+            "shared server. Auto-picks a free port unless `--adb-server-port` is "
+            "given. Use it when several agents drive emulators in parallel.",
+        ),
+    ] = False,
+    adb_server_port: Annotated[
+        int,
+        typer.Option(
+            "--adb-server-port",
+            "-P",
+            help="Explicit private adb server port (implies --isolate-adb). `0` "
+            "auto-picks one. Each parallel agent should pass a distinct port (or "
+            "let it auto-pick).",
+        ),
+    ] = 0,
 ) -> None:
     """Run a Playwright-style native UI test file (F9 driver).
 
@@ -857,9 +877,19 @@ def uitest_cmd(
     `headless` target runs in-process with no renderer; `--target emulator` runs
     the SAME script against a real app on the Compose renderer on an Android
     emulator, sharding across `-j N` isolated instances and saving a real
-    screenshot per test.
+    screenshot per test. With `--isolate-adb`, the emulator run uses a private
+    adb server (ANDROID_ADB_SERVER_PORT) so parallel agents stay fully isolated.
     """
-    raise typer.Exit(_run_uitest(path, target, jobs))
+    isolate = isolate_adb or adb_server_port != 0
+    raise typer.Exit(
+        _run_uitest(
+            path,
+            target,
+            jobs,
+            isolate_adb=isolate,
+            adb_server_port=adb_server_port or None,
+        )
+    )
 
 
 @app.command("check", rich_help_panel=_QUALITY)
@@ -1622,7 +1652,14 @@ def _run_run(
         return exc.returncode or 1
 
 
-def _run_uitest(path: str, target: str, jobs: int = 1) -> int:
+def _run_uitest(
+    path: str,
+    target: str,
+    jobs: int = 1,
+    *,
+    isolate_adb: bool = False,
+    adb_server_port: int | None = None,
+) -> int:
     """Run a UI test file against a backend target and report the outcome.
 
     Args:
@@ -1630,12 +1667,18 @@ def _run_uitest(path: str, target: str, jobs: int = 1) -> int:
             the emulator target).
         target: The backend target (``headless`` or ``emulator``).
         jobs: Emulator instances to run in parallel (``emulator`` only).
+        isolate_adb: Use a private adb server for the emulator run (per-agent
+            isolation); ignored by the headless target.
+        adb_server_port: An explicit private server port (implies isolation);
+            ``None`` auto-picks one when ``isolate_adb`` is set.
 
     Returns:
         ``0`` when every test passed, ``1`` otherwise (or on a load error).
     """
     if target == "emulator":
-        return _run_uitest_emulator(path, jobs)
+        return _run_uitest_emulator(
+            path, jobs, isolate_adb=isolate_adb, adb_server_port=adb_server_port
+        )
     from tempestroid.testing import run_test_file
 
     try:
@@ -1668,7 +1711,13 @@ def _discover_test_files(path: str) -> list[str]:
     return [str(target)]
 
 
-def _run_uitest_emulator(path: str, jobs: int) -> int:
+def _run_uitest_emulator(
+    path: str,
+    jobs: int,
+    *,
+    isolate_adb: bool = False,
+    adb_server_port: int | None = None,
+) -> int:
     """Run UI tests on N real emulators, sharding files and capturing shots.
 
     Acquires up to ``jobs`` serials from an :class:`EmulatorPool` (reusing any
@@ -1676,23 +1725,43 @@ def _run_uitest_emulator(path: str, jobs: int) -> int:
     on an :class:`EmulatorBackend`, saves a real screenshot per test under
     ``docs/assets/emulator/uitest/``, and aggregates the reports.
 
+    When ``isolate_adb`` is set, the whole run is pinned to a **private** adb
+    server (``ANDROID_ADB_SERVER_PORT``) — auto-allocated when no explicit port is
+    given — so parallel agents never reach, nor wedge, one another's server.
+
     Args:
         path: A UI test file or a directory of ``test_*.py`` files.
         jobs: Desired parallel emulator count (capped by hardware).
+        isolate_adb: Pin the run to a private adb server (per-agent isolation).
+        adb_server_port: An explicit private port; ``None`` auto-picks one when
+            ``isolate_adb`` is set.
 
     Returns:
         ``0`` when every test passed, else ``1``.
     """
+    import os
     from pathlib import Path
 
-    from tempestroid.testing import EmulatorPool, run_test_files_emulator
+    from tempestroid.testing import (
+        EmulatorPool,
+        allocate_adb_server_port,
+        run_test_files_emulator,
+    )
 
     files = _discover_test_files(path)
     if not files:
         print(f"no UI test files found at {path}")
         return 1
 
-    pool = EmulatorPool()
+    server_port: int | None = None
+    if isolate_adb:
+        server_port = allocate_adb_server_port(adb_server_port)
+        # Export it for the whole process so the pool's device_loop.sh subshells
+        # and the emulator binary inherit the private server too.
+        os.environ["ANDROID_ADB_SERVER_PORT"] = str(server_port)
+        print(f"adb server isolated on port {server_port} (per-agent)")
+
+    pool = EmulatorPool(adb_server_port=server_port)
     serials = pool.allocate(jobs)
     if not serials:
         print(
@@ -1705,7 +1774,10 @@ def _run_uitest_emulator(path: str, jobs: int) -> int:
     shot_dir = Path("docs/assets/emulator/uitest")
     try:
         reports = run_test_files_emulator(
-            list(files), serials, screenshot_dir=shot_dir
+            list(files),
+            serials,
+            screenshot_dir=shot_dir,
+            adb_server_port=server_port,
         )
     finally:
         pool.teardown()

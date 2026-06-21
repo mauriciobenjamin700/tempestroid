@@ -27,6 +27,9 @@ Public surface:
 * :class:`HeadlessBackend` — the no-renderer reference backend.
 * :class:`EmulatorBackend` — drives a real Compose render on an emulator/device.
 * :class:`EmulatorPool` — allocate/recycle N isolated emulators for parallel runs.
+* :func:`allocate_adb_server_port` / :func:`current_adb_server_port` — per-agent
+  adb-server isolation (a private ``ANDROID_ADB_SERVER_PORT`` per agent) so
+  parallel agents never contend on — nor wedge — the shared default server.
 * :func:`run_test_file` — load + run a UI test file's ``test_*`` functions.
 * :func:`run_test_files_emulator` — shard files across emulator serials.
 * :mod:`tempestroid.testing.mirror` — host-side scene mirror (deserialize +
@@ -36,6 +39,10 @@ Public surface:
 
 from __future__ import annotations
 
+from tempestroid.testing.adb_server import (
+    allocate_adb_server_port,
+    current_adb_server_port,
+)
 from tempestroid.testing.backend import HeadlessBackend, TestBackend, event_schema_for
 from tempestroid.testing.emulator import EmulatorBackend
 from tempestroid.testing.locator import Locator, LocatorError
@@ -70,6 +77,8 @@ __all__ = [
     "EmulatorPool",
     "max_parallel_emulators",
     "running_emulators",
+    "allocate_adb_server_port",
+    "current_adb_server_port",
     "event_schema_for",
     "deserialize_node",
     "deserialize_scene",
