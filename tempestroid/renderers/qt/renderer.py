@@ -6793,7 +6793,7 @@ class QtRenderer:
         widget.setScaledContents(cast("str", props.get("fit", "contain")) == "fill")
 
     def _apply_canvas(self, widget: _CanvasWidget, props: dict[str, Any]) -> None:
-        """Push the Canvas draw commands (and optional fixed size) to the widget.
+        """Push the Canvas draw commands to the widget (size is pinned separately).
 
         The IR carries ``commands`` as a list of frozen ``DrawCommand`` Pydantic
         models; they are lowered to plain JSON-able dicts here so the
