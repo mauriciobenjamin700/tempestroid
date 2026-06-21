@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any, cast
 from tempest_core.core.ir import Node, Patch, Scene
 
 from tempestroid.bridge.protocol import BACK_TOKEN
+from tempestroid.testing.adb_server import adb_server_env
 from tempestroid.testing.tree import node_at
 
 if TYPE_CHECKING:
@@ -98,6 +99,7 @@ class EmulatorBackend:
         *,
         port: int = 0,
         adb: str = "adb",
+        adb_server_port: int | None = None,
         launch: bool = True,
     ) -> None:
         """Initialize the backend bound to one emulator/device serial.
@@ -108,6 +110,11 @@ class EmulatorBackend:
                 (e.g. ``"emulator-5554"``).
             port: The dev-server TCP port; ``0`` picks a free one.
             adb: The ``adb`` executable name/path.
+            adb_server_port: A private adb server port (per-agent isolation). When
+                set, every ``adb`` call this backend makes
+                (``reverse``/``am``/``screencap``) is pinned to that server via
+                ``ANDROID_ADB_SERVER_PORT``, so it reaches only this agent's
+                emulator. ``None`` inherits the current environment's server.
             launch: Auto ``adb reverse`` + launch the host in dev mode on
                 :meth:`mount`. Set ``False`` when the host is already running in
                 dev mode against this server (tests/manual).
@@ -116,6 +123,11 @@ class EmulatorBackend:
         self._serial = serial
         self._port: int = port
         self._adb = adb
+        # Environment pinned to the private server when isolation is on; ``None``
+        # so subprocess calls inherit the current environment otherwise.
+        self._env: dict[str, str] | None = (
+            adb_server_env(adb_server_port) if adb_server_port is not None else None
+        )
         self._launch = launch
         # DevServer (lazily imported to avoid a cycle); typed via TYPE_CHECKING.
         self._server: DevServer | None = None
@@ -342,6 +354,7 @@ class EmulatorBackend:
             [self._adb, "-s", self._serial, "exec-out", "screencap", "-p"],
             check=True,
             capture_output=True,
+            env=self._env,
         )
         stdout: bytes = result.stdout
         dest.write_bytes(stdout)
@@ -365,6 +378,7 @@ class EmulatorBackend:
                 check=False,
                 capture_output=True,
                 timeout=10,
+                env=self._env,
             )
         except (OSError, subprocess.SubprocessError):
             pass
@@ -396,6 +410,7 @@ class EmulatorBackend:
         subprocess.run(  # noqa: S603
             [self._adb, "-s", self._serial, "reverse", f"tcp:{port}", f"tcp:{port}"],
             check=True,
+            env=self._env,
         )
 
     def _launch_host(self, port: int) -> None:
@@ -421,6 +436,7 @@ class EmulatorBackend:
             ],
             check=False,
             capture_output=True,
+            env=self._env,
         )
         # Force-stop first: `am start` on an already-running host only delivers a
         # new-intent to the live instance, whose dev-client keeps polling the
@@ -429,6 +445,7 @@ class EmulatorBackend:
         subprocess.run(  # noqa: S603
             [self._adb, "-s", self._serial, "shell", "am", "force-stop", _HOST_PACKAGE],
             check=True,
+            env=self._env,
         )
         subprocess.run(  # noqa: S603
             [
@@ -445,6 +462,7 @@ class EmulatorBackend:
                 f"http://127.0.0.1:{port}",
             ],
             check=True,
+            env=self._env,
         )
 
 

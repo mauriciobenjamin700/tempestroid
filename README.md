@@ -407,7 +407,7 @@ surfaced and the happy path stays quiet.
 | `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only) |
 | `tempest type [path]` | ✅ | `pyright` on the target (strict type check) |
 | `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter) |
-| `tempest uitest <path>` | ✅ | Run a **Playwright-style native UI test** file (F9 driver): an app module + `async def test_*(page)` functions, driven against the renderer-agnostic IR with **auto-wait** (no `sleep`). `--target`/`-t`: `headless` (default, in-process, no renderer) or `emulator` (REAL Compose render on an Android emulator); `-j N` shards across N isolated emulators with a real screenshot per test. `qt`/`device` are reserved — the same script runs on every target unchanged |
+| `tempest uitest <path>` | ✅ | Run a **Playwright-style native UI test** file (F9 driver): an app module + `async def test_*(page)` functions, driven against the renderer-agnostic IR with **auto-wait** (no `sleep`). `--target`/`-t`: `headless` (default, in-process, no renderer) or `emulator` (REAL Compose render on an Android emulator); `-j N` shards across N isolated emulators with a real screenshot per test; `--isolate-adb` (or `-P <port>`) runs against a **private adb server** so parallel agents never contend on — nor wedge — the shared one. `qt`/`device` are reserved — the same script runs on every target unchanged |
 | `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test (stops at the first failure). Each tool is resolved on `PATH` or via `uv run` |
 
 ### Running on a device from WSL
@@ -921,7 +921,11 @@ script runs on every target**: the **headless** backend drives the
 IR/state/event core in-process, and the **emulator** backend drives a REAL app
 through the **Compose** renderer on an Android emulator. Drive it with
 `tempest uitest` — `--target emulator -j N` shards across N isolated emulators and
-saves a real on-device screenshot per test.
+saves a real on-device screenshot per test. Add `--isolate-adb` so the run uses a
+**private adb server** (`ANDROID_ADB_SERVER_PORT`): the emulator *instances* are
+already isolated by port/userdata, and this isolates the last shared resource so
+multiple agents can drive emulators in parallel without contending on — or
+wedging — one another's adb server.
 
 - **`Page`** — the top-level driver. Locators: `get_by_key` / `get_by_text` /
   `get_by_role` / `get_by_semantics` / `get_by_prop`. Actions: `tap` / `fill` /

@@ -19,8 +19,10 @@ import re
 import shlex
 import socket
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+
+from tempestroid.testing.adb_server import adb_server_env
 
 __all__ = ["EmulatorPool", "running_emulators", "max_parallel_emulators"]
 
@@ -42,7 +44,9 @@ _RAM_PER_INSTANCE_MB = 2048
 _HARD_CAP = 8
 
 
-def running_emulators(adb: str = "adb") -> list[str]:
+def running_emulators(
+    adb: str = "adb", *, env: Mapping[str, str] | None = None
+) -> list[str]:
     """List serials of emulators currently in the ``device`` state.
 
     When the ``ANDROID_SERIAL`` environment variable is set, the result is
@@ -53,6 +57,10 @@ def running_emulators(adb: str = "adb") -> list[str]:
 
     Args:
         adb: The ``adb`` executable.
+        env: Environment for the ``adb`` call; when it carries
+            ``ANDROID_ADB_SERVER_PORT`` the probe queries that **private** server
+            (per-agent isolation) instead of the shared default. ``None``
+            inherits the current environment.
 
     Returns:
         The ready ``emulator-*`` serials, or ``[]`` when none / adb is missing.
@@ -61,7 +69,14 @@ def running_emulators(adb: str = "adb") -> list[str]:
     """
     try:
         out = subprocess.run(  # noqa: S603
-            [adb, "devices"], check=False, capture_output=True, text=True, timeout=10
+            [adb, "devices"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            # ``None`` makes subprocess inherit the live environment (the
+            # non-isolated path); a mapping pins the private server.
+            env=dict(env) if env is not None else None,
         )
     except (OSError, subprocess.SubprocessError):
         return []
@@ -80,7 +95,9 @@ def running_emulators(adb: str = "adb") -> list[str]:
     return serials
 
 
-def _attached_serials(adb: str = "adb") -> set[str]:
+def _attached_serials(
+    adb: str = "adb", *, env: Mapping[str, str] | None = None
+) -> set[str]:
     """List every ``emulator-*`` serial ``adb`` knows about, in **any** state.
 
     Unlike :func:`running_emulators` (which keeps only ``device``-state serials),
@@ -90,13 +107,23 @@ def _attached_serials(adb: str = "adb") -> set[str]:
 
     Args:
         adb: The ``adb`` executable.
+        env: Environment for the ``adb`` call (carries
+            ``ANDROID_ADB_SERVER_PORT`` for per-agent isolation); ``None``
+            inherits the current environment.
 
     Returns:
         The set of attached ``emulator-*`` serials regardless of state.
     """
     try:
         out = subprocess.run(  # noqa: S603
-            [adb, "devices"], check=False, capture_output=True, text=True, timeout=10
+            [adb, "devices"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            # ``None`` makes subprocess inherit the live environment (the
+            # non-isolated path); a mapping pins the private server.
+            env=dict(env) if env is not None else None,
         )
     except (OSError, subprocess.SubprocessError):
         return set()
@@ -177,6 +204,7 @@ class EmulatorPool:
         avd: str = _DEFAULT_AVD,
         snapshot: str = _DEFAULT_SNAPSHOT,
         adb: str = "adb",
+        adb_server_port: int | None = None,
         toolchain_dir: Path | None = None,
         log: Callable[[str], None] = print,
         boot: bool = True,
@@ -187,6 +215,13 @@ class EmulatorPool:
             avd: The AVD name to boot fresh instances from.
             snapshot: The snapshot to restore on boot.
             adb: The ``adb`` executable.
+            adb_server_port: A private adb server port for **per-agent
+                isolation**. When set, every ``adb`` probe and every
+                ``device_loop.sh`` boot/recover this pool runs is pinned to that
+                server (via ``ANDROID_ADB_SERVER_PORT``), so a pool in one agent
+                never reaches — nor wedges — another agent's emulators. ``None``
+                uses whatever server the environment already names (the shared
+                default ``5037``, or an externally-set ``ANDROID_ADB_SERVER_PORT``).
             toolchain_dir: The repo ``toolchain/`` dir (for ``device_loop.sh``);
                 auto-located relative to this file when ``None``.
             log: Sink for status lines (never silent about caps/reuse).
@@ -196,6 +231,12 @@ class EmulatorPool:
         self._avd = avd
         self._snapshot = snapshot
         self._adb = adb
+        self._adb_server_port = adb_server_port
+        # Environment pinned to the private server when isolation is on; ``None``
+        # so the subprocess calls inherit the current environment otherwise.
+        self._env: dict[str, str] | None = (
+            adb_server_env(adb_server_port) if adb_server_port is not None else None
+        )
         self._log = log
         self._boot = boot
         self._toolchain = toolchain_dir or (
@@ -205,6 +246,16 @@ class EmulatorPool:
         self._booted: list[str] = []
         # Every serial currently handed out.
         self._allocated: list[str] = []
+
+    @property
+    def adb_server_port(self) -> int | None:
+        """The private adb server port this pool is pinned to, if any.
+
+        Returns:
+            The ``ANDROID_ADB_SERVER_PORT`` value (per-agent isolation), or
+            ``None`` when the pool uses the shared/inherited server.
+        """
+        return self._adb_server_port
 
     def allocate(self, n: int) -> list[str]:
         """Acquire up to ``n`` ready emulator serials.
@@ -230,7 +281,12 @@ class EmulatorPool:
             )
             want = ceiling
 
-        running = running_emulators(self._adb)
+        if self._adb_server_port is not None:
+            self._log(
+                f"[pool] adb server isolated on port {self._adb_server_port} "
+                "(ANDROID_ADB_SERVER_PORT) — private to this agent"
+            )
+        running = running_emulators(self._adb, env=self._env)
         reused = running[:want]
         if reused:
             joined = ", ".join(reused)
@@ -242,7 +298,7 @@ class EmulatorPool:
                 f"[pool] only {len(serials)} running emulator(s); boot disabled, "
                 f"not starting more (wanted {want})"
             )
-        attached = _attached_serials(self._adb)
+        attached = _attached_serials(self._adb, env=self._env)
         index = 0
         #: Most ports to probe before giving up — guards against an entirely
         #: occupied port range (every candidate poisoned), so a skip-only loop
@@ -330,6 +386,10 @@ class EmulatorPool:
         command = f". {shlex.quote(str(script))}; {func} {quoted}"
         env = dict(os.environ)
         env.setdefault("ANDROID_SDK_ROOT", "/usr/lib/android-sdk")
+        # Pin the private adb server so device_loop.sh's boot/recover talk to —
+        # and only ever reset — this agent's own server (per-agent isolation).
+        if self._adb_server_port is not None:
+            env["ANDROID_ADB_SERVER_PORT"] = str(self._adb_server_port)
         try:
             subprocess.run(  # noqa: S602
                 ["bash", "-c", command], check=True, env=env

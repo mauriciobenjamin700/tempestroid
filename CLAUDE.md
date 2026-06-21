@@ -170,7 +170,7 @@ roadmap em [`docs/roadmap.md`](docs/roadmap.md) e [`docs/plan.md`](docs/plan.md)
 | G4 | Entrega e storage do modelo: embutido vs download+cache, `mmap` no load, Play Asset Delivery p/ modelos grandes | ✅ done (emulador) | **Ambas estratégias device-provadas.** Embutido (asset no bundle, G1-G3). Download+cache+verify: `native/model_store.py` `ensure_model(url, dest_dir, *, sha256, filename)` — cache-first, baixa 1x streamed off-loop (`asyncio.to_thread`), verifica sha256, rename atômico; stdlib urllib/hashlib (roda no interpretador embarcado, `file://` ok); `ModelStoreError` (download_failed/hash_mismatch); 6 testes. **Device-verificado:** app baixa squeezenet de localhost (adb-reverse) → cache `…/cache/tempest_models/` → classifica banana (`source=download`, 921ms). `mmap` implícito no load-by-path da AAR. Fix de host: `TMPDIR` agora fixado de dentro do interpretador (`os.setenv` no `onCreate` não alcançava o `os.environ` embarcado → `FileNotFoundError` quebrava todo `tempest serve`) + passthrough `tempest_env` por intent (allowlist `VISIONSPIKE_`/`TEMPEST_`). Play Asset Delivery = futuro |
 | G5 | (opcional) `pandas` no device — feature-engineering tabular | ⏳ planejado | `import pandas` + pipeline tabular roda no aparelho |
 | G6 | (opcional) `scipy`+`scikit-learn`+`scikit-image` no device — ML clássico + processamento de imagem (calcanhar: Fortran/LAPACK+OpenMP; skimage gated atrás do scipy) | ⏳ planejado | `import sklearn`/`skimage`; modelo sklearn faz `predict` no aparelho |
-| G7 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | ⏳ planejado | APK com inferência cabe num orçamento de tamanho acordado, medido |
+| G7 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | 🚧 em progresso | **Lever 1 landado (foreign-ABI dead-weight):** o `assets/python` empacotava `.so` compilados de AMBAS ABIs (aarch64+x86_64), mas o APK roda em UMA só (`abiFilters`) — a ABI não-alvo era peso morto não-carregável. Pior: o generated-assets dir do AGP ACUMULA entre trocas de ABI no mesmo checkout (build x86_64 do emulador → depois arm64 do release → APK arm64 carregava `.so` x86_64 velhos). Fix em `build.gradle.kts` (`CopyPythonStdlibTask`/`CopyPythonSitePackagesTask`): limpa o outputDir + exclui todo `*-<abi-não-alvo>-linux-android.so`. **Lever 2 (numpy runtime-dead):** exclui `numpy/tests` (7.7M)+`f2py`+`_pyinstaller`+todos `*.pyi` (pure-python, zero risco). **Medido: APK x86_64 73M→57M (−16MB, −22%), 0 `.so` estrangeiro; device-verificado** (counter tap 0→3 + `import numpy`+sum/dot OK no emulador). R8/minify deliberadamente OFF (build.gradle linha 171: o interpretador chama Kotlin por nome via JNI → R8 quebra sem keep-rules; alto risco/ganho dex-only). Falta p/ "orçamento acordado": custom onnxruntime reduced-op build + (talvez) R8 com keep-rules |
 
 `G3`/`G4` ficam **gated** por demanda real de app — não bloqueiam o caminho de
 visão (`G0→G4`), que é o que o `ort-vision-sdk` exercita. Mesma regra de sempre:
@@ -606,6 +606,19 @@ change done; `git-worktree` to isolate any task that may run in parallel.
 - Build prereqs for the device path live in the "Trilho B status" notes above
   (export `ANDROID_SDK_ROOT=/usr/lib/android-sdk`, Gradle wrapper 8.11.1, MIUI
   "Install via USB").
+- **Parallel agents on emulators → isolate the adb server per agent.** The
+  emulator *instances* in a pool are isolated (own console/adb port + `-read-only`
+  userdata + serial), but the adb server (default TCP `5037`) is shared: two agents
+  driving emulators at once both hammer it, it wedges, and recovery used to kill
+  every adb — taking down the sibling agent's server. Whenever more than one agent
+  may run device/emulator work at the same time, give each agent a **private adb
+  server**: `tempest uitest --target emulator --isolate-adb` (auto-allocates a port
+  in `5038..5500`), or export a distinct `ANDROID_ADB_SERVER_PORT` per agent before
+  any `adb`/`make emulator-*`/`tempest serve` call (`toolchain/device_loop.sh`
+  honors it and scopes recovery to that port only). Also pin `ANDROID_SERIAL` to
+  the agent's own emulator. Combined with one `git worktree` per agent, this is the
+  full isolation contract for parallel device work. Single-agent work needs nothing
+  (the shared 5037 server is the default).
 
 ## Commands
 

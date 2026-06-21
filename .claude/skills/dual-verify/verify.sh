@@ -53,6 +53,9 @@ if [[ $DEVICE -eq 1 ]]; then
 
   section "device leg — build/install + exercise on the real device"
   echo "  Pick ONE, then run the SAME flow you ran in Qt and screenshot it:"
+  echo "  (parallel agents: export ANDROID_ADB_SERVER_PORT=<5038..5500> + ANDROID_SERIAL"
+  echo "   first for a PRIVATE adb server — never 'adb kill-server'/'pkill -x adb', it"
+  echo "   drops every agent's server. 'tempest uitest --isolate-adb' auto-allocates one.)"
   cmd "make apk-install            # rebuild + adb install the APK"
   cmd "tempest serve $APP   # live code-push over adb reverse (no rebuild)"
   cmd "make logcat                 # tail device logs for runtime errors"

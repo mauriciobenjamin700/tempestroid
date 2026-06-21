@@ -342,6 +342,11 @@ abstract class CopyPythonStdlibTask @Inject constructor(
     @get:Input
     abstract val prebuilt: Property<Boolean>
 
+    // Globs for every NON-target ABI's compiled extensions (G7) — excluded so an
+    // ABI switch / prebuilt host can't leak foreign `.so` into this APK's assets.
+    @get:Input
+    abstract val foreignAbiSoGlobs: ListProperty<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -349,6 +354,12 @@ abstract class CopyPythonStdlibTask @Inject constructor(
     fun stage() {
         val version = pythonVersion.get()
         val isPrebuilt = prebuilt.get()
+        val foreignSo = foreignAbiSoGlobs.get()
+        // Rebuild from scratch: the generated dir is AGP-relocated and survives
+        // ABI switches, so without this an x86_64 run's .so linger into an arm64
+        // build (and vice-versa). Clearing it makes the staged tree reflect only
+        // this run's (single-ABI) source.
+        fs.delete { delete(outputDir) }
         fs.copy {
             // Nest under "python/" so the packaged assets tree is
             // assets/python/lib/python<ver>/... — MainActivity.extractAssets
@@ -398,6 +409,9 @@ abstract class CopyPythonStdlibTask @Inject constructor(
                         "lib-dynload/xxlimited*.so",
                     )
                 }
+                // Drop every non-target ABI's compiled extensions (G7 trim) — in
+                // both modes, so a prebuilt host or an ABI switch can't leak them.
+                exclude(foreignSo)
             }
             // The .gz files in an extracted APK are ALREADY renamed .gz- (AGP did
             // it on the host build); re-renaming would produce .gz--. Only rename
@@ -411,6 +425,41 @@ abstract class CopyPythonStdlibTask @Inject constructor(
 }
 
 val targetAbi = abi
+
+// Foreign-ABI dead weight (G7 APK trim). Compiled CPython extensions carry their
+// ABI in the filename (`*.cpython-314-<tag>-linux-android.so`, tag = aarch64 /
+// x86_64 / arm / i686). The APK runs on exactly ONE ABI (`abiFilters += abi`
+// restricts the native lib/<abi>/ libs), so any extension built for ANOTHER ABI
+// that lands in assets/python is pure dead weight — it can never be loaded.
+// It leaks in two ways: a prebuilt host whose site-packages already holds both
+// ABIs, and — the one that bit us — the generated-assets dir ACCUMULATING across
+// ABI switches in one checkout (build x86_64 for the emulator, then arm64 for the
+// release, and the arm64 APK still carries the stale x86_64 .so). Measured: a
+// ~11.6 MB foreign payload in the x86_64 emulator APK. The fix excludes every
+// non-target ABI's extension at the copy step, so only the target ABI's .so are
+// ever staged regardless of how the source dir got populated.
+val knownPyAbiTags = listOf("aarch64", "x86_64", "arm", "i686")
+val targetPyAbiTag = when (targetAbi) {
+    "arm64-v8a" -> "aarch64"
+    "x86_64" -> "x86_64"
+    "armeabi-v7a" -> "arm"
+    "x86" -> "i686"
+    else -> ""
+}
+// Fail-safe: only strip foreign ABIs when the target tag is RECOGNIZED. A typo'd
+// `-Ptempest.abi` (e.g. "arm64" instead of "arm64-v8a") would otherwise leave the
+// target tag unmatched, and excluding "everything except an unknown tag" would
+// drop the REAL target's extensions too — a blank-screen APK. Unknown ABI =>
+// strip nothing (ship as-is) rather than risk that.
+val foreignAbiSoGlobsValue: List<String> =
+    if (targetPyAbiTag in knownPyAbiTags) {
+        knownPyAbiTags
+            .filter { it != targetPyAbiTag }
+            .map { "**/*-$it-linux-android.so" }
+    } else {
+        emptyList()
+    }
+
 /**
  * Stage the device site-packages: the pre-built deps (pydantic + pydantic_core
  * Android wheel + friends, from `toolchain/dist/site-packages`) plus the Qt-free
@@ -436,6 +485,12 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
     @get:Input
     abstract val prebuilt: Property<Boolean>
 
+    // Globs for every NON-target ABI's compiled extensions (G7) — excluded so a
+    // prebuilt host carrying both ABIs (or an ABI switch) can't leak foreign
+    // `.so` (e.g. pydantic_core, numpy) into this APK's assets.
+    @get:Input
+    abstract val foreignAbiSoGlobs: ListProperty<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -443,9 +498,26 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
     fun stage() {
         val sp = "python/lib/python${pythonVersion.get()}/site-packages"
         val isPrebuilt = prebuilt.get()
+        val foreignSo = foreignAbiSoGlobs.get()
+        // Rebuild from scratch (the generated dir survives ABI switches).
+        fs.delete { delete(outputDir) }
         fs.copy {
             from(depsDir) {
                 into(sp)
+                // Drop every non-target ABI's compiled extensions (G7 trim).
+                exclude(foreignSo)
+                // G7 trim — runtime-dead payload in the science deps. numpy ships
+                // its test suites (~7.7 MB), the f2py Fortran-wrapper generator and
+                // PyInstaller hooks; none run during inference. Type stubs (*.pyi)
+                // and bytecode caches are never imported at runtime either. Pure
+                // Python, so this is zero-risk for an app that only does ndarray ops
+                // (numpy/typing/__init__.py — the real runtime module — is kept; only
+                // its .pyi stubs go).
+                exclude(
+                    "numpy/tests/**", "numpy/**/tests/**",
+                    "numpy/f2py/**", "numpy/_pyinstaller/**",
+                    "**/*.pyi", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
+                )
                 if (isPrebuilt) {
                     exclude("tempestroid/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo")
                 }
@@ -510,6 +582,7 @@ val copyPythonStdlib by tasks.registering(CopyPythonStdlibTask::class) {
     stdlibDir.fileValue(stdlibSourceDir)
     pythonVersion.set(pyVer)
     prebuilt.set(isPrebuilt)
+    foreignAbiSoGlobs.set(foreignAbiSoGlobsValue)
     outputDir.set(layout.buildDirectory.dir("generated/assets/python"))
 }
 
@@ -518,6 +591,7 @@ val copyPythonSitePackages by tasks.registering(CopyPythonSitePackagesTask::clas
     coreSrc.fileValue(tempestroidCore)
     pythonVersion.set(pyVer)
     prebuilt.set(isPrebuilt)
+    foreignAbiSoGlobs.set(foreignAbiSoGlobsValue)
     outputDir.set(layout.buildDirectory.dir("generated/assets/site-packages"))
 }
 

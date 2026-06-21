@@ -169,7 +169,20 @@ uv run tempest uitest examples/counter/test_counter.py --target emulator
 
 # N isolated emulators in parallel (capped by host CPU/RAM)
 uv run tempest uitest examples/ --target emulator -j 3
+
+# multiple AGENTS in parallel: each with its own PRIVATE adb server
+uv run tempest uitest examples/ --target emulator -j 2 --isolate-adb
 ```
+
+!!! tip "Per-agent adb-server isolation (`--isolate-adb`)"
+    The emulator *instances* are already isolated (own port/userdata). The last
+    shared resource is the **adb server** (TCP `5037` by default): when two agents
+    drive emulators at once they both hammer that one server, it wedges, and the
+    recovery path used to kill *every* `adb` process — taking down the sibling
+    agent's server too. With `--isolate-adb` (or `-P <port>`) the run uses a
+    **private** server (`ANDROID_ADB_SERVER_PORT`, auto-allocated), and recovery
+    (`device_loop.sh`) is scoped to that port only. Each agent is then fully
+    isolated — this is what closes true N-emulator parallelism across agents.
 
 The `emulator` backend (`EmulatorBackend`) drives a **real** app through the
 **Compose** renderer: it owns a `DevServer` in **harness mode**, `adb -s <serial>

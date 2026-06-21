@@ -240,6 +240,7 @@ def run_test_file_emulator(
     *,
     screenshot_dir: str | Path | None = None,
     launch: bool = True,
+    adb_server_port: int | None = None,
 ) -> TestReport:
     """Run a UI test file against a real app on one emulator serial.
 
@@ -253,6 +254,8 @@ def run_test_file_emulator(
         serial: The ``adb`` serial of the target emulator.
         screenshot_dir: Directory for per-test PNGs; ``None`` to skip capture.
         launch: Auto ``adb reverse`` + launch the host in dev mode on mount.
+        adb_server_port: A private adb server port (per-agent isolation) passed to
+            every backend's ``adb`` calls; ``None`` uses the inherited server.
 
     Returns:
         The :class:`TestReport` with one outcome per test (target ``"emulator"``).
@@ -267,7 +270,7 @@ def run_test_file_emulator(
     _make_state, _view, tests = _load_test_module(file)
     shot_dir = Path(screenshot_dir) if screenshot_dir is not None else None
     outcomes = [
-        _run_one_emulator(name, func, file, serial, shot_dir, launch)
+        _run_one_emulator(name, func, file, serial, shot_dir, launch, adb_server_port)
         for name, func in tests
     ]
     return TestReport(path=str(file), target="emulator", outcomes=outcomes)
@@ -279,6 +282,7 @@ def run_test_files_emulator(
     *,
     screenshot_dir: str | Path | None = None,
     launch: bool = True,
+    adb_server_port: int | None = None,
 ) -> list[TestReport]:
     """Shard test files across emulator serials and run each shard in parallel.
 
@@ -291,6 +295,8 @@ def run_test_files_emulator(
         serials: The allocated emulator serials (at least one).
         screenshot_dir: Directory for per-test PNGs; ``None`` to skip capture.
         launch: Auto ``adb reverse`` + launch the host in dev mode on mount.
+        adb_server_port: A private adb server port (per-agent isolation) threaded
+            to every backend; ``None`` uses the inherited server.
 
     Returns:
         One :class:`TestReport` per file (order matches ``paths``).
@@ -320,6 +326,7 @@ def run_test_files_emulator(
                     serial,
                     screenshot_dir=screenshot_dir,
                     launch=launch,
+                    adb_server_port=adb_server_port,
                 )
         finally:
             loop.close()
@@ -343,6 +350,7 @@ def _run_one_emulator(
     serial: str,
     screenshot_dir: Path | None,
     launch: bool,
+    adb_server_port: int | None = None,
 ) -> TestOutcome:
     """Run one test against a fresh emulator backend, capturing a screenshot.
 
@@ -353,13 +361,17 @@ def _run_one_emulator(
         serial: The emulator serial to bind.
         screenshot_dir: Directory for the per-test PNG, or ``None`` to skip.
         launch: Auto ``adb reverse`` + launch on mount.
+        adb_server_port: A private adb server port (per-agent isolation) for the
+            backend's ``adb`` calls; ``None`` uses the inherited server.
 
     Returns:
         The :class:`TestOutcome` for this test.
     """
     from tempestroid.testing.emulator import EmulatorBackend
 
-    backend = EmulatorBackend(file, serial, launch=launch)
+    backend = EmulatorBackend(
+        file, serial, launch=launch, adb_server_port=adb_server_port
+    )
     page = Page(backend)
 
     async def _body() -> None:
