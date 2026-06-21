@@ -78,6 +78,8 @@ plugins:
             Kit de ação e entrada: Action and entry kit
             Superfície e layout: Surface and layout
             Data display e feedback: Data display and feedback
+            Componentes de pesquisa: Research components
+            Storybook (galeria): Storybook (gallery)
             Eventos: Events
             CLI (tempest): CLI (tempest)
             Galeria de exemplos: Example gallery
@@ -145,6 +147,9 @@ nav:
           - Kit de ação e entrada: guia/design-system/kit.md
           - Superfície e layout: guia/design-system/superficie.md
           - Data display e feedback: guia/design-system/feedback.md
+          - Navegação: guia/design-system/navegacao.md
+          - Componentes de pesquisa: guia/design-system/pesquisa.md
+          - Storybook (galeria): guia/design-system/storybook.md
       - Eventos: guia/eventos.md
       - Testes de UI: guia/testing.md
       - CLI (tempest): guia/cli.md
