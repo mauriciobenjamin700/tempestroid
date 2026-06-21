@@ -131,6 +131,12 @@ android {
     // VCS/editor junk and __pycache__.
     androidResources {
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~:!__pycache__"
+        // Don't compress the bundled CPython extension modules (.so assets). They
+        // are extracted to filesDir at first launch (never read from inside the
+        // APK), so compressing them only costs build time — and AGP's asset
+        // compressor crashes ("Required array size too large") on a very large
+        // one such as polars' ~255 MB Rust core. Storing them is correct + robust.
+        noCompress.add("so")
     }
 
     // Register the CMake project ONLY in source-build mode. Omitting it in
