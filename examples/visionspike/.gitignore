@@ -1,0 +1,7 @@
+# Intermediate INT8 onnx from `tempest optimize` — the shippable artifact is the
+# .ort (committed); the .int8.onnx is a build intermediate, regenerable on demand.
+squeezenet1.1.int8.onnx
+# `.ort` conversion sidecar (lists required ops for minimal builds) — regenerable.
+squeezenet1.1.int8.required_operators.config
+# Stray uv lock from running `uv` inside the example dir — never shipped.
+uv.lock

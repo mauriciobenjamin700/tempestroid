@@ -13,8 +13,7 @@ simulator honest against the Compose device renderer.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-
-from tempestroid.style import (
+from tempest_core.style import (
     AlignItems,
     Border,
     Color,
@@ -28,7 +27,13 @@ from tempestroid.style import (
     TextDecoration,
 )
 
-__all__ = ["to_qss", "layout_alignment", "self_alignment"]
+__all__ = [
+    "qss_background",
+    "to_qss",
+    "state_layer_qss",
+    "layout_alignment",
+    "self_alignment",
+]
 
 _FONT_STYLE: dict[FontStyle, str] = {
     FontStyle.NORMAL: "normal",
@@ -48,7 +53,7 @@ _GRADIENT_COORDS: dict[GradientDirection, tuple[int, int, int, int]] = {
 }
 
 
-def _qss_background(background: Color | Gradient) -> str:
+def qss_background(background: Color | Gradient) -> str:
     """Render a background as a QSS ``background-color`` value (color or gradient)."""
     if isinstance(background, Gradient):
         x1, y1, x2, y2 = _GRADIENT_COORDS[background.direction]
@@ -66,15 +71,22 @@ def _qss_border_value(border: Border) -> str:
     return f"{border.width}px solid {color}"
 
 
-def _qss_border_rules(border: Border | SideBorder) -> list[str]:
-    """Render a border (uniform or per-side) as QSS declarations."""
+def _qss_border_rules(border: Border | SideBorder, *, rtl: bool) -> list[str]:
+    """Render a border (uniform or per-side) as QSS declarations.
+
+    Under ``rtl`` the per-side ``left``/``right`` borders are mirrored so a
+    leading/trailing divider follows the layout direction (a uniform border has
+    no side to mirror).
+    """
     if isinstance(border, SideBorder):
+        left = border.right if rtl else border.left
+        right = border.left if rtl else border.right
         rules: list[str] = []
         for side, value in (
             ("top", border.top),
-            ("right", border.right),
+            ("right", right),
             ("bottom", border.bottom),
-            ("left", border.left),
+            ("left", left),
         ):
             if value is not None:
                 rules.append(f"border-{side}: {_qss_border_value(value)}")
@@ -94,7 +106,7 @@ def _qss_radius_rules(radius: float | Corners) -> list[str]:
     return [f"border-radius: {radius}px"]
 
 
-def to_qss(style: Style | None, *, with_padding: bool) -> str:
+def to_qss(style: Style | None, *, with_padding: bool, rtl: bool = False) -> str:
     """Render the paint/typography/box parts of a style as a QSS rule body.
 
     Flex layout (direction/justify/align/grow), gap, and margin are *not* QSS —
@@ -108,6 +120,10 @@ def to_qss(style: Style | None, *, with_padding: bool) -> str:
     Args:
         style: The style to translate, or ``None``.
         with_padding: Whether to emit ``padding`` (leaves: yes; containers: no).
+        rtl: Whether the node lays out right-to-left. When ``True``, the box
+            model's ``left``/``right`` is mirrored (padding and per-side borders)
+            and ``text_scale`` still applies, matching the Compose translator so
+            the two renderers stay in lockstep.
 
     Returns:
         A ``"; "``-joined QSS declaration body (empty string when nothing maps).
@@ -116,22 +132,48 @@ def to_qss(style: Style | None, *, with_padding: bool) -> str:
         return ""
     rules: list[str] = []
     if style.background is not None:
-        rules.append(f"background-color: {_qss_background(style.background)}")
+        rules.append(f"background-color: {qss_background(style.background)}")
     if style.color is not None:
         rules.append(f"color: {style.color.to_rgba_string()}")
     if style.border is not None:
-        rules.extend(_qss_border_rules(style.border))
+        rules.extend(_qss_border_rules(style.border, rtl=rtl))
     if style.radius is not None:
         rules.extend(_qss_radius_rules(style.radius))
     if with_padding and style.padding is not None:
         edge = style.padding
-        rules.append(
-            f"padding: {edge.top}px {edge.right}px {edge.bottom}px {edge.left}px"
-        )
-    if style.font_family is not None:
+        left, right = (edge.right, edge.left) if rtl else (edge.left, edge.right)
+        rules.append(f"padding: {edge.top}px {right}px {edge.bottom}px {left}px")
+    if style.margin is not None:
+        # Qt honours a QSS ``margin`` on a styled widget as true *outer* space:
+        # the background/border paints inside the margin, leaving the margin zone
+        # transparent — exactly the box-model semantics Compose realizes via
+        # ``Modifier`` padding outside the background. Emitted for both leaves and
+        # containers (unlike ``padding``, which a container routes to its layout's
+        # ``contentsMargins`` to avoid double-counting). ``left``/``right`` mirror
+        # under ``rtl`` to match the Compose translator.
+        edge = style.margin
+        left, right = (edge.right, edge.left) if rtl else (edge.left, edge.right)
+        rules.append(f"margin: {edge.top}px {right}px {edge.bottom}px {left}px")
+    if style.font_asset is not None:
+        # The renderer loads the asset via ``QFontDatabase.addApplicationFont``
+        # and registers it under this family name; the family is emitted here so
+        # the QSS picks up the custom font. A custom ``font_asset`` wins over
+        # ``font_family`` (a custom font is the more specific intent).
+        rules.append('font-family: "CustomAsset"')
+    elif style.font_family is not None:
         rules.append(f"font-family: {style.font_family}")
     if style.font_size is not None:
-        rules.append(f"font-size: {style.font_size}px")
+        # ``text_scale`` multiplies an explicit ``font_size`` before emission.
+        scaled = (
+            style.font_size * style.text_scale
+            if style.text_scale is not None
+            else style.font_size
+        )
+        rules.append(f"font-size: {scaled}px")
+    elif style.text_scale is not None:
+        # A ``text_scale`` with no explicit ``font_size`` scales the inherited
+        # font relative to its current size, expressed in QSS ``em`` units.
+        rules.append(f"font-size: {style.text_scale}em")
     if style.font_weight is not None:
         rules.append(f"font-weight: {int(style.font_weight)}")
     if style.font_style is not None:
@@ -146,6 +188,43 @@ def to_qss(style: Style | None, *, with_padding: bool) -> str:
         rules.append(f"min-height: {style.min_height}px")
     if style.max_height is not None:
         rules.append(f"max-height: {style.max_height}px")
+    return "; ".join(rules)
+
+
+def state_layer_qss(style: Style) -> str:
+    """Render only the paint-delta parts of a per-state style as a QSS body.
+
+    Material 3 state layers (hover/pressed/focus/disabled) change a component's
+    *paint* — its background (the composited state-layer color), content color and
+    (focus) border — while leaving the geometry (padding, radius, size) at the
+    resting value. Emitting a full :func:`to_qss` body inside a ``:hover`` /
+    ``:pressed`` pseudo-state block would re-declare padding/radius and risk
+    fighting the base block, so this renders **only** ``background``, ``color`` and
+    ``border`` — exactly the fields :func:`tempest_core.variants.resolve_variant`'s
+    state resolution mutates.
+
+    Used by the Qt renderer to build a styled :class:`Button`'s
+    ``#name:hover{…}`` / ``:pressed`` / ``:focus`` / ``:disabled`` blocks from the
+    per-state styles the engine resolves, so the simulator shows the same M3 state
+    layers the Compose renderer paints with native ``InteractionSource`` layers.
+
+    Args:
+        style: The per-state style resolved by the engine.
+
+    Returns:
+        A ``"; "``-joined QSS declaration body covering only the paint delta
+        (empty string when none of the paint fields are set).
+    """
+    rules: list[str] = []
+    if style.background is not None:
+        rules.append(f"background-color: {qss_background(style.background)}")
+    if style.color is not None:
+        rules.append(f"color: {style.color.to_rgba_string()}")
+    if style.border is not None:
+        # ``rtl`` is irrelevant here: a button's focus indicator is a uniform
+        # ``Border`` (no per-side left/right to mirror), so a fixed LTR flag is
+        # correct and keeps the signature simple.
+        rules.extend(_qss_border_rules(style.border, rtl=False))
     return "; ".join(rules)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "tempestroid"
-version = "0.4.0"
+version = "0.14.0"
 description = "Framework for building native Android apps in typed Python — declarative typed UI tree, Qt simulator + Compose device renderers."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,6 +33,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.7",
+    "tempest-core>=0.8.1",
     "typer>=0.12.0",
 ]
 
@@ -42,6 +43,37 @@ qt = [
     "PySide6>=6.7",
     "qasync>=0.27",
 ]
+# `tempest icon` — generate the launcher icon + boot splash from one source
+# image (Pillow). Opt in with `pip install tempestroid[icons]`.
+icons = [
+    "pillow>=10.0",
+]
+# On-device ONNX vision inference (Trilho G). Brings the ort-vision-sdk with its
+# pluggable backend (>=0.4.0); `tempestroid.native.inference.AarBackend` runs the
+# SDK's inference through the native onnxruntime-android AAR over the bridge, so
+# the SDK's NumPy pre/post still runs in Python. On the desktop this pulls
+# onnxruntime (the SDK's own dep) for parity testing; on the device only
+# ort_vision_sdk + numpy + pillow are staged (inference goes to the AAR).
+vision = [
+    "ort-vision-sdk>=0.4.0",
+    # `tempest optimize` (Trilho G3): .onnx → .ort + INT8 quantization run on the
+    # host (build time). onnx is the graph lib onnxruntime's quantization +
+    # ort-conversion tooling needs (fp16 additionally wants onnxconverter-common,
+    # lazily imported).
+    "onnx>=1.17",
+]
+# Heavy device capabilities are gated at BUILD time, not pip time: the native
+# weight (CameraX, ML Kit, Firebase, media3, maps) lives in the Android host APK
+# and is bundled only when the app opts in. These extras carry no Python deps —
+# they are intent markers so `pip install tempestroid[camera]` documents which
+# `[tool.tempest] features` (or `tempest build --feature camera`) the project
+# uses. The lean default build ships none of them, keeping the APK small.
+camera = []
+qr = []
+push = []
+video = []
+maps = []
+features = []
 
 [project.urls]
 Homepage = "https://github.com/mauriciobenjamin700/tempestroid"
@@ -64,6 +96,18 @@ dev = [
     "pytest-asyncio>=0.23",
     "PySide6>=6.7",
     "qasync>=0.27",
+    # `tempest icon` asset generator (kept here so the test suite can exercise it).
+    "pillow>=10.0",
+    # Trilho G spike: `examples/onnxspike` imports numpy so the headless driver
+    # can run it too (the device proof uses the cross-compiled android wheel).
+    "numpy>=2.0",
+    # Trilho G: the vision SDK with the pluggable backend — lets the gate exercise
+    # the cross-repo contract (Detector driven through `native.inference.AarBackend`
+    # over a loopback). Pulls onnxruntime on the desktop for the integration test;
+    # on the device inference goes to the native AAR instead.
+    "ort-vision-sdk>=0.4.0",
+    # `tempest optimize` (G3) host tooling: .onnx → .ort + INT8 quantization.
+    "onnx>=1.17",
     # Documentation site (PT-BR). `uv sync` installs it; build with
     # `uv run mkdocs build --strict` / serve with `uv run mkdocs serve`.
     # Pinned <9.6: the 9.6.x line prints a non-suppressible MkDocs-2.0 protest
@@ -85,12 +129,36 @@ artifacts = ["tempestroid/_assets/*.apk"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tempestroid"]
+# Ship the android-host Gradle project INSIDE the wheel (as tempestroid/_android_host,
+# ~1.3 MB of Gradle/Kotlin/C source) so `tempest build apk`/`prd` works from a
+# plain `pip install` — no `git clone` of the repo, always matched to the
+# installed version. The heavy bits (prebuilt host APK, CPython natives) are NOT
+# here: the build runs in prebuilt mode, reusing the host APK's natives. Build
+# outputs + machine-specific files are excluded.
+force-include = { "android-host" = "tempestroid/_android_host" }
+exclude = [
+    "**/build/**",
+    "**/.gradle/**",
+    "tempestroid/_android_host/local.properties",
+    "tempestroid/_android_host/app/src/main/assets/tempest_app_bundle.zip",
+    "tempestroid/_android_host/app/src/main/assets/tempest_app.py",
+]
 
 [tool.hatch.build.targets.sdist]
-# Strict allowlist: ship the package + docs/examples + metadata. The B-track
-# build scaffolding (Gradle/Kotlin/C host + CPython toolchain) is only needed in
-# a full repo checkout for `tempest build`/`run`, never by PyPI consumers.
-only-include = ["tempestroid", "examples", "docs", "README.md", "LICENSE", "CHANGELOG.md", "mkdocs.yml"]
+# Ship the package + docs/examples + metadata + the android-host Gradle project
+# (the wheel force-includes it as tempestroid/_android_host, and the wheel is
+# built FROM the sdist on PyPI, so it must be in the sdist too). Build outputs +
+# the CPython toolchain (toolchain/dist) are NOT shipped — `tempest build` runs
+# in prebuilt mode (reuses the host APK's natives), never from source on PyPI.
+only-include = ["tempestroid", "android-host", "examples", "docs", "README.md", "LICENSE", "CHANGELOG.md", "mkdocs.yml"]
+exclude = [
+    "android-host/build",
+    "android-host/.gradle",
+    "android-host/app/build",
+    "android-host/local.properties",
+    "android-host/app/src/main/assets/tempest_app_bundle.zip",
+    "android-host/app/src/main/assets/tempest_app.py",
+]
 
 [tool.ruff]
 line-length = 88

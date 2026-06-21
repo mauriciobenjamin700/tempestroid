@@ -1,0 +1,15 @@
+{
+  "compose": {
+    "transition": {
+      "curve": "bounce",
+      "delayMs": 0,
+      "durationMs": 400
+    }
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "",
+    "qss_leaf": ""
+  }
+}

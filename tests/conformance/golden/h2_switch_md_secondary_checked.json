@@ -1,0 +1,14 @@
+{
+  "compose": {
+    "background": "#477485",
+    "color": "#477485",
+    "height": 20.0,
+    "width": 20.0
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(71, 116, 133, 1.0); color: rgba(71, 116, 133, 1.0)",
+    "qss_leaf": "background-color: rgba(71, 116, 133, 1.0); color: rgba(71, 116, 133, 1.0)"
+  }
+}

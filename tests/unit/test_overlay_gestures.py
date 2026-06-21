@@ -20,11 +20,19 @@ import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
+from tempest_core.widgets import EventValidationError
 
 from tempestroid import (
+    DismissEvent,
+    Dismissible,
+    DragEvent,
     GestureDetector,
     LongPressEvent,
+    PanEvent,
     Position,
+    ReorderableList,
+    ReorderEvent,
+    ScaleEvent,
     Stack,
     StackAlign,
     Style,
@@ -32,6 +40,7 @@ from tempestroid import (
     SwipeEvent,
     TapEvent,
     Text,
+    Widget,
     build,
     diff,
     introspect,
@@ -39,9 +48,9 @@ from tempestroid import (
     serialize_node,
     to_compose,
 )
+from tempestroid.bridge.protocol import EVENT_SCHEMAS, event_type_for
 from tempestroid.renderers.qt import QtRenderer
 from tempestroid.renderers.qt.renderer import _GestureWidget, _StackWidget
-from tempestroid.widgets import EventValidationError
 
 # --- widgets / IR -----------------------------------------------------------
 
@@ -81,6 +90,115 @@ def test_introspection_lists_new_widgets_and_events() -> None:
     assert "GestureDetector" in catalog["widgets"]
     assert "LongPressEvent" in catalog["events"]
     assert "SwipeEvent" in catalog["events"]
+
+
+# --- advanced gestures (E4): events ----------------------------------------
+
+
+def test_pan_event_validates_fields() -> None:
+    event = parse_event(PanEvent, {"dx": 12.5, "dy": 0.3, "vx": 200.0, "vy": 5.0})
+    assert event.dx == 12.5
+    assert event.dy == 0.3
+    assert event.vx == 200.0
+    assert event.vy == 5.0
+    # Defaults when the renderer omits a field.
+    bare = parse_event(PanEvent, {})
+    assert bare.dx == 0.0 and bare.vy == 0.0
+
+
+def test_scale_event_validates_fields() -> None:
+    event = parse_event(
+        ScaleEvent,
+        {"scale": 1.8, "focus_x": 140.0, "focus_y": 200.0, "rotation": 0.0},
+    )
+    assert event.scale == 1.8
+    assert event.focus_x == 140.0
+    assert event.focus_y == 200.0
+    assert event.rotation == 0.0
+
+
+def test_drag_event_round_trip() -> None:
+    event = parse_event(DragEvent, {"data": "item-3", "x": 180.0, "y": 320.0})
+    assert event.data == "item-3"
+    assert event.x == 180.0 and event.y == 320.0
+    # x/y are optional — a drag with no measured drop position validates too.
+    no_pos = parse_event(DragEvent, {"data": "item-1"})
+    assert no_pos.x is None and no_pos.y is None
+
+
+def test_reorder_event_round_trip() -> None:
+    event = parse_event(ReorderEvent, {"from_index": 2, "to_index": 0})
+    assert event.from_index == 2 and event.to_index == 0
+
+
+def test_reorder_event_requires_indices() -> None:
+    with pytest.raises(EventValidationError):
+        parse_event(ReorderEvent, {"from_index": 1})
+
+
+# --- advanced gestures (E4): widgets + contract ----------------------------
+
+
+def test_dismissible_declares_event_schemas() -> None:
+    assert Dismissible.event_schemas == {"on_dismiss": DismissEvent}
+    node = build(
+        Dismissible(
+            direction=SwipeDirection.RIGHT,
+            on_dismiss=lambda e: None,
+            child=Text(content="row"),
+        )
+    )
+    assert node.type == "Dismissible"
+    assert node.props["direction"] == "right"
+    assert len(node.children) == 1 and node.children[0].type == "Text"
+
+
+def test_reorderable_list_child_nodes() -> None:
+    items: list[Widget] = [
+        Text(content="a"),
+        Text(content="b"),
+        Text(content="c"),
+    ]
+    widget = ReorderableList(children=items)
+    assert widget.child_nodes() == items
+    # Empty list returns [], never raises.
+    assert ReorderableList().child_nodes() == []
+
+
+def test_introspection_lists_all_new_widgets_and_events() -> None:
+    catalog = introspect()
+    for widget in (
+        "PanHandler",
+        "ScaleHandler",
+        "DoubleTapHandler",
+        "Draggable",
+        "DragTarget",
+        "Dismissible",
+        "ReorderableList",
+        "InteractiveViewer",
+    ):
+        assert widget in catalog["widgets"], widget
+    for event in ("PanEvent", "ScaleEvent", "DragEvent", "ReorderEvent"):
+        assert event in catalog["events"], event
+
+
+def test_event_schemas_registered_in_protocol() -> None:
+    expected = {
+        "PanHandler": {"on_pan": "PanEvent"},
+        "ScaleHandler": {"on_scale": "ScaleEvent", "on_double_tap": "TapEvent"},
+        "DoubleTapHandler": {"on_double_tap": "TapEvent"},
+        "Draggable": {"on_drag": "DragEvent"},
+        "DragTarget": {"on_drop": "DragEvent"},
+        "Dismissible": {"on_dismiss": "DismissEvent"},
+        "ReorderableList": {"on_reorder": "ReorderEvent"},
+        "InteractiveViewer": {"on_interaction": "ScaleEvent"},
+    }
+    for widget, props in expected.items():
+        assert widget in EVENT_SCHEMAS, widget
+        for prop, event_name in props.items():
+            event = event_type_for(widget, prop)
+            assert event is not None, (widget, prop)
+            assert event.__name__ == event_name, (widget, prop)
 
 
 # --- events -----------------------------------------------------------------

@@ -21,11 +21,15 @@ from pathlib import Path
 from typing import cast
 
 import qasync  # pyright: ignore[reportMissingTypeStubs]
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
+from tempest_core.core.state import App
+from tempest_core.devices import DEFAULT_DEVICE, Device
 
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.watcher import watch
-from tempestroid.devices import DEFAULT_DEVICE
+from tempestroid.renderers.qt.app_runner import BackKeyFilter, connect_lifecycle
+from tempestroid.renderers.qt.platform_setup import configure_qt_platform
 from tempestroid.renderers.qt.simulator import Simulator
 
 __all__ = ["run_dev"]
@@ -108,25 +112,51 @@ def _ms(started: float) -> str:
     return f"{(time.monotonic() - started) * 1000:.0f}ms"
 
 
-def run_dev(path: str | Path, *, verbose: bool = False) -> int:
+def run_dev(
+    path: str | Path,
+    *,
+    verbose: bool = False,
+    device: Device | None = None,
+) -> int:
     """Run the dev cockpit for an app file until quit.
 
     Args:
         path: Path to the app's Python file.
         verbose: Print full tracebacks when a save fails to reload.
+        device: An optional :class:`~tempestroid.devices.Device` preset to size
+            the simulator window to that device's logical viewport. When ``None``
+            the window falls back to :data:`~tempestroid.devices.DEFAULT_DEVICE`'s
+            size (the unchanged default).
 
     Returns:
         The process exit code.
     """
     app_path = Path(path).resolve()
+    window_size = (device or DEFAULT_DEVICE).size
+    # Prefer xcb + mute the qpa probe on Linux/WSLg before the QApplication is
+    # created (no-op when the user pinned QT_QPA_PLATFORM/QT_LOGGING_RULES — so
+    # `QT_QPA_PLATFORM=offscreen` in headless tests is left untouched).
+    configure_qt_platform()
     qt_app = cast("QApplication", QApplication.instance() or QApplication(sys.argv))
+    connect_lifecycle(qt_app)
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
 
     simulator = Simulator()
     _restart(simulator, app_path, verbose=verbose)  # first mount is a clean start
+
+    def _current_app() -> App[object] | None:
+        # Re-read each Esc press so a hot reload that swaps the app is honoured.
+        try:
+            return simulator.app
+        except RuntimeError:
+            return None
+
+    back_filter = BackKeyFilter(_current_app)
+    simulator.host.installEventFilter(back_filter)
+    simulator.host.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     simulator.host.setWindowTitle(f"tempestroid dev — {app_path.name}")
-    simulator.host.resize(*DEFAULT_DEVICE.size)
+    simulator.host.resize(*window_size)
     simulator.host.show()
     print(_BANNER.format(app=app_path))
 

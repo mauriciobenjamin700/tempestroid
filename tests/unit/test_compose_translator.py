@@ -77,3 +77,42 @@ def test_spec_is_json_serializable():
 
     spec = to_compose(Style(background=Color.from_hex("#abc"), gap=2.0))
     json.dumps(spec)  # must not raise
+
+
+# --- E9: RTL mirroring + text_scale/font_asset ------------------------------
+
+
+def test_rtl_mirrors_padding_and_margin():
+    style = Style(padding=Edge(left=8, right=16), margin=Edge(left=1, right=2))
+    ltr = to_compose(style)
+    rtl = to_compose(style, rtl=True)
+    assert ltr["padding"] == {"top": 0.0, "right": 16.0, "bottom": 0.0, "left": 8.0}
+    assert rtl["padding"] == {"top": 0.0, "right": 8.0, "bottom": 0.0, "left": 16.0}
+    assert ltr["margin"] == {"top": 0.0, "right": 2.0, "bottom": 0.0, "left": 1.0}
+    assert rtl["margin"] == {"top": 0.0, "right": 1.0, "bottom": 0.0, "left": 2.0}
+
+
+def test_rtl_flips_text_align():
+    assert to_compose(Style(text_align=TextAlign.LEFT))["textAlign"] == "left"
+    assert (
+        to_compose(Style(text_align=TextAlign.LEFT), rtl=True)["textAlign"] == "right"
+    )
+    assert (
+        to_compose(Style(text_align=TextAlign.RIGHT), rtl=True)["textAlign"] == "left"
+    )
+    # CENTER / JUSTIFY are direction-neutral.
+    assert (
+        to_compose(Style(text_align=TextAlign.CENTER), rtl=True)["textAlign"]
+        == "center"
+    )
+
+
+def test_rtl_default_is_ltr():
+    style = Style(padding=Edge(left=8, right=16))
+    assert to_compose(style) == to_compose(style, rtl=False)
+
+
+def test_text_scale_and_font_asset_in_spec():
+    spec = to_compose(Style(text_scale=2.0, font_asset="fonts/a.ttf"))
+    assert spec["textScale"] == 2.0
+    assert spec["fontAsset"] == "fonts/a.ttf"

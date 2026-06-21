@@ -37,6 +37,8 @@ default until the Kotlin host grows the matching cases (see *Constraints* below)
 | [`form`](form/app.py) | The value-bearing input widgets, each folding its typed event back into state. | `Input` / `Checkbox` / `DatePicker` / `FilePicker`; `TextChangeEvent` / `ToggleEvent` / `DateChangeEvent` / `FileSelectEvent`. | ✅ |
 | [`gallery`](gallery/app.py) | The expanded component set + input styling + an implicit `Style` transition. | `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`; secure + regex `Input`; `SlideEvent`; `Style.transition`. | 〜 |
 | [`device_counter`](device_counter/app.py) | Minimal device-only counter (no Qt import) for the code-push path. | Same contract, Qt-free; styled button. | ✅ |
+| [`onnxspike`](onnxspike/app.py) | Trilho G proof: `import numpy` + a computation run on the embedded interpreter. | numpy-on-android (needs `[vision]`). | ✅ (emu) |
+| [`visionspike`](visionspike/app.py) | On-device ONNX vision: real image → `BitmapFactory` decode → `ort-vision-sdk` `Classifier` via the native AAR → top-1 + latency. Model embedded **or** downloaded; fp32 `.onnx` or quantized `.int8.ort`. | G1–G4: AAR backend, image decode, `tempest optimize`, model delivery. Needs `[vision]` + `--feature vision`. | ✅ (emu) |
 
 ## Constraints (current widget set)
 

@@ -1,27 +1,72 @@
+# Virtualized-list tests reach into the renderer's private scroll-area classes
+# to assert their window/sticky behaviour — internal by design.
+# pyright: reportPrivateUsage=false
+from typing import Any, cast
+
 import pytest
+from PySide6.QtCore import QTime
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
+    QComboBox,
     QDateEdit,
     QLabel,
     QLineEdit,
+    QMenu,
+    QProgressBar,
     QPushButton,
+    QTimeEdit,
     QWidget,
 )
+from tempest_core.widgets import Form, FormField, Widget
 
 from tempestroid import (
+    ActionSheet,
+    Autocomplete,
+    BottomSheet,
     Button,
     Checkbox,
     Column,
     Container,
     DatePicker,
+    Dialog,
+    Dropdown,
+    EndReachedEvent,
     FilePicker,
     Input,
+    LazyColumn,
+    LazyGrid,
+    MaskedInput,
+    Menu,
+    MenuItem,
+    PinInput,
+    Popover,
+    RangeSlider,
+    RefreshControl,
     Row,
+    Scene,
+    ScrollEvent,
+    SectionHeader,
+    SectionList,
     Text,
+    TimePicker,
+    Toast,
+    Tooltip,
     build,
+    build_scene,
     diff,
+    diff_scene,
 )
 from tempestroid.renderers.qt import QtRenderer
+from tempestroid.renderers.qt.renderer import (
+    _DismissDialog,
+    _FormFieldWidget,
+    _LazyGridArea,
+    _LazyScrollArea,
+    _PinInputWidget,
+    _RangeSliderWidget,
+    _ScrimWidget,
+)
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -208,9 +253,7 @@ def test_checkbox_toggle_invokes_handler():
     renderer = QtRenderer()
     renderer.mount(
         build(
-            Checkbox(
-                label="x", on_change=lambda event: toggles.append(event.checked)
-            )
+            Checkbox(label="x", on_change=lambda event: toggles.append(event.checked))
         )
     )
     widget = renderer.root_widget
@@ -233,6 +276,265 @@ def test_filepicker_renders_label_as_button():
     widget = renderer.root_widget
     assert isinstance(widget, QPushButton)
     assert widget.text() == "Upload"
+
+
+# --- E5 inputs and forms ---------------------------------------------------
+
+
+def test_dropdown_renders_options_and_current_value():
+    renderer = QtRenderer()
+    renderer.mount(build(Dropdown(options=["A", "B", "C"], value="B")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QComboBox)
+    assert [widget.itemText(i) for i in range(widget.count())] == ["A", "B", "C"]
+    assert widget.currentIndex() == 1
+
+
+def test_dropdown_change_invokes_handler_with_value_and_index():
+    selections: list[tuple[str, int]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Dropdown(
+                options=["A", "B", "C"],
+                value="A",
+                on_select=lambda event: selections.append((event.value, event.index)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QComboBox)
+    widget.setCurrentIndex(2)
+    assert selections == [("C", 2)]
+
+
+def test_dropdown_options_update_repopulates():
+    renderer = QtRenderer()
+    old = Dropdown(options=["A", "B"], value="A")
+    renderer.mount(build(old))
+    new = Dropdown(options=["X", "Y", "Z"], value="Y")
+    renderer.apply(diff(build(old), build(new)))
+    widget = renderer.root_widget
+    assert isinstance(widget, QComboBox)
+    assert [widget.itemText(i) for i in range(widget.count())] == ["X", "Y", "Z"]
+    assert widget.currentIndex() == 1
+
+
+def test_timepicker_renders_value():
+    renderer = QtRenderer()
+    renderer.mount(build(TimePicker(value="08:30")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QTimeEdit)
+    assert widget.time().toString("HH:mm") == "08:30"
+
+
+def test_timepicker_change_invokes_handler():
+    times: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            TimePicker(value="08:30", on_change=lambda event: times.append(event.value))
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QTimeEdit)
+    widget.setTime(QTime(9, 45))
+    assert times == ["09:45"]
+
+
+def test_range_slider_renders_bounds_and_values():
+    renderer = QtRenderer()
+    renderer.mount(build(RangeSlider(low=10, high=80, min_value=0, max_value=100)))
+    widget = renderer.root_widget
+    assert isinstance(widget, _RangeSliderWidget)
+    assert widget.values() == (10, 80)
+
+
+def test_range_slider_change_invokes_handler():
+    ranges: list[tuple[float, float]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            RangeSlider(
+                low=10,
+                high=80,
+                min_value=0,
+                max_value=100,
+                on_change=lambda event: ranges.append((event.low, event.high)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _RangeSliderWidget)
+    widget._low_slider.setValue(25)
+    assert ranges and ranges[-1] == (25.0, 80.0)
+
+
+def test_range_slider_keeps_low_below_high():
+    ranges: list[tuple[float, float]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            RangeSlider(
+                low=10,
+                high=80,
+                min_value=0,
+                max_value=100,
+                on_change=lambda event: ranges.append((event.low, event.high)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _RangeSliderWidget)
+    # Drag the low handle past the high handle: the high follows so low <= high.
+    widget._low_slider.setValue(95)
+    low, high = widget.values()
+    assert low <= high
+
+
+def test_masked_input_applies_converted_mask():
+    renderer = QtRenderer()
+    renderer.mount(build(MaskedInput(mask="999.999.999-99")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    # Framework '9' (digit) -> Qt '0'; literals are preserved.
+    assert widget.inputMask().startswith("000.000.000-00")
+
+
+def test_masked_input_change_invokes_handler():
+    changes: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            MaskedInput(
+                mask="99/99", on_change=lambda event: changes.append(event.value)
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    widget.setText("1234")
+    assert changes and "12/34" in changes[-1]
+
+
+def test_autocomplete_renders_completer_and_value():
+    renderer = QtRenderer()
+    renderer.mount(build(Autocomplete(options=["apple", "apricot"], value="ap")))
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    assert widget.text() == "ap"
+    assert widget.completer() is not None
+
+
+def test_autocomplete_text_change_invokes_handler():
+    texts: list[str] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Autocomplete(
+                options=["apple", "apricot"],
+                on_change=lambda event: texts.append(event.value),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    widget.setText("ap")
+    assert texts == ["ap"]
+
+
+def test_autocomplete_select_invokes_handler_with_value_and_index():
+    # The completer's `activated` signal routes a SelectEvent carrying the chosen
+    # option and its index in the options list (on_select path, done-when #3).
+    selections: list[tuple[str, int]] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            Autocomplete(
+                options=["apple", "apricot", "banana"],
+                on_select=lambda event: selections.append((event.value, event.index)),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, QLineEdit)
+    completer = widget.completer()
+    assert completer is not None
+    cast("Any", completer.activated)[str].emit("banana")
+    assert selections == [("banana", 2)]
+
+
+def test_pin_input_renders_cells_and_completes():
+    changes: list[str] = []
+    completions: list[int] = []
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            PinInput(
+                length=3,
+                on_change=lambda event: changes.append(event.value),
+                on_complete=lambda: completions.append(1),
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _PinInputWidget)
+    assert len(widget.findChildren(QLineEdit)) == 3
+    widget._cells[0].setText("1")
+    widget._cells[1].setText("2")
+    widget._cells[2].setText("3")
+    assert changes[-1] == "123"
+    assert completions == [1]
+
+
+def test_form_field_shows_error_text():
+    renderer = QtRenderer()
+    renderer.mount(
+        build(
+            FormField(
+                name="email", label="Email", error="Invalid", child=Input(value="x")
+            )
+        )
+    )
+    widget = renderer.root_widget
+    assert isinstance(widget, _FormFieldWidget)
+    assert widget.error_visible()
+    assert widget.error_text() == "Invalid"
+    # The wrapped input is rendered inside the field.
+    assert widget.findChildren(QLineEdit)
+
+
+def test_form_field_hides_error_when_empty():
+    renderer = QtRenderer()
+    renderer.mount(build(FormField(name="email", error="", child=Input(value="y"))))
+    widget = renderer.root_widget
+    assert isinstance(widget, _FormFieldWidget)
+    assert not widget.error_visible()
+
+
+def test_form_field_error_toggles_on_update():
+    renderer = QtRenderer()
+    old = FormField(name="e", error="", child=Input(value="z"))
+    renderer.mount(build(old))
+    new = FormField(name="e", error="Required", child=Input(value="z"))
+    renderer.apply(diff(build(old), build(new)))
+    widget = renderer.root_widget
+    assert isinstance(widget, _FormFieldWidget)
+    assert widget.error_visible()
+    assert widget.error_text() == "Required"
+
+
+def test_form_renders_field_children():
+    renderer = QtRenderer()
+    form = Form(
+        fields=[
+            FormField(name="a", child=Input(value="1")),
+            FormField(name="b", child=Input(value="2")),
+        ]
+    )
+    renderer.mount(build(form))
+    widget = renderer.root_widget
+    assert len(widget.findChildren(QLineEdit)) == 2
 
 
 def test_input_value_update_applies():
@@ -258,3 +560,513 @@ def test_nested_container_renders():
     )
     renderer.mount(tree)
     assert _labels(renderer.root_widget) == ["x", "y", "z"]
+
+
+# --- virtualized lists (E1b) ------------------------------------------------
+
+
+def _item(index: int) -> Text:
+    """Build a trivial text item for a virtualized list."""
+    return Text(content=str(index))
+
+
+def test_lazy_column_renders_materialized_window(qapp: QApplication) -> None:
+    # E1 contract: build() materializes the visible window into keyed children;
+    # the Qt renderer mounts those children directly into a scroll area, never
+    # self-materializing from item_count.
+    renderer = QtRenderer()
+    node = build(LazyColumn(item_count=100, item_builder=_item))
+    host = renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+    # The default window is [0, window_size) — the renderer renders exactly the
+    # children the IR carried, never the full 100.
+    materialized = area.item_widgets()
+    assert len(materialized) == len(node.children)
+    assert 0 < len(materialized) < 100
+
+
+def test_lazy_column_applies_window_slide_child_patches(qapp: QApplication) -> None:
+    # Sliding the window is a keyed diff (remove/reorder/insert) on the children;
+    # the renderer applies it through the generic container path.
+    renderer = QtRenderer()
+    old = build(LazyColumn(item_count=100, item_builder=_item, window=(0, 10)))
+    host = renderer.mount(old)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+
+    def window_labels() -> list[str]:
+        return [
+            widget.text()
+            for widget in area.item_widgets()
+            if isinstance(widget, QLabel)
+        ]
+
+    assert window_labels() == [str(i) for i in range(10)]
+    # The app slid the window [0,10) -> [5,15); the renderer applies the patches.
+    new = build(LazyColumn(item_count=100, item_builder=_item, window=(5, 15)))
+    renderer.apply(diff(old, new))
+    qapp.processEvents()
+    assert window_labels() == [str(i) for i in range(5, 15)]
+
+
+def test_lazy_column_emits_scroll_and_end_reached(qapp: QApplication) -> None:
+    scrolls: list[ScrollEvent] = []
+    ends: list[EndReachedEvent] = []
+    renderer = QtRenderer()
+    node = build(
+        LazyColumn(
+            item_count=100,
+            item_builder=_item,
+            window=(0, 60),
+            on_scroll=scrolls.append,
+            on_end_reached=ends.append,
+            end_reached_threshold=0.8,
+        )
+    )
+    host = renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 200)
+    host.show()
+    qapp.processEvents()
+    bar = area.verticalScrollBar()
+    bar.setValue(bar.maximum())
+    qapp.processEvents()
+    assert scrolls, "scroll handler should fire on scrollbar movement"
+    assert scrolls[-1].direction == "vertical"
+    assert ends, "end-reached should fire past the threshold"
+
+
+def test_lazy_column_update_item_count_applies_window_patches(
+    qapp: QApplication,
+) -> None:
+    # Pagination: item_count grows but the window children change via the keyed
+    # diff. The renderer accepts the child patches without raising (the bug the
+    # old xfail tracked: it used to treat LazyColumn as a leaf).
+    renderer = QtRenderer()
+    old = build(LazyColumn(item_count=10, item_builder=_item))
+    host = renderer.mount(old)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+    # item_count grows from 10 to 1000; the window stays its default size, so the
+    # materialized window is still small (virtualization preserved).
+    new = build(LazyColumn(item_count=1000, item_builder=_item))
+    renderer.apply(diff(old, new))
+    qapp.processEvents()
+    assert len(area.item_widgets()) == len(new.children)
+    assert 0 < len(area.item_widgets()) < 100
+
+
+def test_lazy_grid_renders_window(qapp: QApplication) -> None:
+    renderer = QtRenderer()
+    node = build(LazyGrid(item_count=500, columns=3, item_builder=_item))
+    host = renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyGridArea)
+    host.resize(300, 600)
+    host.show()
+    qapp.processEvents()
+    materialized = area.item_widgets()
+    assert len(materialized) == len(node.children)
+    assert 0 < len(materialized) < 500
+
+
+def test_section_list_renders_sticky_header(qapp: QApplication) -> None:
+    renderer = QtRenderer()
+    sections = [
+        SectionHeader(
+            title="A",
+            item_count=3,
+            item_builder=_item,
+            header_builder=lambda: Text(content="Header A"),
+        ),
+        SectionHeader(
+            title="B",
+            item_count=2,
+            item_builder=_item,
+            header_builder=lambda: Text(content="Header B"),
+        ),
+    ]
+    node = build(SectionList(sections=sections))
+    renderer.mount(node)
+    area = renderer.root_widget
+    assert isinstance(area, _LazyScrollArea)
+    # The first section's title pins the sticky header (Qt stand-in for Compose's
+    # native stickyHeader — a documented divergence).
+    assert area.sticky.text() == "A"
+
+
+def test_refresh_control_busy_when_refreshing():
+    renderer = QtRenderer()
+    node = build(RefreshControl(refreshing=True))
+    renderer.mount(node)
+    widget = renderer.root_widget
+    assert isinstance(widget, QProgressBar)
+    # An active refresh shows an indeterminate (busy) bar: range collapses to 0.
+    assert widget.minimum() == 0
+    assert widget.maximum() == 0
+
+
+# --- overlays (E2c) --------------------------------------------------------
+
+
+def _scene(root: Widget, overlays: list[tuple[str, Widget, bool]]) -> Scene:
+    """Build a Scene from a root widget and (id, widget, barrier) overlays."""
+    return build_scene(root, overlays)
+
+
+def test_mount_scene_renders_root_and_no_overlay():
+    renderer = QtRenderer()
+    host = renderer.mount(_scene(Column(children=[Text(content="hi")]), []))
+    assert _labels(host) == ["hi"]
+    assert renderer._overlays == []
+    assert renderer._scrim.isHidden()
+
+
+def test_dialog_overlay_mounts_as_dialog_with_body():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(title="Hello", children=[Text(content="body")]), True)],
+        )
+    )
+    assert len(renderer._overlays) == 1
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, _DismissDialog)
+    assert overlay.widget.windowTitle() == "Hello"
+    assert _labels(overlay.widget) == ["body"]
+
+
+def test_barrier_overlay_shows_blocking_scrim():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(children=[Text(content="x")]), True)],
+        )
+    )
+    assert not renderer._scrim.isHidden()
+
+
+def test_barrierless_menu_does_not_show_scrim():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("m1", Menu(items=[MenuItem(label="One", value="1")]), False)],
+        )
+    )
+    assert renderer._scrim.isHidden()
+
+
+def test_scrim_tap_dismisses_topmost_barrier_overlay():
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(children=[Text(content="x")]), True)],
+        )
+    )
+    # Tapping the scrim dismisses the topmost barrier overlay by its id.
+    renderer._scrim._on_tap()
+    assert dismissed == ["d1"]
+
+
+def test_dialog_on_dismiss_handler_and_app_dismiss_both_fire():
+    fired: list[str] = []
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "d1",
+                    Dialog(
+                        children=[Text(content="x")],
+                        on_dismiss=lambda _e: fired.append("dismiss"),
+                    ),
+                    True,
+                )
+            ],
+        )
+    )
+    dialog = renderer._overlays[0].widget
+    assert isinstance(dialog, _DismissDialog)
+    # A user-initiated close routes on_dismiss + App.dismiss (mirrors __dismiss__).
+    dialog.close()
+    assert fired == ["dismiss"]
+    assert dismissed == ["d1"]
+
+
+def test_dismiss_removes_overlay_via_diff_scene():
+    renderer = QtRenderer()
+    old = _scene(
+        Column(children=[Text(content="root")]),
+        [("d1", Dialog(children=[Text(content="x")]), True)],
+    )
+    renderer.mount(old)
+    new = _scene(Column(children=[Text(content="root")]), [])
+    renderer.apply(diff_scene(old, new))
+    assert renderer._overlays == []
+    assert renderer._scrim.isHidden()
+
+
+def test_toast_renders_label_with_message():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("t1", Toast(message="Saved", duration_s=2.5), False)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, QLabel)
+    assert overlay.widget.text() == "Saved"
+
+
+def test_toast_removal_tears_down_label():
+    renderer = QtRenderer()
+    root = Column(children=[Text(content="root")])
+    old = _scene(root, [("t1", Toast(message="Saved"), False)])
+    renderer.mount(old)
+    # The app-side timer fires App.dismiss → a Remove patch removes the toast.
+    new = _scene(root, [])
+    renderer.apply(diff_scene(old, new))
+    assert renderer._overlays == []
+
+
+def test_menu_lists_items_and_select_routes_event():
+    selected: list[tuple[str, str]] = []
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "m1",
+                    Menu(
+                        items=[
+                            MenuItem(label="Copy", value="copy"),
+                            MenuItem(label="Paste", value="paste"),
+                        ],
+                        on_select=lambda e: selected.append((e.value, e.label)),
+                    ),
+                    False,
+                )
+            ],
+        )
+    )
+    menu = renderer._overlays[0].widget
+
+    assert isinstance(menu, QMenu)
+    actions = menu.actions()
+    assert [a.text() for a in actions] == ["Copy", "Paste"]
+    # Triggering the second action routes a MenuSelectEvent + App.dismiss.
+    actions[1].trigger()
+    assert selected == [("paste", "Paste")]
+    assert dismissed == ["m1"]
+
+
+def test_action_sheet_title_becomes_section_header():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "a1",
+                    ActionSheet(
+                        title="Actions",
+                        items=[MenuItem(label="Delete", value="del")],
+                    ),
+                    True,
+                )
+            ],
+        )
+    )
+
+    menu = renderer._overlays[0].widget
+    assert isinstance(menu, QMenu)
+    # The title is a (disabled) section action ahead of the item action.
+    texts = [a.text() for a in menu.actions()]
+    assert "Delete" in texts
+
+
+def test_bottom_sheet_overlay_mounts_with_body():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("s1", BottomSheet(children=[Text(content="sheet body")]), True)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, _DismissDialog)
+    assert _labels(overlay.widget) == ["sheet body"]
+
+
+def test_overlay_update_changes_toast_message():
+    renderer = QtRenderer()
+    root = Column(children=[Text(content="root")])
+    old = _scene(root, [("t1", Toast(message="One"), False)])
+    renderer.mount(old)
+    new = _scene(root, [("t1", Toast(message="Two"), False)])
+    renderer.apply(diff_scene(old, new))
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, QLabel)
+    assert overlay.widget.text() == "Two"
+
+
+def test_remount_clears_open_overlays():
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("d1", Dialog(children=[Text(content="x")]), True)],
+        )
+    )
+    assert len(renderer._overlays) == 1
+    renderer.remount(_scene(Column(children=[Text(content="fresh")]), []))
+    assert renderer._overlays == []
+    assert renderer._scrim.isHidden()
+    assert _labels(renderer.host) == ["fresh"]
+
+
+def test_scrim_widget_swallows_press():
+    from PySide6.QtCore import QPointF
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QMouseEvent
+
+    scrim = _ScrimWidget(QWidget())
+    fired: list[bool] = []
+    scrim.configure(lambda: fired.append(True))
+    event = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(1.0, 1.0),
+        QPointF(1.0, 1.0),
+        _Qt.MouseButton.LeftButton,
+        _Qt.MouseButton.LeftButton,
+        _Qt.KeyboardModifier.NoModifier,
+    )
+    scrim.mousePressEvent(event)
+    assert fired == [True]
+    assert event.isAccepted()
+
+
+# --- Tooltip and Popover overlays (E2c) ----------------------------------------
+
+
+def test_tooltip_overlay_mounts_as_qlabel():
+    """Tooltip overlay renders as a floating QLabel carrying the message."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("tip1", Tooltip(message="Hint text"), False)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, QLabel)
+    assert overlay.widget.text() == "Hint text"
+
+
+def test_tooltip_is_barrierless():
+    """A Tooltip overlay has no barrier and must not trigger the scrim."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("tip1", Tooltip(message="Hint"), False)],
+        )
+    )
+    assert renderer._scrim.isHidden()
+
+
+def test_popover_overlay_mounts_as_dismiss_dialog():
+    """Popover overlay renders as a frameless _DismissDialog panel."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [("pop1", Popover(child=Text(content="popover body")), False)],
+        )
+    )
+    overlay = renderer._overlays[0]
+    assert isinstance(overlay.widget, _DismissDialog)
+    assert _labels(overlay.widget) == ["popover body"]
+
+
+def test_popover_on_dismiss_fires_on_close():
+    """Closing a Popover dialog triggers the on_dismiss handler and app dismiss."""
+    fired: list[str] = []
+    dismissed: list[str] = []
+    renderer = QtRenderer()
+    renderer.set_dismiss_overlay(dismissed.append)
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                (
+                    "pop1",
+                    Popover(
+                        child=Text(content="content"),
+                        on_dismiss=lambda _e: fired.append("dismissed"),
+                    ),
+                    False,
+                )
+            ],
+        )
+    )
+    dialog = renderer._overlays[0].widget
+    assert isinstance(dialog, _DismissDialog)
+    dialog.close()
+    assert fired == ["dismissed"]
+    assert dismissed == ["pop1"]
+
+
+def test_multiple_overlay_types_stack_in_order():
+    """A mix of overlay types (dialog + toast + tooltip) preserves push order."""
+    renderer = QtRenderer()
+    renderer.mount(
+        _scene(
+            Column(children=[Text(content="root")]),
+            [
+                ("d1", Dialog(children=[Text(content="dlg")]), True),
+                ("t1", Toast(message="msg"), False),
+                ("tip1", Tooltip(message="hint"), False),
+            ],
+        )
+    )
+    assert len(renderer._overlays) == 3
+    assert renderer._overlays[0].key == "d1"
+    assert renderer._overlays[1].key == "t1"
+    assert renderer._overlays[2].key == "tip1"
+
+
+def test_overlay_insert_appends_to_layer():
+    """A diff_scene Insert at ('overlay',) appends a new overlay to the renderer."""
+    renderer = QtRenderer()
+    root = Column(children=[Text(content="root")])
+    old = _scene(root, [])
+    renderer.mount(old)
+    new = _scene(root, [("tip1", Tooltip(message="new tip"), False)])
+    renderer.apply(diff_scene(old, new))
+    assert len(renderer._overlays) == 1
+    assert isinstance(renderer._overlays[0].widget, QLabel)

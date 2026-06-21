@@ -4,12 +4,14 @@ The `tempest` entry point covers the app lifecycle: create, develop in the
 simulator, push to the device, package, and inspect the contract.
 
 ```bash
-uv run tempest new MyApp                        # scaffold a new app project
+uv run tempest new                              # scaffold in the current dir (id = folder name)
 uv run python examples/counter/app.py           # run an app directly in the Qt simulator
 uv run tempest dev examples/counter/app.py       # dev loop: edit + save → hot reload
+uv run tempest deploy examples/multifile/main.py # offline push to a device (no SDK/NDK)
 uv run tempest serve examples/device_counter/app.py  # LAN code-push, no APK rebuild
-uv run tempest build MyApp/app.py               # bundle the app into an APK
-uv run tempest run MyApp/app.py                 # build + install on a device + logs
+uv run tempest build apk                        # per-app APK, side by side (JDK + SDK)
+uv run tempest build release-apk                # release-signed APK (distribute off the Play Store)
+uv run tempest run                              # build + install on a device + logs
 uv run tempest spec                             # print the typed contract (widgets/events) as JSON
 uv run tempest --help
 ```
@@ -18,12 +20,31 @@ uv run tempest --help
 
 | Command | Status | Description |
 |---|---|---|
-| `tempest new <name>` | ✅ | Scaffolds a runnable app project. |
-| `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs the `qt` extra). |
-| `tempest serve <app>` | ✅ | LAN code-push to a device + log relay (phase B5). |
+| `tempest new` | ✅ | Scaffolds a runnable app project **in the current directory** (id = folder name). Pass a name only to create a subdirectory. |
+| `tempest dev <app>` | ✅ | Simulator + hot reload / hot restart (needs the `qt` extra). `--device`/`-d` sizes the window to a device preset (e.g. `pixel-7`, `galaxy-s24`). |
+| `tempest deploy <app>` | ✅ | **Offline** push of the whole project to a device (no SDK/NDK): install the bundled host + push + launch. |
+| `tempest serve <app>` | ✅ | LAN code-push + hot reload of the whole project (phase B5). |
+| `tempest install [src]` | ✅ | adb-installs the prebuilt host (no SDK/NDK). |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON. |
-| `tempest build <app>` | ✅ | Bundles an app into an APK (needs Android SDK/NDK). |
-| `tempest run <app>` | ✅ | Build + install on a device + stream logs. |
+| `tempest doctor` | ✅ | Diagnose the Android build/run prerequisites (JDK, android-host, SDK, adb, device). Build readiness sets the exit code; a missing device is informational (only `run`/`install` need one). |
+| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/build-tools; `--install` installs the Android SDK. |
+| `tempest version` | ✅ | Print the framework version (same as `--version`). |
+| `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore. |
+| `tempest build [apk\|release-apk\|prd]` | ✅ | `apk`: a **per-app** APK (own id → N apps side by side) via Gradle reusing the prebuilt natives (**JDK + SDK only**, no NDK/toolchain). `release-apk`: a release-signed APK with your keystore to distribute **off the Play Store** (`--keystore`; verify with `apksigner verify`). `prd`: a release AAB. Reads `[tool.tempest]`. |
+| `tempest run` | ✅ | `build apk` + install on a device + stream logs. |
+| `tempest icon <img>` | ✅ | Generate `icon.png` + `splash.png` from one image (Pillow). |
+| `tempest lint [path]` | ✅ | `ruff check` on the target (lint only). |
+| `tempest fix [path]` | ✅ | `ruff check --fix` + `ruff format` in one pass (`--unsafe` for unsafe autofixes). |
+| `tempest format [path]` | ✅ | `ruff format` (writes files). |
+| `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only). |
+| `tempest type [path]` | ✅ | `pyright` on the target (strict type check). |
+| `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter). |
+| `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test. |
+
+Apps are **multi-file**: the project tree ships with them (on `sys.path`) in both
+the simulator and the device. See [Build, deploy and ship](build.md) for the
+difference between the offline push (`deploy`/`serve`) and the distributable APK
+(`build`).
 
 ## The `tempest dev` cockpit
 
@@ -40,10 +61,13 @@ Saving the file triggers a hot reload automatically; if the reload is
 incompatible with the live state, the loop falls back to a clean restart. A bad
 save is caught and printed — the loop survives.
 
-!!! note "build / run need the Android toolchain"
-    `tempest build`/`run` drive the `android-host` Gradle project + `adb`, so they
-    require an Android SDK/NDK and a checkout of the host tree. See
-    [installation](../instalacao.md) and the [runtime research](../research/android-runtime.md).
+!!! note "build / run need a JDK + the Android SDK"
+    `tempest build`/`run` run Gradle reusing the prebuilt natives (the
+    `android-host` ships in the package), so they need a **JDK + the Android SDK**
+    — **no NDK, no CPython toolchain, no `git clone`**. To run on a device
+    **without an SDK**, use `tempest deploy`/`serve`. See
+    [Build, deploy and ship](build.md), [installation](../instalacao.md) and the
+    [runtime research](../research/android-runtime.md).
 
 ## The app-file contract
 

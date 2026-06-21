@@ -194,3 +194,44 @@ def test_self_alignment_maps_cross_axis() -> None:
     assert self_alignment(is_row=True, align_self=None) is None
     # STRETCH has no single-flag equivalent.
     assert self_alignment(is_row=True, align_self=AlignItems.STRETCH) is None
+
+
+# --- E9: text_scale + font_asset --------------------------------------------
+
+
+def test_text_scale_and_font_asset_roundtrip() -> None:
+    style = Style(text_scale=1.4, font_asset="fonts/Roboto.ttf", font_size=16)
+    restored = Style.model_validate(style.model_dump())
+    assert restored == style
+    assert restored.text_scale == 1.4
+    assert restored.font_asset == "fonts/Roboto.ttf"
+
+
+def test_text_scale_rejects_non_positive() -> None:
+    with pytest.raises(ValidationError):
+        Style(text_scale=0.0)
+    with pytest.raises(ValidationError):
+        Style(text_scale=-1.0)
+
+
+def test_text_scale_compose_emits_textscale() -> None:
+    assert to_compose(Style(text_scale=1.25))["textScale"] == 1.25
+
+
+def test_font_asset_compose_emits_fontasset() -> None:
+    assert to_compose(Style(font_asset="fonts/X.ttf"))["fontAsset"] == "fonts/X.ttf"
+
+
+def test_text_scale_qt_scales_font_size() -> None:
+    qss = to_qss(Style(font_size=10, text_scale=1.5), with_padding=True)
+    assert "font-size: 15.0px" in qss
+
+
+def test_text_scale_qt_without_font_size_uses_em() -> None:
+    qss = to_qss(Style(text_scale=1.3), with_padding=True)
+    assert "font-size: 1.3em" in qss
+
+
+def test_font_asset_qt_emits_custom_family() -> None:
+    qss = to_qss(Style(font_asset="fonts/X.ttf"), with_padding=True)
+    assert 'font-family: "CustomAsset"' in qss

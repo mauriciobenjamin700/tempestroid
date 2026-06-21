@@ -28,9 +28,11 @@ render** (per-platform leaf renderers), tied together by a **pure reconciler**.
 
 `view(app)` returns a `Widget` tree — Pydantic models, frozen where they
 represent immutable values. Each widget is a declarative node: `Text`, `Button`,
-`Column`, `Row`, `Container`, `ScrollView`, and the value-bearing inputs (`Input`,
-`TextArea`, `Checkbox`, `Switch`, `Slider`, `DatePicker`, `FilePicker`), plus
-media (`Image`, `Icon`) and indicators (`ProgressBar`, `Spinner`).
+`Column`, `Row`, `Container`, `ScrollView`, the value-bearing inputs (`Input`,
+`TextArea`, `Checkbox`, `Switch`, `Slider`, `DatePicker`, `FilePicker`, …), plus
+media, indicators, and dozens more (virtualized lists, navigation, overlays,
+animation, gestures) — all supported by **both renderers**. The full list is in
+the [examples guide](guia/exemplos.md#current-widget-set).
 
 ### 2. build → Node
 
@@ -65,6 +67,44 @@ Each leaf renderer applies the same patches to its live widgets:
 - **Compose** (`renderers/compose` + the Kotlin host) — maps the serialized tree
   to `@Composable`s and `Style` to `Modifier`/`Arrangement`/`Alignment`. The
   device renderer.
+
+## Simulator fidelity (what it reflects — and what it doesn't)
+
+The Qt simulator is a **faithful semantic proxy**, not a pixel-perfect mirror of
+the device. Knowing the boundary lets you trust it where it counts.
+
+**What is identical** (the backbone): the same IR tree, the same reconciler, the
+same `view → diff → patch` flow, the same typed events and the same coalesced
+state. Layout, navigation, logic, state and events behave the same. Most `Style`
+fields are honored on both (alignment, `SPACE_*` spacing, `STRETCH`, `text_align`,
+fixed size, padding/margin, color, font). The simulator's sizes are in **dp** —
+the same layout space Compose uses — so what fits in the window fits on the device
+(see [pick the screen size](inicio-rapido.md#pick-the-screen-size-device-presets)).
+
+!!! check "Parity guarantee"
+    The **conformance** suite (`tests/conformance/`) pins **both `Style`
+    translators side by side** (golden snapshots of `to_qss` and `to_compose`) +
+    a per-field coverage table. They **cannot silently diverge** — a change that
+    regresses parity breaks the gate.
+
+**What only the device shows faithfully** (expected divergences):
+
+- **Widget appearance** — Qt uses QWidget/QSS; the device uses **Material 3**.
+  Dialogs, menus, bottom sheets, pickers and fields wear each platform's native
+  look.
+- **Animations** — Qt uses `QPropertyAnimation`; the device drives Compose's
+  native engine (`animate*AsState`/`AnimatedContent`).
+- **Overlays & safe-area** — Compose manages its own
+  `WindowInsets.safeDrawing`/scrim; Qt approximates with a manual scrim.
+- **Fonts & OS density** shift fine layout metrics.
+- **Hardware widgets** — `CameraPreview`/`QrScanner`/`MapView` are **device-only**;
+  the simulator shows a signalled placeholder.
+
+!!! warning "Rule: dual verification"
+    So when you touch UI surface, validate on **both**: the Qt simulator **and**
+    the physical device (Compose) when one is connected — `make dual-verify`. The
+    simulator speeds up development; the device confirms final appearance,
+    animations and overlays.
 
 ## State: `App[S]`
 

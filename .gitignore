@@ -69,8 +69,11 @@ android-host/captures/
 # MkDocs build output
 site/
 
-# `tempest build` embeds the user app here as a generated asset (phase C).
+# `tempest build` embeds the user app here as a generated asset (phase C): the
+# legacy single-file slot and the multi-file project bundle. Both are build
+# artifacts staged from the user's project, not source.
 android-host/app/src/main/assets/tempest_app.py
+android-host/app/src/main/assets/tempest_app_bundle.zip
 
 # Bundled prebuilt host APK (staged from `make apk` output via `make stage-host`).
 # Shipped in the wheel via [tool.hatch.build] artifacts; too big to track in git.
@@ -78,3 +81,5 @@ tempestroid/_assets/*.apk
 
 # Runtime lock for scheduled tasks — per-session (sessionId/pid), not source.
 .claude/scheduled_tasks.lock
+.claude/worktrees/
+docs/assets/emulator/pool/

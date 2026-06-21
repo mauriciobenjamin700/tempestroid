@@ -56,9 +56,7 @@ def check_exports(readme: str) -> None:
     section("exports ⨉ README")
     import tempestroid
 
-    exported: list[str] = [
-        n for n in tempestroid.__all__ if not n.startswith("__")
-    ]
+    exported: list[str] = [n for n in tempestroid.__all__ if not n.startswith("__")]
     missing = [n for n in exported if n not in readme]
     if missing:
         fail("exported names absent from README Public API: " + ", ".join(missing))
@@ -85,8 +83,10 @@ def check_cli(readme: str) -> None:
     if missing:
         fail("CLI commands missing from README table: " + ", ".join(missing))
     else:
-        ok(f"all {len(commands)} CLI commands appear in README: "
-           + ", ".join(sorted(commands)))
+        ok(
+            f"all {len(commands)} CLI commands appear in README: "
+            + ", ".join(sorted(commands))
+        )
 
 
 _PHASE_ROW = re.compile(r"^\|\s*(A\d|B0–B6|C\s*/\s*D)\s*\|.*?\|.*?(✅|⬜)")

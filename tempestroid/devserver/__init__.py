@@ -7,6 +7,7 @@ the app over the bridge. :func:`render_qr` shows the URL to pair by scanning.
 """
 
 from tempestroid.devserver.client import run_dev_client, serve_device
+from tempestroid.devserver.harness import HarnessTransport, poll_commands
 from tempestroid.devserver.qr import render_qr
 from tempestroid.devserver.server import DevServer, source_hash
 
@@ -16,4 +17,6 @@ __all__ = [
     "run_dev_client",
     "serve_device",
     "render_qr",
+    "HarnessTransport",
+    "poll_commands",
 ]

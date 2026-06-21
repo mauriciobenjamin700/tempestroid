@@ -11,9 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtWidgets import QWidget
+from tempest_core.core.ir import Patch
+from tempest_core.core.state import App
 
 from tempestroid.cli.app_loader import AppSpec
-from tempestroid.core.state import App
 from tempestroid.renderers.qt.renderer import QtRenderer
 
 __all__ = ["Simulator"]
@@ -60,10 +61,32 @@ class Simulator:
             spec: The app spec to instantiate.
         """
         app: App[Any] = App(
-            spec.make_state(), spec.view, apply_patches=self.renderer.apply
+            spec.make_state(),
+            spec.view,
+            apply_patches=self._apply_with_context,
+            theme=spec.make_theme() if spec.make_theme is not None else None,
         )
+        # `App.start` builds a `Scene`; the Qt renderer mounts its root tree and
+        # floating overlay layer, routing host-owned dismissals to `App.dismiss`.
+        self.renderer.set_dismiss_overlay(app.dismiss)
+        # Wire the live app so the renderer reads theme/locale/media context (E9).
+        self.renderer.set_app(app)
         self.renderer.remount(app.start())
         self._app = app
+
+    def _apply_with_context(self, patches: list[Patch]) -> None:
+        """Apply a coalesced patch batch then re-sync the theme/locale context.
+
+        Mirrors ``run_qt``: after each batch the renderer re-reads the app's
+        ``theme``/``locale`` so a ``set_theme``/``set_locale`` (which only
+        schedules a rebuild) takes visual effect (palette swap + layout
+        direction).
+
+        Args:
+            patches: The patch batch from the reconciler.
+        """
+        self.renderer.apply(patches)
+        self.renderer.sync_context()
 
     def reload(self, spec: AppSpec) -> None:
         """Hot-*reload* the app from a spec, preserving the live state.

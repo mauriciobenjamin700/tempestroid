@@ -13,11 +13,15 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from tempest_core.core.ir import Node, Path, Scene
+from tempest_core.widgets import Event, handler_accepts_event, parse_event
+
 from tempestroid.bridge.protocol import event_type_for, handler_token
-from tempestroid.core.ir import Node
-from tempestroid.widgets import Event, handler_accepts_event, parse_event
 
 __all__ = ["HandlerRegistry"]
+
+#: The reserved leading path step that addresses a scene's overlay layer.
+_OVERLAY_STEP = "overlay"
 
 
 def _invoke(handler: Callable[..., Any], event: Event | None) -> Any:  # noqa: ANN401 — handler return is arbitrary (a value or a coroutine to await)
@@ -43,17 +47,28 @@ class HandlerRegistry:
         """Create an empty registry."""
         self._handlers: dict[str, tuple[Callable[[], Any], type[Event] | None]] = {}
 
-    def refresh(self, root: Node | None) -> None:
+    def refresh(self, root: Node | Scene | None) -> None:
         """Rebuild the token→handler map by walking the current tree.
 
+        Accepts either a bare root :class:`Node` (legacy/no-overlay path) or a
+        full :class:`Scene`. For a scene, the root is walked at ``()`` and each
+        overlay at the reserved ``("overlay", i)`` prefix, so overlay handler
+        tokens (e.g. ``"overlay/0:on_dismiss"``) match what the serializer emits.
+
         Args:
-            root: The current root node, or ``None`` to clear.
+            root: The current root node, scene, or ``None`` to clear.
         """
         self._handlers.clear()
-        if root is not None:
-            self._walk(root, ())
+        if root is None:
+            return
+        if isinstance(root, Scene):
+            self._walk(root.root, ())
+            for index, overlay in enumerate(root.overlays):
+                self._walk(overlay, (_OVERLAY_STEP, index))
+            return
+        self._walk(root, ())
 
-    def _walk(self, node: Node, path: tuple[int, ...]) -> None:
+    def _walk(self, node: Node, path: Path) -> None:
         """Register every handler prop on ``node`` and recurse.
 
         Args:

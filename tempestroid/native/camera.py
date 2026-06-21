@@ -27,14 +27,28 @@ __all__ = [
 
 
 class CameraFacing(StrEnum):
-    """Which physical camera to open."""
+    """Which physical camera to open.
+
+    Attributes:
+        BACK: The rear-facing camera, pointing away from the screen — the
+            higher-resolution main sensor used for general photography.
+        FRONT: The front-facing camera, on the same side as the screen —
+            typically used for selfies and video calls.
+    """
 
     BACK = "back"
     FRONT = "front"
 
 
 class VideoQuality(StrEnum):
-    """Capture quality hint passed to the device camera app."""
+    """Capture quality hint passed to the device camera app.
+
+    Attributes:
+        LOW: Request a lower-resolution, smaller-bitrate recording, producing
+            a more compact file at the cost of visual fidelity.
+        HIGH: Request the device's high-quality recording profile, favoring
+            visual fidelity over file size.
+    """
 
     LOW = "low"
     HIGH = "high"

@@ -10,26 +10,37 @@ import asyncio
 
 import pytest
 from PySide6.QtWidgets import QCheckBox, QDateEdit, QLineEdit
+from tempest_core.widgets import handler_accepts_event
 
 from tempestroid import (
     App,
+    Autocomplete,
     Checkbox,
     Column,
     DateChangeEvent,
     DatePicker,
+    Dropdown,
     EventValidationError,
     FilePicker,
     FileSelectEvent,
     Input,
+    MaskedInput,
+    PinInput,
+    RangeChangeEvent,
+    RangeSlider,
+    SelectEvent,
+    SubmitEvent,
     TextChangeEvent,
+    TimeChangeEvent,
+    TimePicker,
     ToggleEvent,
     build,
     introspect,
     parse_event,
 )
 from tempestroid.bridge import DeviceApp, EventMessage, LoopbackBridge, serialize_node
+from tempestroid.bridge.protocol import event_type_for
 from tempestroid.renderers.qt import QtRenderer
-from tempestroid.widgets import handler_accepts_event
 
 # --- events ----------------------------------------------------------------
 
@@ -121,6 +132,153 @@ def test_introspection_includes_new_widgets_and_events():
         assert name in spec["events"]
 
 
+# --- E5 controls: events ----------------------------------------------------
+
+
+def test_select_event_round_trip_and_rejection():
+    event = parse_event(SelectEvent, {"value": "Brazil", "index": 1})
+    assert event.value == "Brazil"
+    assert event.index == 1
+    with pytest.raises(EventValidationError):
+        parse_event(SelectEvent, {"value": "Brazil"})  # missing index
+
+
+def test_time_change_event_round_trip():
+    event = parse_event(TimeChangeEvent, {"value": "09:45"})
+    assert event.value == "09:45"
+
+
+def test_range_change_event_round_trip():
+    event = parse_event(RangeChangeEvent, {"low": 5.0, "high": 50.0})
+    assert event.low == 5.0
+    assert event.high == 50.0
+
+
+def test_submit_event_round_trip():
+    event = parse_event(SubmitEvent, {"values": {"otp": "1234"}})
+    assert event.values == {"otp": "1234"}
+
+
+# --- E5 controls: widget contracts ------------------------------------------
+
+
+def test_e5_widgets_declare_event_schemas():
+    assert Dropdown.event_schemas == {"on_select": SelectEvent}
+    assert TimePicker.event_schemas == {"on_change": TimeChangeEvent}
+    assert RangeSlider.event_schemas == {"on_change": RangeChangeEvent}
+    assert Autocomplete.event_schemas == {
+        "on_change": TextChangeEvent,
+        "on_select": SelectEvent,
+    }
+    assert PinInput.event_schemas == {
+        "on_change": TextChangeEvent,
+        "on_complete": SubmitEvent,
+    }
+    assert MaskedInput.event_schemas == {"on_change": TextChangeEvent}
+
+
+def test_e5_widget_defaults():
+    assert Dropdown().options == [] and Dropdown().value is None
+    assert TimePicker().value == ""
+    assert RangeSlider().low == 0.0 and RangeSlider().high == 100.0
+    assert PinInput().length == 6
+    assert MaskedInput().mask == ""
+
+
+# --- E5 controls: bridge event-type resolution ------------------------------
+
+
+def test_event_type_for_resolves_e5_widgets():
+    assert event_type_for("Dropdown", "on_select") is SelectEvent
+    assert event_type_for("TimePicker", "on_change") is TimeChangeEvent
+    assert event_type_for("RangeSlider", "on_change") is RangeChangeEvent
+    assert event_type_for("PinInput", "on_complete") is SubmitEvent
+    assert event_type_for("PinInput", "on_change") is TextChangeEvent
+    assert event_type_for("Autocomplete", "on_select") is SelectEvent
+    assert event_type_for("Autocomplete", "on_change") is TextChangeEvent
+    assert event_type_for("MaskedInput", "on_change") is TextChangeEvent
+
+
+# --- E5 controls: serialization ---------------------------------------------
+
+
+def test_serialize_dropdown_carries_options_and_token():
+    node = build(
+        Dropdown(options=["BR", "US"], value="BR", on_select=lambda e: e, key="d")
+    )
+    payload = serialize_node(node)
+    assert payload["props"]["options"] == ["BR", "US"]
+    assert payload["props"]["value"] == "BR"
+    assert payload["props"]["on_select"]["event"] == "SelectEvent"
+
+
+def test_serialize_range_slider_carries_float_bounds():
+    node = build(RangeSlider(low=10.0, high=80.0, on_change=lambda e: e, key="r"))
+    payload = serialize_node(node)
+    assert payload["props"]["low"] == 10.0
+    assert payload["props"]["high"] == 80.0
+    assert payload["props"]["on_change"]["event"] == "RangeChangeEvent"
+
+
+def test_serialize_autocomplete_carries_both_handler_tokens():
+    node = build(
+        Autocomplete(
+            options=["a", "ab"],
+            on_change=lambda e: e,
+            on_select=lambda e: e,
+            key="ac",
+        )
+    )
+    payload = serialize_node(node)
+    assert payload["props"]["on_change"]["event"] == "TextChangeEvent"
+    assert payload["props"]["on_select"]["event"] == "SelectEvent"
+    assert (
+        payload["props"]["on_change"]["$handler"]
+        != payload["props"]["on_select"]["$handler"]
+    )
+
+
+def test_serialize_pin_input_carries_change_and_complete_tokens():
+    node = build(
+        PinInput(length=4, on_change=lambda e: e, on_complete=lambda e: e, key="p")
+    )
+    payload = serialize_node(node)
+    assert payload["props"]["length"] == 4
+    assert payload["props"]["on_change"]["event"] == "TextChangeEvent"
+    assert payload["props"]["on_complete"]["event"] == "SubmitEvent"
+
+
+def test_serialize_masked_input_carries_mask():
+    node = build(MaskedInput(mask="999.999.999-99", on_change=lambda e: e, key="m"))
+    payload = serialize_node(node)
+    assert payload["props"]["mask"] == "999.999.999-99"
+    assert payload["props"]["on_change"]["event"] == "TextChangeEvent"
+
+
+# --- E5 controls: introspection ---------------------------------------------
+
+
+def test_introspection_includes_e5_widgets_and_events():
+    spec = introspect()
+    for name in (
+        "Dropdown",
+        "TimePicker",
+        "RangeSlider",
+        "Autocomplete",
+        "PinInput",
+        "MaskedInput",
+    ):
+        assert name in spec["widgets"]
+    for name in (
+        "SelectEvent",
+        "TimeChangeEvent",
+        "RangeChangeEvent",
+        "SubmitEvent",
+        "ValidationEvent",
+    ):
+        assert name in spec["events"]
+
+
 # --- bridge dispatch passes the typed event --------------------------------
 
 
@@ -145,9 +303,11 @@ def test_dispatch_passes_typed_value_to_handler():
         bridge = LoopbackBridge()
         device = DeviceApp(State(), view, bridge)
         await device.start()
-        root = device.app.current_tree
-        assert root is not None
-        token = serialize_node(root)["children"][0]["props"]["on_change"]["$handler"]
+        scene = device.app.current_tree
+        assert scene is not None
+        token = serialize_node(scene.root)["children"][0]["props"]["on_change"][
+            "$handler"
+        ]
         await device.handle_event(
             EventMessage(token=token, payload={"value": "typed"}).model_dump()
         )
@@ -218,8 +378,6 @@ def test_qt_renders_datepicker_and_emits_iso_date():
 def test_qt_zero_arg_handler_still_called():
     calls: list[int] = []
     renderer = QtRenderer()
-    host = renderer.mount(
-        build(Checkbox(label="x", on_change=lambda: calls.append(1)))
-    )
+    host = renderer.mount(build(Checkbox(label="x", on_change=lambda: calls.append(1))))
     host.findChildren(QCheckBox)[0].setChecked(True)
     assert calls == [1]

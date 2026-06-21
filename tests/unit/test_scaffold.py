@@ -3,10 +3,10 @@
 from pathlib import Path
 
 import pytest
+from tempest_core.core.state import App
 
 from tempestroid.cli.app_loader import load_app_spec
 from tempestroid.cli.scaffold import scaffold
-from tempestroid.core.state import App
 
 
 def test_scaffold_creates_files(tmp_path: Path):

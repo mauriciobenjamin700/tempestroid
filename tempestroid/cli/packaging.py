@@ -20,29 +20,40 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tempestroid.cli.console import Console, StepError
+
+if TYPE_CHECKING:
+    from tempestroid.cli.branding import Branding
 
 __all__ = [
     "ToolchainError",
     "PreflightCheck",
     "find_android_host",
     "stage_app_source",
+    "stage_app_bundle",
     "connected_devices",
     "preflight",
     "report_preflight",
     "build_apk",
+    "package_app_apk",
     "run_on_device",
     "host_apk_url",
     "bundled_host_apk",
     "resolve_host_apk",
     "install_host",
+    "host_installed",
+    "deploy_offline",
     "adb_reverse",
     "launch_host_dev",
 ]
 
 # Asset path inside android-host the host's MainActivity extracts and runs.
 _BUNDLED_APP_ASSET = "app/src/main/assets/tempest_app.py"
+# Multi-file project bundle the host extracts onto sys.path and runs (the entry
+# is recorded in the bundle's manifest). Supersedes the single-file asset above.
+_BUNDLED_APP_BUNDLE = "app/src/main/assets/tempest_app_bundle.zip"
 # Where the global Android SDK lives on the maintainer's WSL host when
 # ANDROID_SDK_ROOT is unset (documented in CLAUDE.md / memory).
 _SDK_FALLBACK = "/usr/lib/android-sdk"
@@ -117,6 +128,26 @@ def find_android_host(start: str | Path | None = None) -> Path:
     )
 
 
+def _bundled_android_host_available() -> bool:
+    """Report whether the android-host Gradle project is bundled in the package.
+
+    The wheel ships ``tempestroid/_android_host`` so ``tempest build`` works from
+    a plain ``pip install`` (no ``git clone``). Returns ``True`` when that bundled
+    copy is present (a repo checkout has it at the repo root instead, handled by
+    :func:`find_android_host`).
+
+    Returns:
+        ``True`` when the bundled ``_android_host/gradlew`` is importable.
+    """
+    from importlib import resources
+
+    try:
+        gradlew = resources.files("tempestroid").joinpath("_android_host", "gradlew")
+        return gradlew.is_file()
+    except (ModuleNotFoundError, OSError):
+        return False
+
+
 def _android_env() -> dict[str, str]:
     """Build the subprocess environment with the Android SDK root resolved.
 
@@ -159,6 +190,37 @@ def stage_app_source(app: str | Path, host: Path) -> Path:
     asset = host / _BUNDLED_APP_ASSET
     asset.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, asset)
+    return asset
+
+
+def stage_app_bundle(app: str | Path, host: Path) -> Path:
+    """Bundle the app's whole project tree into the host's bundled-app slot.
+
+    Resolves the project root + entry from ``app`` (see
+    :func:`tempestroid.cli.bundle.resolve_project`), zips the importable tree,
+    and writes it to the host's ``tempest_app_bundle.zip`` asset so the built
+    APK boots *that* multi-file project standalone (no dev server). Removes any
+    stale legacy single-file ``tempest_app.py`` asset so the host doesn't pick
+    it up instead of the bundle.
+
+    Args:
+        app: Path to the app's entry Python file.
+        host: The ``android-host`` project root.
+
+    Returns:
+        The path of the staged bundle asset.
+
+    Raises:
+        FileNotFoundError: If ``app`` does not exist.
+    """
+    from tempestroid.cli.bundle import build_bundle, resolve_project
+
+    layout = resolve_project(app)
+    asset = host / _BUNDLED_APP_BUNDLE
+    asset.parent.mkdir(parents=True, exist_ok=True)
+    asset.write_bytes(build_bundle(layout))
+    legacy = host / _BUNDLED_APP_ASSET
+    legacy.unlink(missing_ok=True)
     return asset
 
 
@@ -225,20 +287,39 @@ def preflight(
     """
     checks: list[PreflightCheck] = []
 
+    # JDK — required by Gradle for `tempest build apk`/`prd`/`run`.
+    from tempestroid.cli.setup_env import jdk_ok
+
+    jdk_present, jdk_detail = jdk_ok()
+    checks.append(
+        PreflightCheck(
+            "jdk",
+            jdk_present,
+            jdk_detail,
+            "" if jdk_present else "install a JDK >= 17 (e.g. openjdk-21-jdk).",
+        )
+    )
+
+    # android-host Gradle project: an existing checkout (repo / env var) OR the
+    # copy bundled inside the wheel (used by a plain `pip install`).
     try:
         host_dir = host or find_android_host()
-        checks.append(PreflightCheck("android-host", True, str(host_dir)))
-    except ToolchainError as exc:
-        checks.append(
-            PreflightCheck(
-                "android-host",
-                False,
-                str(exc),
-                "for a device run use `tempest install` + `tempest serve` "
-                "(no source build); to build an APK, run from a checkout or set "
-                "TEMPESTROID_ANDROID_HOST.",
+        checks.append(PreflightCheck("android-host", True, f"checkout: {host_dir}"))
+    except ToolchainError:
+        if _bundled_android_host_available():
+            checks.append(
+                PreflightCheck("android-host", True, "bundled in the package")
             )
-        )
+        else:
+            checks.append(
+                PreflightCheck(
+                    "android-host",
+                    False,
+                    "not found",
+                    "reinstall tempestroid, run from a checkout, or set "
+                    "TEMPESTROID_ANDROID_HOST.",
+                )
+            )
 
     try:
         sdk = _android_env()["ANDROID_SDK_ROOT"]
@@ -246,7 +327,11 @@ def preflight(
     except ToolchainError as exc:
         checks.append(
             PreflightCheck(
-                "android-sdk", False, str(exc), "set ANDROID_SDK_ROOT to your SDK."
+                "android-sdk",
+                False,
+                str(exc),
+                "run `tempest setup --install` to install the SDK, or set "
+                "ANDROID_SDK_ROOT.",
             )
         )
 
@@ -339,17 +424,15 @@ def build_apk(
     host_dir = host or find_android_host()
     env = _android_env()
 
-    with con.step(f"Staging app source ({Path(app).name})"):
-        asset = stage_app_source(app, host_dir)
-        con.detail(f"copied to {asset}")
+    with con.step(f"Bundling project ({Path(app).name})"):
+        asset = stage_app_bundle(app, host_dir)
+        con.detail(f"bundled to {asset} ({asset.stat().st_size} bytes)")
 
     with con.step(f"Gradle assemble{variant}"):
         # Use the bundled wrapper (8.11.1) — the global Gradle 9.5 is too new
         # for AGP 8.7 (see CLAUDE.md). Run from the host root so ./gradlew
         # resolves.
-        con.run_command(
-            ["./gradlew", f"assemble{variant}"], cwd=host_dir, env=env
-        )
+        con.run_command(["./gradlew", f"assemble{variant}"], cwd=host_dir, env=env)
 
     apk_dir = host_dir / "app" / "build" / "outputs" / "apk" / variant.lower()
     apks = sorted(apk_dir.glob("*.apk"))
@@ -357,6 +440,62 @@ def build_apk(
         raise ToolchainError(f"build succeeded but no APK found in {apk_dir}")
     con.info(f"APK: {apks[0]}")
     return apks[0]
+
+
+def package_app_apk(
+    app: str | Path,
+    *,
+    version: str,
+    console: Console | None = None,
+    output: Path | None = None,
+    branding: Branding | None = None,
+) -> Path:
+    """Build a shippable APK for ``app`` by repackaging the prebuilt host.
+
+    Bundles the whole project, resolves the prebuilt host APK (bundled asset →
+    download/cache, see :func:`resolve_host_apk`), then injects the bundle and
+    re-signs via the SDK's ``zipalign`` + ``apksigner`` (see
+    :func:`tempestroid.cli.apk_repack.repackage_host_apk`). Needs only the Android
+    SDK build-tools — **no Gradle, NDK, or android-host checkout** — so it works
+    from a plain PyPI install. The output APK runs the app standalone and is
+    shippable to anyone (debug-signed).
+
+    Per-app branding is applied for the **splash only** (its assets live at stable,
+    uncompiled paths the repackage can overwrite); a ``--icon`` cannot be applied
+    here (the launcher icon is a compiled resource) — the caller warns and the APK
+    keeps the host's default icon.
+
+    Args:
+        app: Path to the app's entry Python file.
+        version: The tempestroid version (host-APK release fallback).
+        console: Step reporter.
+        output: Output APK path; defaults to ``dist/<project>.apk`` under the cwd.
+        branding: Optional per-app branding (splash overrides applied; icon
+            ignored on this path).
+
+    Returns:
+        The signed APK path.
+
+    Raises:
+        FileNotFoundError: If ``app`` does not exist.
+        ApkToolError: If the SDK build-tools / keystore are missing.
+        subprocess.CalledProcessError: If align/sign fails.
+    """
+    con = console or Console()
+    from tempestroid.cli.apk_repack import repackage_host_apk
+    from tempestroid.cli.branding import apk_asset_replacements
+    from tempestroid.cli.bundle import build_bundle, resolve_project
+
+    layout = resolve_project(app)
+    with con.step(f"Bundling project ({layout.entry})"):
+        bundle = build_bundle(layout)
+        con.detail(f"{len(bundle)} bytes from {layout.root}")
+    host = resolve_host_apk(None, version=version, console=con)
+    out = output or (Path.cwd() / "dist" / f"{layout.root.name}.apk")
+    replacements = apk_asset_replacements(branding) if branding else {}
+    repackage_host_apk(host, bundle, out, console=con, replacements=replacements)
+    con.info(f"shippable APK: {out}")
+    return out
 
 
 def run_on_device(
@@ -582,6 +721,143 @@ def install_host(
             con.run_command([adb, "shell", "am", "start", "-n", _HOST_ACTIVITY])
 
     con.info("host installed — push your app with: tempest serve <app.py>")
+    return 0
+
+
+def host_installed(adb: str | None = None) -> bool:
+    """Report whether the prebuilt host package is already on the device.
+
+    Lets the offline deploy skip a redundant ~50 MB ``adb install`` when the
+    host is already present, so repeated ``tempest build`` runs only push app
+    source. Never raises — a probe failure is treated as "not installed".
+
+    Args:
+        adb: The ``adb`` executable; resolved from ``PATH`` when ``None``.
+
+    Returns:
+        ``True`` when ``pm list packages`` reports :data:`_HOST_PACKAGE`.
+    """
+    exe = adb or shutil.which("adb")
+    if exe is None:
+        return False
+    try:
+        out = subprocess.run(  # noqa: S603
+            [exe, "shell", "pm", "list", "packages", _HOST_PACKAGE],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return f"package:{_HOST_PACKAGE}" in out.stdout
+
+
+def deploy_offline(
+    app: str | Path,
+    *,
+    version: str,
+    console: Console | None = None,
+    fetch_timeout: float = 60.0,
+    settle_seconds: float = 5.0,
+    force_install: bool = False,
+) -> int:
+    """Deploy an app to a connected device offline, with no Android toolchain.
+
+    The single ``tempest build`` abstraction: it needs no SDK/NDK, Gradle, or
+    ``android-host`` source. It (1) ensures the prebuilt host APK (bundled in the
+    wheel, offline) is installed, then (2) pushes the app source **once** over a
+    short-lived dev server — ``adb reverse`` + a dev-mode host launch — waits for
+    the device to fetch it, and tears the server down. The app keeps running on
+    the device; nothing is left listening. Edit + ``tempest serve`` for a
+    persistent hot-reload loop instead.
+
+    Args:
+        app: Path to the app's Python file (``make_state`` + ``view``).
+        version: The tempestroid version (fallback host-APK release URL).
+        console: Step reporter for transparent output (a quiet one when ``None``).
+        fetch_timeout: Seconds to wait for the device to fetch the pushed source
+            before giving up.
+        settle_seconds: Grace window kept serving after the device fetches the
+            source, so it finishes parsing and mounting the app before the
+            short-lived server is torn down.
+        force_install: Re-install the host APK even when already present.
+
+    Returns:
+        ``0`` on success.
+
+    Raises:
+        ToolchainError: If adb or the host APK cannot be resolved.
+        FileNotFoundError: If ``app`` does not exist.
+        StepError: If no device is connected or the device never fetches the app.
+        subprocess.CalledProcessError: If an adb command fails.
+    """
+    import threading
+    import time
+
+    from tempestroid.devserver import DevServer
+
+    con = console or Console()
+    adb = _adb()
+    source = Path(app).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"app file not found: {source}")
+
+    with con.step("Checking for a connected device"):
+        devices = connected_devices()
+        if not devices:
+            raise StepError("no ready device (connect one and run `adb devices`)")
+        joined = ", ".join(devices)
+        con.info(f"device: {joined}")
+
+    if force_install or not host_installed(adb):
+        apk = resolve_host_apk(None, version=version, console=con)
+        with con.step(f"Installing host APK ({apk.name})"):
+            con.run_command([adb, "install", "-r", str(apk)])
+    else:
+        con.info(f"host already installed ({_HOST_PACKAGE}) — skipping install")
+
+    fetched = threading.Event()
+    server = DevServer(
+        source,
+        host="127.0.0.1",
+        port=0,
+        log=con.detail,
+        on_fetch=fetched.set,
+    )
+    with con.step(f"Pushing app to device ({source.name})"):
+        server.start()
+        try:
+            # Force-stop the host so it cold-boots and honors the new dev URL: an
+            # `am start` against an already-running activity only triggers
+            # onNewIntent, leaving the in-process code-push loop polling the
+            # previous (now-unreversed) port — the app would never be fetched.
+            # Best-effort: a missing/failing adb here must not abort the deploy.
+            try:
+                subprocess.run(  # noqa: S603
+                    [adb, "shell", "am", "force-stop", _HOST_PACKAGE], check=False
+                )
+            except OSError:
+                pass
+            adb_reverse(server.port)
+            launch_host_dev(server.port)
+            if not fetched.wait(timeout=fetch_timeout):
+                raise StepError(
+                    f"device did not fetch the app within {fetch_timeout:.0f}s "
+                    "(is the host installed and the screen on?)"
+                )
+            con.detail("device fetched the app")
+            # Keep serving briefly so the device parses + mounts the app before
+            # the server goes away (its next poll erroring is harmless once the
+            # app is already running).
+            time.sleep(settle_seconds)
+        finally:
+            server.stop()
+
+    con.info(
+        "app deployed — running on the device. "
+        "For a live hot-reload loop, run: tempest serve <app.py>"
+    )
     return 0
 
 

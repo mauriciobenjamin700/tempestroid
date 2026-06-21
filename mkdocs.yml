@@ -7,7 +7,13 @@ site_description: >-
   declarativa e tipada, simulador Qt + renderizador Compose no dispositivo.
 site_author: Mauricio Benjamin
 docs_dir: docs
-# site_url: https://mauriciobenjamin700.github.io/tempestroid/  # ajuste ao publicar no GitHub Pages
+site_url: https://mauriciobenjamin700.github.io/tempestroid/
+
+# Hooks de build (core MkDocs, sem dependência extra). O llms_txt gera
+# llms.txt + llms-full.txt na raiz do site (convenção llmstxt.org) para IAs
+# lerem o projeto inteiro a partir de duas URLs estáveis.
+hooks:
+  - docs/hooks/llms_txt.py
 
 theme:
   name: material
@@ -66,12 +72,21 @@ plugins:
             Guia do usuário: User guide
             Widgets: Widgets
             Estilos: Styles
+            Design system: Design system
+            Tema e tokens: Theme and tokens
+            Variantes ao estilo Chakra: Chakra-style variants
+            Kit de ação e entrada: Action and entry kit
+            Superfície e layout: Surface and layout
+            Data display e feedback: Data display and feedback
+            Componentes de pesquisa: Research components
+            Storybook (galeria): Storybook (gallery)
             Eventos: Events
             CLI (tempest): CLI (tempest)
             Galeria de exemplos: Example gallery
             Rodar no dispositivo (WSL): Running on a device (WSL)
             Referência: Reference
             API pública: Public API
+            Cobertura de renderizadores: Renderer coverage
             Lado do dispositivo (ponte): Device side (bridge)
             Projeto: Project
             Roadmap e fases: Roadmap and phases
@@ -112,17 +127,48 @@ nav:
   - Começo rápido: inicio-rapido.md
   - Arquitetura: arquitetura.md
   - Guia do usuário:
-      - Widgets: guia/widgets.md
+      - Widgets:
+          - Visão geral: guia/widgets.md
+          - Texto, ação e indicadores: guia/widgets/basics.md
+          - Layout: guia/widgets/layout.md
+          - Inputs com valor: guia/widgets/inputs.md
+          - Listas virtualizadas: guia/widgets/lists.md
+          - Navegação: guia/widgets/navigation.md
+          - Overlays e feedback: guia/widgets/overlays.md
+          - Animação: guia/widgets/animation.md
+          - Gestos: guia/widgets/gestures.md
+          - Mídia e gráficos: guia/widgets/media.md
+          - Componentes compostos: guia/widgets/components.md
+      - Navegação entre telas: guia/navegacao.md
       - Estilos: guia/estilos.md
+      - Design system:
+          - Tema e tokens: guia/design-system/tokens.md
+          - Variantes ao estilo Chakra: guia/design-system/variantes.md
+          - Kit de ação e entrada: guia/design-system/kit.md
+          - Superfície e layout: guia/design-system/superficie.md
+          - Data display e feedback: guia/design-system/feedback.md
+          - Navegação: guia/design-system/navegacao.md
+          - Componentes de pesquisa: guia/design-system/pesquisa.md
+          - Storybook (galeria): guia/design-system/storybook.md
       - Eventos: guia/eventos.md
+      - Testes de UI: guia/testing.md
       - CLI (tempest): guia/cli.md
       - Galeria de exemplos: guia/exemplos.md
+      - Build, deploy e publicação: guia/build.md
       - Rodar no dispositivo (WSL): guia/dispositivo-wsl.md
   - Referência:
       - API pública: referencia/api.md
+      - Enums: referencia/enums.md
+      - Cobertura de renderizadores: referencia/cobertura.md
       - Lado do dispositivo (ponte): referencia/dispositivo.md
   - Projeto:
       - Roadmap e fases: roadmap.md
       - Plano de design (EN): plan.md
+      - Plano do design system (Trilho H): plan-design-system.md
+      - Plano de estabilização (Trilho F): plan-stable.md
       - Pesquisa — runtime Android (EN): research/android-runtime.md
       - Pesquisa — runbook Android (EN): research/android-runbook.md
+      - Pesquisa — ONNX + stack científica no device: research/onnx-ml-stack.md
+      - Pesquisa — G0 viabilidade (resultados): research/g0-feasibility.md
+      - Pesquisa — G1 onnxruntime (decisão A/B): research/g1-onnxruntime-path.md
+      - Pesquisa — G6 scipy/sklearn (spike): research/g6-sklearn-feasibility.md

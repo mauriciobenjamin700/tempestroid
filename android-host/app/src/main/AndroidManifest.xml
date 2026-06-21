@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Runtime-requested where required (API 33+ for notifications; location,
-         camera and bluetooth scan are requested on demand by NativeModules). -->
+    <!-- LEAN BASE manifest (feature-gating, F4). Only permissions for the
+         always-present core capabilities live here. The heavy-feature entries —
+         CAMERA/RECORD_AUDIO + the FileProvider (camera/qr) and the FCM <service>
+         (push) — are injected by the manifest generator task in build.gradle.kts
+         ONLY when the matching feature is in -Ptempest.features, so the lean APK
+         never references a class from an absent dependency. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Bluetooth scan/connect on API 31+; older devices fall back to location. -->
@@ -21,7 +23,19 @@
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
 
-    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- E8 platform + system native. VIBRATE → HapticsModule; WAKE_LOCK →
+         keep-awake (FLAG_KEEP_SCREEN_ON also needs no perm, but WorkManager +
+         WakeLock-style work want it); ACCESS_NETWORK_STATE → ConnectivityModule;
+         USE_BIOMETRIC (+ legacy USE_FINGERPRINT) → BiometricsModule;
+         RECEIVE_BOOT_COMPLETED → WorkManager re-schedules periodic work after a
+         reboot. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
@@ -35,7 +49,9 @@
     </queries>
 
     <application
-        android:label="tempestroid host"
+        android:label="${appLabel}"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
@@ -52,15 +68,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Exposes app-private capture files to the camera app (CameraModule). -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+        <!-- TEMPEST_FEATURE_APPLICATION_ENTRIES: the manifest generator injects
+             the camera FileProvider + the FCM <service> here when their feature
+             is active. Do not remove this marker comment. -->
     </application>
 </manifest>

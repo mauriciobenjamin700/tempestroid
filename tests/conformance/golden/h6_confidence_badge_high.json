@@ -1,0 +1,22 @@
+{
+  "compose": {
+    "background": "#dcefe3",
+    "color": "#102317",
+    "fontSize": 11.0,
+    "fontWeight": 500,
+    "padding": {
+      "bottom": 2.0,
+      "left": 8.0,
+      "right": 8.0,
+      "top": 2.0
+    },
+    "radius": 999.0,
+    "textAlign": "center"
+  },
+  "qt": {
+    "align_col": null,
+    "align_row": null,
+    "qss_container": "background-color: rgba(220, 239, 227, 1.0); color: rgba(16, 35, 23, 1.0); border-radius: 999.0px; font-size: 11.0px; font-weight: 500",
+    "qss_leaf": "background-color: rgba(220, 239, 227, 1.0); color: rgba(16, 35, 23, 1.0); border-radius: 999.0px; padding: 2.0px 8.0px 2.0px 8.0px; font-size: 11.0px; font-weight: 500"
+  }
+}

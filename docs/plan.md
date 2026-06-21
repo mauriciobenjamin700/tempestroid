@@ -213,16 +213,27 @@ Cada fase tem um "feito quando" testável. A ordem dentro de cada trilho é sequ
 - **C — Polimento.** ✅ `tempest new` (scaffold de projeto rodável), `tempest build` (empacota o app como asset + dirige o Gradle do `android-host`), `tempest run` (build + `adb install` + logcat). Hot reload com preservação de estado via `App.swap_view`: no cockpit Qt `r` (e o save) reaplica por diff preservando o estado e cai para restart limpo se incompatível; `R` reinicia do zero; no device o code-push faz `DeviceApp.reload` preservando o estado on-device. (`build`/`run` no device exigem SDK/NDK Android.)
 - **D — Conformância.** Suite de golden snapshots Qt vs Compose, no CI.
 
-### Trilho E — Paridade Flutter/RN (planejado)
+### Trilho E — Paridade Flutter/RN (concluído — E0–E9)
 
 Trilhos A–D entregaram a fundação (IR, reconciliador, dois renderizadores, dev
-loop, capacidades nativas básicas). O **Trilho E** fecha o gap de superfície com
+loop, capacidades nativas básicas). O **Trilho E** fechou o gap de superfície com
 Flutter + React Native: navegação/rotas, listas virtualizadas, overlays, motor de
 animação, gestos avançados, formulários, layout refinado, mídia/gráficos,
 plataforma/sistema e transversais (tema/i18n/a11y). O roadmap descritivo
 fase-a-fase (E0–E9, com passos IR · Qt · Compose · testes, metas e "feito quando")
 está em [`plan-parity.md`](plan-parity.md). Cada fase entrega as três camadas
 casadas e só fecha com os dois renderizadores verdes.
+
+O **Trilho G** (investigação) abre a frente de **inferência ONNX + stack
+científica no device**: rodar modelos `.onnx` via
+[`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk) dentro
+do app nativo, com `numpy`/`pandas`/`scikit-learn` no aparelho. A viabilidade é o
+primeiro entregável — dois caminhos em aberto (CPython-puro com wheels android
+via cibuildwheel, padrão B1; vs inferência nativa pelo AAR `onnxruntime-android`
+sobre a ponte JNI). Pesquisa fundamentada em
+[`research/onnx-ml-stack.md`](research/onnx-ml-stack.md); fases G0–G5 em
+[`roadmap.md`](roadmap.md). `scipy`/`sklearn` são o calcanhar (Fortran/LAPACK +
+OpenMP) — por isso opcionais e gated, sem bloquear o caminho de visão (G0→G2).
 
 ---
 

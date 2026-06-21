@@ -94,7 +94,7 @@ Tracks `docs/plan.md`. Update the table when a phase opens/closes; keep the
 | B4 | Compose renderer (native): render the serialized tree, apply patches, route taps | ✅ done | on-device: Compose renders the mount tree (Text/Button/Column + style spec → Modifier/Arrangement), applies patch batches (recomposes), and a real button tap → `dispatchEvent` → handler → patch → UI updates (`count` 0→4 by tapping; verified by screenshot) |
 | B5 | dev server + QR (LAN code-push + log relay) | ✅ done | on-device: `tempest serve <app>` (over `adb reverse`) pushes the app source; the device's code-push client polls, fetches, re-execs and hot-restarts the `DeviceApp` — editing+saving the file live-reloaded the device UI without an APK rebuild (verified by screenshot) |
 | B6 | native capabilities (notifications) | ✅ done | on-device: a `notify()` call from a Python handler → `native` command over the bridge → `NativeModules`/`NotificationModule` → a system notification posts (verified via `dumpsys notification` + the shade). The `native` envelope + module-router is the template for further capabilities (camera, etc.) |
-| C | Polish: `tempest new`/`build`/`run` + stateful hot reload | ✅ done | `tempest new` scaffolds a runnable project; `tempest build`/`run` stage the app as an asset + drive the `android-host` Gradle wrapper + `adb` (need SDK/NDK); `App.swap_view` powers stateful hot reload — `tempest dev` `r` (save) preserves state via diff, `R` restarts clean, device code-push `reload`s preserving on-device state (all covered by tests; build/run device path needs the toolchain) |
+| C | Polish: `tempest new`/`build`/`run`/`deploy` + multi-file bundle + stateful hot reload | ✅ done | `tempest new` scaffolds a runnable project; apps are **multi-file** — every device path bundles the whole project tree (`cli/bundle.py`: `resolve_project`/`build_bundle`/`extract_bundle`/`tree_signature`) onto `sys.path` and runs the entry via `spec_from_project`; `tempest build` produces a **standalone shippable APK** via Gradle `assembleDebug` (project baked into the host via `stage_app_bundle`, needs SDK/NDK — verified on device), stamping each app with its **own `applicationId`** (`--app-id`, else derived `com.example.<project>`) + launcher label (`--app-name`, else derived from the project name, via the manifest `${appLabel}` placeholder) so two tempestroid APKs install side by side instead of overwriting each other (`cli/release_build.py`: `build_apk`/`derive_app_id`/`derive_app_name`, sharing `_prepare_gradle_build` with the `--release` AAB; `tempest run` launches `<app-id>/org.tempestroid.host.MainActivity`); `tempest deploy` is the **offline** device push (`deploy_offline`: bundled-host install if needed + one-shot bundle push + launch, no SDK/NDK — verified on device); `tempest run` = build + install + logs; `App.swap_view` powers stateful hot reload — `tempest dev` `r` (save) preserves state via diff, `R` restarts clean, device code-push `reload`s preserving on-device state (all covered by tests) |
 | D | Conformance golden snapshots (Qt vs Compose) | ✅ done | `tests/conformance/` pins both `Style` translators: golden snapshots of `to_compose` + `to_qss`/`layout_alignment` for canonical styles (regenerate with `UPDATE_GOLDEN=1`), plus a per-field coverage-parity table that fails if either translator starts/stops handling a field without updating the documented divergences |
 
 ### Trilho E — Paridade Flutter/RN (planejado)
@@ -109,16 +109,73 @@ E0/E2 nas transições; E4–E9 acoplam menos e reordenam por demanda.
 
 | Phase | Scope | Status | Done when |
 |---|---|---|---|
-| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | 🔜 planned | exemplo de 3 telas navega; voltar do Android faz `pop` (device); abas/gaveta como rotas; transições na conformância |
-| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | 🔜 planned | lista de 10k itens rola fluido nos dois renderizadores; refresh + `on_end_reached` + cabeçalho fixo |
-| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | 🔜 planned | cada overlay abre/fecha por handler; barrier bloqueia; toast expira; menu ancorado (device) |
-| E3 | Framework de animação (controller, tween/curva, implícita, gesto-dirigida, Hero, shimmer) | 🔜 planned | `AnimatedContainer`/`AnimatedList`/`Hero` animam nos dois renderizadores; controlador testado com clock determinístico |
-| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder, viewer) | 🔜 planned | cada gesto dispara evento tipado e muda estado; swipe-to-delete + reorder (diff) + pinça-zoom (device) |
-| E5 | Inputs e formulários (dropdown/select, time, range, form/validação, autocomplete, OTP, máscara) | 🔜 planned | formulário valida e bloqueia submit inválido com erro por campo nos dois renderizadores |
-| E6 | Layout refinado (flex-wrap, pager/carousel, sliver/app bar colapsável, tabela, aspect ratio) | 🔜 planned | `Wrap` quebra linha igual (conformância); pager pagina; app bar colapsa ao rolar (device) |
-| E7 | Mídia e gráficos (vídeo, webview, canvas/desenho, svg, câmera live, QR scanner, mapa, blur, clip) | 🔜 planned | vídeo/webview no device; canvas desenha chart idêntico (conformância); preview câmera + QR (device); placeholders Qt sinalizados |
-| E8 | Plataforma/sistema (haptics, sensores, lifecycle, deep link, permissões, biometria, secure storage, prefs, SQLite, connectivity, push, background) | 🔜 planned | metade Python unit-testada off-device; capacidades validadas no device; stubs do simulador avisam o que é device-only |
-| E9 | Transversais (tema/dark + MediaQuery, i18n/l10n + RTL, acessibilidade/semantics, fontes custom + escala) | 🔜 planned | dark mode (snapshot light/dark); RTL espelha start/end (conformância); TalkBack lê rótulos; troca de locale re-renderiza |
+| E0 | Navegação e rotas (pilha push/pop, abas, gaveta, botão voltar, deep link) | ✅ done | exemplo de 3 telas navega; voltar do Android faz `pop` (device); abas/gaveta como rotas; transições na conformância |
+| E1 | Listas virtualizadas + scroll (lazy, seção sticky, pull-to-refresh, scroll infinito) | ✅ done | lista de 10k itens rola fluido nos dois renderizadores; refresh + `on_end_reached` + cabeçalho fixo |
+| E2 | Overlays e feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ done | cada overlay abre/fecha por handler; barrier bloqueia; toast expira; menu ancorado (device) |
+| E3 | Framework de animação (controller, tween/curva, implícita, gesto-dirigida, Hero, shimmer) | ✅ done | `Animated`/`AnimatedList`/`Hero`/`Shimmer`/`Skeleton` animam nos dois renderizadores; `AnimationController`/`Tween`/`Spring` testados com clock determinístico; o clock cruza o bridge via `FRAME_TOKEN` (`App._tick_from_device`) e `has_animations` em `MountMessage`/`PatchMessage` liga o `withFrameNanos` no host |
+| E4 | Gestos avançados (pan/drag-drop, pinça/zoom, double-tap, dismissible, reorder, viewer) | ✅ done | cada gesto dispara evento tipado e muda estado; swipe-to-delete + reorder (diff) + pinça-zoom (device) |
+| E5 | Inputs e formulários (dropdown/select, time, range, form/validação, autocomplete, OTP, máscara) | ✅ done | formulário valida e bloqueia submit inválido com erro por campo nos dois renderizadores |
+| E6 | Layout refinado (flex-wrap, pager/carousel, sliver/app bar colapsável, tabela, aspect ratio) | ✅ done | `Wrap` quebra linha igual nos dois renderizadores (conformância `flex_wrap`); `PageView` pagina e emite `PageChangeEvent`; app bar colapsa ao rolar (device) |
+| E7 | Mídia e gráficos (vídeo, webview, canvas/desenho, svg, câmera live, QR scanner, mapa, blur, clip) | ✅ done | canvas desenha chart idêntico (lista de comandos JSON na conformância); svg/blur/clip renderizam no device; vídeo/webview via AndroidView; câmera/QR/mapa = placeholder Qt sinalizado, device-only |
+| E8 | Plataforma/sistema (haptics, sensores, lifecycle, deep link, permissões, biometria, secure storage, prefs, SQLite, connectivity, push, background) | ✅ done | metade Python unit-testada off-device (envelopes, futures, resultados tipados, parse dos eventos de stream, registros de callback sensor/lifecycle/connectivity, prefs/SQLite reais via tmp_path); tokens reservados `__sensor__`/`__lifecycle__`/`__connectivity__` roteados em jni.py **e** devserver/client.py; `KeyboardAvoidingView` + 4 eventos novos em introspect; biometria/FCM/WorkManager/sensores reais hardware-gated (Kotlin pelo kotlin-specialist). **Device-verificado (2026-06-04, Xiaomi 23053RN02A)** via `examples/platform/app.py` + `examples/sysverify/app.py`: **haptics** (vibração física 80ms via `VibratorManagerService`), **lifecycle** ("foreground"), **prefs** (write), **sensores** (stream do acelerômetro ao vivo, z≈9.8 gravidade, Kotlin `SensorManager`→`__sensor__`→callback→UI), **background/WorkManager** (enqueue confirmado em `dumpsys jobscheduler` `.schedulePersisted()`; worker ainda no-op stub), **biometria** (alcança o `BiometricManager`, retorna resultado tipado — `Status 7`/NONE_ENROLLED sem digital; **fix: `MainActivity` agora é `FragmentActivity`** senão o `BiometricPrompt` não hospeda), **push** (notificação local postada na shade + caminho do token FCM retorna `not_configured` tipado sem `google-services.json`). Pendente só o que exige config externa/hardware extra: digital cadastrada (sucesso pleno da biometria), `google-services.json`+envio server (token/push FCM real), corpo real do worker (re-entrar Python) |
+| E9 | Transversais (tema/dark + MediaQuery, i18n/l10n + RTL, acessibilidade/semantics, fontes custom + escala) | ✅ done | metade IR/core completa e testada off-device: `theme.py` (`Theme`/`ThemeMode`/`MediaQueryData`), `i18n.py` (`Locale`/`translate`/`t`), `App.set_theme`/`set_locale`/`_update_media` (contexto que o `view` lê — não nós da árvore, rebuild coalescido), `Semantics`+`focusable`/`focus_order` no `Widget` base (propagados a ambos os renderers + introspect), `Style.text_scale`/`font_asset` nos DOIS tradutores + conformância (goldens `rtl_layout`/`text_scale_font_asset` + parity `(True,True)`), RTL espelha start/end (padding/margin/border-side/text-align) em `to_compose`/`to_qss` via flag `rtl`, `ThemeChangeEvent`/`LocaleChangeEvent` roteados por `THEME_TOKEN`/`LOCALE_TOKEN` em jni.py (sem mudança C/JNI), `examples/theming/app.py`; renderers Qt (E9c) + Compose (E9d) pelos respectivos especialistas. **Device-verificado (2026-06-04, Xiaomi 23053RN02A):** `examples/theming/app.py` → **dark mode** (bg/texto/accent trocam), **i18n/locale** (PT↔árabe via `set_locale`) e **RTL** (texto árabe + espelhamento de start/end) funcionam no aparelho (screenshots light/dark/RTL). TalkBack audível ainda pendente (precisa ativar o leitor) |
+
+### Trilho H — design system: componentes estilizados (M3 + API Chakra) (planejado)
+
+Elevar os **46 componentes** já existentes (no engine `tempest-core`) a um
+**design system** ancorado em **Material 3** com **ergonomia de API do Chakra**
+(`variant`/`size`/`color_scheme` + tokens de tema), para que **pesquisadores
+acadêmicos** montem apps Android de validação (junto ao [Trilho G](docs/research/onnx-ml-stack.md))
+com pouco esforço e visual profissional. **Não é greenfield**: o gap é a camada
+de tokens + API de variantes + estados visuais + vitrine, não os componentes em
+si. Plano fase-a-fase em [`docs/plan-design-system.md`](docs/plan-design-system.md);
+tabela em [`docs/roadmap.md`](docs/roadmap.md).
+
+| Phase | Scope | Status | Done when |
+|---|---|---|---|
+| H0 | Sistema de tokens (foundation): paleta tonal M3 + `color_scheme`s, escalas de espaçamento (4pt)/raio/tipografia/elevação/motion; `Theme` resolve, `Style` referencia | ✅ done | `tempest-core` 0.2.0 (`tokens.py`): `TonalPalette`/`tonal_palette_from_seed`, `ColorScheme`/`color_schemes_from_seed` (light+dark, WCAG-AA), escalas `Spacing`(4dp)/`Shape`/`Typography`/`Elevation`/`Motion`/`Breakpoints`, `TokenSet`(`from_seed`/`default_tokens`); `Theme` carrega o `TokenSet` (`from_seed`, `scheme`/`color`/`space`/`radius`/`typography`/`elevation`, `resolve_ref`/`resolve_style`); `TokenRef` é o seam Style⟷token (resolve antes do diff). Aditivo/back-compat. tempestroid bumpa a dep (#109) |
+| H1 | API de variantes (Chakra): `Variant`/`Size`/`color_scheme` → `Style` via tema (função pura) + estados (hover/press/disabled/focus) como state layers M3 + transversais (a11y/contraste/touch-target, RTL, responsividade); `Button` piloto | ✅ done | `resolve_variant`/`resolve_variant_states`/`resolve_size`/`merge_styles` em `tempest-core` 0.3.0 (`Variant` solid/outline/ghost/link, `Size` xs/sm/md/lg, `ComponentState`), `Button(variant/size/color_scheme/theme/media)` resolve `→Style` (override por cima, `state_styles()` p/ os renderers; `theme`/`media` fora da IR via `Widget.prop_exclude_names`); renderer **Qt** (#112) pinta os state layers em QSS pseudo-state escopado (`#name:hover/:pressed/:focus/:disabled`), renderer **Compose** (#113) despacha por variant para affordance M3 (solid→Button, outline→OutlinedButton, ghost→TextButton, link→TextButton+underline) com `InteractionSource` nativo (≥48dp via `heightIn`), **device-verificado** (emulador x86_64, 4 variants + tap 0→3); conformância (#114) pina os Styles resolvidos nos DOIS tradutores (8 goldens) + tripwire `_H1_WIDGET_DIVERGENCES` (state_layer_engine/variant_affordance/disabled_interactivity); contraste WCAG-AA + touch-target ≥48dp pelos tokens. Follow-up: `enabled=` do Compose (botão disabled ainda clicável) |
+| H2 | Kit base ação/entrada estilizado: Button/IconButton (+ ícones)/Input/Checkbox/RadioGroup/Switch/Select/Slider + inputs BR sobre os inputs do E5 | ✅ done | `tempest-core` 0.4.0: três resolvers puros irmãos (`resolve_field_variant`+`FieldVariant` OUTLINE/FILLED/FLUSHED, `resolve_selection_variant`, `resolve_slider_variant` + `_states`) reusando os helpers do H1, zero campos novos em `Style`; mixins `_FieldWidget`/`_SelectionWidget`/`_SliderWidget` plumam variant/size/color_scheme/theme/media em Input/TextArea/Dropdown/Autocomplete/Masked/Pin/Checkbox/Switch/Slider/RangeSlider; novo `IconButton` (reusa `resolve_variant`, quadrado/circular); BR inputs + RadioGroup migrados p/ tokens do tema; `MATERIAL_ALIASES` no engine (alias de ícone vira renderer-agnóstico). Renderer **Qt** (#116): `_apply_field_states` (QSS `:focus/:hover/:disabled` escopado), accent de seleção via `::indicator`, track de slider `::sub-page`/`::add-page`, `IconButton` glyph; alias delegado ao engine. Renderer **Compose** (#116): `RenderInput` alimenta `TextFieldDefaults.colors` + despacha por `field_variant`, Checkbox/Switch/Slider via `*Defaults.colors`, `RenderIconButton`; **device-verificado** (emulador x86_64 — 3 variants IconButton + 3 affordances Input + accent checkbox/slider + `photo_camera`→glyph). Conformância: 13 goldens nos DOIS tradutores + `_H2_WIDGET_DIVERGENCES` (6) + `test_h2_no_style_field_added` + contraste WCAG-AA (17.12) + drift guard engine↔Kotlin; galeria `examples/h2gallery`. Divergência device: selection/slider são color-only no M3 (geometria fixa). |
+| H3 | Superfície & layout estilizado: Card (elevated/filled/outlined), Surface, Divider, Stack helpers, Container, Grid, ListTile, Accordion | ✅ done | `tempest-core` 0.5.0: novo `CardVariant` (elevated/filled/outlined) + resolver puro `resolve_surface_variant` (reusa os helpers do H1/H2; elevação→`Shadow` via `_ELEVATION_SHADOW`, **sem campo novo de `Style`** — invariante `len(Style.model_fields)==41` mantida; `color_scheme != "neutral"` pinta os roles `*_container` tonal; sem `_states` — superfície não-interativa); `Card`/`Surface`/`StyledContainer`/`HStack`/`VStack`/`Spacer` novos ou estilizados, `Divider`/`ListTile`/`Accordion`/`Grid` migrados pra tokens do tema, token-step `str` aceito junto do `float`. tempestroid re-exporta a superfície + bumpa a dep. Renderer **Qt**: superfícies lowerizam pra `Container`/`Row`/`Column` (path genérico + shadow via `QGraphicsDropShadowEffect` existente), só o leaf novo `Spacer` ganhou caso no renderer; galeria `examples/h3gallery` renderiza os 3 variants + Spacer + ListTile/Divider/Surface no Qt. Renderer **Compose**: caso `Spacer` + `grow`/weight em filhos de Row/Column (gap antes não-tratado no device) + elevação→`Modifier.shadow` (dp derivado do blur). Conformância: 7 goldens de `resolve_surface_variant` nos DOIS tradutores + tripwire `_H3_WIDGET_DIVERGENCES` (elevation_engine/variant_affordance/tonal_surface) + `test_h3_no_style_field_added` + contraste WCAG-AA. Device (emulador x86_64): pendente o pin `tempest-core` 0.5.0 no staging |
+| H4 | Data display & feedback estilizado: Badge/Tag/Chip/Avatar, Alert/Banner, Progress/Spinner, Skeleton (E3), Tooltip, Stat, Rating, EmptyState, SegmentedControl, Stepper | ✅ done | `tempest-core` 0.6.0: **famílias de cor de status** (success/warning/info — 12 roles novos gerados de seeds fixos, threaded por `color_schemes_from_seed`; `ColorScheme` ganha 16 campos defaulted + validator de backfill p/ back-compat; `VALID_COLOR_SCHEMES` widened) — **Approach A1**: o tratamento SUBTLE usa o par `*_container`/`on_*_container` (clears WCAG-AA ~13.7; o role saturado em tone40-on-white falha AA 3.02). `BadgeVariant` (solid/subtle/outline) + `AlertVariant` (subtle/solid/left_accent/top_accent) + `resolve_badge_variant`/`resolve_alert_variant` (puros, reusam helpers; **sem campo novo de `Style`** — `model_fields==41`). Novos componentes: `Alert`/`Stat`/`ProgressStepper` (nome evita o `Stepper` numérico) + `Tag` (preset do Chip); re-theme Badge/Banner/Avatar/EmptyState/SegmentedControl/Rating/Chip; `color_scheme` em ProgressBar/Spinner/Tooltip/Skeleton. tempestroid re-exporta + bumpa a dep + o pin de staging (0.6.0). Renderer **Qt**: display lowerizam pra primitivas (status flui como cor concreta); ProgressBar/Spinner ganharam accent do `color_scheme` no `::chunk` (via `resolve_slider_variant`). Renderer **Compose**: `schemeAccentColor` (scheme→accent p/ ProgressBar/Spinner) + desenho de `SideBorder` (Alert left/top accent + RTL via `drawBehind`/layoutDirection). **Device-verificado (emulador x86_64):** 4 alerts status distintos + badges + Stat (delta up/down) + stepper + **ProgressBar verde (success, pixel-sampled)** + banner. Conformância: 10 goldens (badge+alert) nos DOIS tradutores + `_H4_WIDGET_DIVERGENCES` (indicator_engine/anchoring/accent_affordance) + `test_h4_no_style_field_added` + gate WCAG-AA por status (prova o A1). Galeria `examples/h4gallery`. Follow-ups: Alert left/top accent compila mas não exercitado on-screen (galeria usa subtle); devserver `/version` roda `tree_signature` no repo inteiro (~6.8s) → estoura timeout do code-push em projeto grande |
+| H5 | Navegação estilizada: AppBar/CollapsingAppBar, NavBar, Drawer/Sidebar, Breadcrumb, Burger, Footer, Header, Scaffold, SearchBar, Tabs (skins M3 sobre os hosts do E0) | ✅ done | `tempest-core` 0.7.0: **skin pass** — os 11 componentes nav (Components do E0) migrados de hexes hard-coded de `base.py` p/ tokens do tema, **reusando os resolvers existentes** (zero novo): surface (`resolve_surface_variant`) p/ AppBar/CollapsingAppBar/Footer/Sidebar/Drawer + barra do NavBar/strip do Tabs; item ativo do NavBar = pill accent (`resolve_badge_variant` SOLID), inativo + tabs = `resolve_variant` GHOST; SearchBar input = `resolve_field_variant`; Burger → `IconButton`; link do Breadcrumb → LINK; Header/Scaffold/Breadcrumb tokens-only. Novo componente `Tabs` (strip + underline via `SideBorder` — campos existentes). **Zero novo resolver/enum/campo de `Style`** (model_fields==41). Os HOSTS do E0 (`Navigator`/`TabBar`/`TabView`/`RouteDrawer`) intactos — só re-estiliza a camada Component. tempestroid re-exporta `Tabs` + bumpa dep + pin staging (0.7.0). Renderers **Qt + Compose**: **zero código novo** — nav lowerizam pra primitivas (Row/Column/Container/Button/Input/IconButton) já cobertas; status/accent fluem como cores concretas no Style resolvido (path genérico já device-provado no H3/H4). Galeria `examples/h5gallery` renderiza no Qt (AppBar tinted + Header + Breadcrumb + SearchBar + Tabs c/ underline ativo + NavBar c/ pill ativo). Conformância: 7 goldens dos Styles nav nos DOIS tradutores + `_H5_WIDGET_DIVERGENCES` (bar_affordance/selected_indicator/tab_indicator/drawer_affordance/field_affordance) + `test_h5_no_style_field_added` + WCAG-AA. Device: sem código novo de renderer p/ exercitar (path coberto por transitividade) |
+| H6 | Componentes de pesquisa (liga ao Trilho G): MetricCard/StatCard, wrappers de gráfico (canvas E7), DataTable estilizada, ConfidenceBadge, DetectionOverlay (ort-vision-sdk), ImagePicker→ResultView | ✅ done | `tempest-core` 0.8.1: novo módulo `components/research.py` — `MetricCard`/`StatCard` (compõem Card H3 + Stat H4), `ConfidenceBadge` (Badge SUBTLE + `confidence_scheme(conf)`→success/warning/error; **AA-safe** via par container, fix 0.8.1), `LineChart`/`BarChart` (lowerizam pro `Canvas` E7: escala/eixos/séries via comandos existentes, paleta tematizada — **sem novo draw-command**), `DetectionOverlay` (`Stack` de `Image` + `Canvas` de boxes; coords normalizadas [0,1]; cor por confiança; **sem dep do ort-vision-sdk** — `DetectionBox` pydantic puro, adapter fica no lado tempestroid), `ResultView`; + `ChartSeries`/`DetectionBox`/`confidence_scheme`. Skins: `DataTable` (sort/paginate — app detém estado, componente projeta+emite; zebra por índice absoluto), `Calendar`/`Clock` (hexes→tokens). **Zero novo resolver/draw-command/campo de `Style`** (model_fields==41). tempestroid re-exporta os 10 + bumpa dep + pin staging (0.8.1). Renderers **Qt+Compose**: charts/overlay lowerizam pro Canvas (já renderizado); **2 fixes de renderer Qt** (bugs reais de Canvas-em-box-layout): `_pin_canvas_size` re-pina o tamanho do Canvas após `_apply_sizing` (senão colapsa em box layout) + `_relayout_stack` funde width/height props no Style da layer (Canvas overlay enche o Stack). Galeria `examples/h6gallery` (dashboard de visão faux: overlay c/ 2 boxes + bar/line chart + badges + DataTable + metric cards) renderiza completo no Qt. Conformância: 11 goldens (listas de comandos de chart determinísticas — o que o E7 não fazia — + Styles resolvidos) + `_H6_WIDGET_DIVERGENCES` (canvas_replay/canvas_text_metrics/rtl_spatial) + `test_h6_no_style_field_added` + WCAG-AA + thresholds. Device: charts/overlay = mesmo path Canvas do E7 (device-provado); não re-exercitado |
+| H7 | Galeria (storybook) + docs tutorial-first bilíngues + dark/RTL verificados + conformância (matriz representativa) de tokens/variants | ✅ done | `examples/storybook/app.py`: app navegável (AppBar + toggles light/dark + LTR/RTL + `Tabs` sobre Action/Inputs/Surfaces/Feedback/Navigation/Research) com specimen de cada componente H1–H6, todos tematizados de `app.theme` → os toggles re-skin o sistema inteiro ao vivo. **Dark/RTL verificados no Qt** (screenshots light/dark/RTL em `docs/assets/examples/storybook-*.png`; dark adapta porque `theme=` é threaded em todo componente); device dark/RTL já verificado no E9 (mesmo mecanismo `set_theme`/`set_locale`). Docs tutorial-first bilíngues completas (tokens/variantes/kit/superficie/feedback/**navegacao**/**pesquisa**/**storybook**), na nav + no `llms.txt`/`llms-full.txt`. Conformância de matriz: os blocos H1–H6 pinam os Styles resolvidos × variant/size/color_scheme/state nos DOIS tradutores + WCAG-AA; capstone `test_storybook_h7` builda o sistema inteiro em light/dark × LTR/RTL × 6 tabs (25 testes) + prova que dark resolve cores ≠ light. Gate verde nos dois repos |
+
+**Cross-repo (enforced para H):** ao contrário do Trilho E (tudo em
+`tempestroid`), o Trilho H atravessa **dois repos** porque o engine foi extraído
+(v0.13.0): camada IR/tokens/componentes → **`tempest-core`**; renderer Qt →
+**`tempestroid/renderers/qt`**; renderer Compose → **`android-host`**. Cada fase
+fecha com as **três camadas casadas** + conformância nos dois tradutores `Style`.
+Token/variante landa e é **released** no `tempest-core` primeiro, depois
+`tempestroid` bumpa a dep e os renderers consomem — cada fase é um par de PRs
+coordenados. Tokens/variantes são **aditivos** (`Style` cru continua aceito).
+Nenhum pacote PyPI novo: tudo no ecossistema `tempest-core` + `tempestroid`.
+
+### Trilho G — inferência ONNX + stack científica no device (investigação)
+
+Rodar inferência de modelos `.onnx` **dentro do app Android nativo** usando o
+[`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk), com
+`numpy`/`pandas`/`scikit-learn` funcionando no aparelho. **Investigação-primeiro**:
+a viabilidade (qual caminho, quais wheels fecham) é o entregável inicial.
+Pesquisa fundamentada em [`docs/research/onnx-ml-stack.md`](docs/research/onnx-ml-stack.md);
+roadmap em [`docs/roadmap.md`](docs/roadmap.md) e [`docs/plan.md`](docs/plan.md).
+
+| Phase | Scope | Status | Done when |
+|---|---|---|---|
+| G0 | Spike de viabilidade: deps reais do `ort-vision-sdk`, decidir caminho **(A) CPython-puro** (wheels android via cibuildwheel, padrão B1) vs **(B) inferência-nativa** (AAR `onnxruntime-android` + shim JNI), provar `import numpy`+`onnxruntime` no device | ✅ done | deps classificadas (núcleo visão = numpy+onnxruntime+pillow); A/B decidido (numpy é caminho crítico p/ AMBOS → (A) parcial); EPs do emulador listados (NNAPI sample/XNNPACK/CPU; QNN só Snapdragon). **`import numpy` roda no emulador** (`numpy-2.4.6-cp314-cp314-android_24_x86_64.whl` via cibuildwheel **4.1** + `allow-noblas` + cross-prop longdouble; o `$(BLDLIBRARY)` era bug da 3.4.1). Receita: `toolchain/build_numpy_x86.sh`; prova: `examples/onnxspike` (screenshot `sum=55 dot=385`). Detalhes: [`docs/research/g0-feasibility.md`](docs/research/g0-feasibility.md) |
+| G1 | Wheel do `onnxruntime` (ou AAR Maven) + 1 modelo `.onnx` real ponta-a-ponta, **fora da UI thread/loop** + **escolha de EP** (NNAPI/XNNPACK/QNN, fallback CPU, latência medida) | ✅ done (emulador) | Decisão A/B: **(A) wheel-python do onnxruntime é inviável no Android** (não-suportado upstream; só AAR) → **caminho (B)**. `ort-vision-sdk` ganhou **backend plugável** (v0.4.0, publicado no PyPI): `InferenceBackend` Protocol + injeção `backend=`. tempestroid: `native/inference.py` `AarBackend` (marshaling de tensor base64 pela ponte request/response, módulo `onnx`) + `OnnxModule` Kotlin **feature-gated `vision`** (`onnxruntime-android:1.26.0`, EP NNAPI→XNNPACK→CPU). **Device-verificado (emulador x86_64):** `Classifier` real (squeezenet1.1) roda via AAR fora da UI thread — top-1 `matchstick`, 569ms, EP=CPU (NNAPI/XNNPACK fallback no emulador). Decisão+plano: [`docs/research/g1-onnxruntime-path.md`](docs/research/g1-onnxruntime-path.md). Follow-ups: EP real + arm64 físico; decode de imagem (Pillow android = G2; hoje só ndarray via PIL-shim) |
+| G2 | Caminho de imagem sem OpenCV (Pillow / `BitmapFactory` do host; cv2 → OpenCV Android SDK nativo + ponte, **não** a wheel) + pré/pós em `numpy` | ✅ done (emulador) | `decode_image` (`native/image.py`) bridge → módulo Kotlin `image` (`BitmapFactory`, em `src/main`, sem dep pesada → não feature-gated): path/bytes → RGB HWC uint8 (sem alpha/padding, R,G,B row-major; `inSampleSize` power-of-two p/ `max_size`) → ndarray → SDK. **Device-verificado (emulador):** `banana.jpg` real → decode nativo → squeezenet → top-1 **banana (83.9%)**, 963ms, **sem `opencv-python` nem wheel Pillow** na APK (resize no shim numpy). Wheel Pillow android = futuro só p/ ops puro-Python |
+| G3 | Otimização de execução: pipeline `.onnx`→`.ort` + quantização (INT8/fp16); avaliar `onnxruntime-extensions` (pré/pós no grafo) | ✅ done (emulador) | `tempest optimize <model> -q int8` (host, `cli/onnx_optimize.py`): INT8 dynamic quant (`onnxruntime.quantization`) + conversão `.ort` (`convert_onnx_models_to_ort`, Fixed) + fp16 opcional (onnxconverter-common); third-party untyped acessado via `Any` (importlib) p/ pyright strict. squeezenet1.1 → `.int8.ort` **72% menor** (4840→1337 KiB). **Device-verificado:** `.ort` quantizado roda via AAR no emulador — banana 81.5% (vs 83.9% fp32), 925ms vs 819ms (INT8 ganha **tamanho**, não latência no CPU EP do emulador — quant dinâmico só-pesos tem overhead de dequant sem SIMD INT8). `onnxruntime-extensions` (pré/pós no grafo) = follow-up |
+| G4 | Entrega e storage do modelo: embutido vs download+cache, `mmap` no load, Play Asset Delivery p/ modelos grandes | ✅ done (emulador) | **Ambas estratégias device-provadas.** Embutido (asset no bundle, G1-G3). Download+cache+verify: `native/model_store.py` `ensure_model(url, dest_dir, *, sha256, filename)` — cache-first, baixa 1x streamed off-loop (`asyncio.to_thread`), verifica sha256, rename atômico; stdlib urllib/hashlib (roda no interpretador embarcado, `file://` ok); `ModelStoreError` (download_failed/hash_mismatch); 6 testes. **Device-verificado:** app baixa squeezenet de localhost (adb-reverse) → cache `…/cache/tempest_models/` → classifica banana (`source=download`, 921ms). `mmap` implícito no load-by-path da AAR. Fix de host: `TMPDIR` agora fixado de dentro do interpretador (`os.setenv` no `onCreate` não alcançava o `os.environ` embarcado → `FileNotFoundError` quebrava todo `tempest serve`) + passthrough `tempest_env` por intent (allowlist `VISIONSPIKE_`/`TEMPEST_`). Play Asset Delivery = futuro |
+| G5 | (opcional) `pandas` no device — feature-engineering tabular | ⏳ planejado | `import pandas` + pipeline tabular roda no aparelho |
+| G6 | (opcional) `scipy`+`scikit-learn`+`scikit-image` no device — ML clássico + processamento de imagem (calcanhar: Fortran/LAPACK+OpenMP; skimage gated atrás do scipy) | ⏳ planejado | `import sklearn`/`skimage`; modelo sklearn faz `predict` no aparelho |
+| G7 | Encolher APK: custom onnxruntime build + modelo quantizado + ABI splits + trim | ⏳ planejado | APK com inferência cabe num orçamento de tamanho acordado, medido |
+
+`G3`/`G4` ficam **gated** por demanda real de app — não bloqueiam o caminho de
+visão (`G0→G4`), que é o que o `ort-vision-sdk` exercita. Mesma regra de sempre:
+metade Python em `tempestroid/`, metade Kotlin em `android-host/`; o
+`ort-vision-sdk` segue dependência externa, não re-implementado aqui.
 
 **Tudo dentro do projeto — sem projetos extras (enforced).** Toda implementação
 do Trilho E (e qualquer feature futura) mora **dentro do repositório
@@ -170,7 +227,17 @@ dev server + QR (B5 native loop) is **done and verified on device**: `devserver/
 holds the `DevServer` (serves source + relays logs), `run_dev_client`/
 `serve_device` (the device poll-fetch-restart loop), and `render_qr`; `tempest
 serve <app>` drives it, and `MainActivity` enters dev mode on a `tempest_dev_url`
-intent extra. Native capabilities (B6) are wired and verified too: `native/`
+intent extra. **App files must stay renderer-agnostic — import the Qt renderer
+lazily (inside `main()`/`__main__`), never at module top.** A top-level
+`from tempestroid.renderers.qt import run_qt` crashes the on-device load (no
+PySide6) → white screen. Hardening (2026-06-04): both device entry points
+(`run_device_file`/`run_device_bundle` for the baked APK, and the code-push
+client) now catch any load/build failure and mount a visible **error screen**
+(`bridge/errors.py`, `run_device_error`) carrying the traceback instead of a
+blank window; the dev client commits the version hash on a load failure (no
+re-fetch storm) and recovers on the next saved edit; `DevServer.do_GET` swallows
+`BrokenPipeError`/`ConnectionError`. All verified on device. Native capabilities
+(B6) are wired and verified too: `native/`
 (`notify` + `send_native`/`native_command`) emits `{"kind":"native"}` envelopes
 the host routes via `NativeModules`/`NotificationModule`; a Python `notify()`
 posts a real system notification. **All of Trilho B (B0–B6) is implemented and
@@ -208,11 +275,150 @@ validated on a device — needs the Android SDK/NDK toolchain (absent in WSL).**
 
 - `Style → Qt`: padding is QSS for leaves, `contentsMargins` for containers (no
   double-count). `justify`/`align` `START/CENTER/END` → Qt alignment flags;
-  `SPACE_*` and `AlignItems.STRETCH` fall through to Qt defaults (post-v1).
-  `grow` → layout stretch factor; `width/height` fixed-size is not wired yet.
+  `grow` → layout stretch factor. **Fidelity gaps closed (`feat/qt-fidelity`):**
+  `text_align` (LEFT/CENTER/RIGHT/JUSTIFY) is now honored on a leaf `Text` via
+  `QLabel.setAlignment` (`_text_alignment`/`_apply_text_flow`); fixed
+  `width`/`height` via `setFixedWidth`/`setFixedHeight` (`_apply_sizing`, idempotent
+  reset to flexible `[0, QWIDGETSIZE_MAX]` when unset, so `grow`/stretch is
+  untouched); `SPACE_BETWEEN`/`SPACE_AROUND`/`SPACE_EVENLY` realized with stretch
+  spacers around children in `_sync_main_axis` (between-only, ends-doubled for
+  AROUND, ends-equal for EVENLY); `AlignItems.STRETCH` fills the cross axis via
+  Qt's default packing (no alignment flag emitted). All realized **imperatively in
+  the renderer**, not the `Style` translator — so the conformance `_COVERAGE`
+  table keeps `qt_reacts=False` for `text_align`/`width`/`height` (the translator
+  is inert; the simulator still renders them, matching Compose). The simulator can
+  also be sized to a `Device` preset: `run_qt`/`run_dev` accept an optional
+  `device: Device | None` (wins over `size` when both given).
+- **Box-model fidelity (`feat/qt-fidelity-boxmodel`).** Four imperative renderer
+  fixes (translator still inert → conformance unchanged), spec in
+  [`docs/qt-fidelity-roadmap.md`](docs/qt-fidelity-roadmap.md): (1) **P0** — every
+  node's box QSS is now **scoped to an `#objectName` selector**
+  (`_scoped_stylesheet`) instead of a bare body, so a bordered/backgrounded
+  container no longer cascades its box onto descendants (a bare QSS body is an
+  implicit universal selector in Qt); same scoping for the `FormField` error label
+  and `Toast`/`Tooltip` pills. (2) **P1 radius** — `_apply_visual` sets
+  `WA_StyledBackground` when `background`/`radius` is present (so a rounded
+  background-only box clips), and after sizing clamps an over-large radius (pill
+  sentinel `999`, circles) to `min(w, h)/2` via `_clamp_radius`/`_clamp_node_radius`
+  (re-renders the scoped QSS from a size-adjusted style copy; `_ClipWidget` clamps
+  its mask too). (3) **P1 sizing** — when **both** `width`/`height` are fixed,
+  `_apply_sizing` also pins `QSizePolicy.Fixed/Fixed` so a parent `QBoxLayout`'s
+  cross-axis stretch can't oval a square box (idempotent reset to
+  `Preferred/Preferred`). (4) **P2 icons** — `_ICON_ALIASES`/`_resolve_icon_name`
+  map common Material names (`photo_camera`→`eye`, `history`→`clock`, `person`→
+  `user`, …) to curated glyphs in `_icon_pixmap` so they render a line icon
+  instead of the literal-text fallback; `register_icon` is still the escape hatch.
+  All four are renderer-only — the `_COVERAGE` parity table and goldens are
+  untouched. Tests: `tests/unit/test_qt_boxmodel.py`.
+- **Margin parity (`feat/qt-fidelity-gradient-border-parity`).** Audited the
+  box-model fields the Compose translator consumes: **gradient backgrounds**
+  (`to_qss` already emits `qlineargradient(...)`), **`Border`/`SideBorder`**, and
+  **`min`/`max` sizing** were already faithful and pinned (goldens
+  `gradient`/`corners_sides`/`sizing`, all `(True, True)`). The one real gap was
+  **`margin`**, which the Qt side rendered nowhere. Unlike the box-model items
+  above (imperative), `margin` is realized in the **translator** to match Compose:
+  `to_qss` now emits a QSS `margin: T R B L` rule (for both leaves and containers,
+  always — unlike `padding`, which a container routes to `contentsMargins`), with
+  `left`/`right` mirrored under `rtl`. Qt honours a QSS `margin` on a styled widget
+  as true *outer* space (the box paints inside it), so `_apply_visual` sets
+  `WA_StyledBackground` when a margin is present. This **deliberately touches
+  conformance**: `_COVERAGE["margin"]` is now `(True, True)`, the `grow_margin` and
+  `rtl_layout` goldens were regenerated, and the resolved `margin` row was removed
+  from the E9 `_E9_RTL_DIVERGENCES` tripwire (`test_e9_rtl_margin_parity` pins the
+  new both-sides-mirror parity). Tests: `tests/unit/test_qt_boxmodel.py`.
 - `QtRenderer` owns a *host* widget so a root `Replace` is a uniform child swap.
   Updates re-apply the full merged visual idempotently. Headless tests run under
   `QT_QPA_PLATFORM=offscreen` (see `tests/conftest.py`).
+- **Navigation hosts (E0b).** `Navigator`/`TabView` render a `QStackedWidget`
+  whose *current page's* inner layout is the diffable child slot, so a screen
+  swap is the normal child `Replace`, intercepted in `_replace_screen` to add a
+  fresh page and animate it in with a one-shot `QPropertyAnimation` (slide
+  direction from the `depth` delta, or `fade`/`none` per `transition`); the
+  outgoing page is dropped on `finished` and animations are strong-reffed against
+  GC. `TabBar`/`TabView` render a tab strip of `QPushButton`s emitting a typed
+  `RouteChangeEvent` (`params["index"]`) through `_invoke`. `RouteDrawer` lays
+  content + a slide-over panel as direct children (no box layout, like `Stack`),
+  sliding the panel on `open`. `Esc` on the simulator host → `App.pop` via the
+  `BackKeyFilter` event filter (`app_runner`/`dev_loop`); root pop is a no-op.
+  Conformance divergence to document on the Compose side: Qt animates with
+  `QPropertyAnimation` vs Compose `AnimatedContent`/`ModalDrawer` — the device
+  back button (vs `Esc`) is the Compose/device half (E0c/E0d), not exercised here.
+- **Virtualized lists (E1b).** Since the E1 core change `LazyColumn`/`LazyRow`/
+  `LazyGrid`/`SectionList` are **not leaves**: `build` materializes the visible
+  window into `node.children` (keyed `str(absolute_index)`; sections
+  `sec:<title>:header` / `sec:<title>:<index>`). The Qt renderer renders those
+  children directly — it no longer self-materializes from `item_count`. The old
+  `_LazyArea`/`_LazyGridArea`/`_SectionListArea` auto-materializers are gone.
+  `LazyColumn`/`LazyRow`/`SectionList` are `_LazyScrollArea`s whose inner content
+  box layout is the diffable child slot, so a window slide (the keyed
+  remove/reorder/insert sequence the app produces) flows through the **generic
+  container path** unchanged. `LazyGrid` is a `_LazyGridArea` driven like `Stack`
+  (no box layout: children re-placed in a `columns`-wide `QGridLayout` via
+  `_relayout_grid` on every structural patch). Scroll wiring: the scrollbar's
+  `valueChanged` emits a `ScrollEvent(offset)` via `on_scroll`; the **app** turns
+  the offset into a new `window` (`App.slide_window`) and rebuilds — the renderer
+  never computes the window. Past `end_reached_threshold` → `EndReachedEvent` via
+  `on_end_reached`; `refreshing=True` shows a `_RefreshOverlay` busy banner.
+  **Qt-vs-Compose divergences (document in the conformance table):** (1) the Qt
+  scroll area spans only the *materialized window* (no reserved virtual extent),
+  so the scrollbar can only travel within the current window — to scroll further
+  the app must already widen the window; Compose's native `LazyColumn` reports
+  `layoutInfo` against the full `itemCount`. (2) `SectionList` sticky headers are
+  a floated `QLabel` over the viewport top tracking the topmost visible section
+  (key prefix `sec:…:header`), vs Compose's intrinsic `stickyHeader`. (3) Desktop
+  has no pull-to-refresh gesture → `on_refresh` is driven by the `refreshing`
+  prop/overlay only (no pull), vs Compose `PullToRefreshBox`.
+- **Overlays + feedback (E2c).** `QtRenderer.mount`/`remount` now take a `Scene`
+  (root tree + z-ordered overlay layer); a bare `Node` is still accepted (wrapped
+  as an overlay-free `Scene`) for direct-mount tests. Overlay-layer patches carry
+  the reserved leading `"overlay"` path token from `diff_scene`: `("overlay",)`
+  for layer insert/remove/reorder, `("overlay", i)` for an overlay's own
+  update/replace, `("overlay", i, …)` for a within-overlay child patch — the
+  renderer strips the `("overlay", i)` prefix and re-bases the patch onto the
+  overlay subtree, reusing the generic root-tree machinery (no new patch kind).
+  Each overlay node's `barrier` prop drives a shared `_ScrimWidget` (a
+  `rgba(0,0,0,0.4)` QWidget over the host that swallows `mousePressEvent` and, on
+  tap, dismisses the topmost barrier overlay). Overlay surfaces are top-level
+  widgets, not host children: `Dialog`/`BottomSheet`/`Popover` → `_DismissDialog`
+  (a `QDialog` that reports user-initiated closes); `Menu`/`ActionSheet` →
+  `QMenu` (shown via non-blocking `popup`, **not** `exec`, so the qasync loop
+  keeps running; `triggered` → `MenuSelectEvent`); `Toast`/`Tooltip` → a frameless
+  floating `QLabel` (toasts fade via `QGraphicsOpacityEffect`+`QTimer` just before
+  the **app-side** `loop.call_later` removes them — the Python timer stays
+  authoritative). A host-owned dismissal (scrim tap, dialog close, menu select)
+  invokes the widget's `on_dismiss`/`on_select` then calls `App.dismiss` via the
+  `set_dismiss_overlay` callback (`run_qt`/`Simulator` wire it) — the desktop
+  analogue of the device bridge's `__dismiss__:<id>` token; both are idempotent.
+  **Qt-vs-Compose divergences (document in the conformance table):** Qt uses
+  `QDialog`/`QMenu`/`QTimer`+`QPropertyAnimation` and a manual scrim QWidget;
+  Compose uses Material3 `AlertDialog`/`ModalBottomSheet`/`DropdownMenu` which
+  manage their own `WindowInsets.safeDrawing` and scrim (no double safe-area
+  padding). `BottomSheet` slides up via a `QPropertyAnimation` on `pos` and
+  anchors to the host bottom edge; the `Menu`/`Popover` `anchor` key is resolved
+  to a global point via a depth-first `key` lookup in the root tree (falling back
+  to the host origin when unresolved), vs Compose anchoring by composition.
+  Example: `examples/overlays/app.py` (`make run APP=examples/overlays/app.py`).
+- **Inputs & forms (E5c).** `Dropdown`→`QComboBox` (`currentIndexChanged`→
+  `SelectEvent(value,index)`); `TimePicker`→`QTimeEdit` (inline `HH:mm` spinner,
+  `timeChanged`→`TimeChangeEvent`); `RangeSlider`→`_RangeSliderWidget` (two stacked
+  `QSlider`s clamped `low<=high`, no native `QRangeSlider`; emits
+  `RangeChangeEvent(low,high)` as floats); `Autocomplete`→`QLineEdit`+`QCompleter`
+  (two distinct signals — `textChanged`→`TextChangeEvent` via `_value_conns`,
+  completer `activated`→`SelectEvent` via the new `_select_conns`); `PinInput`→
+  `_PinInputWidget` (N chained one-char `QLineEdit`s with auto focus-advance;
+  `TextChangeEvent` per edit + `SubmitEvent` when full); `MaskedInput`→`QLineEdit`
+  with `setInputMask` (framework `9`→Qt `0`, `A` kept, other chars escaped if a Qt
+  metachar — `_to_qt_input_mask`). `FormField`→`_FormFieldWidget` (a `QVBoxLayout`
+  whose middle `content_layout` is the IR child slot, label `QLabel` above + red
+  error `QLabel` below, hidden when `error==""`); `Form`→plain `QVBoxLayout`
+  container of its `FormField` children — all validation (`Form.validate` →
+  `FormState`) runs in Python before patches, so the renderer only renders the
+  `error` it is handed and never gates submit. Qt-vs-Compose divergences to pin in
+  conformance: `TimePicker` inline spinner vs Compose modal `TimePickerDialog`;
+  `RangeSlider` dual `QSlider` vs native M3 `RangeSlider`; `PinInput` chained
+  `QLineEdit`s vs `BasicTextField`+`FocusRequester`; `Autocomplete` `QCompleter`
+  popup vs filterable `DropdownMenu` — every emitted event payload is identical.
+  Example: `examples/forms/app.py` (`make run APP=examples/forms/app.py`).
 
 **A4 notes / known limits:**
 
@@ -323,11 +529,21 @@ Project skills that guard framework health — use them, don't reinvent the chec
   the three-matched-layers invariant (IR + Qt + Compose + conformance), then
   chains `framework-guard` and points at `dual-verify`. Use to start or close any
   E0–E9 sub-task.
+- **`git-worktree`** — `bash .claude/skills/git-worktree/worktree.sh
+  new|list|rm|prune …`. Creates and manages an **isolated git worktree per
+  parallel task** so concurrent agents never share one working tree (a shared
+  tree lets one switch `HEAD` or leave uncommitted files mid-run → commits land
+  on the wrong branch, unrelated changes leak into the PR — this has bitten the
+  repo). `new <branch> [base]` fetches origin and adds
+  `../<repo>-worktrees/<branch>` off `origin/main` (or a given base); work,
+  commit + open the PR from there, then `rm <branch>` when merged. Use **before**
+  any work that may run alongside another agent, or to recover after a
+  shared-tree mishap. See the **Git** section's "one worktree per agent/task".
 
 Run `framework-guard` + `docs-sync-check` before every commit; `phase-closer`
 (A–D) or `parity-phase` (Trilho E) before closing a phase; `android-doctor`
 before any Android build and `dual-verify` before calling a framework-surface
-change done.
+change done; `git-worktree` to isolate any task that may run in parallel.
 
 ## Workflow
 
@@ -364,8 +580,11 @@ change done.
     and whether the device half was exercised (and if not, say so explicitly).
     The reviewer and the owner both read this.
   - **Branches + Conventional Commits always.** Work on a `feat/`/`fix/`/`ref/`
-    branch (a `git worktree` off a clean base when the tree is shared). Branches
-    keep history clean and let the owner bisect QA feedback.
+    branch (a `git worktree` off a clean base when the tree is shared — use the
+    **`git-worktree`** skill: `worktree.sh new <branch>`). Branches keep history
+    clean and let the owner bisect QA feedback. **Whenever work may run alongside
+    another agent in this repo, take a worktree first** — a shared tree has let a
+    parallel task switch `HEAD` and reset tracked files mid-run.
   - Before starting, check `origin/main` + open branches so you don't redo landed
     or in-flight work.
 

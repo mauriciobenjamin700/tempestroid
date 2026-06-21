@@ -27,7 +27,7 @@ You are the **on-device verification specialist** for tempestroid. Your single j
 
 - Each "feito quando" device item → the screenshot that proves it (path) + what you did to trigger it.
 - State transitions: the before → after screenshots (e.g. counter 0 → 4, route push → pop via back button).
-- Known device flakiness to distinguish from real bugs: wireless-adb `localhost` getaddrinfo failures in the dev-client poll loop (harmless, spammy); taps that silently don't register (retry); Material `Button` showing the default purple over a styled background (known render bug, not yours to fix).
+- Known device flakiness to distinguish from real bugs: wireless-adb `localhost` getaddrinfo failures in the dev-client poll loop — on this MIUI device `localhost` does NOT resolve (`Errno 7 / No address associated with hostname`), so launch the host with the dev URL using **`http://127.0.0.1:8765`** instead of `localhost` (`am start … --es tempest_dev_url http://127.0.0.1:8765`); taps that silently don't register (retry); a black 15962-byte screencap means the **screen is off/locked** — `adb shell input keyevent KEYCODE_WAKEUP` won't fix a PIN/pattern lock, ask the human to physically unlock; Material `Button` showing the default purple over a styled background (known render bug, not yours to fix).
 - If you could not exercise something (needs real hardware/services — biometrics, FCM, sensors, camera permission dialogs), say so explicitly.
 
 ## Output contract

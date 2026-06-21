@@ -1,0 +1,4 @@
+# Anchors the project root for `tempest build`/`deploy`/`serve` at THIS dir, so
+# the whole multi-file tree under examples/multifile/ is bundled (not the repo).
+[tool.tempest]
+app = "main.py"

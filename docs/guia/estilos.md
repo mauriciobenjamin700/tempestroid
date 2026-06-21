@@ -38,10 +38,11 @@ Column(
 
 | Grupo | Campos |
 |---|---|
-| **Layout** | `direction`, `justify`, `align`, `align_self`, `grow`, `gap` |
+| **Layout** | `direction`, `justify`, `align`, `align_self`, `grow`, `gap`, `flex_wrap`, `stack_align` |
+| **Posição** | `position`, `top`, `right`, `bottom`, `left` |
 | **Caixa** | `padding`, `margin`, `border`, `radius` |
 | **Pintura** | `background`, `color`, `opacity`, `shadow` |
-| **Tipografia** | `font_family`, `font_size`, `font_weight`, `font_style`, `text_align`, `text_decoration`, `letter_spacing`, `line_height`, `max_lines`, `text_overflow` |
+| **Tipografia** | `font_family`, `font_asset`, `font_size`, `font_weight`, `font_style`, `text_align`, `text_decoration`, `text_scale`, `letter_spacing`, `line_height`, `max_lines`, `text_overflow` |
 | **Dimensão** | `width`, `height`, `min_width`, `max_width`, `min_height`, `max_height`, `aspect_ratio` |
 | **Animação** | `transition` |
 
@@ -77,11 +78,17 @@ Style(
 
 ## Enums
 
+Resumo dos mais usados em `Style`. A **[referência de enums](../referencia/enums.md)**
+documenta os 27 enums com cada membro, valor e significado.
+
 | Enum | Valores |
 |---|---|
 | `FlexDirection` | `ROW`, `COLUMN`. |
 | `JustifyContent` | `START`, `CENTER`, `END`, `SPACE_BETWEEN`, `SPACE_AROUND`, `SPACE_EVENLY`. |
 | `AlignItems` | `START`, `CENTER`, `END`, `STRETCH`. |
+| `FlexWrap` | `NOWRAP`, `WRAP`, `WRAP_REVERSE` (usado por `Wrap`/`flex_wrap`). |
+| `StackAlign` | `TOP_START`…`BOTTOM_END` (alinhamento de filhos num `Stack`). |
+| `Position` | `STATIC`, `ABSOLUTE` (com `top`/`right`/`bottom`/`left`). |
 | `TextAlign` | `LEFT`, `CENTER`, `RIGHT`, `JUSTIFY`. |
 | `FontWeight` | `NORMAL`, `BOLD` (e pesos numéricos). |
 | `FontStyle` | `NORMAL`, `ITALIC`. |

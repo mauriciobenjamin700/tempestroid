@@ -17,6 +17,18 @@ All inherit from `Event` (frozen Pydantic).
 | `DateChangeEvent` | `value: str` (ISO `yyyy-mm-dd`) | `DatePicker.on_change` |
 | `FileSelectEvent` | `uri: str`, `name: str \| None` | `FilePicker.on_select` |
 
+!!! info "These are the core events — there are 31 in total"
+    The table above shows the most common ones. Track E added many more —
+    navigation (`RouteChangeEvent`/`PageChangeEvent`), lists (`ScrollEvent`/
+    `EndReachedEvent`/`RefreshEvent`), gestures (`PanEvent`/`ScaleEvent`/
+    `SwipeEvent`/`ReorderEvent`/`LongPressEvent`/`DragEvent`), forms
+    (`SubmitEvent`/`ValidationEvent`/`RangeChangeEvent`/`TimeChangeEvent`/
+    `SelectEvent`), overlays
+    (`DismissEvent`/`MenuSelectEvent`) and platform (`SensorEvent`/
+    `LifecycleEvent`/`ConnectivityEvent`/`DeepLinkEvent`/`QrScanEvent`/
+    `ThemeChangeEvent`/`LocaleChangeEvent`). List the full contract with
+    `tempest spec` or see the [API reference](../referencia/api.md).
+
 ## The validation gate: `parse_event`
 
 `parse_event(event_type, raw)` turns a raw payload (a mapping) into a typed event,

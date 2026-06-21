@@ -12,6 +12,7 @@ import json
 
 import pytest
 from PySide6.QtWidgets import QLayout, QWidget
+from tempest_core.style import Edge
 
 from tempestroid import (
     Column,
@@ -23,7 +24,6 @@ from tempestroid import (
     serialize_node,
 )
 from tempestroid.renderers.qt import QtRenderer
-from tempestroid.style import Edge
 
 
 def _margins(widget: QWidget) -> tuple[int, int, int, int]:
@@ -117,9 +117,7 @@ class TestSafeAreaQtRenderer:
 
     def test_child_renders_inside(self) -> None:
         renderer = QtRenderer()
-        renderer.mount(
-            build(SafeArea(child=Column(children=[Text(content="inner")])))
-        )
+        renderer.mount(build(SafeArea(child=Column(children=[Text(content="inner")]))))
         layout = renderer.root_widget.layout()
         assert isinstance(layout, QLayout)
         assert layout.count() == 1

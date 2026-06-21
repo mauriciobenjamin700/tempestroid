@@ -14,14 +14,93 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import sys
+import tempfile
+import traceback
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from tempestroid.bridge.device import Bridge, DeviceApp
-from tempestroid.cli.app_loader import spec_from_source
+from tempestroid.bridge.errors import error_screen
+from tempestroid.bridge.protocol import (
+    BACK_TOKEN,
+    BACKGROUND_TOKEN_PREFIX,
+    CONNECTIVITY_TOKEN_PREFIX,
+    LIFECYCLE_TOKEN,
+    SENSOR_TOKEN_PREFIX,
+)
+from tempestroid.cli.app_loader import spec_from_project
+from tempestroid.cli.bundle import extract_bundle
+from tempestroid.devserver.harness import HarnessTransport, poll_commands
+from tempestroid.native.background import dispatch_background_task
+from tempestroid.native.connectivity import dispatch_connectivity_event
 from tempestroid.native.dispatch import NATIVE_RESULT_PREFIX, resolve_native_result
+from tempestroid.native.lifecycle import dispatch_lifecycle_event
+from tempestroid.native.sensors import dispatch_sensor_event
 
 __all__ = ["run_dev_client", "serve_device"]
+
+_BUNDLE_PREFIX = "tempest-app-"
+
+
+def _sweep_stale_bundles(keep: Path | None = None) -> int:
+    """Delete leftover code-push bundle dirs from earlier ``serve`` sessions.
+
+    Each ``tempest serve`` push extracts the project to a fresh
+    ``tempest-app-*`` temp dir (see :func:`_load_bundle_spec`). Within a single
+    client process the previous push's dir is removed on the next push, but a
+    *new* process (every ``serve`` invocation is one) starts with no prior root
+    and never reclaims the dirs the earlier processes left behind. Across many
+    pushes — e.g. validating the whole example gallery — those orphans pile up
+    and fill the device/emulator ``/data`` partition, which then surfaces as a
+    bogus extraction failure (error screen) on a perfectly good app.
+
+    Sweeping the temp dir once at client startup reclaims that space. It is
+    best-effort: any dir that cannot be removed (in use, permission) is skipped.
+
+    Args:
+        keep: A bundle root to preserve (the current process's own), if any.
+
+    Returns:
+        The number of stale bundle dirs removed.
+    """
+    tmp_root = Path(tempfile.gettempdir())
+    removed = 0
+    for path in tmp_root.glob(f"{_BUNDLE_PREFIX}*"):
+        if not path.is_dir() or (keep is not None and path == keep):
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            removed += 1
+    return removed
+
+
+def _load_bundle_spec(data: bytes, previous_root: Path | None) -> tuple[Any, Path]:
+    """Extract a pushed bundle, swap it onto ``sys.path``, and load its spec.
+
+    Removes the previous push's root from ``sys.path`` (and disk) so a re-push
+    cannot leak stale modules, extracts the new bundle to a fresh temp dir, and
+    loads the entry via :func:`spec_from_project` (which adds the new root).
+
+    Args:
+        data: The bundle ``.zip`` bytes fetched from ``/bundle``.
+        previous_root: The prior push's extraction root, or ``None`` on first
+            push.
+
+    Returns:
+        A ``(spec, root)`` pair — the loaded :class:`AppSpec` and its new root.
+    """
+    if previous_root is not None:
+        root_str = str(previous_root)
+        while root_str in sys.path:
+            sys.path.remove(root_str)
+        shutil.rmtree(previous_root, ignore_errors=True)
+    dest = Path(tempfile.mkdtemp(prefix="tempest-app-"))
+    layout = extract_bundle(data, dest)
+    spec = spec_from_project(layout.root, layout.entry)
+    return spec, layout.root
 
 
 async def run_dev_client(
@@ -29,25 +108,49 @@ async def run_dev_client(
     *,
     make_bridge: Callable[[], Bridge],
     register_sink: Callable[[Callable[[str, str], None]], None],
-    fetch: Callable[[str], Awaitable[str]],
+    fetch: Callable[[str], Awaitable[bytes]],
     poll_interval: float = 1.0,
     log: Callable[[str], None] = print,
     max_polls: int | None = None,
+    post: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
 ) -> None:
-    """Poll the dev server and hot-restart the app on every source change.
+    """Poll the dev server and hot-restart the app on every project change.
+
+    When the server advertises **harness mode** (``GET /version`` carries
+    ``"harness": true``) and a ``post`` callable was supplied, the client wraps
+    each fresh bridge in a :class:`~tempestroid.devserver.harness.HarnessTransport`
+    (mirroring every mount/patch back to the host) and starts a background
+    :func:`~tempestroid.devserver.harness.poll_commands` loop that feeds host→
+    device events to the same sink a real tap drives. Without harness mode the
+    loop is byte-for-byte the normal code-push loop.
 
     Args:
         url: The dev server base URL (e.g. ``http://localhost:8765``).
         make_bridge: Factory for a fresh :class:`Bridge` per (re)load.
         register_sink: Registers the incoming-event callback with the transport
             (``_tempest_host.set_event_sink`` on device).
-        fetch: Async ``url -> body`` HTTP GET.
+        fetch: Async ``url -> body`` HTTP GET returning raw bytes (``/version``
+            is JSON, ``/bundle`` is the project zip).
         poll_interval: Seconds between version polls.
         log: Sink for status lines.
         max_polls: Stop after this many polls (tests); ``None`` runs forever.
+        post: Async ``(path, body) -> None`` POSTing JSON to the dev server. Only
+            used in harness mode; ``None`` disables the harness mirror.
     """
     loop = asyncio.get_running_loop()
-    current: dict[str, Any] = {"device": None, "hash": None}
+    current: dict[str, Any] = {
+        "device": None,
+        "hash": None,
+        "root": None,
+        "harness": False,
+    }
+
+    # Reclaim disk left by earlier ``serve`` sessions before the first push, so
+    # a long run (e.g. the whole example gallery) cannot fill ``/data`` with
+    # orphaned bundle dirs and fail a good app with a bogus extraction error.
+    swept = _sweep_stale_bundles()
+    if swept:
+        log(f"[tempest] swept {swept} stale bundle dir(s)")
 
     def on_event(token: str, payload_json: str) -> None:
         """Route a device event to the currently-loaded app.
@@ -59,9 +162,41 @@ async def run_dev_client(
         mirroring :func:`tempestroid.bridge.jni.run_device`.
         """
         payload: dict[str, Any] = json.loads(payload_json) if payload_json else {}
+        # A system back action (Android back) rides the same event channel under
+        # the reserved BACK_TOKEN — route it straight to App.pop, mirroring
+        # tempestroid.bridge.jni.run_device. Without this the code-push path drops
+        # the back event (no widget handler matches), so the device back button
+        # would not pop under ``tempest serve`` even though the bundled app does.
+        if token == BACK_TOKEN:
+            back_device: DeviceApp[Any] | None = current["device"]
+            if back_device is not None:
+                loop.call_soon_threadsafe(back_device.app.pop)
+            return
         if token.startswith(NATIVE_RESULT_PREFIX):
             request_id = token[len(NATIVE_RESULT_PREFIX) :]
             loop.call_soon_threadsafe(resolve_native_result, request_id, payload)
+            return
+        # Reserved stream tokens (sensor samples, lifecycle transitions,
+        # connectivity changes) ride the same event channel and must be routed
+        # here too — without this the ``tempest serve`` code-push path would
+        # silently drop them (the lesson from E0d, where the dev client forgot
+        # the reserved tokens). Mirrors tempestroid.bridge.jni.make_event_sink.
+        sensor_prefix = f"{SENSOR_TOKEN_PREFIX}:"
+        if token.startswith(sensor_prefix):
+            sensor_type = token[len(sensor_prefix) :]
+            loop.call_soon_threadsafe(dispatch_sensor_event, sensor_type, payload)
+            return
+        if token == LIFECYCLE_TOKEN:
+            loop.call_soon_threadsafe(dispatch_lifecycle_event, payload)
+            return
+        if token.startswith(f"{CONNECTIVITY_TOKEN_PREFIX}:"):
+            loop.call_soon_threadsafe(dispatch_connectivity_event, payload)
+            return
+        background_prefix = f"{BACKGROUND_TOKEN_PREFIX}:"
+        if token.startswith(background_prefix):
+            loop.call_soon_threadsafe(
+                dispatch_background_task, token[len(background_prefix) :]
+            )
             return
         device: DeviceApp[Any] | None = current["device"]
         if device is None:
@@ -73,41 +208,121 @@ async def run_dev_client(
 
     register_sink(on_event)
 
+    # In harness mode each fresh bridge is wrapped so its mount/patch is mirrored
+    # back to the host; resolved on the first /version that advertises harness.
+    effective_make_bridge = make_bridge
+
+    def _harness_make_bridge() -> Bridge:
+        """Build a real bridge wrapped to mirror renders to the host."""
+        assert post is not None  # guarded by the harness-enable check below
+        return HarnessTransport(make_bridge(), post)
+
     polls = 0
     while max_polls is None or polls < max_polls:
         polls += 1
         try:
-            version = json.loads(await fetch(f"{url}/version")).get("hash")
+            # Network zone: a transient fetch failure (timeout, reset) must NOT
+            # commit the hash, so the next poll retries the same version.
+            meta = json.loads((await fetch(f"{url}/version")).decode("utf-8"))
+            version = meta.get("hash")
+            if not current["harness"] and meta.get("harness") and post is not None:
+                # First sight of harness mode: switch to the mirroring bridge and
+                # start the host→device command poll feeding the same event sink.
+                current["harness"] = True
+                effective_make_bridge = _harness_make_bridge
+                loop.create_task(poll_commands(url, sink=on_event, fetch=fetch))
             if version != current["hash"]:
-                payload = json.loads(await fetch(f"{url}/app"))
-                spec = spec_from_source(payload["source"], filename="<dev-push>")
-                device: DeviceApp[Any] | None = current["device"]
-                short = str(version)[:8]
-                if device is None:
-                    device = DeviceApp(spec.make_state(), spec.view, make_bridge())
-                    current["device"] = device
-                    await device.start()
-                    log(f"[tempest] pushed app {short}")
-                else:
-                    # Hot-reload preserving on-device state; if the new view is
-                    # incompatible with the live state, restart clean.
-                    try:
-                        device.reload(spec.view)
-                        log(f"[tempest] hot-reloaded {short} (state preserved)")
-                    except Exception as reload_exc:  # noqa: BLE001
-                        device = DeviceApp(
-                            spec.make_state(), spec.view, make_bridge()
-                        )
-                        current["device"] = device
-                        await device.start()
-                        log(
-                            f"[tempest] hot-restarted {short} "
-                            f"(state reset: {reload_exc})"
-                        )
-                current["hash"] = payload["hash"]
+                data = await fetch(f"{url}/bundle")
+                # App zone: from here the bundle is in hand. Commit the hash up
+                # front so a *broken* app (load/build error) is not re-fetched on
+                # every poll — we wait for the next edit. The error is surfaced
+                # on-device as a red error screen instead of a blank window.
+                current["hash"] = version
+                await _apply_push(data, current, effective_make_bridge, log)
         except Exception as exc:  # noqa: BLE001 - keep the loop alive on any error
             log(f"[tempest] dev client error: {exc}")
         await asyncio.sleep(poll_interval)
+
+
+async def _apply_push(
+    data: bytes,
+    current: dict[str, Any],
+    make_bridge: Callable[[], Bridge],
+    log: Callable[[str], None],
+) -> None:
+    """Load a freshly-fetched bundle and (re)start or hot-reload the app.
+
+    A load/build failure is caught and mounted as an on-device error screen (the
+    device analogue of the desktop dev loop printing a caught exception) rather
+    than left as a blank window — the developer sees *what* broke without
+    attaching ``adb``. The poll loop keeps running, so the next saved edit
+    recovers.
+
+    Args:
+        data: The bundle ``.zip`` bytes fetched from ``/bundle``.
+        current: The mutable load state (``device``/``root``) shared with the
+            poll loop.
+        make_bridge: Factory for a fresh :class:`Bridge` per (re)load.
+        log: Sink for status lines.
+    """
+    try:
+        spec, root = _load_bundle_spec(data, current["root"])
+        current["root"] = root
+    except Exception:  # noqa: BLE001 - surface any load failure on-device
+        await _mount_error(current, make_bridge, log, traceback.format_exc())
+        return
+    # The app's declared initial theme (e.g. dark) rides each (re)load, so a
+    # fresh DeviceApp starts with the right Material color scheme on the host.
+    theme = spec.make_theme() if spec.make_theme is not None else None
+    device: DeviceApp[Any] | None = current["device"]
+    is_error = bool(current.get("error"))
+    if device is None or is_error:
+        # First push, or replacing an error screen: start clean.
+        try:
+            device = DeviceApp(spec.make_state(), spec.view, make_bridge(), theme=theme)
+            current["device"] = device
+            current["error"] = False
+            await device.start()
+            log("[tempest] pushed app")
+        except Exception:  # noqa: BLE001 - a first-build error is still on-device
+            await _mount_error(current, make_bridge, log, traceback.format_exc())
+        return
+    # Hot-reload preserving on-device state; if the new view is incompatible
+    # with the live state, restart clean.
+    try:
+        device.reload(spec.view)
+        log("[tempest] hot-reloaded (state preserved)")
+    except Exception as reload_exc:  # noqa: BLE001
+        try:
+            device = DeviceApp(spec.make_state(), spec.view, make_bridge(), theme=theme)
+            current["device"] = device
+            await device.start()
+            log(f"[tempest] hot-restarted (state reset: {reload_exc})")
+        except Exception:  # noqa: BLE001 - the clean restart also failed
+            await _mount_error(current, make_bridge, log, traceback.format_exc())
+
+
+async def _mount_error(
+    current: dict[str, Any],
+    make_bridge: Callable[[], Bridge],
+    log: Callable[[str], None],
+    detail: str,
+) -> None:
+    """Mount a red error screen on the device and flag the error state.
+
+    Args:
+        current: The mutable load state (``device``/``error``).
+        make_bridge: Factory for a fresh :class:`Bridge`.
+        log: Sink for status lines.
+        detail: The traceback / error detail to show on-device.
+    """
+    log(f"[tempest] app failed to load:\n{detail}")
+    device: DeviceApp[Any] = DeviceApp(
+        None, lambda _app: error_screen("App failed to load", detail), make_bridge()
+    )
+    current["device"] = device
+    current["error"] = True
+    await device.start()
 
 
 def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
@@ -127,14 +342,33 @@ def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
 
     host = native_host()
 
-    async def _fetch(target: str) -> str:
-        """Fetch a URL body off the event loop thread."""
+    async def _fetch(target: str) -> bytes:
+        """Fetch a URL body (raw bytes) off the event loop thread."""
 
-        def _get() -> str:
-            with urllib.request.urlopen(target, timeout=5) as response:  # noqa: S310
-                return response.read().decode("utf-8")
+        def _get() -> bytes:
+            # A generous timeout: the first poll races the cold-start of the
+            # ``adb reverse`` tunnel, and ``/bundle`` can be a large multi-file
+            # archive — 10s was tight enough to spuriously time out on both.
+            with urllib.request.urlopen(target, timeout=30) as response:  # noqa: S310
+                return response.read()
 
         return await asyncio.to_thread(_get)
+
+    async def _post(path: str, body: dict[str, Any]) -> None:
+        """POST a JSON body to the dev server off the event loop thread."""
+        data = json.dumps(body).encode("utf-8")
+
+        def _send() -> None:
+            request = urllib.request.Request(  # noqa: S310
+                f"{url}{path}",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=30):  # noqa: S310
+                return
+
+        await asyncio.to_thread(_send)
 
     asyncio.run(
         run_dev_client(
@@ -143,5 +377,6 @@ def serve_device(url: str, *, poll_interval: float = 1.0) -> None:
             register_sink=host.set_event_sink,
             fetch=_fetch,
             poll_interval=poll_interval,
+            post=_post,
         )
     )

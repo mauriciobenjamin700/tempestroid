@@ -15,14 +15,20 @@ the change live.
 
 ## Step 1 — Create a project
 
-The `tempest new` command generates a minimal, already-runnable project: an
-`app.py` (an example counter) and a `README.md` with the day-to-day commands.
+You are already inside your project folder (and its virtualenv). Run
+`tempest new` with **no arguments** to generate the starter files **right here** —
+an `app.py` (example counter), `pyproject.toml`, `README.md` and `.gitignore` —
+using the **current folder name as the app id**. No extra wrapping directory.
 
 ```bash
-uv run tempest new MyApp        # creates MyApp/ with app.py + README.md
+mkdir my-app && cd my-app            # your project folder (with its venv)
+uv run tempest new                   # scaffold HERE; id = "my-app"
 ```
 
-> Installed via `pip`? The binary is available as `tempest new MyApp` (without
+> Want a subdirectory? Pass a name: `uv run tempest new OtherApp` creates
+> `OtherApp/`. But the recommended flow is the in-place one above.
+>
+> Installed via `pip`? The binary is available as `tempest new` (without
 > `uv run`). Throughout this guide we use `uv run tempest …` because it is the
 > repository flow; drop the `uv run ` if you installed via `pip`.
 
@@ -33,10 +39,12 @@ so the **same file** runs in the desktop simulator, ships to the device via
 ## Step 2 — Run it in the simulator
 
 ```bash
-uv run tempest dev MyApp/app.py        # opens the Qt simulator + hot reload
+uv run tempest dev                     # opens the Qt simulator + hot reload
 ```
 
-A window opens with the counter (`-`, the value, `+`). The terminal becomes an
+`tempest dev` (with no argument) reads the app path from `[tool.tempest] app` in
+`pyproject.toml`, so you run it from the project root without pointing at the
+file. A window opens with the counter (`-`, the value, `+`). The terminal becomes an
 interactive *cockpit*:
 
 | Key | Action |
@@ -46,9 +54,38 @@ interactive *cockpit*:
 | `s` | Raises the simulator window to the front. |
 | `q` | Quits. |
 
+### Pick the screen size (device presets)
+
+The simulator opens at a generic phone size, but you should **test at your
+target devices' sizes**. Pass `--device` (or `-d`) with a preset:
+
+```bash
+uv run tempest dev --device pixel-7        # 412×915 dp
+uv run tempest dev -d galaxy-s24           # 384×824 dp
+uv run tempest dev -d redmi-note-12        # 393×873 dp (default)
+```
+
+Sizes are in **dp** (density-independent pixels) — exactly the layout space
+Compose uses on the device, so what fits in the simulator fits on the device.
+Names are forgiving (`pixel-7`, `PIXEL_7`, `pixel 7`, `Google Pixel 7` all
+resolve the same). The full catalog is 33 presets (Pixel, Galaxy S/A,
+Redmi/Poco/Xiaomi, Moto, OnePlus) in the `Device` enum — use it
+programmatically with `run_qt(state, view, device=Device.PIXEL_7)`.
+
+!!! tip "Which to test"
+    Cover a **small/narrow phone** (e.g. `galaxy-s8`, 360×740) and a **large**
+    one (e.g. `pixel-8-pro`, 448×998) — if the layout behaves at both extremes,
+    the sizes in between follow.
+
+!!! info "How faithful is the simulator?"
+    It faithfully reflects structure, state, events and most of `Style`, but
+    **not** the native look (Material 3), animations, overlays and fonts — those
+    are only 100% faithful on the device. See
+    [simulator fidelity](arquitetura.md#simulator-fidelity-what-it-reflects-and-what-it-doesnt).
+
 ## Step 3 — Edit and see it live
 
-With the simulator open, open `MyApp/app.py` in your editor and change some text
+With the simulator open, open `app.py` in your editor and change some text
 — for example the title inside `Text`. **Save the file.** `tempest dev` detects
 the write and hot-reloads automatically: the window updates without losing the
 counter.

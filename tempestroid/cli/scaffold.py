@@ -6,10 +6,12 @@ the ``tempestroid[qt]`` dependency and the ``[tool.tempest] app`` pointer (so
 ``tempest dev``/``serve``/``build`` run with no app argument inside the
 project), a ``README.md`` with the dev-loop commands, and a ``.gitignore``.
 
-``tempest new .`` scaffolds **in place** into the current directory (the project
-name is taken from the directory name); ``tempest new <name>`` creates a new
-subdirectory. The template is pure Python — no Qt import at module level — so the
-same file targets the desktop simulator and the Android device.
+``tempest new`` (no argument, the default) scaffolds **in place** into the
+current directory and takes the project/app id from the directory name — the user
+is expected to already be inside their project folder and virtualenv, so no extra
+wrapping directory is created. Passing ``tempest new <name>`` creates a new
+subdirectory instead. The template is pure Python — no Qt import at module level —
+so the same file targets the desktop simulator and the Android device.
 """
 
 from __future__ import annotations
@@ -17,7 +19,20 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-__all__ = ["scaffold", "DEFAULT_APP_TEMPLATE", "ScaffoldResult"]
+from tempestroid.cli.templates import TEMPLATES, py_safe, render_files
+
+__all__ = ["scaffold", "DEFAULT_APP_TEMPLATE", "ScaffoldResult", "template_names"]
+
+
+def template_names() -> list[str]:
+    """List the available ``tempest new`` template names.
+
+    Returns:
+        ``["default", ...]`` — the built-in single-file template plus every
+        multi-file template in :data:`tempestroid.cli.templates.TEMPLATES`.
+    """
+    return ["default", *TEMPLATES.keys()]
+
 
 DEFAULT_APP_TEMPLATE = """\
 \"\"\"{name} — a tempestroid app.
@@ -133,10 +148,41 @@ description = "A tempestroid app — native Android in typed Python."
 requires-python = ">=3.11"
 dependencies = ["tempestroid[qt]>=0.2"]
 
-# `tempest dev`/`serve`/`build`/`run` read this when no app path is given, so
-# inside the project you can run `tempest dev` with no arguments.
+[dependency-groups]
+# The linter/formatter, behind `uv run tempest lint` / `fix` / `format`.
+dev = ["ruff>=0.6"]
+
+# `tempest dev`/`serve`/`build`/`run` read this, so inside the project you run
+# the commands with no arguments. `tempest build apk` reads the keys below to
+# stamp the APK — set `id` to your own reverse-domain before publishing (the
+# derived `com.example.*` is a non-publishable placeholder).
 [tool.tempest]
 app = "app.py"
+# id = "com.yourcompany.{project}"   # applicationId (derived from the name if unset)
+# name = "My App"                    # launcher label (the name under the icon)
+# icon = "icon.png"                  # launcher icon (`tempest icon logo.png` makes one)
+# splash = "splash.png"              # boot splash shown while Python starts
+# splash_bg = "#0b0f14"              # splash background colour
+# version = "1.0.0"                  # versionName
+# features = ["camera", "qr"]        # bundle heavy native caps (camera/qr/push/
+#                                    # video/maps); each opt-in needs a from-source
+#                                    # build (SDK/NDK). The lean default ships none.
+
+# Ruff keeps the project tidy and caps line length at 79 (the convention shared
+# with tempest-fastapi-sdk). Tweak to taste.
+[tool.ruff]
+line-length = 79
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "Q", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 """
 
 README_TEMPLATE = """\
@@ -155,7 +201,13 @@ uv sync                                 # install tempestroid + the Qt simulator
 
 ```bash
 uv run tempest dev                      # Qt simulator + hot reload (edit & save)
+uv run tempest lint                     # ruff check (line length capped at 79)
+uv run tempest fix                      # ruff --fix + format in one pass
+uv run tempest format                   # ruff format (writes files)
 ```
+
+(`tempest check` also runs `pyright` + `pytest` — add them to the `dev` group
+above if you want the full gate.)
 
 In the `tempest dev` cockpit: `r` hot-reloads (state preserved), `R` restarts
 clean, `s` raises the window, `q` quits. (`tempest dev`/`serve`/`build` read the
@@ -173,12 +225,17 @@ uv run tempest serve                    # push over LAN + auto-launch in dev mod
 `tempest serve` pushes app code to the installed host and edit-and-save
 hot-reloads on the device — no Gradle build or toolchain needed.
 
-## Build an APK from source (advanced — needs Android SDK/NDK)
+## Ship an APK (needs a JDK + the Android SDK)
 
 ```bash
-uv run tempest build                    # package an APK from source
+uv run tempest setup --install          # one-time: install the Android SDK
+uv run tempest build apk                # → dist/<project>.apk (its own app id)
 uv run tempest run                      # build + install on a device + logs
+uv run tempest build prd                # store-ready release AAB
 ```
+
+The APK carries its own `applicationId` (set `[tool.tempest] id` above), so it
+installs side by side with other apps. No NDK or CPython toolchain needed.
 """
 
 GITIGNORE_TEMPLATE = """\
@@ -232,27 +289,42 @@ def _project_slug(name: str) -> str:
     return slug or "app"
 
 
-def scaffold(name: str, *, parent: str | Path = ".") -> ScaffoldResult:
-    """Create a fully configured app project from the default template.
+def scaffold(
+    name: str, *, parent: str | Path = ".", template: str = "default"
+) -> ScaffoldResult:
+    """Create a fully configured app project from a template.
 
     ``name == "."`` scaffolds in place into ``parent`` (the current directory by
     default), taking the project name from the directory; any other ``name``
     creates a new subdirectory under ``parent``.
+
+    All templates share the common project files (``pyproject.toml`` with the
+    ``[tool.tempest] app`` pointer, ``README.md``, ``.gitignore``); the chosen
+    template supplies the app modules. ``default`` writes a single ``app.py``;
+    the multi-file templates (see :data:`tempestroid.cli.templates.TEMPLATES`)
+    write a ``state.py`` + ``screens/`` + ``components/`` tree.
 
     Args:
         name: The project/directory name, or ``"."`` to scaffold in place. A
             named project must start with a letter and contain only letters,
             digits, ``-`` or ``_``.
         parent: Directory to create the project under (default: cwd).
+        template: The template name (``"default"`` or a key of
+            :data:`tempestroid.cli.templates.TEMPLATES`).
 
     Returns:
         A :class:`ScaffoldResult` describing what was written.
 
     Raises:
-        ValueError: If a named ``name`` is not a valid project/identifier name.
+        ValueError: If a named ``name`` is not a valid project/identifier name,
+            or ``template`` is unknown.
         FileExistsError: If the target directory exists (named) or already holds
             an ``app.py`` (in place).
     """
+    if template != "default" and template not in TEMPLATES:
+        known = ", ".join(template_names())
+        raise ValueError(f"unknown template {template!r}; choose one of: {known}")
+
     in_place = name in (".", "./")
     if in_place:
         root = Path(parent).resolve()
@@ -273,9 +345,17 @@ def scaffold(name: str, *, parent: str | Path = ".") -> ScaffoldResult:
         root.mkdir(parents=True)
 
     project = _project_slug(display)
-    (root / "app.py").write_text(
-        DEFAULT_APP_TEMPLATE.format(name=display), encoding="utf-8"
-    )
+    if template == "default":
+        # Escape the name for the generated .py (docstring + f-string + title);
+        # an in-place scaffold's directory name is otherwise unconstrained.
+        (root / "app.py").write_text(
+            DEFAULT_APP_TEMPLATE.format(name=py_safe(display)), encoding="utf-8"
+        )
+    else:
+        for rel_path, content in render_files(TEMPLATES[template], display).items():
+            target = root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
     (root / "pyproject.toml").write_text(
         PYPROJECT_TEMPLATE.format(project=project), encoding="utf-8"
     )

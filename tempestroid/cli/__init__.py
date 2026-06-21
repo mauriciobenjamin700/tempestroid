@@ -2,7 +2,28 @@
 
 from typing import TYPE_CHECKING, Any
 
-from tempestroid.cli.app_loader import AppSpec, load_app_spec, spec_from_source
+from tempestroid.cli.apk_repack import (
+    ApkToolError,
+    ensure_debug_keystore,
+    find_build_tool,
+    inject_bundle,
+    repackage_host_apk,
+)
+from tempestroid.cli.app_loader import (
+    AppSpec,
+    load_app_spec,
+    spec_from_project,
+    spec_from_source,
+)
+from tempestroid.cli.bundle import (
+    MANIFEST_NAME,
+    ProjectLayout,
+    build_bundle,
+    bundle_hash,
+    extract_bundle,
+    resolve_project,
+    tree_signature,
+)
 from tempestroid.cli.console import Console, StepError
 from tempestroid.cli.packaging import (
     PreflightCheck,
@@ -11,10 +32,13 @@ from tempestroid.cli.packaging import (
     build_apk,
     bundled_host_apk,
     connected_devices,
+    deploy_offline,
     find_android_host,
     host_apk_url,
+    host_installed,
     install_host,
     launch_host_dev,
+    package_app_apk,
     preflight,
     report_preflight,
     resolve_host_apk,
@@ -22,10 +46,22 @@ from tempestroid.cli.packaging import (
     stage_app_source,
 )
 from tempestroid.cli.project import AppResolutionError, resolve_app
+from tempestroid.cli.release_build import (
+    ReleaseConfig,
+    build_aab,
+    ensure_release_keystore,
+    ensure_source_checkout,
+    ensure_toolchain,
+)
 from tempestroid.cli.scaffold import (
     DEFAULT_APP_TEMPLATE,
     ScaffoldResult,
     scaffold,
+)
+from tempestroid.cli.setup_env import (
+    install_android_sdk,
+    probe_build_env,
+    setup_build_env,
 )
 
 if TYPE_CHECKING:
@@ -36,22 +72,46 @@ __all__ = [
     "main",
     "AppSpec",
     "load_app_spec",
+    "spec_from_project",
     "spec_from_source",
+    "MANIFEST_NAME",
+    "ProjectLayout",
+    "build_bundle",
+    "bundle_hash",
+    "tree_signature",
+    "extract_bundle",
+    "resolve_project",
     "scaffold",
     "ScaffoldResult",
     "DEFAULT_APP_TEMPLATE",
     "AppResolutionError",
     "resolve_app",
+    "install_android_sdk",
+    "probe_build_env",
+    "setup_build_env",
     "Console",
     "StepError",
     "ToolchainError",
     "PreflightCheck",
+    "ApkToolError",
+    "ensure_debug_keystore",
+    "find_build_tool",
+    "inject_bundle",
+    "repackage_host_apk",
+    "package_app_apk",
+    "ReleaseConfig",
+    "build_aab",
+    "ensure_release_keystore",
+    "ensure_source_checkout",
+    "ensure_toolchain",
     "adb_reverse",
     "build_apk",
     "bundled_host_apk",
     "connected_devices",
+    "deploy_offline",
     "find_android_host",
     "host_apk_url",
+    "host_installed",
     "install_host",
     "launch_host_dev",
     "preflight",

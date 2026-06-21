@@ -33,7 +33,27 @@ __all__ = [
     "send_native",
     "send_native_request",
     "resolve_native_result",
+    "on_device",
 ]
+
+
+def on_device() -> bool:
+    """Report whether the native host (``_tempest_host``) is available.
+
+    Capabilities that the Qt simulator can emulate (preferences, SQLite) or must
+    stub with an explicit ``device_only`` error (biometrics, push) branch on this
+    instead of letting :func:`send_native` raise. It is the importable analogue
+    of "are we running inside the Android host", with no device dependency.
+
+    Returns:
+        ``True`` when running inside the Android host, ``False`` on the desktop.
+    """
+    try:
+        import _tempest_host  # type: ignore[import-not-found] # noqa: F401
+    except ImportError:
+        return False
+    return True
+
 
 #: Reserved token prefix the host uses (over the event channel) to deliver a
 #: native request/response result back to the matching pending future.

@@ -1,9 +1,15 @@
-# tempestroid
+# Tempestroid
 
 > 📖 **Documentação / Docs:** site MkDocs bilíngue em [`docs/`](docs/index.md)
 > com seletor **PT-BR / EN-US** no header — rode `uv run mkdocs serve` e abra
 > <http://127.0.0.1:8000> (PT) ou <http://127.0.0.1:8000/en/> (EN). Guia do
 > usuário, arquitetura e referência da API.
+>
+> 🤖 **Ler com sua IA / Read with your AI:** o site publica
+> [`/llms.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms.txt) (índice)
+> e [`/llms-full.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms-full.txt)
+> (docs inteiras num arquivo) seguindo a convenção [llmstxt.org](https://llmstxt.org/) —
+> entregue a URL ao seu assistente para usar o projeto como referência (sem servidor/MCP).
 
 Build **native Android apps** in **typed Python**.
 
@@ -57,13 +63,29 @@ in the Qt simulator and LAN code-push to a device over QR — both shipping toda
 
 ## Install
 
+**Building an app?** Install from PyPI — the **core** needs only `pydantic`:
+
 ```bash
-uv sync        # core + dev tooling + the Qt simulator
+pip install tempestroid            # core
+pip install "tempestroid[qt]"      # + desktop simulator (PySide6 + qasync)
+pip install "tempestroid[icons]"   # + tempest icon (Pillow)
 ```
 
-End users embedding the framework who want the simulator:
-`pip install tempestroid[qt]`. The framework **core** needs only `pydantic` —
-Qt is an optional extra.
+Building the Android **APK** (`tempest build apk`) needs only a **JDK + Android
+SDK** (no NDK, no CPython toolchain, no repo clone — the `android-host` ships in
+the package). Run `tempest setup --install` to get the SDK and `tempest doctor`
+to check what's missing.
+
+**Contributing to the framework?** Clone this repo and use `uv` — one command
+installs the core + dev tooling + Qt simulator + docs:
+
+```bash
+uv sync
+```
+
+See the [installation guide](https://mauriciobenjamin700.github.io/tempestroid/instalacao/)
+([EN](https://mauriciobenjamin700.github.io/tempestroid/en/instalacao/)) for the
+full breakdown.
 
 ---
 
@@ -73,7 +95,6 @@ Qt is an optional extra.
 from dataclasses import dataclass
 
 from tempestroid import App, Button, Column, Style, Text, Widget
-from tempestroid.renderers.qt import run_qt
 
 
 @dataclass
@@ -99,11 +120,95 @@ def view(app: App[CounterState]) -> Widget:
 
 
 if __name__ == "__main__":
+    # Import the Qt renderer lazily — keep the module Qt-free so the SAME file
+    # also loads on the Android device (which has no PySide6). A top-level
+    # `from tempestroid.renderers.qt import run_qt` would crash the on-device
+    # load; the framework now shows an error screen instead of a blank window,
+    # but the fix is to import Qt only where you run the desktop simulator.
+    from tempestroid.renderers.qt import run_qt
+
     raise SystemExit(run_qt(make_state(), view, title="counter"))
 ```
 
+> 💡 The module above only ever imports `tempestroid` (renderer-agnostic) at the
+> top level — `run_qt` is imported lazily inside `__main__`. That is what lets
+> the same `make_state()` + `view(app)` run in the Qt simulator **and** on a
+> device via `tempest serve` with no changes. If an app file (or one of its
+> imports) fails to load on the device, the host now renders a red **error
+> screen** carrying the traceback instead of a silent white window.
+
 Full example with sync **and** `async` handlers:
 [`examples/counter/app.py`](examples/counter/app.py).
+
+---
+
+## Design system (M3 variants + Chakra-style API)
+
+The styled components carry a **Chakra-ergonomics variant API** — `variant` /
+`size` / `color_scheme` — and resolve a complete **Material 3** `Style` from a
+`Theme` (tonal color schemes, spacing/shape/typography/elevation scales). Seed
+one brand color with `Theme.from_seed(...)` and the whole palette (light + dark,
+WCAG-AA contrast, ≥ 48dp touch targets) comes for free. It is **additive**: raw
+`Style` still works, and an explicit `style=` is merged on top of the resolved
+variant.
+
+```python
+from tempestroid import (
+    Button,
+    Color,
+    Column,
+    FieldVariant,
+    IconButton,
+    Input,
+    Size,
+    Style,
+    Theme,
+    Variant,
+    Widget,
+)
+
+# One brand seed → a full Material 3 theme (light + dark).
+theme = Theme.from_seed(Color.from_hex("#2563eb"))
+
+
+def panel() -> Widget:
+    return Column(
+        style=Style(gap=12.0),
+        children=[
+            # variant / size / color_scheme resolve a Material 3 Style:
+            Button(
+                label="Save",
+                variant=Variant.SOLID,
+                size=Size.MD,
+                color_scheme="primary",
+                theme=theme,
+                key="save",
+            ),
+            IconButton(icon="add", label="Add", color_scheme="primary", theme=theme, key="add"),
+            # The field family adds field_variant; pass the live theme so the
+            # whole kit follows dark mode:
+            Input(
+                value="",
+                placeholder="Name",
+                field_variant=FieldVariant.OUTLINE,
+                color_scheme="primary",
+                theme=theme,
+                key="name",
+            ),
+        ],
+    )
+```
+
+The full kit (Buttons + IconButtons, the field family, selection controls,
+slider, the BR inputs) is shown in [`examples/h2gallery/app.py`](examples/h2gallery/app.py)
+and the Button variant matrix in [`examples/h1buttons/app.py`](examples/h1buttons/app.py).
+
+> 📖 Tutorial-first guide: **[Theme and tokens](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/tokens/)**
+> · **[Chakra-style variants](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/variantes/)**
+> · **[Action and entry kit](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/kit/)**
+> · **[Surface & layout](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/superficie/)**
+> · **[Data display & feedback](https://mauriciobenjamin700.github.io/tempestroid/guia/design-system/feedback/)**
+> (in-repo: [`docs/guia/design-system/`](docs/guia/design-system/tokens.md)).
 
 ---
 
@@ -122,91 +227,188 @@ code-push (`uv run tempest serve examples/<name>/app.py`) with no changes.
 | [`stopwatch`](examples/stopwatch/app.py) | Async loop ticking the UI via `asyncio.sleep`. |
 | [`colorpicker`](examples/colorpicker/app.py) | Dynamic `Style` updates (swatches + toggles). |
 | [`form`](examples/form/app.py) | The value-bearing inputs (`Input` / `Checkbox` / `DatePicker` / `FilePicker`) + their typed change events. |
+| [`forms`](examples/forms/app.py) | A validating `Form` of `FormField`s (typed validators block an invalid submit, per-field error inline) + `Dropdown` + `PinInput` OTP. |
 | [`gallery`](examples/gallery/app.py) | The expanded set — `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView`, secure + regex + multiline text fields, and a `Style.transition`. |
+| [`layout`](examples/layout/app.py) | Refined layout — `Wrap` chips that wrap, a paginated `PageView` (`PageChangeEvent` + dot indicator) and a `CollapsingAppBar` that shrinks on scroll. |
+| [`platform`](examples/platform/app.py) | Platform/system (E8) — haptics, real preferences, the lifecycle stream and a `KeyboardAvoidingView`. |
+| [`theming`](examples/theming/app.py) | Cross-cutting (E9) — a light/dark `ThemeMode` toggle (`App.set_theme`), a PT↔AR locale/RTL toggle (`App.set_locale` + `translate`), and a counter label carrying `Semantics(label=…)`. |
+| [`native_caps`](examples/native_caps/app.py) | Native capabilities — `clipboard` / `storage` / `database` (SQLite) / `secure_storage` / `system`, each a request/response round-trip returning a typed result (device-verified). |
 
-The framework and the Qt simulator support the full widget set. The device
-(Compose) renderer renders `Text` / `Button` / `Column` / `Row` / `Container` /
-`SafeArea` (insetting against the real `WindowInsets.safeDrawing`) / `Stack` /
-`GestureDetector`, the value widgets `Input` / `TextArea` / `Checkbox` /
-`Switch` / `Slider` / `DatePicker` / `FilePicker` (with their typed change
-events), and the presentation/utility widgets `ProgressBar` / `Spinner` /
-`Image` (via Coil) / `Icon` (named Material icons) / `ScrollView`. See
-[`examples/README.md`](examples/README.md).
+**Both renderers** — the Qt simulator and Compose on the device — support the
+full Track E widget set (~70 types): layout, text & action, the value-bearing
+inputs (`Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider`
+/ `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` /
+`MaskedInput` / `Autocomplete` / `Form`) with their typed change events,
+virtualized lists, navigation, overlays, animation, gestures, and media. Parity
+is pinned by the conformance suite (golden snapshots of both `Style` translators)
+and device-verified across E0–E9. A few hardware widgets (`CameraPreview` /
+`QrScanner` / `MapView`) are device-only and show a signalled placeholder on Qt.
+See the per-widget [renderer-coverage matrix](https://mauriciobenjamin700.github.io/tempestroid/referencia/cobertura/)
+(Qt vs Compose), the [widget set](https://mauriciobenjamin700.github.io/tempestroid/guia/exemplos/#conjunto-de-widgets-atual)
+and [`examples/README.md`](examples/README.md).
 
 ---
 
 ## CLI
 
 ```bash
-uv run tempest new .                # scaffold a fully configured project in the current dir
+uv run tempest new                  # scaffold in the CURRENT dir (id = folder name)
 uv run tempest dev                  # dev loop: edit + save → hot reload (reads pyproject)
+uv run tempest dev -d pixel-7       # …sized to a device preset (dp; matches Compose)
 uv run tempest install              # download + adb-install the prebuilt host (no SDK/NDK)
-uv run tempest serve                # push to a device over LAN + auto-launch in dev mode
+uv run tempest deploy               # push the whole project to a device — offline, no SDK/NDK
+uv run tempest serve                # LAN code-push + hot reload (whole project) in dev mode
 uv run tempest doctor               # check the Android build/run prerequisites
-uv run tempest build                # bundle the app into an APK (from-source; needs SDK/NDK)
-uv run tempest run                  # build + install on a device + stream logs
+uv run tempest build apk            # per-app APK (own id, installs side by side); reads [tool.tempest]; JDK+SDK
+uv run tempest build release-apk    # release-signed standalone APK (distribute off-Play); --keystore
+uv run tempest build prd            # store-ready release AAB (Play); reads [tool.tempest] + keystore
+uv run tempest run                  # build + install on a device + stream logs (needs SDK/NDK)
+uv run tempest icon logo.png        # generate icon.png + splash.png from one image (needs [icons])
+uv run tempest optimize model.onnx  # quantize (INT8) + .ort for on-device ONNX (needs [vision])
 uv run tempest spec                 # print the typed contract (widgets/events) as JSON
+uv run tempest uitest test_app.py   # run a Playwright-style native UI test (headless)
 uv run tempest --version            # print the framework version (also: tempest version)
 uv run tempest --help
 ```
 
-`tempest new <name>` makes a new subdirectory; `tempest new .` scaffolds in the
-current directory. The generated `pyproject.toml` carries `[tool.tempest] app =
-"app.py"`, so **`dev` / `serve` / `build` / `run` take no app argument inside a
-project** — pass an explicit path (`tempest dev path/to/app.py`) only to override.
+Run `tempest new` **inside your already-created project folder** (and venv): it
+scaffolds in place and uses the **folder name as the app id** — no extra wrapping
+directory. Pass a name (`tempest new other`) only if you want a new subdirectory.
+The generated `pyproject.toml` carries `[tool.tempest] app = "app.py"`, so
+**`dev` / `serve` / `build` / `run` take no app argument inside a project** —
+pass an explicit path (`tempest build path/to/app.py`) only to override.
+
+Pick a starting structure with `--template`/`-t`:
+
+- `default` (the default) — a single `app.py`, great for a quick demo.
+- `multi` — a pythonic multi-file layout: a typed `state.py`, one `view` per
+  screen under `screens/`, a reusable `Card` `Component` under `components/`, and
+  an `app.py` that routes with `Navigator` / `Route` (push/pop + Android back).
+- `native` — the `multi` layout plus a screen that calls native capabilities:
+  `notify` (fire-and-forget) and `await get_position()` (request/response,
+  guarded by `on_device()` + `try/except NativeError`).
+
+```bash
+uv run tempest new -t multi          # multi-file project (in the current dir)
+```
 
 `tempest dev` cockpit commands: `r` (hot reload, state preserved), `R` (hot
 restart, clean state), `s` (raise window), `q` (quit). Saving the file
 hot-reloads; a reload incompatible with the live state falls back to a clean
 restart.
 
-**Running on a device — the easy path (no toolchain).** You do **not** need an
-Android SDK/NDK or the `android-host` source to run on hardware. Install the
-prebuilt host once, then push your Python over LAN:
+Apps are **multi-file**: `main.py` may import sibling modules and packages from
+your project tree. The simulator (`tempest dev`/`run`) puts the project root on
+`sys.path`, and every device path (`deploy`/`serve`/`build`) bundles the **whole
+importable tree** (the project root — the nearest ancestor with a
+`pyproject.toml` — minus `.venv`, caches, VCS, build output) and puts it on
+`sys.path` on the device, so `from my_pkg.foo import bar` resolves identically on
+desktop and device.
+
+**Running on your own device — the easy path (no toolchain).** You do **not**
+need an Android SDK/NDK or the `android-host` source to test on hardware:
 
 ```bash
-uv run tempest install   # fetch + adb-install the prebuilt host APK
-uv run tempest serve     # auto adb-reverse + launches the host in dev mode
+uv run tempest deploy    # install the bundled host (once) + push the whole project + launch
+```
+
+`tempest deploy <app>` ensures the prebuilt host APK (downloaded from the GitHub
+release on first use, then cached under `~/.cache/tempestroid`) is installed on
+the connected device, pushes the project bundle once
+over a short-lived dev server, launches it, and exits. No SDK/NDK, Gradle, or
+`android-host` checkout. Repeat runs skip the ~50 MB install (the host is already
+there) and just push the new bundle; pass `--force-install` to reinstall the
+host. The app keeps running on the device — but it lives in the host, so it is
+**not** a standalone artifact you can hand to someone else (use `tempest build`
+for that). For a **persistent hot-reload loop** instead, `tempest serve` keeps
+the dev server up: editing + saving any file in the tree hot-reloads on device.
+
+```bash
+uv run tempest install   # download (cached) + adb-install the prebuilt host APK
+uv run tempest serve     # persistent LAN code-push: edit + save → hot reload on device
 ```
 
 `tempest install` resolves the host APK in order: an explicit `.apk` path/URL →
-`TEMPESTROID_HOST_APK` → a bundled asset (present in source checkouts) → a
-download from the matching GitHub release (`TEMPESTROID_HOST_APK_URL` to override),
-cached under `~/.cache/tempestroid` so it's fetched only once. With a device
-connected, `tempest serve` wires `adb reverse` and launches the host in dev mode
-pointing at the dev server, so edit-and-save hot-reloads on the device — no APK
-rebuild. Use `--no-launch` to serve only.
+`TEMPESTROID_HOST_APK` → a bundled asset (only in a source checkout staged with
+`make stage-host`) → a download from the matching GitHub release
+(`TEMPESTROID_HOST_APK_URL` to override), cached under `~/.cache/tempestroid` so
+it's fetched only once. The published wheel does **not** embed the ~100 MB APK
+(it would exceed PyPI's per-file limit), so from a PyPI install the download is
+the normal path — offline thereafter. With a device connected,
+`tempest serve` wires `adb reverse` and launches the host in dev mode pointing at
+the dev server. Use `--no-launch` to serve only.
 
-**Building an APK from source** (`tempest build`/`run`) is the maintainer path:
-it drives the `android-host` Gradle project + `adb`, so it needs an Android
-SDK/NDK **and** a checkout of the host tree. From an installed wheel it fails
-fast with a hint pointing at `tempest install` + `tempest serve`.
+**Shipping a standalone APK — `tempest build apk`.** To produce a self-contained
+`.apk` you can give to anyone (it runs the app with **no** dev server), use
+`tempest build apk`: it stamps the APK with the project's **own `applicationId`**
+so **any number of tempestroid apps install side by side** (never overwriting).
+Identity + branding come from **`[tool.tempest]`** in `pyproject.toml`:
 
-> **Maintainers:** publish the host APK to the GitHub release for each version
-> with `make publish-host` (builds via `make apk` first, then `gh release
-> upload`), so `tempest install` resolves it as a download. Optionally
-> `make stage-host` copies it to `tempestroid/_assets/host.apk` (gitignored) for
-> a local checkout to install offline; the PyPI wheel stays lean.
+```toml
+[tool.tempest]
+app = "app.py"
+id = "com.yourcompany.todolist"   # applicationId; derived (com.example.<project>) if unset
+name = "Todo List"                # launcher label; icon / splash / splash_bg / version optional
+```
 
-**Transparent output.** `build`/`run` announce each step (`→ … ✓/✗` with
-elapsed time) and run a **preflight** first — checking the host tree, Android
-SDK, `adb`, and (for `run`) a connected device — so they fail fast with an
-actionable hint instead of an opaque Gradle stack trace. `tempest doctor` runs
-that same preflight on its own. Pass `-v`/`--verbose` (on `build`/`run`/`dev`)
-to echo the raw commands and stream the full Gradle/adb output; without it, a
-failed command's tail is surfaced and the happy path stays quiet.
+The derived `com.example.*` id is a **placeholder, not publishable** (the Play
+Store rejects it) — set your own `id` before publishing and **keep it forever**.
+The build runs Gradle but **reuses the prebuilt host natives** (libpython / the
+JNI shim / stdlib that ship in the package) and bundles the `android-host`
+project **inside the wheel**, so it needs only a **JDK + the Android SDK** — **no
+NDK, no CPython toolchain, no `git clone`** (`tempest setup --install` bootstraps
+the SDK). Output: `dist/<project>.apk` (debug-signed). `tempest build release-apk`
+is the **release-signed standalone** APK for distributing off the Play Store
+(signed with your own `--keystore`, else an auto-generated one; output
+`dist/<project>-release.apk`, verify with `apksigner verify`); `tempest build
+prd` is the store-ready release **AAB**; `tempest run` = build + install + launch
++ logs.
+
+Without a JDK/SDK, `tempest build` falls back to **`--fast`** (repackage the
+prebuilt host, no SDK at all) with a warning — that APK keeps the shared
+`org.tempestroid.host` id (one app per device). `tempest deploy` covers the same
+toolchain-free path for your own connected device.
+
+> **Maintainers:** the host APK (~100 MB — it embeds CPython) is **not** shipped
+> inside the PyPI wheel (it would exceed PyPI's per-file limit). `make release`
+> builds it (`make apk`) and **attaches it to the GitHub release** as
+> `tempest-host-<version>.apk`; `tempest install` / `deploy` download it from
+> there (cached). `make publish-host` (re)uploads the asset to an existing
+> release; `make stage-host` copies it into a local checkout
+> (`tempestroid/_assets/host.apk`, gitignored) so that checkout installs offline.
+
+**Transparent output.** `build`/`run`/`deploy`/`install` announce each step
+(`→ … ✓/✗` with elapsed time). `build`/`run` (the from-source APK paths) run a
+**preflight** first — checking the host tree, Android SDK, `adb`, and (for `run`)
+a connected device — so they fail fast with an actionable hint instead of an
+opaque Gradle stack trace; `tempest doctor` runs that same preflight on its own.
+Pass `-v`/`--verbose` (on `build`/`run`/`deploy`/`dev`) to echo the raw commands
+and stream the full adb/Gradle output; without it, a failed command's tail is
+surfaced and the happy path stays quiet.
 
 | Command | Status | Notes |
 |---|---|---|
-| `tempest new [name]` | ✅ | Scaffold a fully configured project (`.` = current dir); writes `pyproject.toml` + `app.py` + `.gitignore` |
-| `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `-v` for tracebacks |
-| `tempest serve [app]` | ✅ | LAN code-push to a device + log relay; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |
+| `tempest new [name]` | ✅ | Scaffold a fully configured project **in the current dir** (id = folder name); pass a `name` only for a new subdirectory. Writes `pyproject.toml` + `app.py` + `.gitignore`. `--template`/`-t`: `default` (single file), `multi` (state + screens/ + components/ + Navigator), `native` (multi + native-capabilities screen) |
+| `tempest dev [app]` | ✅ | Simulator + hot reload / hot restart (needs `qt` extra); app from `[tool.tempest]` when omitted; `--device`/`-d` sizes the window to a device preset (e.g. `pixel-7`, `galaxy-s24` — dp, matches Compose); `-v` for tracebacks |
+| `tempest deploy [app]` | ✅ | Offline push of the whole project to a device (no SDK/NDK): install the bundled host (if needed) + push bundle + launch; `--force-install`, `-v` |
+| `tempest serve [app]` | ✅ | LAN code-push of the whole project + log relay + hot reload; auto `adb reverse` + launch in dev mode (`--no-launch` to skip) |
 | `tempest install [src]` | ✅ | Fetch + adb-install the prebuilt host APK (no SDK/NDK); resolves `src`/env/bundled/GitHub-release (cached); `src` = local `.apk`/URL |
+| `tempest icon <src>` | ✅ | Generate a square launcher `icon.png` + a centered `splash.png` from one source image (`--out`, `--icon-size`, `--splash-size`, `--splash-scale`). `--adaptive` also writes `ic_launcher_foreground.png` for an Android **adaptive icon** (the launcher applies its mask). Needs Pillow (`pip install tempestroid[icons]`); feed the output to `tempest build --icon/--splash` / `--adaptive-icon` |
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
-| `tempest doctor` | ✅ | Check the Android build/run prerequisites (host tree, SDK, adb, device) |
-| `tempest build <app>` | ✅ | Bundle an app into an APK (needs Android SDK/NDK); `-v` for full output |
-| `tempest run <app>` | ✅ | Build + install on a device + stream logs; `-v` for full output |
+| `tempest doctor` | ✅ | Check the Android build/run prerequisites (JDK, android-host, SDK, adb, device); build readiness sets the exit code, a missing device is informational (only `run`/`install` need one) |
+| `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
+| `tempest build [apk\|release-apk\|prd]` | ✅ | `apk` (default): a debug, **per-app** APK — its own `applicationId` + launcher label so **any number of tempestroid apps install side by side** (never overwriting). Reuses the prebuilt host natives → needs only **JDK + Android SDK** (no NDK, no CPython toolchain). `release-apk`: a **release-signed standalone** APK to distribute outside the Play Store (`--keystore`, else auto-generated; verify with `apksigner verify`). `prd`: a store-ready release **AAB**. Identity + branding come from **`[tool.tempest]`** (`id`/`name`/`icon`/`splash`/`splash_bg`/`version`/`adaptive_icon`/`icon_bg`) so the command stays short; flags (`--app-id`/`--app-name`/`--icon`/`--adaptive-icon`/`--icon-bg`/…) override. `--adaptive-icon <fg.png> --icon-bg <#rrggbb>` emits a real Android adaptive icon (the launcher masks it). **Heavy native capabilities are opt-in** — `--feature camera\|qr\|push\|video\|maps` (repeatable; also `[tool.tempest] features`) bundles only what the app uses; the lean default ships none, keeping the APK small. Each feature needs a from-source build (SDK/NDK). Advanced: `--fast` (repackage, no SDK, shared id, one app), `--from-source` (stage the CPython toolchain). `-o`, `-v` |
+| `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
+| `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore |
+| `tempest lint [path]` | ✅ | `ruff check` on the target (lint only) |
+| `tempest fix [path]` | ✅ | `ruff check --fix` + `ruff format` in one pass; `--unsafe` also applies ruff's unsafe autofixes |
+| `tempest format [path]` | ✅ | `ruff format` (writes files) |
+| `tempest fmt-check [path]` | ✅ | `ruff format --check` (read-only) |
+| `tempest type [path]` | ✅ | `pyright` on the target (strict type check) |
+| `tempest test [path]` | ✅ | `pytest` (forwards the optional path filter) |
+| `tempest uitest <path>` | ✅ | Run a **Playwright-style native UI test** file (F9 driver): an app module + `async def test_*(page)` functions, driven against the renderer-agnostic IR with **auto-wait** (no `sleep`). `--target`/`-t`: `headless` (default, in-process, no renderer) or `emulator` (REAL Compose render on an Android emulator); `-j N` shards across N isolated emulators with a real screenshot per test; `--isolate-adb` (or `-P <port>`) runs against a **private adb server** so parallel agents never contend on — nor wedge — the shared one. `qt`/`device` are reserved — the same script runs on every target unchanged |
+| `tempest check [path]` | ✅ | Full quality gate: lint + fmt-check + type + test (stops at the first failure). Each tool is resolved on `PATH` or via `uv run` |
 
 ### Running on a device from WSL
 
@@ -238,7 +440,12 @@ Frozen Pydantic value objects, diffed by value.
 
 - **`Style`** — the style model (layout, box model, paint, typography, sizing,
   effects, animation). Notable fields: `opacity`, `shadow`, `align_self`,
-  `letter_spacing`, `line_height`, `max_lines`, `text_overflow`, `aspect_ratio`.
+  `letter_spacing`, `line_height`, `max_lines`, `text_overflow`, `aspect_ratio`,
+  `flex_wrap` (flow wrapping for a `Wrap` container), and the phase-E9
+  typography knobs `text_scale` (a `font_size` multiplier — Qt scales the
+  emitted `font-size`, Compose emits `textScale` for `LocalDensity`) and
+  `font_asset` (a bundle-relative custom font path — Qt `QFontDatabase`,
+  Compose `FontFamily`).
 - **`Color`** — `Color.from_hex("#101418")`.
 - **`Edge`** — insets; `Edge.all(24.0)`.
 - **`Border`** (uniform) / **`SideBorder`** (per-side, e.g. a bottom divider).
@@ -250,16 +457,78 @@ Frozen Pydantic value objects, diffed by value.
 - **`Transition`** — implicit animation (`duration_ms` / `curve` / `delay_ms`):
   on rebuild the renderer tweens changed visual props instead of snapping
   (Compose maps it to `animate*AsState`; Qt animation is renderer-imperative).
-- Enums: **`FlexDirection`**, **`JustifyContent`**, **`AlignItems`**,
+- Enums: **`FlexDirection`**, **`FlexWrap`** (`NOWRAP`/`WRAP`/`WRAP_REVERSE`),
+  **`JustifyContent`**, **`AlignItems`**,
   **`TextAlign`**, **`FontWeight`**, **`FontStyle`**, **`TextDecoration`**,
-  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing),
+  **`TextOverflow`**, **`GradientDirection`**, **`Curve`** (easing —
+  `LINEAR`/`EASE_IN`/`EASE_OUT`/`EASE_IN_OUT` plus `EASE`/`BOUNCE`/`ELASTIC`),
   **`StackAlign`** (overlay child alignment in a `Stack`).
+
+### Theme, media query + i18n (phase E9)
+
+Cross-cutting **context** the `view(app)` reads — not nodes in the tree. Changing
+any of them swaps an immutable snapshot on the `App` and schedules one coalesced
+rebuild (no new patch kind).
+
+- **`Theme`** (`tempestroid.theme`) — frozen: the active **`ThemeMode`**
+  (`LIGHT`/`DARK`/`SYSTEM`) plus a small color palette (`primary`/`secondary`/
+  `background`/`surface`/`on_primary`/`on_background`/`error`).
+  `Theme.is_dark(platform_dark_mode=...)` resolves `SYSTEM` against the OS.
+  Swap it with `App.set_theme(theme)`.
+- **`MediaQueryData`** (`tempestroid.theme`) — frozen viewport/environment
+  snapshot: `width`/`height`/`device_pixel_ratio`/`text_scale_factor`/
+  `platform_dark_mode`/`orientation`. The renderer keeps it current via
+  `App._update_media(data)` on resize/config-change.
+- **`Locale`** (`tempestroid.i18n`) — frozen: `language` (BCP-47) + optional
+  `region` + `rtl` (layout direction). Swap it with `App.set_locale(locale)`.
+  When the renderer is told a node is RTL, both `Style` translators mirror the
+  box model's start/end (padding/margin left↔right) and flip `text_align`.
+- **`translate(key, locale, translations, **kwargs)`** / alias **`t`**
+  (`tempestroid.i18n`) — a dependency-free table lookup with `str.format`
+  interpolation; a missing key/language degrades to the key itself.
+
+### Design system (M3 variants + tokens)
+
+The Chakra-style variant API and Material 3 token surface, all re-exported from
+`tempestroid` (the underlying engine is `tempest_core`).
+
+- **`Variant`** — the visual emphasis of a styled component (`SOLID`/`OUTLINE`/
+  `GHOST`/`SOFT`/`LINK`), Chakra-style.
+- **`Size`** — the size scale (`XS`/`SM`/`MD`/`LG`/`XL`) driving padding,
+  typography and touch-target sizing.
+- **`FieldVariant`** — the field-family flavor for inputs (`OUTLINE`/`FILLED`/
+  `UNDERLINE`).
+- **`CardVariant`** — the surface flavor for cards/surfaces (`ELEVATED`/`FILLED`/
+  `OUTLINED`), M3 — elevation resolves to a `Shadow`, no new `Style` field.
+- **`BadgeVariant`** — the badge/chip/tag flavor (`SOLID`/`SUBTLE`/`OUTLINE`); the
+  `SUBTLE` treatment uses the tonal container pair (WCAG-AA safe for status).
+- **`AlertVariant`** — the alert/banner flavor (`SUBTLE`/`SOLID`/`LEFT_ACCENT`/
+  `TOP_ACCENT`); accents use a directional `SideBorder` (RTL-mirrored).
+- **Status `color_scheme`s** — beyond the brand roles, `success`/`warning`/`info`
+  (+ `error`) are first-class color schemes (M3 tonal families generated from
+  fixed seeds), so `Alert`/`Badge`/`ProgressBar` take `color_scheme="success"` etc.
+- **`ComponentState`** — the visual state a resolved `Style` targets
+  (`DEFAULT`/`HOVER`/`PRESSED`/`FOCUS`/`DISABLED`) — the M3 state layers.
+- **`ColorRole`** — a semantic Material 3 color role (`PRIMARY`/`SECONDARY`/
+  `SURFACE`/`ERROR`/…) resolved against the active `Theme`.
+- **`TokenSet`** — the resolved bundle of M3 tonal/spacing/shape/typography/
+  elevation/motion tokens a `Theme` exposes.
+- **`TokenRef`** — a typed reference to a single token within a `TokenSet`, so a
+  `Style` can point at a theme token instead of a raw literal.
+
+> 💡 The low-level resolver functions (`resolve_variant`, `resolve_field_variant`,
+> `resolve_selection_variant`, `resolve_slider_variant`) and `merge_styles` /
+> `VALID_COLOR_SCHEMES` are NOT re-exported here — import them from `tempest_core`
+> when you need the raw `variant → Style` machinery.
 
 ### Widgets (`tempestroid.widgets`)
 
 The declarative IR — bare-noun widgets.
 
-- **`Widget`** (base), **`Text`**, **`Button`**, **`Column`**, **`Row`**,
+- **`Widget`** (base) — every node carries `key` / `style` plus the phase-E9
+  accessibility fields `semantics` (**`Semantics`**: `label`/`role`/`hint`,
+  propagated to both renderers and `introspect()`), `focusable`, and
+  `focus_order`. **`Text`**, **`Button`**, **`Column`**, **`Row`**,
   **`Container`**, **`ScrollView`** (scrollable container), **`SafeArea`**
   (insets its child past the status/navigation bars + notch; `edges` selects
   which sides, default all — `SafeAreaEdge` enum).
@@ -267,22 +536,164 @@ The declarative IR — bare-noun widgets.
   declaration order. A child with `position=ABSOLUTE` is anchored by its
   `top`/`right`/`bottom`/`left` insets; the rest align by `Style.stack_align`
   (`StackAlign` enum). The framework's overlay primitive (scrim, modal, FAB).
+- Refined layout (phase E6) — **`Wrap`** (a flow container whose children wrap to
+  the next line when the row fills, driven by `Style.flex_wrap`; Compose
+  `FlowRow`/`FlowColumn`, Qt custom flow layout), **`PageView`** (a paginated
+  horizontal carousel: `children` are pages, the active `page` lives in app state
+  and `on_page_change` (**`PageChangeHandler`**) → **`PageChangeEvent`** updates
+  it; Compose `HorizontalPager`, Qt `QStackedWidget` + prev/next) and
+  **`AspectRatio`** (a single-child box fixing the `ratio` = width / height;
+  Compose `Modifier.aspectRatio`, Qt derives the missing dimension).
+- Design-system layout (Trilho H3) — **`Surface`** (a theme-resolved M3 surface
+  box, the primitive `Card` builds on; `variant`=`CardVariant`), **`Card`** styled
+  with `CardVariant` (elevated/filled/outlined), **`StyledContainer`** (token-step
+  padding over `Container`), **`HStack`**/**`VStack`** (`Row`/`Column` presets with
+  a token-step `gap`), and **`Spacer`** (a flexible gap whose `grow` pushes
+  siblings apart; Compose `Modifier.weight`, Qt layout stretch).
+- Platform layout (phase E8) — **`KeyboardAvoidingView`** (a vertical container
+  that insets its `children` when the on-screen keyboard appears; Compose
+  `Modifier.imePadding()` via `WindowInsets.ime`, Qt listens on
+  `QApplication.inputMethod().keyboardRectangleChanged` and behaves like a
+  `Column` on the desktop). Declares no event contract.
 - **`GestureDetector`** — wraps a `child` and reports pointer gestures via
   **`TapHandler`** / **`LongPressHandler`** / **`SwipeHandler`** props
   (`on_tap` / `on_double_tap` / `on_long_press` / `on_swipe`).
+- Advanced gestures (phase E4) — specialized single-purpose wrappers, each
+  lowering to the same renderer-agnostic contract (Qt via mouse/`QGraphicsView`/
+  `QDrag`, Compose via `pointerInput`/`SwipeToDismissBox`/`graphicsLayer`):
+  **`PanHandler`** (`on_pan` → **`PanEvent`**: delta + fling velocity),
+  **`ScaleHandler`** (`on_scale` → **`ScaleEvent`**: pinch scale/focus/rotation,
+  plus `on_double_tap`), **`DoubleTapHandler`** (`on_double_tap` → `TapEvent`),
+  **`Draggable`** (`drag_data` + `on_drag` → **`DragEvent`**) paired with
+  **`DragTarget`** (`on_drop` → `DragEvent`) — both via the **`DragHandler`**
+  alias, **`Dismissible`** (swipe-to-delete: `direction` + `on_dismiss` →
+  `DismissEvent`), **`ReorderableList`** (drag to reorder: `children` +
+  `on_reorder` (**`ReorderHandler`**) → **`ReorderEvent`**; the handler mutates a
+  keyed list so the A2 diff emits a `Reorder`) and **`InteractiveViewer`** (pan +
+  zoom: `min_scale`/`max_scale` + `on_interaction` → `ScaleEvent`).
+- Animation widgets (phase E3) — the interpolation runs in the **core**
+  (`AnimationController` advances a 0..1 value on the app's frame clock, `Tween`
+  interpolates a `float`/`Color`/`Edge`, the `view` folds the result into a
+  `Style`), so both renderers receive only the final per-frame props.
+  **`Animated`** (wraps a `child` rebuilt with interpolated style each frame),
+  **`AnimatedList`** (a `Column`/`Row` whose items fade + expand in on insert and
+  collapse out on remove — `enter_duration_ms`/`exit_duration_ms`/curves),
+  **`Hero`** (a `hero_tag` shared-element transition across `Navigator` screens),
+  **`Shimmer`** (sweeps a gradient highlight over a `child` as a loading
+  placeholder) and **`Skeleton`** (the childless rectangular shimmer). Qt
+  interpolates in the core and drives `QPropertyAnimation`/`QTimer`; Compose can
+  use its native animation engine (a documented conformance divergence).
+- Navigation hosts — render the `NavStack` into a tree (a route change diffs to
+  an `Update`/`Replace`, no new patch kind): **`Navigator`** (stack host: shows
+  the top `child`, `transition` slide/fade/none + `depth` drive the animation),
+  **`TabView`** (tab strip + active tab `child`), **`TabBar`** (standalone tab
+  strip), **`RouteDrawer`** (main `child` + a slide-over `drawer` panel toggled
+  by `open`). Each emits **`RouteChangeEvent`** via an **`on_change`**
+  (**`RouteChangeHandler`**) prop. In the Qt simulator `Esc` maps to back
+  (`App.pop`); the device back button is the Compose/device half.
 - **`Component`** (base) — a composite widget that lowers to a primitive tree via
   `render()`; the reconciler expands it before diffing, so renderers never see it.
-- Value-bearing inputs: **`Input`** (text — with `secure` password masking +
-  reveal toggle, regex `pattern`, `keyboard` type, `max_length`), **`TextArea`**
-  (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
+- Value-bearing inputs: **`Input`** (text — with `secure` password masking + a
+  modern eye / eye-off reveal toggle, regex `pattern`, `keyboard` type,
+  `max_length`, and `leading_icon`/`trailing_icon` shown inside the field),
+  **`TextArea`** (multi-line), **`Checkbox`** (boolean), **`Switch`** (boolean toggle),
   **`Slider`** (numeric range), **`DatePicker`** (ISO date), **`FilePicker`**
   (file selection).
-- Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph),
-  **`ProgressBar`** (determinate/indeterminate), **`Spinner`** (activity).
+- Selection + segmented inputs (phase E5): **`Dropdown`** (single-choice select —
+  `options` + `value`, emits **`SelectEvent`** with the option `value` + `index`),
+  **`TimePicker`** (`"HH:MM"` value, emits **`TimeChangeEvent`**), **`RangeSlider`**
+  (dual-handle `low`/`high` over `[min_value, max_value]`, emits
+  **`RangeChangeEvent`**), **`Autocomplete`** (text + filtered suggestions; emits
+  **`TextChangeEvent`** while typing and **`SelectEvent`** on pick), **`PinInput`**
+  (segmented PIN/OTP of `length` cells; emits **`TextChangeEvent`** per edit and a
+  **`SubmitEvent`** once full) and **`MaskedInput`** (input `mask` — `'9'` digit,
+  `'A'` letter, else literal — emits **`TextChangeEvent`**).
+- Forms (phase E5, `tempestroid.widgets.forms`): **`Form`** (a container of
+  **`FormField`**s, `on_submit` → **`SubmitEvent`**) and **`FormField`** (a
+  labelled wrapper around a `child` input, carrying typed **`Validator`** rules,
+  `name`, `error`, `on_validate` → **`ValidationEvent`**). A **`Validator`** is a
+  `Callable[[Any], str | None]` (an error string or `None`). `Form.validate(values)`
+  runs every field's validators **purely in Python** — the same boundary-validation
+  philosophy as `parse_event` — and returns a **`FormState`** (a frozen
+  `{"errors": dict[str, str], "valid": bool}` that serializes to plain JSON, with no
+  nested models), so a renderer receives an already-validated tree with each
+  field's `error` filled in; the app gates `SubmitEvent` on `FormState.valid`. Both
+  `Form.fields` and `FormField.child` cross the bridge as child nodes (never as
+  props); validators are pure Python and are never serialized.
+- Presentation widgets: **`Image`** (URL/asset, `fit`), **`Icon`** (named glyph —
+  resolves a built-in [`Icons`](#icons-tempestroidicons) name to a vector glyph,
+  else falls back to the platform set), **`ProgressBar`**
+  (determinate/indeterminate), **`Spinner`** (activity).
+- Media + graphics widgets (phase E7): **`Canvas`** — a retained-mode drawing
+  surface taking a `commands` list of serializable draw commands
+  (**`MoveTo`** / **`LineTo`** / **`ArcTo`** / **`Close`** / **`FillCmd`** /
+  **`StrokeCmd`** / **`DrawText`** / **`DrawRect`** / **`DrawOval`**, the
+  discriminated **`DrawCommand`** union; colors are `[r, g, b, a]` float lists, so
+  the list lowers to pure JSON and diffs by value); **`VideoPlayer`** (`src` +
+  `autoplay`/`loop`/`controls`/`muted`), **`WebView`** (`url` +
+  `javascript_enabled`), **`Svg`** (`src` + `fit`), **`CameraPreview`**
+  (`facing`), **`QrScanner`** (`on_scan` → **`QrScanEvent`**), **`MapView`**
+  (`latitude`/`longitude`/`zoom` + JSON `markers`), and the effect wrappers
+  **`Blur`** / **`BackdropFilter`** (`radius` + `child`) and **`ClipPath`**
+  (**`ClipShape`** `shape` + `radius` + `child`). `CameraPreview`/`QrScanner`/
+  `MapView` are device-only — the Qt simulator shows an explicit placeholder.
+- Virtualized lists (only the visible window is materialized; declare an
+  `item_count` + an `item_builder(index) -> Widget`, never a static child list):
+  **`LazyColumn`** / **`LazyRow`** (vertical/horizontal lazy lists),
+  **`LazyGrid`** (`columns`-wide lazy grid), **`SectionList`** (a list of
+  **`SectionHeader`** sections with sticky headers) and **`RefreshControl`**
+  (standalone pull-to-refresh). The widgets materialize their **initial window**
+  at `build` time — `child_nodes()` builds the items in `window` (when set) or the
+  first `window_size` items (default **`DEFAULT_WINDOW_SIZE`** = 20), each keyed by
+  its absolute index — so the very first mount has content. The app slides the
+  window with `App.slide_window(key, start, end)` (and
+  `App.slide_section_window(key, title, start, end)` for sections) from a scroll
+  handler; the keyed diff turns a slide into a minimal remove/reorder/insert. They
+  emit **`ScrollEvent`** (`on_scroll`), **`RefreshEvent`** (`on_refresh`) and
+  **`EndReachedEvent`** (`on_end_reached`, fired past `end_reached_threshold` —
+  wire it to paginate). The matching handler aliases are **`ScrollHandler`** /
+  **`RefreshHandler`** / **`EndReachedHandler`**.
+- Overlay + feedback widgets (pushed onto the floating overlay layer via the
+  `App` overlay API, not nested in the screen tree): **`Dialog`** (modal, optional
+  `title` + body `children`, `on_dismiss`), **`BottomSheet`** (`children`,
+  `on_dismiss`), **`Toast`** (transient `message` + `duration_s`, auto-dismisses),
+  **`Tooltip`** (`message` + optional `child`), **`Menu`** (selectable
+  **`MenuItem`** `items`, optional `anchor` key, `on_select`), **`Popover`**
+  (anchored `child`, `on_dismiss`) and **`ActionSheet`** (titled `items`,
+  `on_select`). `MenuItem` is a frozen value model (`label` / `value` / `icon`)
+  that crosses the bridge as plain JSON. The matching handler aliases are
+  **`DismissHandler`** and **`MenuSelectHandler`**.
 - Enums: **`KeyboardType`** (text/number/email/phone/url/password),
-  **`ImageFit`** (contain/cover/fill/none).
+  **`ImageFit`** (contain/cover/fill/none), **`ClipShape`**
+  (circle/rounded_rect/oval).
 - **`EventHandler`** — the typed handler-prop wrapper used by every handler field
   (`on_click`, `on_change`, `on_select`); sync or `async`, zero- or one-argument.
+
+### Icons (`tempestroid.icons`)
+
+A curated, DIY (dependency-free) set of common line icons — Lucide-style vector
+glyphs both renderers draw identically by stroking one 24×24 SVG path. Pass a
+name to `Icon(name=…)` or to an input's `leading_icon`/`trailing_icon`.
+
+- **`Icons`** — a `StrEnum` of the curated names (`Icons.EYE`, `Icons.LOCK`,
+  `Icons.SEARCH`, … `Icons.EYE == "eye"`), so you get autocomplete and may also
+  pass the raw string.
+- **`ICON_PATHS`** — `dict[str, str]` mapping each name to its SVG path `d` data.
+- **`icon_path(name)`** — resolve an `Icons` member or raw string (curated or
+  custom) to its `d` string, or `None` when unknown (renderers fall back to the
+  platform set / the raw name).
+- **`icon_names()`** — the sorted list of available names (curated + custom).
+- **`svg_to_path(source)`** — convert an SVG image (a file path or raw markup) to
+  one normalized `d` string, flattening `path`/`circle`/`line`/`rect`/`polyline`/
+  `polygon` shapes — so a project SVG becomes a tempestroid icon.
+- **`register_icon(name, source=…)` / `register_icon(name, path=…)`** — register
+  a custom icon (from an SVG file/markup, or a ready `d`) under a name, so
+  `Icon(name=…)`, an input's `leading_icon`/`trailing_icon` and `icon_path` all
+  resolve it like a built-in.
+
+Input icon slots are typed **`Icons | str | None`**: pass an `Icons` member for
+autocomplete on the curated set, or any string for a registered custom / platform
+icon.
 
 ### Components (`tempestroid.components`)
 
@@ -292,13 +703,26 @@ renderer changes and are fully device-ready. Every component takes an optional
 `style` that is merged over its default via **`merge_style`**.
 
 - **`AppBar`** — top bar: optional `leading` widget, `title`, trailing `actions`.
+- **`CollapsingAppBar`** — a sliver-style header that shrinks as the content
+  scrolls: the app feeds the current `scroll_offset` (from a list's `on_scroll`)
+  and the component eases its height from `expanded_height` down to
+  `collapsed_height`, diffing the derived height as an ordinary prop (no new IR).
 - **`Header`** / **`Footer`** — page header band (title + optional subtitle) and
   a centered bottom bar holding arbitrary `children`.
+- **`Table`** — a static data table built from typed **`TableRow`** /
+  **`TableCell`** values plus optional `headers`; **`DataTable`** — a string-matrix
+  convenience (`columns` + `rows`, optional `sortable` header glyph). Both lower
+  to a `Column` of `Row`s of cells, so they render in both renderers unchanged.
 - **`Sidebar`** — fixed-`width` lateral column of `children`.
 - **`Scaffold`** — page frame stacking `app_bar`, a growing `body` and an
   optional `bottom_bar` (set `scroll=True` to wrap the body in a `ScrollView`).
 - **`NavBar`** — selectable navigation/tab bar: `items` labels, an `active`
-  index and an `on_select(index)` callback (generalises the `tabs` example).
+  index and an `on_select(index)` callback (generalises the `tabs` example). The
+  active destination paints the `color_scheme` accent pill (Trilho H5).
+- **`Tabs`** (Trilho H5) — a styled M3 tab strip: `tabs` labels + `active` index +
+  `on_select`; the active tab gets the `color_scheme` accent + an underline
+  indicator. The H5 nav skins (AppBar/Footer/Sidebar/Drawer/SearchBar/Breadcrumb)
+  resolve their surfaces/fields from the theme — no hand-set colors.
 - **`Burger`** / **`Drawer`** — a hamburger menu button (`on_click`) and a
   controlled lateral panel (`open` lives in app state; toggle it from the burger).
 - **`Calendar`** — month grid of selectable day cells: `month` (`"YYYY-MM"`),
@@ -316,13 +740,55 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`Stepper`** — numeric `-`/`+` around a value with optional `min_value` /
   `max_value` clamping; `on_change(value)`.
 - **`SearchBar`** — controlled text `Input` with an optional clear button.
+- **Brazilian form inputs** — labelled fields that lower to `Input` /
+  `MaskedInput`, each calling `on_change(value)` with the new string: **`EmailInput`**
+  (e-mail keyboard + `mail` icon), **`PasswordInput`** (secure, `lock` icon),
+  **`PhoneInput`** (mask `(99) 99999-9999`), **`CPFInput`** (mask `999.999.999-99`),
+  **`CNPJInput`** (mask `99.999.999/9999-99`) and the grouped **`AddressInput`**
+  (CEP + street/number/complement/neighborhood/city/UF, `on_change(field, value)`).
+  Pair them with the `validators` below in a `FormField`.
+- **Media pickers** — **`ImagePicker`** (`FilePicker` + inline `Image` preview,
+  `on_pick(uri)`), **`DocumentPicker`** (`FilePicker` for documents) and
+  **`ImagePicture`** (circular profile-photo picker — `ClipPath`-clipped `Image`
+  with a `user`-icon placeholder, `on_pick(uri)`).
 - **`Accordion`** — controlled expand/collapse section (`open` in state,
   `on_toggle`).
 - **`Banner`** — inline status bar (`tone`: info/success/warning/error) with an
   optional `action`; **`Badge`** — small status pill; **`EmptyState`** — centered
   glyph + title + subtitle + action placeholder.
+- Data-display & feedback (Trilho H4, status-themed) — **`Alert`** (glyph + title +
+  body + optional dismiss; `variant`=`AlertVariant`, `color_scheme` status),
+  **`Stat`** (label + value + up/down-tinted `delta`), **`ProgressStepper`** (a
+  wizard step indicator: `steps` + `current`, accent from `color_scheme`), and
+  **`Tag`** (a closed, non-selectable `Chip` preset). `Badge`/`Chip`/`ProgressBar`/
+  `Spinner` take `variant`/`color_scheme` too.
+- Research / data-science (Trilho H6, ties to the `ort-vision-sdk`) — **`MetricCard`**
+  / **`StatCard`** (label + value + tinted delta over a themed `Card`),
+  **`ConfidenceBadge`** (a confidence pill colored by `confidence_scheme` —
+  success/warning/error, WCAG-AA via the tonal container), **`LineChart`** /
+  **`BarChart`** (lower to the `Canvas`: data → themed draw commands; data shape is
+  **`ChartSeries`**), **`DetectionOverlay`** (an image + labeled bounding boxes from
+  a list of **`DetectionBox`** — normalized `[0,1]` xyxy, conf-colored), and
+  **`ResultView`** (an `ImagePicker` → result flow). `DataTable` gains sort/paginate;
+  `Calendar`/`Clock` are theme-styled. `confidence_scheme(conf)` is the shared
+  success/warning/error threshold picker.
 - **`Breadcrumb`** — path trail (`items` + `separator`, optional `on_select`).
 - **`Grid`** — equal-width `columns` grid of `children`.
+
+### Validators (`tempestroid.validators`)
+
+Pure, dependency-free field validators matching the `Form` validator shape
+`Callable[[Any], str | None]` — they return a PT-BR error message when invalid or
+`None` when valid, after stripping mask characters. Plug them into a `FormField`
+(e.g. `FormField(validators=[validate_cpf], child=CPFInput(...))`):
+
+- **`validate_cpf`** — 11 digits + the two mod-11 check digits (rejects
+  all-same-digit).
+- **`validate_cnpj`** — 14 digits + the two check digits with the standard CNPJ
+  weights (rejects all-same-digit).
+- **`validate_email`** — a pragmatic email regex; **`EMAIL_PATTERN`** is the
+  reusable pattern string (also used as `EmailInput`'s `Input.pattern`).
+- **`validate_phone`** — Brazilian phone: 10 (landline) or 11 (mobile) digits.
 
 ### Events (`tempestroid.widgets`) — typed boundary contract
 
@@ -332,6 +798,41 @@ renderer changes and are fully device-ready. Every component takes an optional
 - Gesture events (from `GestureDetector`): **`LongPressEvent`** (optional
   `x`/`y`), **`SwipeEvent`** (`direction` + `dx`/`dy`) with the
   **`SwipeDirection`** enum (left/right/up/down).
+- Advanced-gesture events (phase E4): **`PanEvent`** (`dx`/`dy` delta +
+  `vx`/`vy` fling velocity), **`ScaleEvent`** (`scale` + `focus_x`/`focus_y`
+  focal point + `rotation`), **`DragEvent`** (`data` opaque label + optional
+  `x`/`y` drop position) and **`ReorderEvent`** (`from_index` → `to_index`).
+  `Dismissible` reuses **`DismissEvent`**.
+- **`RouteChangeEvent`** (`name` + typed `params`) — emitted when navigation
+  settles on a new route.
+- Virtualized-list events: **`ScrollEvent`** (`offset` + `direction`),
+  **`RefreshEvent`** (pull-to-refresh) and **`EndReachedEvent`** (threshold
+  reached) — emitted by `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` /
+  `RefreshControl`.
+- Overlay events: **`DismissEvent`** (optional `overlay_id`) — an overlay
+  dismissed by a host-owned gesture (`Dialog` / `BottomSheet` / `Popover`); and
+  **`MenuSelectEvent`** (`value` + `label`) — a `Menu` / `ActionSheet` selection.
+- Input + form events (phase E5): **`SelectEvent`** (`value` + 0-based `index`),
+  **`TimeChangeEvent`** (`"HH:MM"` `value`), **`RangeChangeEvent`** (`low` + `high`
+  floats), **`SubmitEvent`** (flat `values: dict[str, str]`) and
+  **`ValidationEvent`** (`field` + `value` + optional `error`). The matching
+  handler aliases are **`SelectHandler`** / **`TimeChangeHandler`** /
+  **`RangeChangeHandler`** / **`SubmitHandler`** / **`ValidationHandler`**.
+- Layout event (phase E6): **`PageChangeEvent`** (`page` + `previous`) — emitted
+  by a `PageView` when the active page changes (handler alias
+  **`PageChangeHandler`**).
+- Media event (phase E7): **`QrScanEvent`** (`data` + `format`) — emitted by a
+  `QrScanner` for each decoded QR/barcode (handler prop `on_scan`).
+- Platform/system events (phase E8) — streamed from the host over reserved event
+  tokens (no widget handler): **`LifecycleEvent`** (`state`, the **`AppState`**
+  enum foreground/background/inactive), **`SensorEvent`** (`sensor` — the
+  **`SensorType`** enum — + `values` + `timestamp_ms`), **`ConnectivityEvent`**
+  (`state`, the **`ConnectivityState`** enum connected/disconnected/wifi/mobile)
+  and **`DeepLinkEvent`** (`url` + parsed `params`).
+- Context events (phase E9) — streamed from the host over reserved tokens (no
+  widget handler): **`ThemeChangeEvent`** (`mode`, the **`ThemeMode`** enum) over
+  `THEME_TOKEN` → `App.set_theme`, and **`LocaleChangeEvent`** (`language` +
+  optional `region` + `rtl`) over `LOCALE_TOKEN` → `App.set_locale`.
 - **`parse_event(event_type, raw)`** — boundary gate: validates a raw payload
   into a typed event or raises **`EventValidationError`** with structured field
   errors. This is the Python↔Kotlin contract for the device bridge. The bridge
@@ -339,12 +840,66 @@ renderer changes and are fully device-ready. Every component takes an optional
 
 ### Core — IR + reconciler (`tempestroid.core`)
 
-- **`Node`**, **`Path`** — the lowered IR.
+- **`Node`**, **`Path`** — the lowered IR. `Path` is `tuple[int | str, ...]`: a
+  child-index path, except the reserved leading `"overlay"` token that addresses
+  the overlay layer (`("overlay", i, …)`).
+- **`Scene`** — a full UI document: a `root` node plus an ascending z-order
+  `overlays` layer (each overlay node keyed by its stable overlay id).
 - Patches: **`Insert`**, **`Remove`**, **`Update`**, **`Reorder`**,
-  **`Replace`**, and the **`Patch`** union.
-- **`build(widget) -> Node`**, **`diff(old, new) -> list[Patch]`**.
+  **`Replace`**, and the **`Patch`** union. Overlays reuse these — no new kind.
+- **`build(widget) -> Node`**, **`diff(old, new) -> list[Patch]`**,
+  **`build_scene(widget, overlays) -> Scene`** (overlays as `(id, widget,
+  barrier)` tuples), **`diff_scene(old, new) -> list[Patch]`** (root diffed as
+  before; overlays diffed keyed under the `("overlay", …)` prefix).
 - **`App[S]`** — renderer-agnostic state container: owns state, builds via
-  `view(app)`, diffs, hands patches to an `apply_patches` callback.
+  `view(app)` into a `Scene` (root tree + overlay layer), diffs, hands patches to
+  an `apply_patches` callback. `App.start()` returns the `Scene` and
+  `App.current_tree` is the live `Scene`. It also owns a `NavStack` (`app.nav`)
+  and exposes navigation helpers: **`push(route)`** / **`pop() -> bool`** /
+  **`replace(route)`** / **`reset(stack)`** — each mutates the stack and schedules
+  the same coalesced rebuild (no new patch kind). `pop()` returns `False` at the
+  root.
+- Overlay API (imperative, returns a stable overlay id for `dismiss`):
+  **`show_dialog(widget, *, barrier=True)`**, **`show_sheet(widget, *,
+  barrier=True)`**, **`show_menu(widget, *, anchor=None, barrier=False)`**,
+  **`toast(widget, *, duration_s=2.5)`** (auto-dismisses via `loop.call_later`)
+  and **`dismiss(overlay_id)`**. Each schedules the same coalesced rebuild;
+  **`OverlayEntry`** is the internal overlay slot.
+
+### Animation (`tempestroid.animation`)
+
+The interpolation runs in the **core**, so both renderers only ever see final
+per-frame props (the divergence — Qt interpolates in the core, Compose may drive
+its native engine — is pinned by the conformance suite).
+
+- **`AnimationController`** — drives a normalized `value` (0.0..1.0) on the app's
+  frame clock: `forward()` ramps toward 1.0, `reverse()` toward 0.0, `stop()`
+  halts and unregisters. Constructed with `duration_s` + `curve`, or a
+  `Spring` for physics-based motion. Injectable `time_source` for deterministic
+  tests.
+- **`Tween[T]`** — a frozen linear interpolator (`begin` → `end`); `at(t)`
+  interpolates `float`, `Color` (per channel), `Edge` (per side) or a numeric
+  `tuple`. The `view` reads `at(controller.value)` to feed an interpolated
+  `Style`.
+- **`Spring`** — frozen spring parameters (`stiffness`/`damping`/`mass`) for an
+  `AnimationController` instead of a fixed duration.
+- `App` owns the frame clock: **`register_animation(ctrl)`** starts a coalesced
+  `loop.call_later(1/60)` tick that advances every active controller and requests
+  a rebuild; the clock stops re-arming once no controller remains. The reserved
+  `__frame__` device token routes to `App._tick_from_device()` (one advance per
+  host frame). `App.__init__` accepts an optional `time_source` kwarg.
+
+### Navigation (`tempestroid`)
+
+- **`Route`** — a frozen navigation destination: `name` + typed `params`.
+- **`NavStack`** — the mutable route stack (defaults to `[Route(name="/")]`);
+  `top` is the visible screen and `can_pop` is `True` past the root. The stack is
+  not a new IR node — `view(app)` reads `app.nav.top` to build the current
+  screen, so changing routes diffs through the existing reconciler.
+- **`routes_from_path(path) -> list[Route]`** — resolve a deep-link path into an
+  initial stack (`"/a/b"` → `["/", "/a", "/a/b"]`, so back pops through the
+  intermediate screens). The entry point hands the result to `App.reset` so a
+  deep link opens directly on the linked screen with its back stack built.
 
 ### Introspection (`tempestroid.core`)
 
@@ -357,6 +912,53 @@ renderer changes and are fully device-ready. Every component takes an optional
 - **`run_qt(state, view, *, title, size)`** — run an app in the Qt simulator.
 - **`run_dev(app_path)`** — the `tempest dev` cockpit.
 
+### UI test driver (`tempestroid.testing`)
+
+A Playwright-style driver that automates an app against the **renderer-agnostic
+IR** (not pixels): locate nodes, inject typed events, assert with **auto-wait**
+(no `sleep`). Because every backend speaks the same IR + typed events, the **same
+script runs on every target**: the **headless** backend drives the
+IR/state/event core in-process, and the **emulator** backend drives a REAL app
+through the **Compose** renderer on an Android emulator. Drive it with
+`tempest uitest` — `--target emulator -j N` shards across N isolated emulators and
+saves a real on-device screenshot per test. Add `--isolate-adb` so the run uses a
+**private adb server** (`ANDROID_ADB_SERVER_PORT`): the emulator *instances* are
+already isolated by port/userdata, and this isolates the last shared resource so
+multiple agents can drive emulators in parallel without contending on — or
+wedging — one another's adb server.
+
+- **`Page`** — the top-level driver. Locators: `get_by_key` / `get_by_text` /
+  `get_by_role` / `get_by_semantics` / `get_by_prop`. Actions: `tap` / `fill` /
+  `back`. Auto-waiting assertions: `expect_text` / `expect_visible` /
+  `expect_count`. `snapshot()` returns a JSON-able tree dump.
+- **`Locator`** — a lazy node query that resolves against the live scene at
+  action/assert time (`first` / `all()` / `count()` / `resolve()`); raises
+  `LocatorError` when zero or (for `resolve`) many nodes match.
+- **`TestBackend`** — the `Protocol` a renderer target implements (`mount` /
+  `scene` / `dispatch` / `settle` / `patches`).
+- **`HeadlessBackend`** — the no-renderer reference backend (wraps an `App`).
+- **`EmulatorBackend(app_path, serial)`** — drives a real Compose render on an
+  emulator over the dev-server **harness** bridge (mount/patch mirrored back into
+  a host-side `Scene`; events fed through `DeviceApp.handle_event` — no C/JNI
+  change). `screenshot(path)` captures REAL Compose pixels via `adb screencap`.
+- **`EmulatorPool`** — allocate / recycle N isolated emulators (reusing running
+  ones, capped by CPU/RAM). `max_parallel_emulators()` / `running_emulators()`.
+- **`run_test_file(path, target="headless")`** — load + run a UI test file's
+  `test_*` functions, returning a `TestReport` of `TestOutcome`s.
+- **`run_test_files_emulator(paths, serials)`** — shard files across emulator
+  serials and run each shard in parallel.
+- **`deserialize_scene` / `apply_patches`** (in `tempestroid.testing.mirror`) —
+  rebuild + patch the host-side scene mirror from the wire JSON.
+
+```python
+from tempestroid.testing import HeadlessBackend, Page
+
+page = Page(HeadlessBackend(make_state, view))
+await page.mount()
+await page.tap(page.get_by_key("inc"))
+await page.expect_text("Count: 1")   # auto-waits until the tree settles
+```
+
 ### Device presets (`tempestroid.devices`)
 
 Logical (`dp`) viewport sizes for common Android phones, so the simulator window
@@ -366,6 +968,8 @@ can match a real device instead of a generic guess.
   Xiaomi, Moto, OnePlus). Each member carries `width` / `height` (in `dp`) and a
   human `label`; `.size` returns the `(width, height)` tuple.
 - **`DEFAULT_DEVICE`** — the simulator default (`Device.REDMI_NOTE_12`, 393×873 dp).
+- **`resolve_device(name)`** — resolve a forgiving name (`"pixel-7"`, `"PIXEL_7"`,
+  `"Google Pixel 7"`) to a `Device`, or `None`. Backs `tempest dev --device`.
 
 ```python
 from tempestroid import Device, run_qt
@@ -384,8 +988,40 @@ transport (B3) and the Kotlin Compose renderer (B4) are implemented in
 - **`serialize_node` / `serialize_patch`** — lower the IR/patches to JSON-able
   dicts (handlers → path tokens, style → Compose spec).
 - **`MountMessage` / `PatchMessage` / `EventMessage`** — the wire protocol across
-  the bridge: `mount` carries the full serialized tree, `patch` an incremental
-  patch list, `event` a device→Python callback addressed by handler token.
+  the bridge: `mount` carries the full serialized tree (plus an `overlays` list of
+  serialized overlay nodes), `patch` an incremental patch list (overlay patches
+  ride under the `("overlay", …)` path), `event` a device→Python callback
+  addressed by handler token. `mount`/`patch` also carry **`can_pop`** (the live
+  `app.nav.can_pop`), so the host can gate its system-back handler without a
+  round-trip, and **`has_animations`** (`app.has_animations`), so the host can
+  start/stop its `withFrameNanos` frame loop without a round-trip.
+- **`BACK_TOKEN`** (`"__back__"`) — the reserved event token the host sends on a
+  system back action (e.g. the Android back gesture). The bridge routes it
+  straight to `App.pop` (no widget handler, no new JNI entry) — it pops a screen,
+  or is a no-op at the root where the host's default close-the-app action runs.
+- **`FRAME_TOKEN`** (`"__frame__"`) — the reserved event token the host sends
+  once per frame from its `withFrameNanos` loop while `has_animations` is `True`.
+  The bridge routes it straight to `App._tick_from_device`, which advances every
+  active `AnimationController` one frame and re-renders (no widget handler, no new
+  JNI entry). The Qt simulator drives its own clock and never emits this token.
+- **`DISMISS_TOKEN_PREFIX`** (`"__dismiss__"`) — the reserved event-token prefix
+  the host sends when an overlay is dismissed by a host-owned gesture (scrim tap,
+  swipe-down): `"__dismiss__:<overlay_id>"`. The bridge strips the prefix and
+  routes the id to `App.dismiss` (no widget handler, no new JNI entry).
+- **`SENSOR_TOKEN_PREFIX`** (`"__sensor__"`) / **`LIFECYCLE_TOKEN`**
+  (`"__lifecycle__"`) / **`CONNECTIVITY_TOKEN_PREFIX`** (`"__connectivity__"`)
+  (phase E8) — reserved tokens carrying *continuous* host streams over the same
+  event channel: `"__sensor__:<type>"` → `dispatch_sensor_event`,
+  `"__lifecycle__"` → `dispatch_lifecycle_event`,
+  `"__connectivity__:<state>"` → `dispatch_connectivity_event`. Each rides the
+  existing transport (no new JNI/C entry) and is routed in **both**
+  `bridge/jni.py` and `devserver/client.py` (so code-push gets them too).
+- **`THEME_TOKEN`** (`"__theme__"`) / **`LOCALE_TOKEN`** (`"__locale__"`)
+  (phase E9) — reserved bare tokens carrying a host-driven context change over
+  the same event channel: `"__theme__"` (payload `{"mode": "dark"}`, validated as
+  a `ThemeChangeEvent`) → `App.set_theme`, and `"__locale__"` (payload
+  `{"language": "ar", "rtl": true}`, validated as a `LocaleChangeEvent`) →
+  `App.set_locale`. Both ride the existing transport (no new JNI/C entry).
 - **`DeviceApp`** + **`Bridge`** / **`LoopbackBridge`** — wire an `App` to a
   device transport; the device-side analogue of `run_qt`. Events come back by
   handler token, are validated by `parse_event`, and trigger coalesced patches.
@@ -462,6 +1098,66 @@ The `native_command` / `native_request` envelope + the host module router is the
 extension point for further capabilities (sensors, contacts, …). The Python side
 (envelopes, pending-future resolution, typed results) is fully unit-tested
 off-device; the Kotlin capability modules need an Android device to validate.
+**`on_device()`** reports whether the native host is present, so a module can
+emulate (prefs/SQLite) or stub (`device_only`) on the desktop.
+
+#### Platform + system (phase E8)
+
+A wider platform surface, same two shapes (plus the sensor/lifecycle/connectivity
+*streams* over the reserved tokens above). Capabilities with no desktop hardware
+stub on the Qt simulator with an explicit `device_only` `NativeError`; the ones
+that can be emulated run for real off-device.
+
+- **Haptics** (fire-and-forget): **`vibrate(duration_ms=50)`**,
+  **`impact(style=ImpactStyle.MEDIUM)`** (the **`ImpactStyle`** enum
+  light/medium/heavy).
+- **System** (set = fire-and-forget, get = `async`):
+  **`set_status_bar(*, hidden=None, color=None, style=None)`** (**`StatusBarStyle`**
+  enum), **`await get_brightness() -> float`**, **`set_brightness(value)`**,
+  **`keep_awake(enabled)`**, **`set_orientation(orientation)`** (the
+  **`Orientation`** enum portrait/landscape/auto).
+- **Sensors** (stream): **`start_sensor(sensor, callback, rate_ms=100) ->
+  Callable[[], None]`** registers a `SensorEvent` callback (the **`SensorCallback`**
+  alias; returns a `stop` handle) and **`stop_sensor(sensor)`**.
+- **Lifecycle** (stream): **`on_app_state_change(callback) -> Callable[[], None]`**
+  registers a `LifecycleEvent` callback (the **`LifecycleCallback`** alias; returns
+  an `unregister`); driven for real on the Qt simulator by
+  `QApplication.applicationStateChanged`.
+- **Connectivity**: **`await get_connectivity() -> ConnectivityState`** and the
+  stream **`on_connectivity_change(callback) -> Callable[[], None]`** (the
+  **`ConnectivityCallback`** alias).
+- **Permissions** (`async`): **`await request_permission(permission)`** /
+  **`await check_permission(permission)`** → **`PermissionResult`**
+  (`permission` + **`PermissionStatus`** granted/denied/permanently_denied; the Qt
+  simulator returns granted — the desktop has every capability).
+- **Biometrics** (`async`): **`await authenticate(reason="") -> BiometricResult`**
+  (`authenticated` + optional `error`); Qt raises `device_only`.
+- **Secure storage**: **`await get_secret(key)`** / **`set_secret(key, value)`** /
+  **`delete_secret(key)`** (Android Keystore-backed; Qt raises `device_only` — no
+  silent plaintext fallback).
+- **Preferences** (real on the desktop — a JSON file under
+  `~/.tempestroid/prefs.json`): **`await get_pref(key, default=None)`** /
+  **`set_pref(key, value)`** / **`delete_pref(key)`** /
+  **`await get_all_prefs() -> dict[str, Any]`**.
+- **Database** (real on the desktop — `sqlite3` under `~/.tempestroid/app.db`):
+  **`await execute(sql, params=()) -> QueryResult`** (`columns` + `rows`) /
+  **`await execute_many(sql, params_list)`**.
+- **Push** (FCM): **`await register_push() -> PushToken`** (Qt raises
+  `device_only`; the device path needs `google-services.json` — drop it into
+  `android-host/app/` and the build enables FCM) and
+  **`schedule_notification(title, body, delay_s)`** (local notification).
+- **Background tasks** (WorkManager): **`schedule_task(name, *, interval_s=None)`**
+  (one-shot when `interval_s` is `None`, else periodic ≥15 min) /
+  **`cancel_task(name)`**, with **`on_background_task(name, callback)`** to run a
+  handler when the task fires — the worker re-enters Python (the live interpreter
+  if the app is up, else a fresh short-lived one).
+
+Example: [`examples/platform/app.py`](examples/platform/app.py) exercises haptics
+(with the Qt fallback), preferences (real JSON store on the desktop), the
+lifecycle stream and a `KeyboardAvoidingView`-wrapped input. The Python half is
+fully unit-tested off-device (envelopes, typed results, stream-callback
+registries, the real prefs/SQLite emulation via `tmp_path`); biometrics, FCM,
+WorkManager and real sensors are hardware-gated and validated on a device.
 
 ---
 
@@ -502,6 +1198,16 @@ Track A (pure desktop CPython) is **complete: A0–A6**.
 | B0–B6 | Android runtime: CPython 3.14 arm64, native wheels, Kotlin host, JNI bridge, Compose renderer, LAN code-push, native capabilities | ✅ |
 | C | Polish: `new`/`build`/`run` + stateful hot reload | ✅ |
 | D | Conformance golden snapshots (Qt vs Compose) | ✅ |
+| E0 | Navigation + routes (push/pop, tabs, drawer, back button, deep link) | ✅ |
+| E1 | Virtualized lists + scroll (lazy, sticky section, pull-to-refresh, infinite) | ✅ |
+| E2 | Overlays + feedback (dialog, bottom sheet, toast, tooltip, menu/popover, action sheet) | ✅ |
+| E3 | Animation framework (`AnimationController`/`Tween`/`Spring`, `Animated`/`AnimatedList`/`Hero`/`Shimmer`/`Skeleton`) | ✅ |
+| E4 | Advanced gestures (`PanHandler`/`ScaleHandler`/`Draggable`/`DragTarget`/`Dismissible`/`ReorderableList`/`InteractiveViewer`) | ✅ |
+| E5 | Inputs + forms (`Dropdown`/`TimePicker`/`RangeSlider`/`Autocomplete`/`PinInput`/`MaskedInput`, `Form`/`FormField`/`Validator`/`FormState`) | ✅ |
+| E6 | Refined layout (`flex_wrap`/`Wrap`/`PageView`/`AspectRatio`/`CollapsingAppBar`/`Table`/`DataTable`, `PageChangeEvent`) | ✅ |
+| E7 | Media + graphics (`Canvas`/`Svg`/`VideoPlayer`/`WebView`/`Blur`/`ClipPath`/`CameraPreview`/`QrScanner`/`MapView`) | ✅ |
+| E8 | Platform + system (haptics/sensors/system/lifecycle/permissions/biometrics/secure_storage/prefs/database/connectivity/push/background, `KeyboardAvoidingView`, `LifecycleEvent`/`SensorEvent`/`ConnectivityEvent`/`DeepLinkEvent`) | ✅ |
+| E9 | Cross-cutting: theme/dark mode (`Theme`/`ThemeMode`) + `MediaQueryData` + i18n/RTL (`Locale`/`translate`) + accessibility (`Semantics`/`focusable`) + custom fonts (`text_scale`/`font_asset`), `ThemeChangeEvent`/`LocaleChangeEvent` over `THEME_TOKEN`/`LOCALE_TOKEN` | ✅ |
 
 ---
 

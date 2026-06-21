@@ -153,3 +153,107 @@ adb shell am start -n org.tempestroid.host/.MainActivity \
 | Gradle falha com erro de AGP | Use o **wrapper 8.11.1** (`./gradlew`), não o Gradle global. |
 | `dir _*` some do APK | O `ignoreAssetsPattern` padrão do AGP dropa dirs `_*`; já sobrescrito em `app/build.gradle.kts`. |
 | `usbipd` não reconhecido | usbipd-win não instalado — veja §1; reabra o PowerShell após instalar. |
+
+---
+
+## Sem hardware físico — emulador headless x86_64 (Trilho F7/F8)
+
+O aparelho físico no WSL é frágil (o usbipd cai, a MIUI exige *toggles*, a tela
+bloqueia). O caminho recomendado para validar o lado nativo **sem hardware** é um
+**emulador headless x86_64**, que cobre tudo que o device cobre — boot do CPython,
+ponte JNI, renderizador Compose e capacidades nativas — e roda em CI.
+
+!!! info "Preview-first"
+    O **simulador Qt** (`make run` / `make dev`) é a sua visualização instantânea
+    de iteração de UI. O **emulador** é a verificação de verdade do lado nativo.
+    Itere no Qt; suba ao emulador só para confirmar Compose/JNI/nativas — não fique
+    esperando o AVD a cada mudança de tela.
+
+### Pré-requisito: KVM
+
+```bash
+[ -r /dev/kvm ] && [ -w /dev/kvm ] && echo "KVM OK" || echo "sem KVM"
+```
+
+Sem `/dev/kvm` (CI sem virtualização aninhada) o emulador é lento demais — use uma
+**farm de device na nuvem** (Firebase Test Lab / Genymotion SaaS / BrowserStack)
+como contingência. Os scripts F8 detectam a ausência de KVM e avisam.
+
+### 1. Provisionar o AVD (reprodutível)
+
+```bash
+make provision-avd          # cria o AVD pinado (idempotente; FORCE=1 recria)
+```
+
+Instala a *system image* exata (`android-34`, `google_apis`, `x86_64`) e cria o
+AVD `pixel8_api34`. Rodar de novo é *no-op* — o time inteiro tem o **mesmo** AVD.
+
+### 2. Salvar o *snapshot* golden (boot rápido)
+
+```bash
+make emulator-snapshot      # boota uma vez (gravável) e salva o snapshot 'golden'
+```
+
+A partir daí `make emulator` **restaura do snapshot em segundos** (estado limpo
+conhecido) em vez de *cold-boot*. Re-rode quando a *system image* ou o host mudar.
+
+### 3. Bootar + verificar
+
+```bash
+make emulator               # boot rápido pelo snapshot 'golden' (cai pra cold-boot se não houver)
+make emulator-verify APP=examples/counter/app.py   # boot → stage x86 → APK x86 → install → serve → screenshot
+VISUAL=1 make emulator-verify APP=examples/counter/app.py  # + regressão visual contra o golden versionado
+```
+
+O `emulator-verify` faz **gating de prontidão real** (`sys.boot_completed=1` +
+*bootanim* parado + `pm` respondendo) e **auto-recupera** um AVD travado uma vez
+antes de desistir — toda chamada `adb` é *time-bounded* (helpers `device_loop.sh`
+do F5), então um emulador preso nunca pendura o harness.
+
+### 4. Regressão visual
+
+`VISUAL=1` compara o screenshot capturado contra um *golden* versionado em
+`docs/assets/emulator/golden/<exemplo>.png` (tolerância padrão 2%, via
+`toolchain/visual_regression.py` — Pillow). Um *golden* ausente é **criado** na
+primeira execução (baseline). Complementa os *goldens* JVM do Roborazzi (F7-camada
+B) e a conformância (fase D): aqueles pinam a tradução de `Style`; este pina o
+render ponta-a-ponta no emulador.
+
+### 5. Pool de N emuladores em paralelo (experimental)
+
+```bash
+make emulator-pool N=3      # sharda a galeria de exemplos entre 3 instâncias isoladas
+```
+
+Cada instância é **isolada** (porta/serial próprios, `-read-only` a partir do
+snapshot golden), então N emuladores compartilham a imagem base sem corromper o
+estado um do outro; um que trave é recuperado sem derrubar os demais. O tempo de
+validação cai ~linearmente com cores/RAM. **Experimental — ainda não validado num
+emulador bootando; valide ponta-a-ponta antes de confiar em CI.**
+
+### 6. Espelhamento ao vivo (`scrcpy`)
+
+```bash
+make mirror                 # espelha o emulador/device numa janela do host (precisa WSLg)
+```
+
+`scrcpy` mostra e clica o lado nativo ao vivo. No WSL precisa de **WSLg** (X). Não
+substitui o screenshot do `emulator-verify` — é para inspeção interativa.
+
+### Robustez de GPU no WSL
+
+O padrão é `-gpu swiftshader_indirect` (render por software, estável headless).
+Se a tela vier preta/corrompida, tente `-gpu guest` ou `-gpu host` (este exige
+WSLg). Gotcha separado do simulador desktop: o Qt no WSL precisa de
+`QT_QPA_PLATFORM=xcb` (bug do backend wayland) — emulador e simulador têm gotchas
+de GPU distintos.
+
+### Solução de problemas (emulador)
+
+| Sintoma | Causa / correção |
+|---|---|
+| `make emulator` faz cold-boot toda vez | Sem snapshot `golden` — rode `make emulator-snapshot` uma vez. |
+| AVD nunca fica pronto | `emulator-verify` auto-recupera uma vez; persistindo, `emulator -avd <AVD> -wipe-data` (destrutivo) e re-snapshot. |
+| `adb` trava sob carga | Helpers `device_loop.sh` dão *timeout* em toda chamada; o `emulator-verify` chama `adb_unwedge` (mata o processo do server + reinicia *nodaemon*) — `adb kill-server` **também trava** quando o server está *wedged*, por isso não o use. |
+| snapshot save falha | Boot tem que ser **gravável** — `emulator-snapshot` já usa `EMU_READONLY=0`; não salve com `-read-only`. |
+| sem `/dev/kvm` | Sem aceleração — use farm na nuvem; não insista no emulador local. |

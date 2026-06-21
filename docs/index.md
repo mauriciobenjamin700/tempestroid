@@ -1,4 +1,4 @@
-# tempestroid
+# Tempestroid
 
 Construa **apps Android nativos** em **Python tipado**.
 
@@ -13,6 +13,23 @@ para o simulador de desktop e **Jetpack Compose** para o dispositivo. O runtime 
     Aqui não há FastAPI, SQLAlchemy, Redis nem camadas HTTP. O foco é a árvore de
     UI tipada e o reconciliador. Veja o [plano de design](plan.md) para o desenho
     completo e o [roadmap por fases](roadmap.md).
+
+!!! tip "🤖 Ler o projeto com sua IA (`llms.txt`)"
+    Este site publica dois arquivos seguindo a convenção
+    [llmstxt.org](https://llmstxt.org/) para você dar ao seu assistente de IA
+    (Claude, ChatGPT, Cursor, etc.) o projeto inteiro como referência — **sem
+    servidor, sem MCP**:
+
+    - **[`/llms.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms.txt)**
+      — índice enxuto (resumo + links de todas as páginas). Use quando a IA puder
+      navegar pelos links.
+    - **[`/llms-full.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms-full.txt)**
+      — documentação **inteira** concatenada num só arquivo Markdown. Use para
+      colar/anexar de uma vez quando a IA não navega.
+
+    **Como usar:** cole a URL (ou o conteúdo) de `llms-full.txt` no contexto do
+    seu assistente e peça para usar como referência do tempestroid. Os arquivos
+    são regenerados a cada publicação das docs, então estão sempre em dia.
 
 ## Por quê
 

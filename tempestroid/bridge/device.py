@@ -17,12 +17,20 @@ import asyncio
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
+from tempest_core.core.ir import Patch
+from tempest_core.core.state import App
+from tempest_core.navigation import NavStack
+from tempest_core.theme import Theme
+from tempest_core.widgets import Widget
+
 from tempestroid.bridge.handlers import HandlerRegistry
-from tempestroid.bridge.protocol import EventMessage, MountMessage, PatchMessage
+from tempestroid.bridge.protocol import (
+    DISMISS_TOKEN_PREFIX,
+    EventMessage,
+    MountMessage,
+    PatchMessage,
+)
 from tempestroid.bridge.serializer import serialize_node, serialize_patch
-from tempestroid.core.ir import Patch
-from tempestroid.core.state import App
-from tempestroid.widgets import Widget
 
 __all__ = ["Bridge", "LoopbackBridge", "DeviceApp"]
 
@@ -70,6 +78,9 @@ class DeviceApp(Generic[S]):
         state: S,
         view: Callable[[App[S]], Widget],
         bridge: Bridge,
+        nav: NavStack | None = None,
+        *,
+        theme: Theme | None = None,
     ) -> None:
         """Initialize the device app.
 
@@ -77,10 +88,18 @@ class DeviceApp(Generic[S]):
             state: The initial application state.
             view: Builds the widget tree from the app.
             bridge: The transport to the device.
+            nav: The initial navigation stack (e.g. from a deep link resolved on
+                boot). Defaults to a fresh stack with the root route.
+            theme: The app's initial :class:`~tempest_core.Theme` (e.g. a dark
+                theme). ``None`` inherits the platform theme. Carried to the host
+                in the mount/patch ``theme_mode`` so its Material color scheme
+                matches the app from the first frame.
         """
         self._bridge: Bridge = bridge
         self._registry: HandlerRegistry = HandlerRegistry()
-        self._app: App[S] = App(state, view, apply_patches=self._on_patches)
+        self._app: App[S] = App(
+            state, view, apply_patches=self._on_patches, nav=nav, theme=theme
+        )
         # Strong refs to in-flight send tasks so the loop does not GC them.
         self._pending: set[asyncio.Task[None]] = set()
 
@@ -94,10 +113,21 @@ class DeviceApp(Generic[S]):
         return self._app
 
     async def start(self) -> None:
-        """Build the initial tree, register handlers, and send the mount message."""
-        root = self._app.start()
-        self._registry.refresh(root)
-        await self._bridge.send(MountMessage(root=serialize_node(root)).model_dump())
+        """Build the initial scene, register handlers, and send the mount message."""
+        scene = self._app.start()
+        self._registry.refresh(scene)
+        await self._bridge.send(
+            MountMessage(
+                root=serialize_node(scene.root),
+                overlays=[
+                    serialize_node(overlay, ("overlay", index))
+                    for index, overlay in enumerate(scene.overlays)
+                ],
+                can_pop=self._app.nav.can_pop,
+                has_animations=self._app.has_animations,
+                theme_mode=self._app.theme.mode.value,
+            ).model_dump()
+        )
 
     def reload(self, view: Callable[[App[S]], Widget]) -> None:
         """Hot-reload the view, preserving state and patching the device.
@@ -121,13 +151,21 @@ class DeviceApp(Generic[S]):
     async def handle_event(self, message: dict[str, Any]) -> None:
         """Process an event coming back from the device.
 
-        Validates and dispatches via the registry; any resulting ``set_state``
-        schedules a coalesced rebuild whose patches are sent on the next tick.
+        A token with the reserved :data:`DISMISS_TOKEN_PREFIX` (an overlay
+        dismissed by a host-owned gesture) is routed straight to
+        :meth:`~tempestroid.core.state.App.dismiss`; every other token is a
+        widget handler, validated and dispatched via the registry. Either path's
+        resulting ``set_state``/``dismiss`` schedules a coalesced rebuild whose
+        patches are sent on the next tick.
 
         Args:
             message: A serialized :class:`EventMessage` dict.
         """
         event = EventMessage.model_validate(message)
+        prefix = f"{DISMISS_TOKEN_PREFIX}:"
+        if event.token.startswith(prefix):
+            self._app.dismiss(event.token[len(prefix) :])
+            return
         await self._registry.dispatch(event.token, event.payload)
 
     def _on_patches(self, patches: list[Patch]) -> None:
@@ -141,7 +179,10 @@ class DeviceApp(Generic[S]):
         """
         self._registry.refresh(self._app.current_tree)
         message = PatchMessage(
-            patches=[serialize_patch(p) for p in patches]
+            patches=[serialize_patch(p) for p in patches],
+            can_pop=self._app.nav.can_pop,
+            has_animations=self._app.has_animations,
+            theme_mode=self._app.theme.mode.value,
         ).model_dump()
         task = asyncio.get_running_loop().create_task(self._bridge.send(message))
         self._pending.add(task)

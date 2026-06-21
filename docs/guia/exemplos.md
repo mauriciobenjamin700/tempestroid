@@ -1,8 +1,11 @@
 # Galeria de exemplos
 
-Um conjunto de apps de exemplo executáveis vive em `examples/`. Cada um expõe o
-mesmo contrato `make_state()` + `view(app)`, então roda no simulador Qt **e** no
-dispositivo via code-push, sem mudanças.
+Um conjunto de apps de exemplo executáveis vive em
+[`examples/`](https://github.com/mauriciobenjamin700/tempestroid/tree/main/examples).
+Cada um expõe o mesmo contrato `make_state()` + `view(app)`, então roda no
+simulador Qt **e** no dispositivo via code-push, sem mudanças. **Clique no nome
+de qualquer app abaixo para ver o código-fonte** — todo `app.py` abre com um
+*docstring* explicando o que demonstra.
 
 ```bash
 # Simulador Qt no desktop (precisa do extra `qt`; instalado por `uv sync`)
@@ -14,36 +17,139 @@ adb reverse tcp:8765 tcp:8765                 # via USB; pule se na mesma Wi-Fi
 uv run tempest serve examples/<nome>/app.py
 ```
 
-## Apps
+## Fundamentos
 
-| App | O que mostra | Widgets / patches exercitados |
+| App | O que mostra | Exercita |
 |---|---|---|
-| `counter` | O básico: handlers síncronos **e** `async`. | `Text`, `Button`, `Row`/`Column`; `update`. |
-| `shell` | Os componentes compostos: um `Scaffold` com `AppBar` no topo e `NavBar` embaixo, corpo por aba. | `tempestroid.components` (`AppBar`/`Scaffold`/`NavBar`/`Header`) reduzidos a primitivos via `Component.render`. |
-| `todo` | Lista dirigida por toque (sem entrada de texto — itens vêm de um pool fixo). | Lista com chave estável; `insert` / `remove` / `update`. |
-| `calculator` | Grade densa de botões como única entrada. | `Row`/`Column` aninhados, 16 botões com chave; `update` no display. |
-| `stopwatch` | Loop async-first: um handler corrotina conta via `asyncio.sleep` sem travar a UI. | Rebuilds coalescidos a partir do loop; `update`. |
-| `colorpicker` | `Style` dinâmico: swatches recolorem um preview vivo; toggles re-estilizam o texto. | Atualizações de `background` / `font_size` / `font_weight` pelo diff. |
-| `form` | Os inputs com valor, cada um dobrando seu evento tipado de volta no estado. | `Input` / `Checkbox` / `DatePicker` / `FilePicker`; `TextChangeEvent` / `ToggleEvent` / `DateChangeEvent` / `FileSelectEvent`. |
-| `gallery` | O conjunto expandido de componentes + estilização de input + uma transição implícita de `Style`. | `Slider` / `Switch` / `ProgressBar` / `Spinner` / `Image` / `Icon` / `ScrollView` / `TextArea`; `Input` seguro + regex; `SlideEvent`; `Style.transition`. |
-| `device_counter` | Contador mínimo só de dispositivo (sem import de Qt) para o caminho de code-push. | Mesmo contrato, livre de Qt. |
+| [`counter`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/counter/app.py) | O básico: handlers síncronos **e** `async` mutam estado e disparam um rebuild coalescido. | `Text`, `Button`, `Row`/`Column`; `update`. |
+| [`stopwatch`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/stopwatch/app.py) | Loop async-first: um handler corrotina conta via `asyncio.sleep` sem travar a UI (stop/reset seguem tocáveis). | Rebuilds coalescidos a partir do loop; `update`. |
+| [`todo`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/todo/app.py) | Digite uma tarefa no `Input` e toque "add"; tocar alterna concluída; "clear done" remove as feitas. | `Input` + chave estável; **todos** os child patches: `insert` / `remove` / `update`. |
+| [`calculator`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/calculator/app.py) | A grade de botões **é** a entrada (sem widget de texto) — vitrine de layout denso. | `Row`/`Column` aninhados, botões com chave; `update` no display. |
+| [`colorpicker`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/colorpicker/app.py) | `Style` dinâmico: *swatches* recolorem um preview vivo; toggles re-estilizam o texto. | `background` / `font_size` / `font_weight` pelo diff. |
+
+## Componentes e shell
+
+| App | O que mostra | Exercita |
+|---|---|---|
+| [`shell`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/shell/app.py) | Tela inteira montada dos componentes compostos: `Scaffold` + `AppBar` (com `Burger`/`Drawer`) no topo, `NavBar` embaixo. | `tempestroid.components` reduzidos a primitivos via `Component.render`. |
+| [`gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/gallery/app.py) | Widgets utilitários + estilização de input + transição implícita de `Style`. | `Slider`/`Switch`/`ProgressBar`/`Spinner`/`Image`/`Icon`/`ScrollView`/`TextArea`; `Input` seguro + regex; `Style.transition`. |
+
+## Trilho E — paridade Flutter/RN
+
+| App | O que mostra | Exercita |
+|---|---|---|
+| [`navigation`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/navigation/app.py) | Os três hosts de navegação: pilha push/pop animada, abas e gaveta. | `Navigator` / `TabView` / `RouteDrawer` (E0). |
+| [`tabs`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/tabs/app.py) | Tab bar persistente troca o corpo entre 3 painéis; o estado compartilhado sobrevive à troca. | Padrão canônico de navegação por abas. |
+| [`lists`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/lists/app.py) | `LazyColumn` de 10k itens + paginação + pull-to-refresh, e `SectionList` com cabeçalho fixo. | Virtualização por janela (E1). |
+| [`overlays`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/overlays/app.py) | Dialog, bottom sheet, menu e toast pela API imperativa de overlay do `App`. | Camada de overlay z-ordenada (E2). |
+| [`animation`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/animation/app.py) | Caixa que faz *ease* de cor/opacidade, lista animada, `Hero` e `Shimmer`. | `AnimationController` + `Tween` no clock de frames (E3). |
+| [`gestures`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/gestures/app.py) | Swipe-to-delete (`Dismissible`), arrastar p/ reordenar e pinça-zoom. | Gestos avançados (E4). |
+| [`forms`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/forms/app.py) | `Form` de `FormField`s com validators tipados (bloqueia submit inválido) + inputs de seleção/segmento. | Validação em Python antes dos patches (E5). |
+| [`form`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/form/app.py) | Os inputs com valor básicos, cada um dobrando seu evento tipado de volta no estado. | `Input` / `Checkbox` / `DatePicker` / `FilePicker` + eventos tipados. |
+| [`layout`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/layout/app.py) | Chips com `Wrap`, `PageView` paginado e `CollapsingAppBar` que encolhe ao rolar. | Layout refinado (E6). |
+| [`media`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/media/app.py) | Desenho com `Canvas`, `Svg`, blur e clip. | Mídia e gráficos (E7). |
+| [`platform`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/platform/app.py) | Haptics, preferências reais, stream de lifecycle e `KeyboardAvoidingView`. | Plataforma/sistema (E8) — roda no Qt e no device. |
+| [`theming`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/theming/app.py) | Toggle dark/light (`App.set_theme`), locale PT↔árabe/RTL (`App.set_locale`) e `Semantics`. | Transversais: tema/i18n/acessibilidade (E9). |
+
+## Dispositivo e multi-arquivo
+
+| App | O que mostra | Exercita |
+|---|---|---|
+| [`device_counter`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/device_counter/app.py) | Contador mínimo **sem import de Qt** — o alvo do code-push no aparelho. | Mesmo contrato, livre de Qt (B5). |
+| [`native_caps`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/native_caps/app.py) | Capacidades nativas sem config extra, cada uma um round-trip request/response tipado. | `clipboard` / `storage` / `database` (SQLite) / `secure_storage` / `system` (device-verificado). |
+| [`sysverify`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/sysverify/app.py) | Harness de verificação on-device das capacidades que exigem hardware real. | Sensores / biometria / push (device-only). |
+| [`multifile`](https://github.com/mauriciobenjamin700/tempestroid/tree/main/examples/multifile) | Projeto **multi-arquivo** (`main.py` + pacote `widgets/`) — o que `tempest new --template multi` gera. | Bundle do projeto inteiro no `sys.path` (Trilho C). |
+
+## Trilho G — inferência ONNX no device
+
+Visão no aparelho com o [`ort-vision-sdk`](https://pypi.org/project/ort-vision-sdk/)
+(backend plugável), inferência pela AAR nativa `onnxruntime-android` — **sem
+OpenCV, sem wheel onnxruntime/Pillow**. Exigem o extra `[vision]` + o build com
+`--feature vision`; device-verificados no emulador x86_64.
+
+| App | O que mostra | Exercita |
+| --- | --- | --- |
+| [`onnxspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/onnxspike/app.py) | Prova mínima: `import numpy` + um cálculo rodam no interpretador embarcado (tela verde "numpy OK"). | numpy android no device (G0/G1). |
+| [`visionspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/visionspike/app.py) | Pipeline completo: imagem real (`banana.jpg`) → decode nativo (`BitmapFactory`) → `Classifier` do SDK via `AarBackend` → top-1 + latência. Modelo **embutido** ou **baixado** (`VISIONSPIKE_MODEL_URL`), `.onnx` fp32 ou `.int8.ort` quantizado (`VISIONSPIKE_MODEL`). | G1 (AAR) + G2 (imagem) + G3 (`tempest optimize`) + G4 (entrega). |
 
 ## Conjunto de widgets atual
 
-O framework e o **simulador Qt** suportam o conjunto completo — `Text` / `Button`
-/ `Column` / `Row` / `Container` mais os inputs com valor `Input` / `Checkbox` /
-`DatePicker` / `FilePicker` (veja o exemplo `form`) — com `on_click` e os eventos
-de mudança tipados.
+Os **dois renderizadores** — simulador Qt (desktop) e Compose (dispositivo) —
+suportam o conjunto completo do Trilho E. Não há mais o gap antigo de "o Compose
+só renderiza cinco widgets": os inputs com valor (`Input` / `TextArea` /
+`Checkbox` / `Switch` / `Slider` / `Dropdown` / `DatePicker` / `FilePicker` / …)
+renderizam **nativamente no aparelho** via Jetpack Compose e dobram seus eventos
+tipados de volta no estado. A paridade é fixada pela suíte de conformância
+(*golden snapshots* dos dois tradutores `Style → Qt` e `Style → Compose`) e foi
+verificada em device ao longo de E0–E9.
 
-O **renderizador do dispositivo (Compose)** hoje renderiza `Text` / `Button` /
-`Column` / `Row` / `Container` e `on_click`; os inputs com valor caem para uma
-caixa vazia até o host Kotlin crescer os casos correspondentes (continuação do
-Trilho B). Por isso os apps voltados ao dispositivo permanecem **dirigidos por
-botão**: o `todo` adiciona de um pool predefinido em vez de texto digitado, e o
-`calculator` usa o teclado numérico como superfície de entrada.
+Cobertura (ambos os renderizadores, salvo nota):
+
+| Categoria | Widgets |
+|---|---|
+| Layout | `Column` / `Row` / `Container` / `Stack` / `Wrap` / `ScrollView` / `SafeArea` / `AspectRatio` / `PageView` / `KeyboardAvoidingView` |
+| Texto e ação | `Text` / `Button` / `Icon` / `Image` (`on_click`) |
+| Inputs com valor | `Input` / `TextArea` / `Checkbox` / `Switch` / `Slider` / `RangeSlider` / `Dropdown` / `DatePicker` / `TimePicker` / `FilePicker` / `PinInput` / `MaskedInput` / `Autocomplete` / `Form` / `FormField` |
+| Listas virtualizadas | `LazyColumn` / `LazyRow` / `LazyGrid` / `SectionList` (+ pull-to-refresh, scroll infinito) |
+| Navegação | `Navigator` / `TabView` / `TabBar` / `RouteDrawer` |
+| Overlays | `Dialog` / `BottomSheet` / `Menu` / `Popover` / `Toast` / `Tooltip` / `ActionSheet` |
+| Animação | `Animated` / `AnimatedList` / `Hero` / `Shimmer` / `Skeleton` |
+| Gestos | `GestureDetector` / `PanHandler` / `ScaleHandler` / `DoubleTapHandler` / `Draggable` / `DragTarget` / `Dismissible` / `ReorderableList` / `InteractiveViewer` |
+| Mídia e gráficos | `Canvas` / `Svg` / `VideoPlayer` / `WebView` / `Blur` / `BackdropFilter` / `ClipPath` |
+| Indicadores | `ProgressBar` / `Spinner` |
+
+!!! note "Divergência de mídia/câmera (device-only)"
+    Alguns widgets de hardware — `CameraPreview` / `QrScanner` / `MapView` —
+    renderizam só no aparelho (Compose) e aparecem como **placeholder sinalizado
+    no Qt**, não o contrário. As divergências por campo entre os dois tradutores
+    estão documentadas na suíte de conformância (`tests/conformance/`).
+
+Os exemplos `form` e `gallery` exercitam os inputs com valor de verdade — no
+simulador **e** no aparelho. Exemplos como `calculator` continuam dirigidos por
+teclado numérico por *design* do app, não por limite do renderizador.
 
 !!! tip "Handlers estáveis"
     Rebuilds comparam props de *handler* por identidade, então um `lambda` novo a
     cada build lê como mudança de prop (limitação conhecida). Os exemplos ainda
     emitem *patches* corretos — apenas mais que o mínimo estrito. Prefira
     referências de *handler* estáveis em apps de produção.
+
+## Capturas no dispositivo (emulador x86_64, sem hardware físico)
+
+!!! note "Geradas sem aparelho físico"
+    A maioria foi renderizada pelo renderizador **Compose** num **emulador x86_64
+    headless** (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero
+    hardware; as galerias do design system (`h1buttons`–`h4gallery`) são capturas
+    do simulador Qt. `stopwatch` (animado) fica para uma recaptura como GIF (ver
+    [Animados](#animados)).
+
+| | | |
+|---|---|---|
+| ![animation](../assets/examples/animation.png){ width=200 }<br>`animation` | ![brforms](../assets/examples/brforms.png){ width=200 }<br>`brforms` | ![calculator](../assets/examples/calculator.png){ width=200 }<br>`calculator` |
+| ![colorpicker](../assets/examples/colorpicker.png){ width=200 }<br>`colorpicker` | ![counter](../assets/examples/counter.png){ width=200 }<br>`counter` | ![device_counter](../assets/examples/device_counter.png){ width=200 }<br>`device_counter` |
+| ![form](../assets/examples/form.png){ width=200 }<br>`form` | ![forms](../assets/examples/forms.png){ width=200 }<br>`forms` | ![gallery](../assets/examples/gallery.png){ width=200 }<br>`gallery` |
+| ![gestures](../assets/examples/gestures.png){ width=200 }<br>`gestures` | ![icons](../assets/examples/icons.png){ width=200 }<br>`icons` | ![layout](../assets/examples/layout.png){ width=200 }<br>`layout` |
+| ![lists](../assets/examples/lists.png){ width=200 }<br>`lists` | ![media](../assets/examples/media.png){ width=200 }<br>`media` | ![multifile](../assets/examples/multifile.png){ width=200 }<br>`multifile` |
+| ![native_caps](../assets/examples/native_caps.png){ width=200 }<br>`native_caps` | ![navigation](../assets/examples/navigation.png){ width=200 }<br>`navigation` | ![overlays](../assets/examples/overlays.png){ width=200 }<br>`overlays` |
+| ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
+| ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
+| ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | ![h3gallery](../assets/examples/h3gallery.png){ width=200 }<br>`h3gallery` |
+| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | | |
+
+Os exemplos `h1buttons` (variantes de `Button`), `h2gallery` (o kit de ação e
+entrada), `h3gallery` (superfície e layout) e `h4gallery` (data display e
+feedback) acompanham o [design system](design-system/variantes.md).
+
+### Animados
+
+Exemplos com movimento (`animation`, `gestures`, `stopwatch`) precisam de um
+**GIF** — um PNG estático não mostra a animação. O harness
+`toolchain/capture_gif.sh` captura uma rajada de frames no dispositivo e monta o
+GIF (via `toolchain/frames_to_gif.py`). Como esses exemplos são **estáticos em
+repouso**, dispare a animação com `TAP_X`/`TAP_Y` antes da rajada:
+
+```bash
+# ex.: stopwatch — toca "start" e captura o relógio correndo
+TAP_X=540 TAP_Y=1400 ANDROID_SERIAL=emulator-5554 \
+    bash toolchain/capture_gif.sh examples/stopwatch/app.py
+```

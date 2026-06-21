@@ -24,10 +24,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
 
-from tempestroid.core.state import App
-from tempestroid.widgets import Widget
+from tempest_core.core.state import App
+from tempest_core.theme import Theme
+from tempest_core.widgets import Widget
 
-__all__ = ["AppSpec", "load_app_spec", "spec_from_source"]
+__all__ = ["AppSpec", "load_app_spec", "spec_from_project", "spec_from_source"]
 
 
 @dataclass(frozen=True)
@@ -37,10 +38,16 @@ class AppSpec:
     Attributes:
         make_state: Factory returning a fresh initial state.
         view: Builds the widget tree from the running app.
+        make_theme: Optional factory returning the app's initial
+            :class:`~tempest_core.Theme` (e.g. ``Theme(mode=ThemeMode.DARK)`` so
+            the app starts dark and the host's Material color scheme matches).
+            ``None`` (the default) means the app inherits the platform theme
+            (``ThemeMode.SYSTEM``).
     """
 
     make_state: Callable[[], Any]
     view: Callable[[App[Any]], Widget]
+    make_theme: Callable[[], Theme] | None = None
 
 
 def load_app_spec(path: str | Path) -> AppSpec:
@@ -57,13 +64,72 @@ def load_app_spec(path: str | Path) -> AppSpec:
         AttributeError: If the module lacks ``view`` or ``make_state``.
         TypeError: If ``view`` or ``make_state`` is not callable.
     """
+    from tempestroid.cli.bundle import resolve_project
+
     file = Path(path).resolve()
     if not file.is_file():
         raise FileNotFoundError(f"app file not found: {file}")
-    source = file.read_text(encoding="utf-8")
-    return spec_from_source(
-        source, filename=str(file), name=f"_tempest_app_{file.stem}"
+    # Resolve the project root (nearest pyproject) and put it on sys.path, so a
+    # multi-file app's sibling imports (`from my_pkg import x`) work in the Qt
+    # simulator / dev loop exactly as they do on device. A lone file with no
+    # pyproject resolves root = its own dir (harmless), preserving single-file.
+    layout = resolve_project(file)
+    return spec_from_project(
+        layout.root, layout.entry, name=f"_tempest_app_{file.stem}"
     )
+
+
+def spec_from_project(
+    root: str | Path,
+    entry: str,
+    *,
+    name: str = "_tempest_app",
+) -> AppSpec:
+    """Load an app spec from a multi-file project root + entry module.
+
+    Puts both the project ``root`` *and* the entry module's own parent directory
+    on ``sys.path`` (so ``entry``'s absolute imports resolve whether the sibling
+    lives at the project root — ``from src.foo import x`` — or right next to the
+    entry — ``from app import x``), then execs the entry module's source. This is
+    the multi-file counterpart of :func:`load_app_spec`: the device side (baked
+    APK or code-push) extracts a project bundle to ``root`` and calls this.
+
+    Mirroring the entry parent onto ``sys.path`` keeps the on-device/bundle
+    loader in parity with the in-process headless test runner
+    (:mod:`tempestroid.testing.runner`), which already inserts the entry file's
+    parent so a test/app entry can import a sibling module
+    (``from app import view, make_state``). Without it, an entry that imports a
+    sibling fails on device with ``ModuleNotFoundError`` whenever the resolved
+    project root sits above the entry's own directory (e.g. the repo root or
+    ``examples/`` for ``examples/counter/test_counter.py``).
+
+    Args:
+        root: The project root directory to place on ``sys.path``.
+        entry: The entry module path, relative to ``root`` (e.g. ``"main.py"``).
+        name: The throwaway module name registered in ``sys.modules``.
+
+    Returns:
+        The loaded :class:`AppSpec`.
+
+    Raises:
+        FileNotFoundError: If the entry module does not exist under ``root``.
+        AttributeError: If the entry lacks ``view`` or ``make_state``.
+        TypeError: If ``view`` or ``make_state`` is not callable.
+    """
+    root_path = Path(root).resolve()
+    entry_file = (root_path / entry).resolve()
+    if not entry_file.is_file():
+        raise FileNotFoundError(f"app entry not found: {entry_file}")
+    # Both dirs go on sys.path (additive + idempotent). The project root anchors
+    # `from src.foo import x`; the entry's own parent anchors `from sibling import
+    # x`. When root == entry parent (single-dir project) the dedupe collapses to
+    # one insert. Keep the entry parent at index 0 so a sibling shadows nothing
+    # below it — same policy the headless runner applies.
+    for path_str in (str(root_path), str(entry_file.parent)):
+        if path_str not in sys.path:
+            sys.path.insert(0, path_str)
+    source = entry_file.read_text(encoding="utf-8")
+    return spec_from_source(source, filename=str(entry_file), name=name)
 
 
 def spec_from_source(
@@ -108,7 +174,14 @@ def spec_from_source(
         raise TypeError(f"{filename}: `view` must be callable")
     if not callable(make_state):
         raise TypeError(f"{filename}: `make_state` must be callable")
+    # Optional: an app may declare its initial theme (e.g. start in dark mode) by
+    # exposing a `make_theme() -> Theme` factory, mirroring `make_state`. Absent →
+    # None (the app inherits the platform theme, ThemeMode.SYSTEM).
+    make_theme = module.__dict__.get("make_theme")
+    if make_theme is not None and not callable(make_theme):
+        raise TypeError(f"{filename}: `make_theme` must be callable")
     return AppSpec(
         make_state=cast("Callable[[], Any]", make_state),
         view=cast("Callable[[App[Any]], Widget]", view),
+        make_theme=cast("Callable[[], Theme] | None", make_theme),
     )

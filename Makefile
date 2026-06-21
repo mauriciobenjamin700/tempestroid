@@ -8,6 +8,13 @@
 APP        ?= examples/counter/app.py
 ANDROID    := android-host
 GRADLEW    := ./gradlew
+# F7 — headless x86_64 emulator target. AVD name + the adb serial it boots as.
+AVD        ?= pixel8_api34
+EMU_SERIAL ?= emulator-5554
+EMU_PORT   ?= 5554
+# F8 — golden snapshot for deterministic fast boot + pool size (default: by host).
+SNAPSHOT   ?= golden
+N          ?=
 # This host: SDK/NDK live here (not the stale ANDROID_HOME). Override if needed.
 ANDROID_SDK_ROOT ?= /usr/lib/android-sdk
 # Version read from pyproject (single source of truth) for tagging.
@@ -91,6 +98,10 @@ docs-build: ## Build MkDocs site (--strict)
 docs-serve: ## Serve MkDocs site locally
 	uv run mkdocs serve
 
+.PHONY: docs-shots
+docs-shots: ## Render a PNG of every widget/component into docs/assets/components
+	QT_QPA_PLATFORM=offscreen uv run python tools/shoot_docs.py
+
 # ---- python package build ---------------------------------------------------
 .PHONY: build
 build: ## Build sdist + wheel into dist/ (bundles the host APK if staged)
@@ -104,13 +115,20 @@ bump: ## Bump version in pyproject (PART=patch|minor|major, default patch)
 	@PART="$${PART:-patch}" python toolchain/bump_version.py
 
 .PHONY: release
-release: gate docs-sync ## Tag vX.Y.Z (from pyproject) + push → triggers PyPI publish CI
+release: gate docs-sync ## Attach host APK to a vX.Y.Z GitHub release + tag → triggers PyPI publish CI
 	@echo "Releasing v$(VERSION)"
 	@git diff --quiet || { echo "ERROR: working tree dirty — commit first"; exit 1; }
 	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
 		&& { echo "ERROR: tag v$(VERSION) already exists"; exit 1; } || true
-	git tag -a "v$(VERSION)" -m "release: v$(VERSION)"
-	git push origin "v$(VERSION)"
+	@# The host APK (~100 MB: it embeds CPython) is too big for the PyPI wheel, so
+	@# it ships as a GitHub release asset that `tempest install`/`deploy` download
+	@# (cached). Create the release WITH the asset, which creates + pushes the tag;
+	@# that single push triggers the publish workflow (lean wheel → PyPI).
+	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' (needs the Android toolchain) before releasing"; exit 1; }
+	cp "$(HOST_APK)" "$(dir $(HOST_APK))$(HOST_ASSET)"
+	gh release create "v$(VERSION)" "$(dir $(HOST_APK))$(HOST_ASSET)" \
+		--title "v$(VERSION)" --notes "tempestroid v$(VERSION)"
+	@echo "released v$(VERSION) with $(HOST_ASSET) — `tempest install` downloads it"
 
 # ---- android (Trilho B — needs SDK/NDK + device) ----------------------------
 .PHONY: doctor
@@ -120,6 +138,14 @@ doctor: ## Validate the Android toolchain (SDK/NDK/Gradle/JDK/device/staging)
 .PHONY: toolchain
 toolchain: ## Fetch CPython 3.14 + build wheels + stage device site-packages
 	cd toolchain && source env.sh && ./00_fetch_cpython.sh && ./01_build_wheels.sh && ./02_stage_deps.sh
+
+.PHONY: compose-test
+compose-test: ## F7 camada B: JVM screen tests of the Compose renderer (no device/emulator)
+	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:testDebugUnitTest
+
+.PHONY: compose-shots
+compose-shots: ## Record Roborazzi golden PNGs of the Compose renderer (opt-in)
+	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:recordRoborazziDebug -Ptempest.roborazzi=true
 
 .PHONY: apk
 apk: ## Build debug APK (assembleDebug)
@@ -164,6 +190,71 @@ apk-install: apk install ## Build + install the debug APK
 .PHONY: logcat
 logcat: ## Tail device logs for the host process
 	adb logcat -s tempest:V python:V AndroidRuntime:E
+
+# ---- emulator target (F7 — headless x86_64, no physical device) -------------
+# Run + verify a tempestroid app on a HEADLESS x86_64 emulator, so no physical
+# device is required. Every adb/gradle/serve step targets the emulator EXPLICITLY
+# (-s $(EMU_SERIAL) / ANDROID_SERIAL) since a physical device may ALSO be attached.
+
+EMU_APK := $(ANDROID)/app/build/outputs/apk/debug/app-debug.apk
+
+.PHONY: emulator
+emulator: ## Boot the headless x86_64 AVD (fast from the '$(SNAPSHOT)' snapshot if present; F7/F8)
+	@if adb devices | grep -q '^$(EMU_SERIAL)[[:space:]]*device$$'; then \
+		echo "emulator $(EMU_SERIAL) already running"; \
+	else \
+		snap_dir="$$HOME/.android/avd/$(AVD).avd/snapshots/$(SNAPSHOT)"; \
+		if [ -d "$$snap_dir" ]; then \
+			echo "==> booting AVD $(AVD) from snapshot '$(SNAPSHOT)' (fast) as $(EMU_SERIAL)"; \
+			snap_args="-snapshot $(SNAPSHOT)"; \
+		else \
+			echo "==> no '$(SNAPSHOT)' snapshot — cold-booting AVD $(AVD) (run 'make emulator-snapshot' once to speed this up)"; \
+			snap_args="-no-snapshot"; \
+		fi; \
+		ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) setsid $(ANDROID_SDK_ROOT)/emulator/emulator \
+			-avd $(AVD) -port $(EMU_PORT) -no-window -no-audio -no-boot-anim \
+			-gpu swiftshader_indirect $$snap_args -read-only \
+			>/tmp/tempest-emulator.log 2>&1 & \
+		echo "==> waiting for $(EMU_SERIAL) to come online"; \
+		adb -s $(EMU_SERIAL) wait-for-device; \
+		echo "==> waiting for sys.boot_completed=1"; \
+		until [ "$$(adb -s $(EMU_SERIAL) shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do \
+			sleep 2; \
+		done; \
+		echo "emulator $(EMU_SERIAL) booted"; \
+	fi
+
+.PHONY: provision-avd
+provision-avd: ## Create the pinned x86_64 AVD idempotently (FORCE=1 recreates; F8)
+	bash toolchain/provision_avd.sh
+
+.PHONY: emulator-snapshot
+emulator-snapshot: ## Boot once + save the '$(SNAPSHOT)' golden snapshot for fast boots (F8)
+	bash toolchain/emulator_snapshot.sh
+
+.PHONY: emulator-pool
+emulator-pool: ## Run the example gallery sharded across N isolated emulators (N=, F8; experimental)
+	N="$(N)" bash toolchain/emulator_pool.sh
+
+.PHONY: mirror
+mirror: ## Mirror the emulator/device screen live with scrcpy (needs WSLg/X; F8)
+	@command -v scrcpy >/dev/null 2>&1 || { echo "scrcpy not installed — 'sudo apt install scrcpy' (needs WSLg)"; exit 1; }
+	scrcpy -s $(EMU_SERIAL)
+
+.PHONY: stage-x86
+stage-x86: ## Stage the x86_64 CPython prefix + site-packages for the emulator (F7)
+	bash toolchain/stage_emulator_runtime.sh
+
+.PHONY: apk-x86
+apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
+	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug \
+		-Ptempest.abi=x86_64 \
+		-Ptempest.pythonPrefix=../toolchain/dist/python/x86_64 \
+		-Ptempest.depsDir=../toolchain/dist/site-packages-x86_64
+
+.PHONY: emulator-verify
+emulator-verify: ## End-to-end: boot emulator → stage-x86 → apk-x86 → install → serve APP → screenshot (F7)
+	bash toolchain/emulator_verify.sh "$(APP)"
 
 # ---- housekeeping -----------------------------------------------------------
 .PHONY: clean
