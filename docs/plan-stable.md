@@ -40,7 +40,7 @@ testes verdes). Acrescenta uma regra própria:
 | F6 | **Trim de tamanho do APK** — enxugar o CPython 3.14 embutido. **Fase-1 (off-device):** pruning seguro de stdlib morta. **Fase-2 (host-side, device-gated):** stdlib-archive/codecs/compressão | 🚧 fase-1 ✅ (PR #74) — baseline real **~39MB** (não ~50MB; já cortado por #70/#71), fase-1 rende ~1MB → **~38MB**; **~20MB exige fase-2 host-side** (Kotlin/C + device, não offline) | **fase-1:** excludes seguros (import trace verde) + APK rebuilda + tamanho documentado + gate verde; **fase-2 (futuro):** APK materialmente menor que boota e roda os examples (Qt + device via F5), custo de 1º boot medido |
 | F7 | **Alvo de device sem hardware físico** — emulador headless x86_64 (equivalente completo, dirigido pelo harness F5) + testes de tela do renderizador Compose na JVM (Roborazzi). Remove o device físico do caminho crítico | 🚧 **provado ponta-a-ponta** (2026-06-13): AVD x86_64 headless + APK x86_64 → counter renderiza e `0→3` por tap, ZERO hardware físico; falta empacotar em comandos (`make emulator-verify`) + camada B | `make emulator-verify` (sem USB) sobe o AVD x86_64, instala o host e roda a galeria F5 verde com screenshots (CPython+JNI+Compose+nativas); camada B pina o Compose em testes JVM no gate; `dual-verify` trata emulador como leg de device legítimo |
 | F8 | **Emulação estável + visualização nativa** — camada de confiabilidade sobre o F7: provisionamento reprodutível do AVD, boot determinístico por snapshot, gating de prontidão, auto-recuperação de AVD travado, **pool de N emuladores em paralelo** (isolados, sharding da suíte), pipeline de screenshot/screen-record + regressão visual, espelhamento ao vivo (`scrcpy`) e fallback de farm na nuvem quando não há KVM | ✅ **boot-proven no emulador (2026-06-14)** — `make emulator-snapshot` (cold-boot gravável → readiness gating → salva `golden` → stop) **OK**; `make emulator` restaura do snapshot em **3s**; `make emulator-verify VISUAL=1` **PASS real** (counter monta, screenshot bate o golden); tap "+" 3× → **Count 0→3** (round-trip evento→JNI→handler→patch→recompose) com a fidelidade Compose #80 (texto contrastante branco-no-escuro + cores dos botões corretas). **Bloqueador real encontrado+fixado:** o diálogo `POST_NOTIFICATIONS` (API 34) cobria o host → pre-grant no `emulator_verify.sh`. **Pool sharded PROVADO em paralelo (2026-06-20):** `make emulator-pool N=2` bootou 2 instâncias isoladas do snapshot → shard → ambos PASS → teardown limpo; destravou o code-push (fix do `tree_signature` que escaneava o repo inteiro) | `make emulator` sobe um AVD pinado em ≤ Ns por snapshot, com auto-recuperação se travar; **um pool de N instâncias isoladas roda a suíte em paralelo** (sharded), bound por hardware; o fluxo de um app é capturável (screenshot/vídeo) e comparável a golden; `scrcpy` espelha emulador/device no host (WSLg); CI sem KVM cai pra farm; zero passos manuais frágeis |
-| F9 | **Driver de testes nativo estilo Playwright** — API de automação de UI de alto nível, **cross-renderer** (mesmo script dirige o simulador Qt **e** o Compose no emulador/device), com **auto-wait** (sem sleeps), locators por Semantics/texto/key, ações (tap/type/scroll/back), asserts, screenshot/trace. Roda sobre a ponte + a árvore de Semantics do E9 + a introspecção | ⏳ planejado | um teste `tempest test` localiza um nó por Semantics/texto/key, age, espera a UI estabilizar e afirma o estado — o **mesmo script passa no Qt e no emulador/device**; flakes eliminados pelo auto-wait; trace+screenshot por passo em falha |
+| F9 | **Driver de testes nativo estilo Playwright** — API de automação de UI de alto nível, **cross-renderer** (mesmo script dirige o backend in-process **e** o Compose no emulador/device), com **auto-wait** (sem sleeps), locators por Semantics/texto/key, ações (tap/type/scroll/back), asserts, screenshot/trace. Roda sobre a ponte + a árvore de Semantics do E9 + a introspecção | ✅ **driver construído + dois alvos implementados** — `tempestroid/testing/` (`Page`/`Locator`/auto-wait + `HeadlessBackend` + `EmulatorBackend` + `EmulatorPool`) + comando `tempest uitest <file> --target headless\|emulator [-j N]`; `examples/*/test_*.py`. **Alvo `headless` PROVADO verde** (2026-06-20: `tempest uitest examples/counter/test_counter.py` → 3/3 PASS — localiza `inc` por key, toca, auto-wait, afirma `Count: 0→1`, inclui handler async). **Alvo `emulator` implementado e provado no caminho do pool** (F8, 2026-06-20: `make emulator-pool N=2` shardou counter+forms no Compose real → ambos PASS); o pool agora **fixa em `ANDROID_SERIAL`** quando setado (`running_emulators`), p/ hosts compartilhados com vários emuladores. `qt`/`device` reservados (`PLANNED_TARGETS` → `NotImplementedError`) | um teste `tempest uitest` localiza um nó por Semantics/texto/key, age, espera a UI estabilizar e afirma o estado — o **mesmo script passa no headless e no emulador/device**; flakes eliminados pelo auto-wait; trace+screenshot por passo em falha |
 
 ---
 
@@ -699,9 +699,10 @@ async def test_counter(page):           # "page" = um app montado num alvo
   pela ponte (o mesmo caminho do `dispatchEvent` do device e do `_invoke` do Qt).
 - **Asserts + trace:** `expect_*` com timeout; em falha, **trace** (sequência de
   árvores + eventos) e screenshot por passo — debug determinístico.
-- **Runner:** `tempest test` roda os scripts, escolhe o alvo (`--target qt` |
-  `--target emulator` | `--target device`) e, no emulador, usa o **pool do F8**
-  para rodar em **paralelo/sharded**.
+- **Runner:** `tempest uitest <file>` roda os scripts e escolhe o alvo
+  (`--target headless` — in-process, sem renderer — | `--target emulator` — Compose
+  real); no emulador usa o **pool do F8** para rodar em **paralelo/sharded** (`-j N`).
+  `qt`/`device` ficam reservados (selecioná-los levanta `NotImplementedError`).
 
 ### Relação com o que já existe
 - **Não** substitui a conformância (D) nem a camada B (F7): aqueles pinam
@@ -713,19 +714,23 @@ async def test_counter(page):           # "page" = um app montado num alvo
 ### Arquivos
 - `tempestroid/testing/` (novo) — o driver: `Page`, locators, auto-wait, ações,
   `expect_*`, trace; backends por alvo (Qt in-process; emulador/device via ponte).
-- `tempestroid/cli/` — comando `tempest test` (alvo + pool + relatório).
+- `tempestroid/cli/` — comando `tempest uitest` (alvo + pool + relatório).
 - `android-host/` — hook de injeção de evento/serialização de árvore para o driver
   (reusa `dispatchEvent` + o canal de mount/patch; sem mudança de C/JNI esperada).
 - `docs/guia/testing.md` (+ `.en`) — tutorial-first do driver, exemplos rodáveis.
 - `examples/*/test_*.py` — testes de exemplo cross-renderer.
 
-### Feito quando
-- Um teste F9 localiza um nó por Semantics/texto/key, age e afirma o estado com
-  **auto-wait** — e o **mesmo script passa no Qt e no emulador/device**.
-- O flake por timing some (sem `sleep`): a espera é pela árvore estabilizar.
-- `tempest test --target emulator` usa o **pool do F8** e roda a suíte em paralelo.
-- Falha gera trace + screenshot por passo; `dual-verify` roda o mesmo teste nos
-  dois legs.
+### Feito quando — ✅ atingido (headless verde; emulador via pool F8)
+- ✅ Um teste F9 localiza um nó por key, age e afirma o estado com **auto-wait** —
+  e o **mesmo script passa no headless e no emulador/Compose** (`examples/counter/
+  test_counter.py`: headless 3/3 PASS em 2026-06-20; emulador via `make
+  emulator-pool` na F8). `qt`/`device` ficam reservados (`NotImplementedError`).
+- ✅ O flake por timing some (sem `sleep`): a espera é pela árvore estabilizar
+  (revisão do mirror quieta + nenhum evento em voo).
+- ✅ `tempest uitest --target emulator -j N` usa o **pool do F8** e shard a suíte
+  em paralelo; o pool **fixa em `ANDROID_SERIAL`** quando setado (host compartilhado).
+- ✅ Falha gera screenshot real por teste (`docs/assets/emulator/uitest/`) +
+  trace/dump da árvore; `dual-verify` pode rodar o mesmo teste nos dois legs.
 
 ---
 
@@ -742,7 +747,7 @@ F5 (device loop)   ──► GATE: harness de device à prova de drop           
 F6 (trim APK)      ──► fase-1 ✅ ~39→~38MB (off-device); fase-2 ~20MB = host  🚧
 F7 (emulador alvo) ──► device sem hardware físico (provado E2E)             🚧
    └─► F8 (emulação estável + pool de N + visualização) ──► boot-proven no emulador ✅ (pool ainda experimental)
-        └─► F9 (driver "Playwright nativo", cross-renderer, sobre o pool)    ⬜
+        └─► F9 (driver "Playwright nativo", cross-renderer, sobre o pool)    ✅ (headless verde; emulador via pool F8)
 ```
 
 F1/F3/F4(1-3) já entregaram criar + distribuir. **F5 é o novo gate**: a validação

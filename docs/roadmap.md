@@ -204,7 +204,15 @@ para distribuição (Trilho F — ver [`docs/plan-stable.md`](plan-stable.md)):
   app monta. `provision_avd.sh`/`emulator_snapshot.sh`/`emulator_pool.sh`/
   `visual_regression.py`/`emulator_verify.sh` + alvos `make` + runbook bilíngue.
   Pendente menor: N>2 em hardware maior, screen-record mp4, android-doctor checks.
-- **F9 — driver de testes nativo estilo Playwright:** API de automação de UI
-  **cross-renderer** (mesmo script no simulador Qt e no Compose do
-  emulador/device), com **auto-wait** (sem `sleep`), locators por Semantics/
-  texto/key, rodando em paralelo sobre o pool do F8. O "Playwright do nativo".
+- **F9 — driver de testes nativo estilo Playwright:** ✅ **construído** —
+  `tempestroid/testing/` (`Page`/`Locator`/auto-wait + `HeadlessBackend` +
+  `EmulatorBackend` + `EmulatorPool`) + `tempest uitest <file> --target
+  headless|emulator [-j N]` + `examples/*/test_*.py`. API de automação de UI
+  **cross-renderer** (mesmo script no backend in-process **e** no Compose real do
+  emulador), com **auto-wait** (sem `sleep`), locators por Semantics/texto/key,
+  rodando em paralelo/sharded sobre o pool do F8. O "Playwright do nativo".
+  **Alvo `headless` PROVADO verde** (2026-06-20: counter 3/3 PASS — key→tap→
+  auto-wait→assert `0→1` + handler async); **alvo `emulator` provado no caminho
+  do pool** (F8: `make emulator-pool N=2` shardou counter+forms no Compose real →
+  PASS). O pool agora **fixa em `ANDROID_SERIAL`** p/ hosts compartilhados.
+  `qt`/`device` reservados (`NotImplementedError`).

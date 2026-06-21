@@ -217,6 +217,55 @@ def test_running_emulators_parses_only_emulator_serials(
     assert pool_mod.running_emulators() == ["emulator-5554"]
 
 
+def test_running_emulators_pins_to_android_serial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``ANDROID_SERIAL`` constrains the result to that one ready emulator.
+
+    On a shared host running several emulators in parallel, a task must only ever
+    reach its own instance — so when ``ANDROID_SERIAL`` names a ready emulator,
+    ``running_emulators`` returns just that serial (never a sibling's).
+    """
+
+    class _Result:
+        stdout = (
+            "List of devices attached\n"
+            "emulator-5554\tdevice\n"
+            "emulator-5556\tdevice\n"
+        )
+
+    def fake_run(*args: Any, **kwargs: Any) -> _Result:
+        return _Result()
+
+    monkeypatch.setattr(pool_mod.subprocess, "run", fake_run)
+    monkeypatch.setenv("ANDROID_SERIAL", "emulator-5556")
+    assert pool_mod.running_emulators() == ["emulator-5556"]
+
+
+def test_running_emulators_ignores_unmatched_android_serial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale/absent ``ANDROID_SERIAL`` does not filter the ready serials.
+
+    If the pinned serial is not a ready emulator, the unfiltered list is returned
+    (the pin is a best-effort constraint, never a hard failure).
+    """
+
+    class _Result:
+        stdout = (
+            "List of devices attached\n"
+            "emulator-5554\tdevice\n"
+            "emulator-5556\tdevice\n"
+        )
+
+    def fake_run(*args: Any, **kwargs: Any) -> _Result:
+        return _Result()
+
+    monkeypatch.setattr(pool_mod.subprocess, "run", fake_run)
+    monkeypatch.setenv("ANDROID_SERIAL", "emulator-9999")
+    assert pool_mod.running_emulators() == ["emulator-5554", "emulator-5556"]
+
+
 def test_allocate_skips_offline_ghost_serial(
     monkeypatch: pytest.MonkeyPatch,
     captured_helpers: list[tuple[str, ...]],

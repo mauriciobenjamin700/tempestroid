@@ -45,11 +45,19 @@ _HARD_CAP = 8
 def running_emulators(adb: str = "adb") -> list[str]:
     """List serials of emulators currently in the ``device`` state.
 
+    When the ``ANDROID_SERIAL`` environment variable is set, the result is
+    **filtered to that serial** (if it is a ready emulator) — so a shared host
+    running several emulators in parallel pins the pool to the caller's instance
+    and never reaches a sibling's device. This mirrors ``adb``'s own
+    ``ANDROID_SERIAL`` targeting.
+
     Args:
         adb: The ``adb`` executable.
 
     Returns:
         The ready ``emulator-*`` serials, or ``[]`` when none / adb is missing.
+        Constrained to ``ANDROID_SERIAL`` when that variable names a ready
+        emulator.
     """
     try:
         out = subprocess.run(  # noqa: S603
@@ -66,6 +74,9 @@ def running_emulators(adb: str = "adb") -> list[str]:
             and parts[0].startswith("emulator-")
         ):
             serials.append(parts[0])
+    pinned = os.environ.get("ANDROID_SERIAL")
+    if pinned and pinned in serials:
+        return [pinned]
     return serials
 
 
