@@ -506,6 +506,18 @@ abstract class CopyPythonSitePackagesTask @Inject constructor(
                 into(sp)
                 // Drop every non-target ABI's compiled extensions (G7 trim).
                 exclude(foreignSo)
+                // G7 trim — runtime-dead payload in the science deps. numpy ships
+                // its test suites (~7.7 MB), the f2py Fortran-wrapper generator and
+                // PyInstaller hooks; none run during inference. Type stubs (*.pyi)
+                // and bytecode caches are never imported at runtime either. Pure
+                // Python, so this is zero-risk for an app that only does ndarray ops
+                // (numpy/typing/__init__.py — the real runtime module — is kept; only
+                // its .pyi stubs go).
+                exclude(
+                    "numpy/tests/**", "numpy/**/tests/**",
+                    "numpy/f2py/**", "numpy/_pyinstaller/**",
+                    "**/*.pyi", "**/__pycache__/**", "**/*.pyc", "**/*.pyo",
+                )
                 if (isPrebuilt) {
                     exclude("tempestroid/**", "**/__pycache__/**", "**/*.pyc", "**/*.pyo")
                 }
