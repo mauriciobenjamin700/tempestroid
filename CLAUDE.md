@@ -606,6 +606,19 @@ change done; `git-worktree` to isolate any task that may run in parallel.
 - Build prereqs for the device path live in the "Trilho B status" notes above
   (export `ANDROID_SDK_ROOT=/usr/lib/android-sdk`, Gradle wrapper 8.11.1, MIUI
   "Install via USB").
+- **Parallel agents on emulators → isolate the adb server per agent.** The
+  emulator *instances* in a pool are isolated (own console/adb port + `-read-only`
+  userdata + serial), but the adb server (default TCP `5037`) is shared: two agents
+  driving emulators at once both hammer it, it wedges, and recovery used to kill
+  every adb — taking down the sibling agent's server. Whenever more than one agent
+  may run device/emulator work at the same time, give each agent a **private adb
+  server**: `tempest uitest --target emulator --isolate-adb` (auto-allocates a port
+  in `5038..5500`), or export a distinct `ANDROID_ADB_SERVER_PORT` per agent before
+  any `adb`/`make emulator-*`/`tempest serve` call (`toolchain/device_loop.sh`
+  honors it and scopes recovery to that port only). Also pin `ANDROID_SERIAL` to
+  the agent's own emulator. Combined with one `git worktree` per agent, this is the
+  full isolation contract for parallel device work. Single-agent work needs nothing
+  (the shared 5037 server is the default).
 
 ## Commands
 

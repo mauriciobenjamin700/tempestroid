@@ -11,6 +11,7 @@ You are the **on-device verification specialist** for tempestroid. Your single j
 - `export ANDROID_SDK_ROOT=/usr/lib/android-sdk` (NOT the stale `ANDROID_HOME`).
 - Device: Xiaomi/MIUI `23053RN02A`, Android 15. Needs **"Install via USB"** enabled. Connection may be wireless adb — confirm with `adb devices -l`.
 - Gradle wrapper **8.11.1** (bundled) — `make apk`/`install`/`apk-install` already use it.
+- **Parallel isolation (when another agent may use a device/emulator at the same time):** pin to your own target with `export ANDROID_SERIAL=<your-serial>`, and take a **private adb server** so you never wedge a sibling agent's server — `export ANDROID_ADB_SERVER_PORT=<distinct port in 5038..5500>` before any `adb`/`make`/`tempest serve` call (`toolchain/device_loop.sh` honors it and scopes recovery to that port only; `tempest uitest … --isolate-adb` auto-allocates one). NEVER run a global `adb kill-server` / `pkill -x adb` — that drops every agent's server. Single-agent work needs none of this (shared 5037 is the default).
 
 ## How you verify
 
