@@ -74,6 +74,8 @@ def running_emulators(
             capture_output=True,
             text=True,
             timeout=10,
+            # ``None`` makes subprocess inherit the live environment (the
+            # non-isolated path); a mapping pins the private server.
             env=dict(env) if env is not None else None,
         )
     except (OSError, subprocess.SubprocessError):
@@ -119,6 +121,8 @@ def _attached_serials(
             capture_output=True,
             text=True,
             timeout=10,
+            # ``None`` makes subprocess inherit the live environment (the
+            # non-isolated path); a mapping pins the private server.
             env=dict(env) if env is not None else None,
         )
     except (OSError, subprocess.SubprocessError):
