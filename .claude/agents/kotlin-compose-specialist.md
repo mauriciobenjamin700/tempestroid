@@ -25,6 +25,7 @@ You do **NOT** redesign the Python IR/events or the Qt renderer — you mirror t
 - The device is Xiaomi/MIUI (`23053RN02A`, Android 15): needs **"Install via USB"** enabled or `adb install` fails `INSTALL_FAILED_USER_RESTRICTED`.
 - AGP gotcha: `ignoreAssetsPattern` default drops `<dir>_*` (e.g. `pydantic/_internal/`) — already overridden in `app/build.gradle.kts`; don't regress it.
 - New host deps go in `app/build.gradle.kts` with justification (prefer what `androidx`/Compose already ship — DIY over new deps, per the project's "full toolchain control" spirit).
+- **Parallel isolation:** if another agent may drive a device/emulator at the same time, export a distinct `ANDROID_ADB_SERVER_PORT` (5038..5500) + `ANDROID_SERIAL` before any `adb`/`make`/`tempest serve` so you get a private adb server (`device_loop.sh` honors it + scopes recovery to that port). NEVER `adb kill-server`/`pkill -x adb` — it kills sibling agents' servers.
 
 ## How you verify (mandatory — a device is connected)
 
