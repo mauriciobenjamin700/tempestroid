@@ -76,5 +76,14 @@ perde-se o allocator "fast" (mimalloc/jemalloc), não a funcionalidade.
 — a mais favorável das DataFrames**: abi3, core deps-free, IO nativo, allocator
 contornável por feature. **Recomendado** como alternativa leve ao pandas para
 pipelines tabulares no device. Próximo passo: `toolchain/build_polars_x86.sh`
-(mirror de `build_pandas_x86.sh` + as features sem `fast_alloc`), buildar **depois**
-do pandas, e provar `examples/polarsspike` no emulador.
+(features sem `fast_alloc`/`nightly`, sem `rust-toolchain.toml` pin), e provar
+`examples/polarsspike` no emulador.
+
+## Enforcement no framework
+
+O loader de app (`tempestroid.cli.app_loader.spec_from_source` — o funil do
+simulador Qt **e** do code-push no device) escaneia a fonte e emite uma
+`DiscouragedImportWarning` quando o app importa `pandas`, orientando a usar Polars
+(`tempestroid/cli/advisories.py`). É um **aviso**, não um erro — o import ainda
+roda no simulador; o objetivo é guiar o dev pra escolha que cabe no device.
+

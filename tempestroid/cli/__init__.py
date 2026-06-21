@@ -2,6 +2,12 @@
 
 from typing import TYPE_CHECKING, Any
 
+from tempestroid.cli.advisories import (
+    DISCOURAGED_IMPORTS,
+    DiscouragedImportWarning,
+    advisories_for_source,
+    warn_discouraged_imports,
+)
 from tempestroid.cli.apk_repack import (
     ApkToolError,
     ensure_debug_keystore,
@@ -74,6 +80,10 @@ __all__ = [
     "load_app_spec",
     "spec_from_project",
     "spec_from_source",
+    "DiscouragedImportWarning",
+    "DISCOURAGED_IMPORTS",
+    "advisories_for_source",
+    "warn_discouraged_imports",
     "MANIFEST_NAME",
     "ProjectLayout",
     "build_bundle",
