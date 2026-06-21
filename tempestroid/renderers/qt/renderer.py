@@ -5354,6 +5354,12 @@ class QtRenderer:
             # ``Style``); apply them after ``_apply_sizing`` so they win over its
             # flexible-size reset.
             self._apply_skeleton_size(cast("_SkeletonWidget", node.widget), node.props)
+        if node.type == "Canvas":
+            # Canvas (and the H6 charts/overlays that lower to it) carries its
+            # extent as ``width``/``height`` PROPS, not via ``Style`` — re-pin the
+            # fixed size after ``_apply_sizing`` reset it to flexible, or a Canvas
+            # in a box layout collapses to a zero sizeHint (empty chart/overlay).
+            self._pin_canvas_size(cast("_CanvasWidget", node.widget), node.props)
         # Now that the widget's size is pinned, clamp an over-large radius (pill
         # sentinel, circle) to ``min(w, h) / 2`` so the corners round fully
         # instead of leaving Qt's square-off of an out-of-range radius.
@@ -5828,10 +5834,24 @@ class QtRenderer:
             parent: The ``Stack`` rendered node.
         """
         widget = cast("_StackWidget", parent.widget)
-        layers = [
-            (child.widget, cast("Style | None", child.props.get("style")))
-            for child in parent.children
-        ]
+        layers: list[tuple[QWidget, Style | None]] = []
+        for child in parent.children:
+            layer_style = cast("Style | None", child.props.get("style"))
+            # A sized leaf (e.g. a ``Canvas`` overlay) carries its extent in
+            # ``width``/``height`` PROPS, not in ``Style`` — fold them into the
+            # layer style so ``_stack_geometry`` sizes it to fill/overlay instead
+            # of collapsing to a tiny sizeHint (the DetectionOverlay boxes case).
+            prop_w = cast("float | None", child.props.get("width"))
+            prop_h = cast("float | None", child.props.get("height"))
+            if prop_w is not None or prop_h is not None:
+                base = layer_style if layer_style is not None else Style()
+                layer_style = base.model_copy(
+                    update={
+                        "width": prop_w if prop_w is not None else base.width,
+                        "height": prop_h if prop_h is not None else base.height,
+                    }
+                )
+            layers.append((child.widget, layer_style))
         style = cast("Style | None", parent.props.get("style"))
         widget.set_layers(layers, style.stack_align if style is not None else None)
 
@@ -6773,7 +6793,7 @@ class QtRenderer:
         widget.setScaledContents(cast("str", props.get("fit", "contain")) == "fill")
 
     def _apply_canvas(self, widget: _CanvasWidget, props: dict[str, Any]) -> None:
-        """Push the Canvas draw commands (and optional fixed size) to the widget.
+        """Push the Canvas draw commands to the widget (size is pinned separately).
 
         The IR carries ``commands`` as a list of frozen ``DrawCommand`` Pydantic
         models; they are lowered to plain JSON-able dicts here so the
@@ -6793,6 +6813,23 @@ class QtRenderer:
                 # Frozen ``DrawCommand`` Pydantic model → JSON-able dict.
                 commands.append(cast("dict[str, Any]", cmd.model_dump()))
         widget.set_commands(commands)
+        # The fixed size is (re-)pinned by ``_pin_canvas_size`` AFTER
+        # ``_apply_sizing`` (which would otherwise reset it to flexible), so it is
+        # not set here — see ``_apply_visual``.
+
+    @staticmethod
+    def _pin_canvas_size(widget: _CanvasWidget, props: dict[str, Any]) -> None:
+        """Pin a Canvas to its ``width``/``height`` props (post-``_apply_sizing``).
+
+        A ``Canvas`` carries its drawing extent as ``width``/``height`` props, not
+        via ``Style``; ``_apply_sizing`` resets unset-``Style`` widgets to the
+        flexible ``[0, QWIDGETSIZE_MAX]`` range, so the size must be pinned again
+        afterwards or the Canvas collapses to a zero sizeHint inside a box layout.
+
+        Args:
+            widget: The backing canvas widget.
+            props: The node's current props (carry ``width``/``height``).
+        """
         width = props.get("width")
         height = props.get("height")
         if width is not None:

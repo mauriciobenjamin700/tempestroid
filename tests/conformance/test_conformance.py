@@ -52,6 +52,19 @@ from tempest_core import (
     resolve_surface_variant,
     resolve_variant,
 )
+from tempest_core.components import (
+    BarChart,
+    ChartSeries,
+    ConfidenceBadge,
+    DataTable,
+    DetectionBox,
+    DetectionOverlay,
+    LineChart,
+    MetricCard,
+    confidence_scheme,
+)
+from tempest_core.core.ir import Node
+from tempest_core.core.reconciler import build
 from tempest_core.style import (
     AlignItems,
     Border,
@@ -4905,4 +4918,460 @@ def test_h5_contrast_wcag_aa(name: str) -> None:
         f"nav use-case {name!r} content vs background has contrast {ratio:.2f} "
         "(< WCAG AA 4.5); the reused resolver no longer guarantees legible content "
         "on the nav container"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H6 conformance: research / data-science components (Trilho H, phase H6)
+# ---------------------------------------------------------------------------
+#
+# Phase H6 ships the research kit in ``tempest-core>=0.8.0``: chart components
+# (``BarChart`` / ``LineChart`` lowering to a ``Canvas`` Node), the
+# ``DetectionOverlay`` (``ort-vision-sdk`` bounding boxes over an image),
+# ``MetricCard`` / ``StatCard``, ``ConfidenceBadge``, and the styled ``DataTable``.
+#
+# KEY ARCHITECTURAL FACT — like H1/H2/H3/H4/H5, H6 adds *no* new resolver, no new
+# ``Style`` field, and no new draw-command kind. So the golden/parity machinery
+# above is untouched and ``len(Style.model_fields) == len(_SAMPLES)`` still holds
+# (pinned by ``test_h6_no_style_field_added`` — the load-bearing guard).
+#
+# H6 pins two NEW kinds of conformance the earlier H phases never produced:
+#
+#   1. **Chart command-list goldens.** ``BarChart`` / ``LineChart`` are Components
+#      that ``build()`` into a ``Canvas`` Node whose ``props["commands"]`` is a
+#      *deterministic* list of draw-command models. Phase E7 only asserted those
+#      commands are JSON-serializable (it pinned no LIST). H6 pins the exact
+#      command list as a golden so any change to the axis-scaling / bar-layout /
+#      polyline math is caught. The ``DetectionOverlay`` box-Canvas commands are
+#      pinned the same way (its Canvas child is grabbed from the ``Stack``).
+#
+#   2. **Resolved-Style goldens for themed compositions.** ``MetricCard``,
+#      ``ConfidenceBadge``, and ``DataTable`` compose primitive trees carrying
+#      *resolved* ``Style``s (the Card surface, the confidence pill at each band,
+#      the table header / zebra / surface). The relevant node's ``props["style"]``
+#      is walked out of the built tree and snapshotted through BOTH translators via
+#      the existing ``snapshot`` helper.
+#
+# A FIXED ``Theme()`` is used for every H6 sample so the resolved colours and the
+# emitted draw commands are deterministic across runs.
+#
+# The Qt-vs-Compose divergences (charts/overlay realize the SAME command list on
+# two distinct canvas engines) are pinned below in ``_H6_WIDGET_DIVERGENCES``.
+
+#: Baseline theme used to resolve / lower every H6 conformance sample.
+_H6_THEME: Theme = Theme()
+
+
+def _find_canvas(root: Node) -> Node:
+    """Return the first ``Canvas`` node in a built IR tree (breadth-first).
+
+    Args:
+        root: The built root ``Node`` to walk.
+
+    Returns:
+        The first ``Node`` whose ``type`` is ``"Canvas"``.
+
+    Raises:
+        AssertionError: If the tree contains no ``Canvas`` node.
+    """
+    queue: list[Node] = [root]
+    while queue:
+        node = queue.pop(0)
+        if node.type == "Canvas":
+            return node
+        queue.extend(node.children)
+    raise AssertionError("no Canvas node found in the built tree")
+
+
+def _canvas_commands(node: Node) -> list[dict[str, Any]]:
+    """Extract a ``Canvas`` node's draw-command list as JSON-able dicts.
+
+    Args:
+        node: A ``Canvas`` ``Node`` carrying ``props["commands"]`` (a list of
+            draw-command Pydantic models).
+
+    Returns:
+        The ``model_dump()`` of every draw command, JSON-serializable.
+    """
+    assert node.type == "Canvas", (
+        f"expected a Canvas Node, got {node.type!r}; the chart lowering changed"
+    )
+    commands: list[Any] = node.props["commands"]
+    return [cmd.model_dump() for cmd in commands]
+
+
+# --- 1. chart command-list goldens (the new bit) ---------------------------
+
+#: Canonical chart / overlay command-list cases. Each builds to a ``Canvas`` Node;
+#: the value is a zero-argument factory returning the JSON command list so the
+#: deterministic FIXED-input charts are constructed lazily at test time.
+_H6_COMMAND_CASES: dict[str, Any] = {
+    "h6_barchart_commands": lambda: _canvas_commands(
+        build(
+            BarChart(
+                values=[10.0, 25.0, 5.0, 40.0],
+                labels=["a", "b", "c", "d"],
+                width=320.0,
+                height=200.0,
+                color_scheme="primary",
+                theme=_H6_THEME,
+            )
+        )
+    ),
+    "h6_linechart_commands": lambda: _canvas_commands(
+        build(
+            LineChart(
+                series=[
+                    ChartSeries(
+                        points=[1.0, 3.0, 2.0, 5.0, 4.0],
+                        label="series-1",
+                        color_scheme="primary",
+                    )
+                ],
+                width=320.0,
+                height=200.0,
+                color_scheme="primary",
+                theme=_H6_THEME,
+            )
+        )
+    ),
+    "h6_detection_overlay_commands": lambda: _canvas_commands(
+        _find_canvas(
+            build(
+                DetectionOverlay(
+                    image_src="sample.png",
+                    boxes=[
+                        DetectionBox(
+                            x1=0.1, y1=0.1, x2=0.5, y2=0.6, name="cat", conf=0.92
+                        ),
+                        DetectionBox(
+                            x1=0.55, y1=0.2, x2=0.9, y2=0.7, name="dog", conf=0.41
+                        ),
+                    ],
+                    width=320.0,
+                    height=320.0,
+                    theme=_H6_THEME,
+                )
+            )
+        )
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H6_COMMAND_CASES))
+def test_h6_chart_command_golden(name: str) -> None:
+    """Each chart / overlay command list matches its committed golden.
+
+    Pins the deterministic draw-command list (``Canvas.props["commands"]``) the
+    chart / overlay lowering emits — catching any change to the axis-scaling, bar
+    layout, polyline, or box-geometry math in ``tempest-core``. Unlike the E7
+    Canvas test (which only asserts JSON-serializability), this pins the exact
+    LIST. Uses a FIXED ``Theme()`` + fixed inputs so colours/coords are stable.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h6``.
+    """
+    commands = _H6_COMMAND_CASES[name]()
+    json.dumps(commands)  # the command list must be pure JSON (no tuples)
+    path = _GOLDEN_DIR / f"{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(commands, indent=2, sort_keys=True) + "\n", "utf-8"
+        )
+    assert path.exists(), f"missing golden for {name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert commands == expected, (
+        f"H6 chart command drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+# --- 2. resolved-Style goldens for themed compositions ----------------------
+
+#: Canonical resolved-``Style`` cases for the themed H6 compositions. Each value is
+#: a zero-argument factory that builds the Component, walks its tree for the
+#: Style-bearing node, and returns that node's ``props["style"]`` — snapshotted
+#: through BOTH translators by ``test_h6_style_golden``.
+_H6_STYLE_CASES: dict[str, Any] = {
+    # MetricCard's root Container carries the resolved Card surface Style.
+    "h6_metric_card_surface": lambda: build(
+        MetricCard(
+            label="Accuracy",
+            value="98%",
+            delta="+2%",
+            delta_up=True,
+            color_scheme="primary",
+            theme=_H6_THEME,
+        )
+    ).props["style"],
+    # ConfidenceBadge resolves a pill Style per confidence band. The root node is a
+    # single Text carrying the resolved badge Style — the key themed output.
+    "h6_confidence_badge_high": lambda: build(
+        ConfidenceBadge(confidence=0.92, label="cat", theme=_H6_THEME)
+    ).props["style"],
+    "h6_confidence_badge_mid": lambda: build(
+        ConfidenceBadge(confidence=0.62, label="cat", theme=_H6_THEME)
+    ).props["style"],
+    "h6_confidence_badge_low": lambda: build(
+        ConfidenceBadge(confidence=0.31, label="cat", theme=_H6_THEME)
+    ).props["style"],
+    # DataTable: the root Column carries the table surface Style; rows[0] is the
+    # header, rows[1]/[2] are the zebra-even / zebra-odd body rows.
+    "h6_datatable_surface": lambda: build(
+        DataTable(
+            columns=["Name", "Score"],
+            rows=[["a", "1"], ["b", "2"], ["c", "3"]],
+            theme=_H6_THEME,
+        )
+    ).props["style"],
+    "h6_datatable_header": lambda: build(
+        DataTable(
+            columns=["Name", "Score"],
+            rows=[["a", "1"], ["b", "2"], ["c", "3"]],
+            theme=_H6_THEME,
+        )
+    ).children[0].props["style"],
+    "h6_datatable_zebra_even": lambda: build(
+        DataTable(
+            columns=["Name", "Score"],
+            rows=[["a", "1"], ["b", "2"], ["c", "3"]],
+            theme=_H6_THEME,
+        )
+    ).children[1].props["style"],
+    "h6_datatable_zebra_odd": lambda: build(
+        DataTable(
+            columns=["Name", "Score"],
+            rows=[["a", "1"], ["b", "2"], ["c", "3"]],
+            theme=_H6_THEME,
+        )
+    ).children[2].props["style"],
+}
+
+
+@pytest.mark.parametrize("name", sorted(_H6_STYLE_CASES))
+def test_h6_style_golden(name: str) -> None:
+    """Each H6 themed-composition resolved ``Style`` matches its committed golden.
+
+    Pins that *both* translators lower a stable, reviewed ``Style`` for the
+    Card surface, every ConfidenceBadge band, and the DataTable surface / header /
+    zebra rows. A drift means either the ``tempest-core`` H6 composition changed
+    its resolved tokens or one of the two translators changed its lowering — both
+    demand a conscious review.
+    Regenerate with ``UPDATE_GOLDEN=1 uv run pytest tests/conformance -k h6``.
+    """
+    style = _H6_STYLE_CASES[name]()
+    assert isinstance(style, Style), (
+        f"{name!r} did not resolve to a Style — the H6 tree structure changed"
+    )
+    snap = snapshot(style)
+    path = _GOLDEN_DIR / f"{name}.json"
+    if os.environ.get("UPDATE_GOLDEN"):
+        _GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", "utf-8")
+    assert path.exists(), f"missing golden for {name!r}; run UPDATE_GOLDEN=1"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert snap == expected, (
+        f"H6 resolved-Style drift for {name!r}; review and re-run "
+        "UPDATE_GOLDEN=1 if intended"
+    )
+
+
+# ---------------------------------------------------------------------------
+# H6 widget-level behavioural divergences (research / data-science components)
+# ---------------------------------------------------------------------------
+#
+# Because H6 adds no new ``Style`` field and no new draw-command kind, the
+# golden/parity machinery above is untouched. The charts and the detection overlay
+# emit the SAME serialized command list to both renderers; the divergence is purely
+# in *which native canvas engine replays it* and in a couple of intrinsic
+# limits of a command list (no text-metrics / no spatial RTL mirroring). These are
+# pinned here as a named tripwire, exactly like the E1/E2/E3/H1/H2/H3/H4/H5 tables,
+# so a renderer change that silently resolves or regresses one is caught loudly.
+#
+# Rationale for each divergence (mirrors the H6 architect contract):
+#
+# 1. BarChart / canvas_replay
+#    Both renderers consume the SAME deterministic ``Canvas`` command list (the one
+#    pinned by ``test_h6_chart_command_golden``). Qt replays it with ``QPainter``
+#    (``drawRect`` / ``drawLine`` / ``drawText`` per command); Compose replays it
+#    with ``drawIntoCanvas`` inside a ``Canvas`` composable. Identical command list,
+#    engine-distinct replay — the shared-but-distinct path (cf. the E7
+#    ``test_e7_canvas_non_divergence`` invariant: Canvas is NOT a *spec* divergence;
+#    this row documents the *replay engine* difference, not a spec one).
+#
+# 2. LineChart / canvas_text_metrics
+#    The axis / value labels are emitted as ``DrawText`` commands with an (x, y)
+#    origin but NO alignment field (the command vocabulary has none). Qt's
+#    ``QPainter.drawText`` places text by its baseline + measures width via
+#    ``QFontMetrics``; Compose's ``drawText`` places by a ``TextLayoutResult``.
+#    The y-axis label alignment is therefore *estimated* at lower time (the chart
+#    pre-offsets the origin) and the two engines may differ by a sub-pixel baseline,
+#    with no align field to reconcile them. Documented, intentional.
+#
+# 3. DetectionOverlay / rtl_spatial
+#    The detection boxes are ABSOLUTE geometry (pixel coords scaled from the
+#    normalized box over the image) emitted as ``DrawRect`` + ``DrawText`` commands.
+#    They are NOT mirrored under the renderer ``rtl`` flag (unlike padding / border
+#    / text-align, which both translators mirror) — a bounding box over an image is
+#    spatial truth, not reading-order layout, so RTL must leave it untouched. Both
+#    renderers honour this; documented as intentional so a future RTL change to the
+#    box geometry fails this tripwire.
+#
+# Updating this table: if a divergence is resolved (both renderers converge on the
+# same strategy), set ``intentional=False`` and explain why — the tripwire
+# ``test_h6_widget_divergences_complete`` will fail until the resolved row is
+# removed. If a new H6 component or topic is added, add a row here AND update the
+# pinned key set.
+
+_H6_WIDGET_DIVERGENCES: list[dict[str, str | bool]] = [
+    {
+        "widget": "BarChart",
+        "topic": "canvas_replay",
+        "qt_strategy": (
+            "Replays the SAME deterministic Canvas command list with QPainter "
+            "(drawRect / drawLine / drawText per command) inside a paintEvent."
+        ),
+        "compose_strategy": (
+            "Replays the SAME deterministic Canvas command list with drawIntoCanvas "
+            "inside a Canvas composable — identical command list, engine-distinct "
+            "replay (NOT a spec divergence, per the E7 Canvas invariant)."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "LineChart",
+        "topic": "canvas_text_metrics",
+        "qt_strategy": (
+            "Axis / value labels are DrawText commands placed by QPainter.drawText "
+            "(baseline origin) and measured with QFontMetrics; no align field in the "
+            "command vocabulary, so y-axis label alignment is pre-estimated at lower "
+            "time."
+        ),
+        "compose_strategy": (
+            "Same DrawText commands placed by Compose drawText (TextLayoutResult "
+            "origin); may differ by a sub-pixel baseline with no align field to "
+            "reconcile — documented, intentional."
+        ),
+        "intentional": True,
+    },
+    {
+        "widget": "DetectionOverlay",
+        "topic": "rtl_spatial",
+        "qt_strategy": (
+            "Detection boxes are ABSOLUTE pixel geometry (DrawRect + DrawText), NOT "
+            "mirrored under the renderer rtl flag — a box over an image is spatial "
+            "truth, not reading-order layout."
+        ),
+        "compose_strategy": (
+            "Same absolute box geometry, also NOT mirrored under its rtl flag — both "
+            "renderers leave detection geometry untouched by RTL (intentional)."
+        ),
+        "intentional": True,
+    },
+]
+
+#: The (widget, topic) pairs that must appear in ``_H6_WIDGET_DIVERGENCES``.
+_H6_DIVERGENCE_KEYS: set[tuple[str, str]] = {
+    (str(row["widget"]), str(row["topic"])) for row in _H6_WIDGET_DIVERGENCES
+}
+
+
+def test_h6_widget_divergences_complete() -> None:
+    """Every H6 research-component divergence row is intentional and uniquely keyed.
+
+    This is the tripwire: a renderer specialist who resolves a divergence (e.g.
+    both renderers converge on the same canvas replay engine) must update the
+    table; one who adds a new H6 component or topic must add a row. Either omission
+    fails this test.
+    """
+    seen: set[tuple[str, str]] = set()
+    for row in _H6_WIDGET_DIVERGENCES:
+        key = (str(row["widget"]), str(row["topic"]))
+        assert key not in seen, (
+            f"duplicate H6 divergence row for {key!r}; "
+            "consolidate or split into distinct topics"
+        )
+        seen.add(key)
+        assert row["intentional"] is True, (
+            f"divergence {key!r} is marked intentional=False; "
+            "either remove it (resolved) or keep it intentional=True (v1 known gap)"
+        )
+        # Each row must document both sides.
+        assert row["qt_strategy"] and row["compose_strategy"], (
+            f"divergence {key!r} is missing a strategy description"
+        )
+    # All pinned keys are present (both directions).
+    assert seen == _H6_DIVERGENCE_KEYS
+
+
+def test_h6_no_style_field_added() -> None:
+    """Phase H6 adds no new ``Style`` fields — research components reuse existing.
+
+    H6 introduces chart / overlay / metric / badge / table components in
+    ``tempest-core`` that lower onto the EXISTING ``Style`` fields (and the
+    EXISTING ``Canvas`` draw-command vocabulary) — no new resolver, enum, draw
+    command, or top-level ``Style`` field. The ``_SAMPLES`` / ``_COVERAGE`` tables
+    therefore stay complete without update. This is the load-bearing guard: if a
+    new field appears, update ``_SAMPLES``, ``_COVERAGE``, regenerate goldens
+    (``UPDATE_GOLDEN=1``), and update this sentinel.
+    """
+    assert len(Style.model_fields) == len(_SAMPLES), (
+        f"Style field count changed to {len(Style.model_fields)} "
+        f"(expected {len(_SAMPLES)}); "
+        "if intentional, update _SAMPLES, _COVERAGE, regenerate goldens with "
+        "UPDATE_GOLDEN=1, and update this test"
+    )
+
+
+@pytest.mark.parametrize(
+    "conf,expected",
+    [
+        (0.9, "success"),
+        (0.6, "warning"),
+        (0.3, "error"),
+    ],
+)
+def test_h6_confidence_scheme_thresholds(conf: float, expected: str) -> None:
+    """``confidence_scheme`` maps each confidence band to the right status scheme.
+
+    This is the picker the ``ConfidenceBadge`` and the ``DetectionOverlay`` box
+    labels share to colour-code confidence (high -> success, mid -> warning, low ->
+    error). Pinning the thresholds guards against a silent re-banding that would
+    desync the badge colour from the overlay box colour.
+    """
+    assert confidence_scheme(conf) == expected, (
+        f"confidence_scheme({conf}) returned {confidence_scheme(conf)!r} "
+        f"(expected {expected!r}); the confidence banding changed — re-check the "
+        "ConfidenceBadge / DetectionOverlay colour coding"
+    )
+
+
+@pytest.mark.parametrize("color_scheme", ["success", "warning", "error"])
+def test_h6_confidence_badge_contrast_wcag_aa(color_scheme: str) -> None:
+    """The SUBTLE badge container pair each confidence band resolves clears WCAG AA.
+
+    H6's a11y gate (reuses the H4 contrast helper): the ``ConfidenceBadge`` colour-
+    codes confidence through the status schemes ``confidence_scheme`` returns
+    (success / warning / error). The raw saturated status role on white fails AA
+    (~3.02 for success), so the *SUBTLE container pair* (the M3 ``*_container`` /
+    ``on_*_container`` roles ``resolve_badge_variant`` emits) is the legible
+    affordance — this asserts that pair clears ``contrast_ratio >= 4.5`` for every
+    band a confidence can fall into, proving the badge stays readable.
+    """
+    badge = resolve_badge_variant(
+        variant=BadgeVariant.SUBTLE,
+        size=Size.MD,
+        color_scheme=color_scheme,
+        theme=_H6_THEME,
+    )
+    assert badge.color is not None, (
+        "SUBTLE confidence badge resolver must set a content color"
+    )
+    assert isinstance(badge.background, Color), (
+        "SUBTLE confidence badge resolver must set a solid container background Color"
+    )
+    ratio = contrast_ratio(badge.color, badge.background)
+    assert ratio >= 4.5, (
+        f"SUBTLE confidence badge pair for color_scheme={color_scheme!r} has "
+        f"contrast {ratio:.2f} (< WCAG AA 4.5); the container pair regressed — the "
+        "raw status role fails AA"
     )
