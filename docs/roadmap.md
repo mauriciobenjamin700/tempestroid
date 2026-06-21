@@ -195,11 +195,15 @@ para distribuição (Trilho F — ver [`docs/plan-stable.md`](plan-stable.md)):
   sobre o F7 — AVD reprodutível, boot por snapshot, auto-recuperação, **pool de N
   emuladores isolados** (sharding da suíte), screenshot/regressão visual e
   `scrcpy` (espelhamento ao vivo no WSLg). Tira a dor recorrente do emulador.
-  **Escrito (off-emulador):** `provision_avd.sh`, helpers de emulador no
-  `device_loop.sh`, `emulator_snapshot.sh`, `emulator_pool.sh` (experimental),
-  `visual_regression.py`, `emulator_verify.sh` (gating + auto-recuperação +
-  `VISUAL=1`), alvos `make` + runbook bilíngue. **Falta a prova de boot real**
-  (emulador estava ocupado por outra sessão) — ver `docs/plan-stable.md` F8.
+  **Boot-proven (2026-06-14)** + **pool sharded PROVADO em paralelo (2026-06-20):**
+  `make emulator-pool N=2` bootou 2 instâncias isoladas (`-read-only` do snapshot
+  `golden`, portas próprias) → shardou counter+forms → ambos PASS → teardown limpo.
+  Destravou no caminho a causa-raiz crônica do code-push: `resolve_project` subia
+  pro `pyproject.toml` do framework ao servir um example → `tree_signature` no repo
+  inteiro (~6.8s) → timeout; agora pula o pyproject do framework → signature 0ms,
+  app monta. `provision_avd.sh`/`emulator_snapshot.sh`/`emulator_pool.sh`/
+  `visual_regression.py`/`emulator_verify.sh` + alvos `make` + runbook bilíngue.
+  Pendente menor: N>2 em hardware maior, screen-record mp4, android-doctor checks.
 - **F9 — driver de testes nativo estilo Playwright:** API de automação de UI
   **cross-renderer** (mesmo script no simulador Qt e no Compose do
   emulador/device), com **auto-wait** (sem `sleep`), locators por Semantics/

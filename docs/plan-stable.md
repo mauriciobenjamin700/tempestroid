@@ -39,7 +39,7 @@ testes verdes). Acrescenta uma regra própria:
 | F5 | **Harness de device confiável** — loop de validação on-device à prova de queda de USB (timeout por adb, detecção de drop, checkpoint/resume), base única do `dual-verify` | ✅ implementada (off-device) — **gate de toda device-verify futura** (bloqueia F2, device-verify do release-apk/ícone e os leftovers E8/E9); falta o teste de drop com device conectado | rodar os 24 examples no device sem hang (cada app ≤40s); desconectar o USB no meio aborta limpo com `ABORT … usb-drop` — detecção ≤20s no drop mid-run (~38s no pior caso de adb-server morto no start), sem adb wedged — e a re-execução **retoma** dos faltantes; `dual-verify` nunca reporta verde falso |
 | F6 | **Trim de tamanho do APK** — enxugar o CPython 3.14 embutido. **Fase-1 (off-device):** pruning seguro de stdlib morta. **Fase-2 (host-side, device-gated):** stdlib-archive/codecs/compressão | 🚧 fase-1 ✅ (PR #74) — baseline real **~39MB** (não ~50MB; já cortado por #70/#71), fase-1 rende ~1MB → **~38MB**; **~20MB exige fase-2 host-side** (Kotlin/C + device, não offline) | **fase-1:** excludes seguros (import trace verde) + APK rebuilda + tamanho documentado + gate verde; **fase-2 (futuro):** APK materialmente menor que boota e roda os examples (Qt + device via F5), custo de 1º boot medido |
 | F7 | **Alvo de device sem hardware físico** — emulador headless x86_64 (equivalente completo, dirigido pelo harness F5) + testes de tela do renderizador Compose na JVM (Roborazzi). Remove o device físico do caminho crítico | 🚧 **provado ponta-a-ponta** (2026-06-13): AVD x86_64 headless + APK x86_64 → counter renderiza e `0→3` por tap, ZERO hardware físico; falta empacotar em comandos (`make emulator-verify`) + camada B | `make emulator-verify` (sem USB) sobe o AVD x86_64, instala o host e roda a galeria F5 verde com screenshots (CPython+JNI+Compose+nativas); camada B pina o Compose em testes JVM no gate; `dual-verify` trata emulador como leg de device legítimo |
-| F8 | **Emulação estável + visualização nativa** — camada de confiabilidade sobre o F7: provisionamento reprodutível do AVD, boot determinístico por snapshot, gating de prontidão, auto-recuperação de AVD travado, **pool de N emuladores em paralelo** (isolados, sharding da suíte), pipeline de screenshot/screen-record + regressão visual, espelhamento ao vivo (`scrcpy`) e fallback de farm na nuvem quando não há KVM | ✅ **boot-proven no emulador (2026-06-14)** — `make emulator-snapshot` (cold-boot gravável → readiness gating → salva `golden` → stop) **OK**; `make emulator` restaura do snapshot em **3s**; `make emulator-verify VISUAL=1` **PASS real** (counter monta, screenshot bate o golden); tap "+" 3× → **Count 0→3** (round-trip evento→JNI→handler→patch→recompose) com a fidelidade Compose #80 (texto contrastante branco-no-escuro + cores dos botões corretas). **Bloqueador real encontrado+fixado:** o diálogo `POST_NOTIFICATIONS` (API 34) cobria o host → pre-grant no `emulator_verify.sh`. Pool sharded (`emulator_pool.sh`) segue **experimental** (não exercitado em paralelo) | `make emulator` sobe um AVD pinado em ≤ Ns por snapshot, com auto-recuperação se travar; **um pool de N instâncias isoladas roda a suíte em paralelo** (sharded), bound por hardware; o fluxo de um app é capturável (screenshot/vídeo) e comparável a golden; `scrcpy` espelha emulador/device no host (WSLg); CI sem KVM cai pra farm; zero passos manuais frágeis |
+| F8 | **Emulação estável + visualização nativa** — camada de confiabilidade sobre o F7: provisionamento reprodutível do AVD, boot determinístico por snapshot, gating de prontidão, auto-recuperação de AVD travado, **pool de N emuladores em paralelo** (isolados, sharding da suíte), pipeline de screenshot/screen-record + regressão visual, espelhamento ao vivo (`scrcpy`) e fallback de farm na nuvem quando não há KVM | ✅ **boot-proven no emulador (2026-06-14)** — `make emulator-snapshot` (cold-boot gravável → readiness gating → salva `golden` → stop) **OK**; `make emulator` restaura do snapshot em **3s**; `make emulator-verify VISUAL=1` **PASS real** (counter monta, screenshot bate o golden); tap "+" 3× → **Count 0→3** (round-trip evento→JNI→handler→patch→recompose) com a fidelidade Compose #80 (texto contrastante branco-no-escuro + cores dos botões corretas). **Bloqueador real encontrado+fixado:** o diálogo `POST_NOTIFICATIONS` (API 34) cobria o host → pre-grant no `emulator_verify.sh`. **Pool sharded PROVADO em paralelo (2026-06-20):** `make emulator-pool N=2` bootou 2 instâncias isoladas do snapshot → shard → ambos PASS → teardown limpo; destravou o code-push (fix do `tree_signature` que escaneava o repo inteiro) | `make emulator` sobe um AVD pinado em ≤ Ns por snapshot, com auto-recuperação se travar; **um pool de N instâncias isoladas roda a suíte em paralelo** (sharded), bound por hardware; o fluxo de um app é capturável (screenshot/vídeo) e comparável a golden; `scrcpy` espelha emulador/device no host (WSLg); CI sem KVM cai pra farm; zero passos manuais frágeis |
 | F9 | **Driver de testes nativo estilo Playwright** — API de automação de UI de alto nível, **cross-renderer** (mesmo script dirige o simulador Qt **e** o Compose no emulador/device), com **auto-wait** (sem sleeps), locators por Semantics/texto/key, ações (tap/type/scroll/back), asserts, screenshot/trace. Roda sobre a ponte + a árvore de Semantics do E9 + a introspecção | ⏳ planejado | um teste `tempest test` localiza um nó por Semantics/texto/key, age, espera a UI estabilizar e afirma o estado — o **mesmo script passa no Qt e no emulador/device**; flakes eliminados pelo auto-wait; trace+screenshot por passo em falha |
 
 ---
@@ -615,11 +615,36 @@ abaixo). Entregue:
 - ✅ **Bloqueador real fixado:** o diálogo `POST_NOTIFICATIONS` (API 34) cobria o host →
   pre-grant após o install no `emulator_verify.sh`.
 
-### Pendente
+### Pool sharded — PROVADO em paralelo (2026-06-20)
 
-- Pool sharded (`emulator_pool.sh`) validado em paralelo ponta-a-ponta (segue experimental).
+✅ `make emulator-pool N=2 APPS="examples/counter/app.py examples/forms/app.py"`:
+bootou **2 instâncias ISOLADAS** (`emulator-5554` + `emulator-5556`, cada uma
+`-read-only` do snapshot `golden` com console/porta próprios → compartilham a
+imagem base sem corromper estado), ambas atingiram readiness + host instalado,
+**shardou** os apps entre elas, ambos montaram o app real → screenshots →
+goldens criados → `EMULATOR-POOL: PASS`, **teardown limpo** (zero emulador
+stray). Bound por hardware (`N` ≤ `nproc/2`, cap 4). Dois bugs reais
+encontrados+corrigidos no caminho:
+
+1. **Code-push não montava o app no pool (nem no `serve` em geral).**
+   `resolve_project`, ao servir um `examples/<x>/app.py` de dentro do repo,
+   subia até o `pyproject.toml` do **próprio framework** → `tree_signature`
+   escaneava o repo INTEIRO (`docs/assets/*.png`, `android-host/`, todos os
+   examples) em **~6.8s** → estourava o timeout de poll do code-push → o app
+   nunca montava (o screenshot pegava a **home do Android**). Fix: pular o
+   pyproject do framework (`name` ∈ tempestroid/tempest-core/tempestweb) → o
+   example resolve pro **próprio diretório** → `tree_signature` em **0ms**, bundle
+   pequeno e correto. **Isso destrava TODO o code-push/device-verify, não só o
+   pool** (era a causa-raiz das falhas crônicas de `tempest serve` da sessão).
+2. **Gate reportava FAIL falso com 0 falhas:** `fails=$(grep -c '^FAIL' || echo 0)`
+   — `grep -c` imprime "0" E sai 1, então o `|| echo 0` duplicava → "0\n0" →
+   `integer expression expected`. Corrigido pra capturar só a contagem.
+
+### Pendente (menor)
+
 - `.claude/skills/android-doctor` — check de snapshot golden + KVM + `scrcpy`/WSLg.
-- Camada de screen-record (mp4) + golden por example (além do counter).
+- Camada de screen-record (mp4) + golden por example (além de counter/forms).
+- Pool com N>2 em hardware maior (provado com N=2; a lógica escala por `nproc`).
 
 ### Feito quando
 - `make emulator` sobe o AVD **por snapshot em segundos** (não cold-boot), com

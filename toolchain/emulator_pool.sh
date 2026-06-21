@@ -132,7 +132,10 @@ for p in "${pids[@]}"; do wait "$p" 2>/dev/null || true; done
 echo
 echo "==> POOL RESULTS"
 sort "$results"
-fails=$(grep -c '^FAIL' "$results" 2>/dev/null || echo 0)
+# ``grep -c`` prints the count AND exits 1 on zero matches, so a ``|| echo 0``
+# would append a second "0" → "0\n0" → a bogus "integer expression expected".
+# Capture the count alone (a failed grep just yields "0").
+fails=$(grep -c '^FAIL' "$results" 2>/dev/null) || true
 rm -f "$results"
 echo "  instances=${#ready_serials[@]}  apps=${#apps[@]}  fails=$fails"
 [ "$fails" -eq 0 ] && echo "EMULATOR-POOL: PASS" || { echo "EMULATOR-POOL: FAIL"; exit 1; }

@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import tomllib
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,12 +83,42 @@ class ProjectLayout:
     entry: str
 
 
+#: The framework's own distribution names. A ``pyproject.toml`` declaring one of
+#: these is NOT an app project — it's the framework/engine repo itself. Running
+#: the bundled ``examples/`` through ``resolve_project`` must NOT anchor to the
+#: framework repo root, or ``tree_signature``/``build_bundle`` would walk the
+#: entire repo (docs assets, android-host, every other example) — slow enough to
+#: blow the code-push poll timeout, and a wrong, huge bundle. The framework is
+#: already staged on the device; an example bundles only its own directory.
+_FRAMEWORK_PROJECT_NAMES = frozenset({"tempestroid", "tempest-core", "tempestweb"})
+
+
+def _is_framework_pyproject(pyproject: Path) -> bool:
+    """Report whether a ``pyproject.toml`` declares the framework itself.
+
+    Args:
+        pyproject: Path to a ``pyproject.toml`` file.
+
+    Returns:
+        ``True`` when its ``[project].name`` is one of the framework packages,
+        so it should be skipped as a project-root anchor for an app bundle.
+    """
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    name = data.get("project", {}).get("name", "")
+    return isinstance(name, str) and name.strip().lower() in _FRAMEWORK_PROJECT_NAMES
+
+
 def resolve_project(app: str | Path) -> ProjectLayout:
     """Resolve a project's root + entry from an app file path.
 
     The root is the nearest ancestor directory of ``app`` that contains a
-    ``pyproject.toml`` (the import anchor); if none is found, the app file's own
-    directory is used. The entry is ``app`` relative to that root.
+    ``pyproject.toml`` (the import anchor), **skipping the framework's own
+    ``pyproject.toml``** (so the bundled ``examples/`` anchor to their own
+    directory, not the whole framework repo); if none is found, the app file's
+    own directory is used. The entry is ``app`` relative to that root.
 
     Args:
         app: Path to the app's entry Python file (defines ``view`` +
@@ -104,7 +135,8 @@ def resolve_project(app: str | Path) -> ProjectLayout:
         raise FileNotFoundError(f"app file not found: {entry_file}")
     root = entry_file.parent
     for directory in (entry_file.parent, *entry_file.parents):
-        if (directory / "pyproject.toml").is_file():
+        pyproject = directory / "pyproject.toml"
+        if pyproject.is_file() and not _is_framework_pyproject(pyproject):
             root = directory
             break
     return ProjectLayout(root=root, entry=str(entry_file.relative_to(root)))
