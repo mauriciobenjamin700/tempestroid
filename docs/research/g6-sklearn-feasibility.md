@@ -26,11 +26,20 @@ estaticamente** no scipy (só `libm`/`libc`/`libpython3.14` em `NEEDED`), OpenMP
 6 símbolos `omp_*`/`__kmpc` por `.so`). `scipy.odr` ausente (o único subpacote que
 o `-D_without-fortran` descarta).
 
-**Pendente (não-bloqueante):** prova on-device de `import sklearn` + `predict`. O
-`adb`/emulador desta sessão WSL está com o daemon travando (poisoning de porta
-conhecido — ver MEMORY `adb port poisoning`); as wheels estão validadas
-estruturalmente (ABI, símbolos, OpenMP, tags) mas **o `import` em aparelho ainda
-não foi exercido**. É o mesmo gate que fechou o G1 para numpy (`examples/onnxspike`).
+**✅ Provado no device (emulador x86_64, 2026-06-21):** `import scipy` +
+`import sklearn` + `LogisticRegression.fit/predict` (`[2,8]→[0,1]`) +
+`scipy.linalg.solve` (`[2,3]`) rodam no emulador via `examples/sklearnspike`
+(screenshot em `docs/assets/emulator/g6/`). Staging opt-in: `make stage-science`
+(`toolchain/stage_science_x86.sh` — as 2 wheels Android + as deps PURE-Python do
+sklearn: `joblib`, `threadpoolctl`, `narwhals`). **3 fixes de packaging reais**
+(`android-host/app/build.gradle.kts`): os trims de APK (G7 `numpy/f2py` + F6
+`pydoc`/`_pyrepl`/`doctest`) quebravam a stack — scipy/sklearn importam esses em
+runtime (não eram "dev-only"); revertidos. O asset-merger do AGP rejeita `.gz`, e
+o sklearn embute datasets `.csv.gz` (`load_digits`/`load_diabetes`) → `.gz`→`.gz-`
+no staging (o `MainActivity` reverte na extração). Excludes de test-suites
+scipy/sklearn/joblib (runtime-dead + carregam os `.gz` de fixture). **Pendente:**
+`scikit-image` (gated atrás do scipy) + rebuild arm64. É o mesmo gate que fechou
+o G1 para numpy (`examples/onnxspike`).
 
 **Esforço para chegar aqui:** ~1 sessão. Muito abaixo dos "N dias de toolchain
 Fortran/LAPACK" que a pesquisa original temia — porque o trabalho pesado foi feito

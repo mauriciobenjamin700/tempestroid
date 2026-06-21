@@ -101,6 +101,11 @@ dev = [
     # Trilho G spike: `examples/onnxspike` imports numpy so the headless driver
     # can run it too (the device proof uses the cross-compiled android wheel).
     "numpy>=2.0",
+    # Trilho G6: `examples/sklearnspike` imports scipy + scikit-learn so the gate
+    # type-checks it (host wheels here; the device proof uses the cross-compiled
+    # android wheels staged by `make stage-science`).
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
     # Trilho G: the vision SDK with the pluggable backend — lets the gate exercise
     # the cross-repo contract (Detector driven through `native.inference.AarBackend`
     # over a loopback). Pulls onnxruntime on the desktop for the integration test;
