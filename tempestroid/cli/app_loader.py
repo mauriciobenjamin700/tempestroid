@@ -155,6 +155,13 @@ def spec_from_source(
         AttributeError: If the source lacks ``view`` or ``make_state``.
         TypeError: If ``view`` or ``make_state`` is not callable.
     """
+    # Nudge the developer off discouraged deps (e.g. pandas -> polars) before the
+    # exec, so the advisory shows in the dev sim AND over the device code-push path
+    # (both funnel through here). Non-fatal — the import may still work in the sim.
+    from tempestroid.cli.advisories import warn_discouraged_imports
+
+    warn_discouraged_imports(source, filename=filename)
+
     # Compile and exec the source directly (no importlib / no .pyc cache) so a
     # reload always sees the latest edit, even within one mtime tick.
     module = ModuleType(name)

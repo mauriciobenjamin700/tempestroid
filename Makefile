@@ -245,6 +245,10 @@ mirror: ## Mirror the emulator/device screen live with scrcpy (needs WSLg/X; F8)
 stage-x86: ## Stage the x86_64 CPython prefix + site-packages for the emulator (F7)
 	bash toolchain/stage_emulator_runtime.sh
 
+.PHONY: stage-science
+stage-science: ## Add scipy + scikit-learn (+ deps) to the x86_64 staging (G6; opt-in, heavy)
+	bash toolchain/stage_science_x86.sh
+
 .PHONY: apk-x86
 apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
 	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug \
