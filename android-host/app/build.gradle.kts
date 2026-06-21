@@ -131,6 +131,16 @@ android {
     // VCS/editor junk and __pycache__.
     androidResources {
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~:!__pycache__"
+        // Don't compress the bundled CPython extension modules (.so assets).
+        // Trade-off: storing them uncompressed grows the APK by the deflate saving
+        // on the .so (native code compresses poorly anyway), but it is the correct
+        // call for a framework that ships large native modules — AGP's asset
+        // compressor CRASHES ("Required array size too large", the 2 GB Java-array
+        // limit) on a very large .so such as polars' Rust core, and the .so are
+        // extracted to filesDir at first launch (never read from inside the APK),
+        // so the in-APK compression bought nothing at runtime. G7 trims size by
+        // shrinking the .so themselves (strip / reduced-op builds), not by zipping.
+        noCompress.add("so")
     }
 
     // Register the CMake project ONLY in source-build mode. Omitting it in
