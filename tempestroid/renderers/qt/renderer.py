@@ -29,6 +29,7 @@ from PySide6.QtCore import (
     QEvent,
     QMetaObject,
     QMimeData,
+    QObject,
     QPoint,
     QPointF,
     QPropertyAnimation,
@@ -3790,6 +3791,45 @@ class _HostWidget(QWidget):
         self._on_resize(size.width(), size.height())
 
 
+class _RadiusReclampFilter(QObject):
+    """Re-clamps a widget's ``border-radius`` once it gets its real size.
+
+    A pill/circle radius is clamped to ``min(w, h) / 2`` at mount, but a widget
+    laid out by a parent (``grow``, no fixed size) has no real geometry yet on
+    the first paint — the clamp would read the host's stale default size and
+    over-round, squaring the corners until something forces a relayout. This
+    shared filter, installed on such widgets, re-runs the clamp on every real
+    resize so the radius tracks the true size.
+    """
+
+    def __init__(self, renderer: QtRenderer) -> None:
+        """Bind the filter to its renderer.
+
+        The renderer is a plain object (not a ``QObject``), so the filter is
+        parentless; the renderer keeps a strong reference to it, which is what
+        prevents premature garbage collection.
+
+        Args:
+            renderer: The renderer that owns the re-clamp logic and node map.
+        """
+        super().__init__()
+        self._renderer = renderer
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Re-clamp ``watched``'s radius on a resize; never consume the event.
+
+        Args:
+            watched: The widget whose size changed.
+            event: The intercepted event.
+
+        Returns:
+            ``False`` always — the event continues to its normal handler.
+        """
+        if event.type() == QEvent.Type.Resize and isinstance(watched, QWidget):
+            self._renderer._on_radius_widget_resized(watched)
+        return False
+
+
 class QtRenderer:
     """Render an IR tree into Qt widgets and keep it in sync via patches."""
 
@@ -3862,6 +3902,12 @@ class QtRenderer:
         # Live ``QCompleter`` options per autocomplete line-edit, so an ``options``
         # change rebuilds the completer cleanly without re-reading the Qt model.
         self._completer_options: dict[int, list[str]] = {}
+        # Widgets whose pill/circle radius depends on their laid-out size (no fixed
+        # dimension): a shared event filter re-clamps them on resize, keyed by id.
+        # See ``_RadiusReclampFilter`` and ``_on_radius_widget_resized``.
+        self._reclamp_filter: _RadiusReclampFilter = _RadiusReclampFilter(self)
+        self._reclamp_nodes: dict[int, _Rendered] = {}
+        self._reclamp_sizes: dict[int, tuple[int, int]] = {}
 
     def set_dismiss_overlay(self, dismiss: Callable[[str], None]) -> None:
         """Wire the callback that removes an overlay from the app layer.
@@ -5515,43 +5561,21 @@ class QtRenderer:
         # Now that the widget's size is pinned, clamp an over-large radius (pill
         # sentinel, circle) to ``min(w, h) / 2`` so the corners round fully
         # instead of leaving Qt's square-off of an out-of-range radius.
-        self._clamp_node_radius(node.widget, style, custom_family, is_container)
-        if node.type in ("Button", "IconButton"):
-            # Append the M3 state-layer pseudo-state blocks AFTER the radius clamp,
-            # which re-sets the (single-block) scoped stylesheet from the
-            # size-adjusted style — so the hover/pressed/focus/disabled blocks are
-            # emitted onto the final, clamped base body and never get clobbered.
-            # ``IconButton`` is ``Variant``-based exactly like ``Button``, so it
-            # reuses the same state-layer pass.
-            # IconButton is a fixed square (``width==height``): strip the inherited
-            # text-button ``padding`` + ``min_height`` from the resting QSS body so
-            # Qt does not compute a ``min-height: content + padding`` larger than the
-            # ``setFixedHeight`` square (min > max → min wins, ovalling the disc).
-            # The glyph is centered by the QPushButton regardless of padding; the
-            # state-layer blocks only paint bg/color/border, so they need no change.
-            base_style = style
-            if (
-                node.type == "IconButton"
-                and style is not None
-                and style.width is not None
-                and style.height is not None
-            ):
-                base_style = style.model_copy(
-                    update={"padding": None, "min_height": None}
-                )
-            self._apply_button_states(
-                cast("QPushButton", node.widget),
-                node.props,
-                self._button_base_qss(node.widget, base_style, custom_family),
-            )
-            if (
-                node.type == "IconButton"
-                and style is not None
-                and style.width is not None
-                and style.height is not None
-            ):
-                node.widget.setFixedSize(int(style.width), int(style.height))
-        elif node.type in _FIELD_TYPES:
+        self._apply_radius_clamp(node, style, custom_family, is_container)
+        # An auto-sized widget (``grow`` / no fixed dimension) has no real geometry
+        # yet at mount, so the clamp above read a stale size; re-clamp it once the
+        # parent lays it out (see ``_RadiusReclampFilter``).
+        self._track_radius_reclamp(node, style)
+        if (
+            node.type == "IconButton"
+            and style is not None
+            and style.width is not None
+            and style.height is not None
+        ):
+            # IconButton is a fixed square: pin the size after the clamp re-set the
+            # resting QSS, so the disc keeps width == height.
+            node.widget.setFixedSize(int(style.width), int(style.height))
+        if node.type in _FIELD_TYPES:
             # The field's resting box (OUTLINE/FILLED/FLUSHED) is already painted by
             # the scoped base block above; append the focus/invalid/hover/disabled
             # paint deltas the engine resolves for the field variant.
@@ -5638,6 +5662,100 @@ class QtRenderer:
             adjusted, is_container=is_container, custom_family=custom_family
         )
         _scoped_stylesheet(widget, body)
+
+    def _apply_radius_clamp(
+        self,
+        node: _Rendered,
+        style: Style | None,
+        custom_family: str | None,
+        is_container: bool,
+    ) -> None:
+        """Clamp the node's radius to its size; re-emit button state layers.
+
+        Shared by the mount pass and the resize re-clamp (:meth:`_track_radius_
+        reclamp`). For a button the resting body embeds the clamped radius, so the
+        M3 hover/pressed/focus/disabled pseudo-state blocks are re-appended onto
+        that freshly-clamped base — otherwise a later re-clamp would drop them.
+
+        Args:
+            node: The rendered node carrying the styled widget.
+            style: The node's style, or ``None``.
+            custom_family: The loaded custom-font family name, or ``None``.
+            is_container: Whether the node is a container (padding routing).
+        """
+        self._clamp_node_radius(node.widget, style, custom_family, is_container)
+        if node.type in ("Button", "IconButton"):
+            # IconButton is a fixed square: strip the inherited text-button
+            # ``padding`` + ``min_height`` from the resting body so Qt does not
+            # compute a min-height larger than the fixed square (which would oval
+            # the disc). The glyph stays centered regardless of padding.
+            base_style = style
+            if (
+                node.type == "IconButton"
+                and style is not None
+                and style.width is not None
+                and style.height is not None
+            ):
+                base_style = style.model_copy(
+                    update={"padding": None, "min_height": None}
+                )
+            self._apply_button_states(
+                cast("QPushButton", node.widget),
+                node.props,
+                self._button_base_qss(node.widget, base_style, custom_family),
+            )
+
+    def _track_radius_reclamp(self, node: _Rendered, style: Style | None) -> None:
+        """Install/remove the resize re-clamp filter for a size-dependent radius.
+
+        A pill/circle radius on an auto-sized widget (``grow`` or no fixed
+        dimension) cannot be clamped correctly at mount — the widget has no real
+        geometry yet. Such widgets get the shared :class:`_RadiusReclampFilter` so
+        the radius is re-clamped on their first (and any later) real resize. A
+        widget whose radius is now size-independent has the filter removed.
+
+        Args:
+            node: The rendered node.
+            style: The node's style, or ``None``.
+        """
+        wid = id(node.widget)
+        size_dependent = (
+            style is not None
+            and style.radius is not None
+            and (style.width is None or style.height is None)
+        )
+        if size_dependent:
+            if wid not in self._reclamp_nodes:
+                node.widget.installEventFilter(self._reclamp_filter)
+            self._reclamp_nodes[wid] = node
+        elif wid in self._reclamp_nodes:
+            node.widget.removeEventFilter(self._reclamp_filter)
+            self._reclamp_nodes.pop(wid, None)
+            self._reclamp_sizes.pop(wid, None)
+
+    def _on_radius_widget_resized(self, widget: QWidget) -> None:
+        """Re-clamp a tracked widget's radius against its new, real size.
+
+        Args:
+            widget: The widget whose size changed (the filter's watched object).
+        """
+        wid = id(widget)
+        node = self._reclamp_nodes.get(wid)
+        if node is None:
+            return
+        size = (widget.width(), widget.height())
+        if size[0] <= 0 or size[1] <= 0 or self._reclamp_sizes.get(wid) == size:
+            return
+        self._reclamp_sizes[wid] = size
+        style = cast("Style | None", node.props.get("style"))
+        if style is None or style.radius is None:
+            return
+        self._apply_radius_clamp(
+            node,
+            style,
+            self._ensure_font_asset(style),
+            node.layout is not None,
+        )
 
     def _ensure_font_asset(self, style: Style | None) -> str | None:
         """Register a ``style.font_asset`` file with ``QFontDatabase`` (once).
@@ -7755,6 +7873,8 @@ class QtRenderer:
         self._eye_actions.pop(widget_id, None)
         self._leading_icons.pop(widget_id, None)
         self._trailing_icons.pop(widget_id, None)
+        self._reclamp_nodes.pop(widget_id, None)
+        self._reclamp_sizes.pop(widget_id, None)
         for child in rendered.children:
             self._purge_connections(child)
 
