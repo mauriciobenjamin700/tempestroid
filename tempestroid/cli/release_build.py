@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tempestroid.cli.console import Console, StepError
+from tempestroid.cli.project import VISION_FEATURE
 from tempestroid.cli.setup_env import default_sdk_dir, install_android_sdk, jdk_ok
 
 if TYPE_CHECKING:
@@ -261,25 +262,82 @@ def ensure_source_checkout(version: str, console: Console) -> Path:
     return dest
 
 
-def ensure_toolchain(checkout: Path, console: Console) -> None:
+def _vision_staged(dist: Path) -> bool:
+    """Report whether the vision Python stack is already in the site-packages.
+
+    The vision feature stages ``ort_vision_sdk`` (Trilho G) into the arm64
+    site-packages payload. A prior *lean* toolchain run leaves it out, so this
+    lets :func:`ensure_toolchain` detect that a re-stage is needed even when the
+    heavy CPython prefix is already present.
+
+    Args:
+        dist: The ``toolchain/dist`` directory.
+
+    Returns:
+        ``True`` if ``ort_vision_sdk`` is present in the arm64 site-packages.
+    """
+    return (dist / "site-packages" / "ort_vision_sdk").is_dir()
+
+
+def _toolchain_env(*, vision: bool) -> dict[str, str] | None:
+    """Build the environment for the toolchain staging subprocess.
+
+    Args:
+        vision: Whether the vision feature is opted in — sets
+            ``TEMPEST_VISION=1`` so ``02_stage_deps.sh`` stages
+            ``ort_vision_sdk`` + the PIL shim into the device site-packages.
+
+    Returns:
+        A full environment mapping (current env plus the vision flag), or
+        ``None`` when no override is needed (lean build).
+    """
+    if not vision:
+        return None
+    return {**os.environ, "TEMPEST_VISION": "1"}
+
+
+def ensure_toolchain(
+    checkout: Path, console: Console, *, features: tuple[str, ...] = ()
+) -> None:
     """Stage the CPython toolchain (``toolchain/dist``) when it is absent.
 
     Runs the repo's toolchain scripts (fetch the Android CPython prefix, build
     the native wheels, stage site-packages) — the heavy prerequisite the Gradle
-    native build links against.
+    native build links against. When the ``vision`` feature is opted in, the
+    staging step also bundles the Python ``ort_vision_sdk`` (via
+    ``TEMPEST_VISION=1``) so on-device ``import ort_vision_sdk`` resolves; a
+    prior lean run that already staged the CPython prefix is re-staged for the
+    site-packages so the vision stack lands without a full rebuild.
 
     Args:
         checkout: The source checkout root.
         console: Step reporter.
+        features: The opted-in build features; ``vision`` triggers the extra
+            Python staging described above.
 
     Raises:
         StepError: If the toolchain scripts are missing or fail.
     """
     dist = checkout / "toolchain" / "dist"
     prefix = dist / "python" / "arm64-v8a"
-    if prefix.is_dir():
-        return
     scripts = checkout / "toolchain"
+    vision = VISION_FEATURE in features
+    if prefix.is_dir():
+        # CPython + wheels already staged. A lean prior run may have skipped the
+        # vision Python stack; re-run only the site-packages staging to add it.
+        if vision and not _vision_staged(dist):
+            console.info("staging the vision Python stack (ort_vision_sdk)…")
+            with console.step("stage vision deps (02_stage_deps.sh, TEMPEST_VISION=1)"):
+                console.run_command(
+                    [
+                        "bash",
+                        "-lc",
+                        "cd toolchain && source env.sh && ./02_stage_deps.sh",
+                    ],
+                    cwd=checkout,
+                    env=_toolchain_env(vision=True),
+                )
+        return
     if not (scripts / "00_fetch_cpython.sh").is_file():
         raise StepError(
             f"toolchain scripts not found under {scripts}; cannot stage CPython. "
@@ -295,6 +353,7 @@ def ensure_toolchain(checkout: Path, console: Console) -> None:
                 "./01_build_wheels.sh && ./02_stage_deps.sh",
             ],
             cwd=checkout,
+            env=_toolchain_env(vision=vision),
         )
 
 
@@ -444,7 +503,11 @@ def _resolve_host_checkout(con: Console, version: str, *, prebuilt: bool) -> Pat
 
 
 def _prepare_gradle_build(
-    app: str | Path, con: Console, *, prebuilt: bool = True
+    app: str | Path,
+    con: Console,
+    *,
+    prebuilt: bool = True,
+    features: tuple[str, ...] = (),
 ) -> tuple[Path, Path | None]:
     """Prepare the Gradle build environment and stage the app bundle.
 
@@ -459,6 +522,8 @@ def _prepare_gradle_build(
         con: Step reporter.
         prebuilt: Reuse the prebuilt host natives (``True``, default) instead of
             staging the CPython toolchain from source.
+        features: The opted-in build features; forwarded to the toolchain so
+            ``vision`` stages the Python ``ort_vision_sdk`` into site-packages.
 
     Returns:
         A ``(host, prebuilt_dir)`` pair — the ``android-host`` Gradle project dir
@@ -490,7 +555,7 @@ def _prepare_gradle_build(
     if prebuilt:
         prebuilt_dir = _extract_prebuilt_host(con)
     else:
-        ensure_toolchain(checkout, con)
+        ensure_toolchain(checkout, con, features=features)
 
     # 5. Stage the user's project bundle into the host assets.
     with con.step(f"Bundling project ({layout.entry})"):
@@ -551,7 +616,7 @@ def build_aab(
             for the build.
         prebuilt: Reuse the prebuilt host natives (``True``, default; no NDK /
             CPython toolchain) instead of staging the toolchain from source.
-        features: Opted-in build features (camera/qr/push/video/maps) whose heavy
+        features: Opted-in build features (camera/qr/push/video/maps/vision) whose heavy
             native dependencies are bundled; empty (default) builds lean.
 
     Returns:
@@ -566,7 +631,9 @@ def build_aab(
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
-    host, prebuilt_dir = _prepare_gradle_build(app, con, prebuilt=prebuilt)
+    host, prebuilt_dir = _prepare_gradle_build(
+        app, con, prebuilt=prebuilt, features=features
+    )
     keystore = ensure_release_keystore(config, con)
 
     # gradlew bundleRelease with the publisher identity + signing.
@@ -634,7 +701,7 @@ def build_apk(
             for the build.
         prebuilt: Reuse the prebuilt host natives (``True``, default) instead of
             staging the CPython toolchain from source.
-        features: Opted-in build features (camera/qr/push/video/maps) whose heavy
+        features: Opted-in build features (camera/qr/push/video/maps/vision) whose heavy
             native dependencies are bundled; empty (default) builds lean.
 
     Returns:
@@ -649,7 +716,9 @@ def build_apk(
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
-    host, prebuilt_dir = _prepare_gradle_build(app, con, prebuilt=prebuilt)
+    host, prebuilt_dir = _prepare_gradle_build(
+        app, con, prebuilt=prebuilt, features=features
+    )
 
     env = dict(os.environ)
     props = [
@@ -711,7 +780,7 @@ def build_release_apk(
             for the build.
         prebuilt: Reuse the prebuilt host natives (``True``, default; no NDK /
             CPython toolchain) instead of staging the toolchain from source.
-        features: Opted-in build features (camera/qr/push/video/maps) whose heavy
+        features: Opted-in build features (camera/qr/push/video/maps/vision) whose heavy
             native dependencies are bundled; empty (default) builds lean.
 
     Returns:
@@ -726,7 +795,9 @@ def build_release_apk(
     from tempestroid.cli.bundle import resolve_project
 
     layout = resolve_project(app)
-    host, prebuilt_dir = _prepare_gradle_build(app, con, prebuilt=prebuilt)
+    host, prebuilt_dir = _prepare_gradle_build(
+        app, con, prebuilt=prebuilt, features=features
+    )
     keystore = ensure_release_keystore(config, con)
 
     env = dict(os.environ)

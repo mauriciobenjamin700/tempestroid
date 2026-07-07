@@ -21,6 +21,7 @@ __all__ = [
     "read_config",
     "FEATURES",
     "FEATURE_REQUIRES",
+    "VISION_FEATURE",
     "resolve_features",
     "UnknownFeatureError",
 ]
@@ -29,7 +30,19 @@ __all__ = [
 #: dependencies (each pulls in its own Gradle deps + native code). An app opts
 #: in via ``[tool.tempest] features`` or ``tempest build --feature <name>``; the
 #: lean default (no features) ships none of them, keeping the APK small.
-FEATURES: tuple[str, ...] = ("camera", "qr", "push", "video", "maps")
+#:
+#: ``vision`` (Trilho G) is the odd one out: besides the native onnxruntime
+#: AAR (gated in Gradle like the others), it also needs the Python
+#: ``ort_vision_sdk`` staged into the device site-packages — the build sets
+#: ``TEMPEST_VISION=1`` when it runs the toolchain so ``02_stage_deps.sh``
+#: bundles it. See :data:`VISION_FEATURE`.
+FEATURES: tuple[str, ...] = ("camera", "qr", "push", "video", "maps", "vision")
+
+#: The feature whose opt-in also requires staging Python packages
+#: (``ort_vision_sdk`` + friends) into the device site-packages, not just a
+#: native Gradle dependency. The build translates it to ``TEMPEST_VISION=1``
+#: for the toolchain staging step.
+VISION_FEATURE: str = "vision"
 
 #: Transitive feature requirements: enabling a key implies its values. ``qr``
 #: (ML Kit barcode) runs on the camera preview, so it needs ``camera`` too.

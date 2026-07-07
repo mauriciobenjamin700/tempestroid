@@ -443,9 +443,11 @@ def build_cmd(
         list[str] | None,
         typer.Option(
             "--feature",
-            help="Bundle a heavy optional capability (camera/qr/push/video/maps); "
-            "repeatable. Adds to [tool.tempest] features. Each opt-in needs a "
-            "from-source build (SDK/NDK); the lean default ships none of them.",
+            help="Bundle a heavy optional capability "
+            "(camera/qr/push/video/maps/vision); repeatable. Adds to "
+            "[tool.tempest] features. Each opt-in needs a from-source build "
+            "(SDK/NDK); the lean default ships none of them. `vision` also stages "
+            "the Python ort_vision_sdk into the device site-packages.",
         ),
     ] = None,
     verbose: Annotated[
@@ -1273,7 +1275,7 @@ def _run_build(
         branding: Per-app branding (icon + splash) applied to the build.
         from_source: Stage the CPython toolchain from source instead of reusing
             the prebuilt host natives.
-        features: Opted-in build features (camera/qr/push/video/maps) to bundle;
+        features: Opted-in build features (camera/qr/push/video/maps/vision) to bundle;
             empty (default) builds lean.
 
     Returns:
@@ -1373,7 +1375,7 @@ def _run_release(
         branding: Per-app branding (icon + splash) applied to the build.
         from_source: Stage the CPython toolchain from source instead of reusing
             the prebuilt host natives.
-        features: Opted-in build features (camera/qr/push/video/maps) to bundle;
+        features: Opted-in build features (camera/qr/push/video/maps/vision) to bundle;
             empty (default) builds lean.
 
     Returns:
@@ -1464,7 +1466,7 @@ def _run_release_apk(
         branding: Per-app branding (icon + splash) applied to the build.
         from_source: Stage the CPython toolchain from source instead of reusing
             the prebuilt host natives.
-        features: Opted-in build features (camera/qr/push/video/maps) to bundle;
+        features: Opted-in build features (camera/qr/push/video/maps/vision) to bundle;
             empty (default) builds lean.
 
     Returns:
@@ -1591,12 +1593,25 @@ def _run_run(
     from tempestroid.cli.bundle import resolve_project
     from tempestroid.cli.console import Console, StepError
     from tempestroid.cli.packaging import connected_devices, package_app_apk
+    from tempestroid.cli.project import (
+        UnknownFeatureError,
+        read_config,
+        resolve_features,
+    )
     from tempestroid.cli.release_build import build_apk, derive_app_id, derive_app_name
 
     console = Console(verbose=verbose)
     project_name = resolve_project(app).root.name
     resolved_id = app_id or derive_app_id(project_name)
     resolved_name = app_name or derive_app_name(project_name)
+    # Honor [tool.tempest] features (e.g. vision) so `tempest run` on a feature
+    # app builds the right APK: any feature pulls heavy native deps absent from
+    # the lean prebuilt host, so the build must run from source.
+    try:
+        run_features = resolve_features(read_config(app).features)
+    except UnknownFeatureError as exc:
+        console.fail(f"cannot run: {exc}")
+        return 1
     try:
         adb = shutil.which("adb")
         with console.step("Checking for a connected device"):
@@ -1618,6 +1633,8 @@ def _run_run(
                 version_name=app_version,
                 version_code=version_code,
                 console=console,
+                prebuilt=not run_features,
+                features=run_features,
             )
         except (StepError, subprocess.CalledProcessError) as exc:
             reason = (

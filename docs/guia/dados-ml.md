@@ -137,6 +137,31 @@ ou **baixados+cacheados** (`tempestroid.native.model_store.ensure_model`, com
 verificação sha256, fora da UI thread). `tempest optimize model.onnx -q int8`
 quantiza + converte pra `.ort` no host (build time).
 
+!!! warning "Como shippar um app de visão (senão dá `no module named ort_vision_sdk`)"
+    O `ort_vision_sdk` é **opt-in**: um `tempest build`/`run`/`deploy` padrão
+    monta o APK a partir do host **enxuto** (sem a stack de visão), então
+    `import ort_vision_sdk` estoura no device. Para embarcá-lo:
+
+    1. **Host (build-time):** `pip install "tempestroid[vision]"` — traz o
+       `ort-vision-sdk` + `onnx` para o tooling do host (`tempest optimize`).
+    2. **Feature `vision` no build** — no `pyproject.toml`:
+
+        ```toml
+        [tool.tempest]
+        app = "app.py"
+        features = ["vision"]
+        ```
+
+        ou por flag: `tempest build app.py --feature vision`. Isso (a) força um
+        **build from-source** (SDK/NDK), (b) empacota o AAR `onnxruntime-android`
+        e (c) seta `TEMPEST_VISION=1` no staging, que copia o `ort_vision_sdk`
+        (+ shim PIL) para o `site-packages` do device. `tempest run` também lê
+        `[tool.tempest] features`.
+    3. **numpy para a ABI alvo** — o `ort_vision_sdk` importa `numpy`, então a
+       wheel Android de numpy precisa estar staged (`make stage-x86` no emulador;
+       a wheel arm64 ainda está pendente — veja a tabela de staging abaixo). Sem
+       ela o staging avisa e o `import` falha no `numpy`, não no SDK.
+
 ## Receitas de staging (resumo)
 
 As libs pesadas são **opt-in** — o build padrão não carrega nenhuma. Cada uma tem

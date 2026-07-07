@@ -280,19 +280,26 @@ fi
 python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
     "$PYDANTIC_CORE_WHEEL" "$STAGE"
 
-# 2b) The cross-compiled numpy Android wheel (non-arm64 ABIs only — there is no
-#     arm64 numpy wheel yet, see build_numpy_x86.sh). Because step 0 wipes $STAGE,
-#     re-staging numpy here keeps the x86_64 site-packages reproducible (the spike
-#     + the vision stack import numpy). Skipped silently when the wheel is absent.
-if [[ "$ABI" != "arm64-v8a" ]]; then
-    NUMPY_WHEEL="$(ls "$DIST/wheels-$ABI"/numpy-*-android_*_"${ABI//-/_}".whl 2>/dev/null | head -1 || true)"
-    if [[ -n "$NUMPY_WHEEL" && -f "$NUMPY_WHEEL" ]]; then
-        echo "==> unpacking Android numpy wheel ($(basename "$NUMPY_WHEEL"))"
-        python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
-            "$NUMPY_WHEEL" "$STAGE"
-    else
-        echo "==> WARN: no numpy Android wheel under $DIST/wheels-$ABI — run build_numpy_x86.sh" >&2
-    fi
+# 2b) The cross-compiled numpy Android wheel. numpy is a hard dependency of the
+#     vision stack (ort_vision_sdk imports it at module load) and of the spikes,
+#     so it must be staged whenever it is available for the target ABI. Because
+#     step 0 wipes $STAGE, re-staging it here keeps the payload reproducible.
+#     There is a cross-compiled x86_64 wheel today (build_numpy_x86.sh); an arm64
+#     wheel is not built yet, so a vision build for a physical arm64 device will
+#     still be missing numpy — warn loudly rather than shipping a half-staged
+#     vision payload that crashes at `import ort_vision_sdk`.
+NUMPY_WHEEL="$(ls "$DIST/wheels-$ABI"/numpy-*-android_*_"${ABI//-/_}".whl 2>/dev/null | head -1 || true)"
+if [[ -n "$NUMPY_WHEEL" && -f "$NUMPY_WHEEL" ]]; then
+    echo "==> unpacking Android numpy wheel ($(basename "$NUMPY_WHEEL"))"
+    python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
+        "$NUMPY_WHEEL" "$STAGE"
+elif [[ "${TEMPEST_VISION:-0}" == "1" ]]; then
+    echo "==> WARN: TEMPEST_VISION=1 but no numpy Android wheel under" \
+        "$DIST/wheels-$ABI — ort_vision_sdk imports numpy and will fail to" \
+        "import on device. Build a numpy wheel for $ABI (see build_numpy_x86.sh" \
+        "for the x86_64 recipe) before shipping a vision APK." >&2
+elif [[ "$ABI" != "arm64-v8a" ]]; then
+    echo "==> WARN: no numpy Android wheel under $DIST/wheels-$ABI — run build_numpy_x86.sh" >&2
 fi
 
 # 3) Drop dist-info + caches we do not need on device (smaller APK).
