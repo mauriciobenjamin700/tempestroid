@@ -158,9 +158,11 @@ verification, off the UI thread). `tempest optimize model.onnx -q int8` quantize
         `ort_vision_sdk` (+ a PIL shim) into the device `site-packages`.
         `tempest run` reads `[tool.tempest] features` too.
     3. **numpy for the target ABI** — `ort_vision_sdk` imports `numpy`, so the
-       Android numpy wheel must be staged (`make stage-x86` on the emulator; the
-       arm64 wheel is still pending — see the staging table below). Without it
-       the staging warns and the `import` fails on `numpy`, not on the SDK.
+       Android numpy wheel must be staged. Emulator: `make stage-x86`. arm64
+       device: `make numpy-arm64` (cross-compiles `wheels-arm64-v8a/`, which the
+       staging then bundles). Without it the staging warns and the `import` fails
+       on `numpy`, not on the SDK. Both recipes need an Android-NDK host +
+       `cibuildwheel >= 4.0` (they do not run under plain WSL).
 
 ## Staging recipes (summary)
 
@@ -169,7 +171,8 @@ per-ABI recipe:
 
 | Lib | Enable | Wheel/recipe |
 |---|---|---|
-| numpy | `make stage-x86` (base) | `toolchain/build_numpy_x86.sh` |
+| numpy (x86_64) | `make stage-x86` (base) | `toolchain/build_numpy_x86.sh` |
+| numpy (arm64-v8a) | `make numpy-arm64` | `toolchain/build_numpy_arm64.sh` (`build_numpy.sh arm64-v8a`) |
 | polars | `make stage-polars` | `toolchain/build_polars_x86.sh` |
 | scipy + sklearn | `make stage-science` | `toolchain/build_{openblas,scipy,sklearn}_x86.sh` |
 | onnxruntime | the `vision` build feature | `onnxruntime-android` AAR (no wheel) |
@@ -189,7 +192,7 @@ The scientific stack is heavy. **Trilho G7** trims what it safely can:
 
 | Piece | x86_64 (emulator) | arm64 (ship) |
 |---|---|---|
-| numpy | ✅ import + compute | ⏳ rebuild |
+| numpy | ✅ import + compute | 🚧 recipe ready (`make numpy-arm64`), on-device build/verify pending |
 | scipy + scikit-learn | ✅ import + `fit`/`predict` | ⏳ rebuild |
 | Polars | ✅ build + `import` (op-path `PySeries` pending) | ⏳ rebuild |
 | ONNX (ort-vision-sdk via AAR) | ✅ real `Classifier` (squeezenet) | ⏳ physical device |

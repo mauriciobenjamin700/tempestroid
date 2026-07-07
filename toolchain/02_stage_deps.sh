@@ -296,8 +296,9 @@ if [[ -n "$NUMPY_WHEEL" && -f "$NUMPY_WHEEL" ]]; then
 elif [[ "${TEMPEST_VISION:-0}" == "1" ]]; then
     echo "==> WARN: TEMPEST_VISION=1 but no numpy Android wheel under" \
         "$DIST/wheels-$ABI — ort_vision_sdk imports numpy and will fail to" \
-        "import on device. Build a numpy wheel for $ABI (see build_numpy_x86.sh" \
-        "for the x86_64 recipe) before shipping a vision APK." >&2
+        "import on device. Build a numpy wheel for $ABI first:" \
+        "build_numpy_arm64.sh (arm64-v8a device) / build_numpy_x86.sh" \
+        "(x86_64 emulator), or 'build_numpy.sh $ABI'." >&2
 elif [[ "$ABI" != "arm64-v8a" ]]; then
     echo "==> WARN: no numpy Android wheel under $DIST/wheels-$ABI — run build_numpy_x86.sh" >&2
 fi

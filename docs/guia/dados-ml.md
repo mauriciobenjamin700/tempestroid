@@ -158,9 +158,11 @@ quantiza + converte pra `.ort` no host (build time).
         (+ shim PIL) para o `site-packages` do device. `tempest run` também lê
         `[tool.tempest] features`.
     3. **numpy para a ABI alvo** — o `ort_vision_sdk` importa `numpy`, então a
-       wheel Android de numpy precisa estar staged (`make stage-x86` no emulador;
-       a wheel arm64 ainda está pendente — veja a tabela de staging abaixo). Sem
-       ela o staging avisa e o `import` falha no `numpy`, não no SDK.
+       wheel Android de numpy precisa estar staged. Emulador: `make stage-x86`.
+       Device arm64: `make numpy-arm64` (cross-compila `wheels-arm64-v8a/`, que o
+       staging inclui). Sem ela o staging avisa e o `import` falha no `numpy`,
+       não no SDK. Ambas as receitas precisam de host com Android NDK +
+       `cibuildwheel >= 4.0` (não rodam no WSL puro).
 
 ## Receitas de staging (resumo)
 
@@ -169,7 +171,8 @@ uma receita por-ABI:
 
 | Lib | Habilitar | Wheel/recipe |
 |---|---|---|
-| numpy | `make stage-x86` (base) | `toolchain/build_numpy_x86.sh` |
+| numpy (x86_64) | `make stage-x86` (base) | `toolchain/build_numpy_x86.sh` |
+| numpy (arm64-v8a) | `make numpy-arm64` | `toolchain/build_numpy_arm64.sh` (`build_numpy.sh arm64-v8a`) |
 | polars | `make stage-polars` | `toolchain/build_polars_x86.sh` |
 | scipy + sklearn | `make stage-science` | `toolchain/build_{openblas,scipy,sklearn}_x86.sh` |
 | onnxruntime | feature `vision` no build | AAR `onnxruntime-android` (sem wheel) |
@@ -189,7 +192,7 @@ A stack científica é pesada. O **Trilho G7** corta o que dá com segurança:
 
 | Peça | x86_64 (emulador) | arm64 (ship) |
 |---|---|---|
-| numpy | ✅ import + compute | ⏳ rebuild |
+| numpy | ✅ import + compute | 🚧 receita pronta (`make numpy-arm64`), build/verificação no device pendente |
 | scipy + scikit-learn | ✅ import + `fit`/`predict` | ⏳ rebuild |
 | Polars | ✅ build + `import` (op-path `PySeries` pendente) | ⏳ rebuild |
 | ONNX (ort-vision-sdk via AAR) | ✅ `Classifier` real (squeezenet) | ⏳ device físico |

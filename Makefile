@@ -253,6 +253,10 @@ stage-science: ## Add scipy + scikit-learn (+ deps) to the x86_64 staging (G6; o
 stage-polars: ## Add polars (Rust core + wrapper) to the x86_64 staging (G; opt-in)
 	bash toolchain/stage_polars_x86.sh
 
+.PHONY: numpy-arm64
+numpy-arm64: ## Cross-compile the arm64-v8a numpy wheel (device vision; needs NDK + cibuildwheel>=4.0)
+	bash toolchain/build_numpy_arm64.sh
+
 .PHONY: apk-x86
 apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
 	cd $(ANDROID) && ANDROID_SDK_ROOT=$(ANDROID_SDK_ROOT) $(GRADLEW) :app:assembleDebug \
