@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-07-07
+
+### Fixed
+
+- **`vision` is now a first-class build feature** so on-device ONNX apps ship
+  with `ort_vision_sdk`. The device bundle carries only the project tree — every
+  third-party dependency resolves from the site-packages baked into the host APK
+  — but `vision` was not a known feature, so an app doing on-device inference
+  could not opt in and crashed with `no module named ort_vision_sdk`. Now
+  `tempest build --feature vision` / `[tool.tempest] features = ["vision"]`
+  validate, force a from-source build, bundle the `onnxruntime-android` AAR, and
+  set `TEMPEST_VISION=1` so the toolchain stages `ort_vision_sdk` (+ a PIL shim)
+  into the device site-packages. `ensure_toolchain` also re-stages the vision
+  Python stack when a prior lean run already staged CPython, and `tempest run`
+  now honours `[tool.tempest] features`.
+- `02_stage_deps.sh` stages the Android numpy wheel for any ABI when present and
+  warns loudly under `TEMPEST_VISION=1` when it is absent (`ort_vision_sdk`
+  imports `numpy` — the next failure without it). The arm64 numpy wheel is still
+  pending, so a physical-device vision build needs that wheel first.
+
+### Docs
+
+- New "how to ship a vision app" note (PT-BR + EN-US) in the Data & ML guide, and
+  `vision` added to the `--feature` help + feature-list docstrings.
+
 ## [0.15.0] — 2026-06-21
 
 ### Added
