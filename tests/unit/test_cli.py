@@ -845,3 +845,196 @@ def test_build_feature_with_fast_rejected(
     monkeypatch.setattr(release_build, "build_apk", fail)
     monkeypatch.setattr(packaging, "package_app_apk", fail)
     assert main(["build", str(app), "--feature", "camera", "--fast"]) != 0
+
+
+def test_resolve_features_accepts_vision():
+    """`vision` is a valid feature (Trilho G on-device ONNX inference)."""
+    from tempestroid.cli.project import FEATURES, VISION_FEATURE, resolve_features
+
+    assert VISION_FEATURE == "vision"
+    assert VISION_FEATURE in FEATURES
+    assert resolve_features(["vision"]) == ("vision",)
+
+
+def test_build_feature_vision_forces_from_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--feature vision` builds from source (prebuilt=False) with the feature.
+
+    Regression: `vision` was not a known feature, so an app doing on-device ONNX
+    inference could not opt in — the shipped APK never staged `ort_vision_sdk`,
+    crashing with "no module named ort_vision_sdk" on device.
+    """
+    from tempestroid.cli import release_build
+
+    app = tmp_path / "app.py"
+    app.write_text("def make_state():\n    ...\ndef view(app):\n    ...\n")
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(
+        _app: object,
+        *,
+        app_id: str,
+        features: tuple[str, ...] = (),
+        prebuilt: bool = True,
+        **_kw: object,
+    ) -> Path:
+        seen["features"] = features
+        seen["prebuilt"] = prebuilt
+        return tmp_path / "out.apk"
+
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    assert main(["build", str(app), "--feature", "vision"]) == 0
+    assert seen["features"] == ("vision",)
+    assert seen["prebuilt"] is False
+
+
+def test_toolchain_env_sets_vision_flag():
+    """`_toolchain_env` sets TEMPEST_VISION=1 for vision, None otherwise."""
+    from tempestroid.cli.release_build import (
+        _toolchain_env,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert _toolchain_env(vision=False) is None
+    env = _toolchain_env(vision=True)
+    assert env is not None
+    assert env["TEMPEST_VISION"] == "1"
+
+
+def test_ensure_toolchain_stages_vision_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A from-source vision build runs the toolchain with TEMPEST_VISION=1."""
+    from tempestroid.cli import release_build
+    from tempestroid.cli.console import Console
+
+    checkout = tmp_path / "checkout"
+    (checkout / "toolchain").mkdir(parents=True)
+    (checkout / "toolchain" / "00_fetch_cpython.sh").write_text("#!/bin/sh\n")
+
+    captured: dict[str, object] = {}
+
+    def fake_run_command(
+        _self: object, _cmd: object, *, cwd: object = None, env: object = None
+    ) -> None:
+        captured["env"] = env
+
+    monkeypatch.setattr(Console, "run_command", fake_run_command)
+    release_build.ensure_toolchain(checkout, Console(), features=("vision",))
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["TEMPEST_VISION"] == "1"
+
+
+def test_ensure_toolchain_restages_vision_when_prefix_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A lean prior run (CPython staged, no vision) is re-staged for vision.
+
+    Regression: `ensure_toolchain` returned early when the CPython prefix
+    existed, so a project that later opted into `vision` never got
+    `ort_vision_sdk` staged. It must re-run the site-packages staging.
+    """
+    from tempestroid.cli import release_build
+    from tempestroid.cli.console import Console
+
+    checkout = tmp_path / "checkout"
+    dist = checkout / "toolchain" / "dist"
+    (dist / "python" / "arm64-v8a").mkdir(parents=True)  # prefix present → lean run
+    (checkout / "toolchain" / "00_fetch_cpython.sh").write_text("#!/bin/sh\n")
+
+    captured: dict[str, object] = {}
+
+    def fake_run_command(
+        _self: object, cmd: object, *, cwd: object = None, env: object = None
+    ) -> None:
+        captured["cmd"] = cmd
+        captured["env"] = env
+
+    monkeypatch.setattr(Console, "run_command", fake_run_command)
+    release_build.ensure_toolchain(checkout, Console(), features=("vision",))
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["TEMPEST_VISION"] == "1"
+    # Only the site-packages staging re-runs — not the heavy fetch/wheel build.
+    cmd = captured["cmd"]
+    assert isinstance(cmd, list)
+    assert "02_stage_deps.sh" in cmd[-1]
+    assert "00_fetch_cpython.sh" not in cmd[-1]
+
+
+def test_ensure_toolchain_skips_restage_when_vision_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """When the vision stack is already staged, no work re-runs."""
+    from tempestroid.cli import release_build
+    from tempestroid.cli.console import Console
+
+    checkout = tmp_path / "checkout"
+    dist = checkout / "toolchain" / "dist"
+    (dist / "python" / "arm64-v8a").mkdir(parents=True)
+    (dist / "site-packages" / "ort_vision_sdk").mkdir(parents=True)  # vision staged
+
+    def fail_run_command(*_a: object, **_k: object) -> None:
+        raise AssertionError("nothing must re-run when vision is already staged")
+
+    monkeypatch.setattr(Console, "run_command", fail_run_command)
+    release_build.ensure_toolchain(checkout, Console(), features=("vision",))
+
+
+def test_run_honors_vision_feature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`tempest run` on a vision app builds from source with the feature.
+
+    `tempest run` must read `[tool.tempest] features` too, else a vision app run
+    via `run` would use the lean prebuilt host and crash on device.
+    """
+    import subprocess
+
+    from tempestroid.cli import packaging, release_build
+    from tempestroid.cli.console import Console
+
+    app = tmp_path / "myapp"
+    app.mkdir()
+    (app / "pyproject.toml").write_text(
+        '[tool.tempest]\napp = "main.py"\nfeatures = ["vision"]\n', encoding="utf-8"
+    )
+    (app / "main.py").write_text(
+        "def make_state():\n    ...\ndef view(app):\n    ...\n", encoding="utf-8"
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_build_apk(
+        _app: object,
+        *,
+        app_id: str,
+        features: tuple[str, ...] = (),
+        prebuilt: bool = True,
+        **_kw: object,
+    ) -> Path:
+        seen["features"] = features
+        seen["prebuilt"] = prebuilt
+        out = tmp_path / "out.apk"
+        out.write_text("")
+        return out
+
+    def _which(_name: str) -> str:
+        return "/usr/bin/adb"
+
+    def _devices() -> list[str]:
+        return ["emulator-5554"]
+
+    def _noop(*_a: object, **_k: object) -> None:
+        return None
+
+    monkeypatch.setattr("shutil.which", _which)
+    monkeypatch.setattr(packaging, "connected_devices", _devices)
+    monkeypatch.setattr(release_build, "build_apk", fake_build_apk)
+    monkeypatch.setattr(Console, "run_command", _noop)
+    monkeypatch.setattr(subprocess, "run", _noop)
+
+    assert main(["run", str(app / "main.py")]) == 0
+    assert seen["features"] == ("vision",)
+    assert seen["prebuilt"] is False
