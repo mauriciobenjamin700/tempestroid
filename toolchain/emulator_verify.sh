@@ -10,6 +10,9 @@
 # ANDROID_SERIAL) because a physical device may ALSO be connected.
 #
 # Usage: bash toolchain/emulator_verify.sh [APP]   (default examples/counter/app.py)
+#   VISION=1   also stage ort_vision_sdk + numpy and build with --feature vision.
+#   EMU_ABI=   x86_64 (default) or arm64-v8a. arm64 ONLY boots on an arm64 host
+#              (an arm64 guest PANICs on x86_64 — the arm64 CI runner sets this).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -43,6 +46,23 @@ VISUAL="${VISUAL:-0}"
 # wheel staged (toolchain/dist/wheels-x86_64/numpy-*, via build_numpy_x86.sh).
 # Off by default so the lean flow is unchanged.
 VISION="${VISION:-0}"
+# EMU_ABI selects the target: x86_64 (default; boots on an x86_64 host with KVM)
+# or arm64-v8a (only boots on an arm64 HOST — an arm64 guest PANICs on x86_64,
+# see docs/research/emulator-arm64-on-x86.md; used by the arm64 CI runner job).
+EMU_ABI="${EMU_ABI:-x86_64}"
+CIBW_ABI="${EMU_ABI//-/_}"
+if [ "$EMU_ABI" = "arm64-v8a" ]; then
+    PY_PREFIX_DIR="$ROOT/toolchain/dist/python/arm64-v8a"
+    DEP_DIR="$ROOT/toolchain/dist/site-packages"
+    FOREIGN_LIB="lib/x86_64/"
+elif [ "$EMU_ABI" = "x86_64" ]; then
+    PY_PREFIX_DIR="$ROOT/toolchain/dist/python/x86_64"
+    DEP_DIR="$ROOT/toolchain/dist/site-packages-x86_64"
+    FOREIGN_LIB="lib/arm64-v8a/"
+else
+    echo "unsupported EMU_ABI: $EMU_ABI (want x86_64 | arm64-v8a)" >&2
+    exit 2
+fi
 
 adb_emu() { adb -s "$EMU_SERIAL" "$@"; }
 
@@ -62,34 +82,38 @@ if ! emu_wait_ready "$EMU_SERIAL" "$READY_WAIT"; then
     emu_recover "$AVD" "$EMU_SERIAL" "$EMU_PORT" || fail "emulator $EMU_SERIAL never became ready"
 fi
 
-echo "==> [2/6] stage x86_64 CPython runtime + site-packages"
+echo "==> [2/6] stage $EMU_ABI CPython runtime + site-packages"
 if [ "$VISION" = "1" ]; then
-    # stage_emulator_runtime.sh inherits the env when it invokes 02_stage_deps.sh,
-    # so exporting TEMPEST_VISION=1 here stages ort_vision_sdk + numpy + PIL shim.
+    # The staging scripts inherit the env when they invoke 02_stage_deps.sh, so
+    # exporting TEMPEST_VISION=1 here stages ort_vision_sdk + numpy + PIL shim.
     export TEMPEST_VISION=1
     echo "    (VISION=1 → staging ort_vision_sdk + numpy + PIL shim)"
-    if ! ls "$ROOT"/toolchain/dist/wheels-x86_64/numpy-*android_*_x86_64.whl >/dev/null 2>&1; then
-        fail "VISION=1 needs the x86_64 numpy wheel — run build_numpy_x86.sh first"
-    fi
+    ls "$ROOT"/toolchain/dist/wheels-"$EMU_ABI"/numpy-*android_*_"$CIBW_ABI".whl >/dev/null 2>&1 \
+        || fail "VISION=1 needs the $EMU_ABI numpy wheel — build it (build_numpy.sh $EMU_ABI)"
 fi
-bash "$ROOT/toolchain/stage_emulator_runtime.sh"
+if [ "$EMU_ABI" = "x86_64" ]; then
+    bash "$ROOT/toolchain/stage_emulator_runtime.sh"
+else
+    # arm64: the official CPython prefix (00_fetch_cpython) + site-packages
+    # (02_stage_deps). The native wheels (pydantic_core + numpy) are pre-built by
+    # the caller into dist/wheels-arm64-v8a / dist/wheels.
+    [ -d "$PY_PREFIX_DIR" ] || ( cd "$ROOT/toolchain" && ./00_fetch_cpython.sh )
+    ( cd "$ROOT/toolchain" && TEMPEST_ABI=arm64-v8a ./02_stage_deps.sh )
+fi
 if [ "$VISION" = "1" ]; then
-    dep_dir="$ROOT/toolchain/dist/site-packages-x86_64"
-    [ -d "$dep_dir/ort_vision_sdk" ] || fail "vision staging missing ort_vision_sdk in $dep_dir"
-    [ -d "$dep_dir/numpy" ] || fail "vision staging missing numpy in $dep_dir"
+    [ -d "$DEP_DIR/ort_vision_sdk" ] || fail "vision staging missing ort_vision_sdk in $DEP_DIR"
+    [ -d "$DEP_DIR/numpy" ] || fail "vision staging missing numpy in $DEP_DIR"
 fi
 
-echo "==> [3/6] build x86_64 APK"
-if [ "$VISION" = "1" ]; then
-    ( cd "$ROOT/android-host" && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
-        ./gradlew :app:assembleDebug \
-            -Ptempest.abi=x86_64 \
-            -Ptempest.pythonPrefix=../toolchain/dist/python/x86_64 \
-            -Ptempest.depsDir=../toolchain/dist/site-packages-x86_64 \
-            -Ptempest.features=vision )
-else
-    make -C "$ROOT" apk-x86 ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
-fi
+echo "==> [3/6] build $EMU_ABI APK"
+feat_arg=""
+[ "$VISION" = "1" ] && feat_arg="-Ptempest.features=vision"
+( cd "$ROOT/android-host" && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
+    ./gradlew :app:assembleDebug \
+        -Ptempest.abi="$EMU_ABI" \
+        -Ptempest.pythonPrefix="$PY_PREFIX_DIR" \
+        -Ptempest.depsDir="$DEP_DIR" \
+        $feat_arg )
 [ -f "$EMU_APK" ] || fail "APK not produced at $EMU_APK"
 echo "    APK: $EMU_APK ($(du -h "$EMU_APK" | cut -f1))"
 # Capture the APK listing ONCE. Do NOT pipe `unzip -l` into `grep -q`: grep -q
@@ -98,11 +122,11 @@ echo "    APK: $EMU_APK ($(du -h "$EMU_APK" | cut -f1))"
 # the entry WAS found (a false negative on any present entry). Grepping the
 # captured string sidesteps the pipe entirely.
 apk_list="$(unzip -Z1 "$EMU_APK")"
-# Confirm it's an x86_64-only APK (no arm64 libs leaked in). Use pure-bash glob
-# matching (no `| grep -q`): grep -q short-circuits, the upstream cmd dies on
-# SIGPIPE, and `set -o pipefail` then flips a present entry into a false negative.
+# Confirm no FOREIGN-ABI libs leaked in. Pure-bash glob match (no `| grep -q`):
+# grep -q short-circuits, the upstream cmd dies on SIGPIPE, and pipefail would
+# flip a present entry into a false negative.
 case "$apk_list" in
-    *"lib/arm64-v8a/"*) fail "APK contains lib/arm64-v8a — expected x86_64-only" ;;
+    *"$FOREIGN_LIB"*) fail "APK contains $FOREIGN_LIB — expected $EMU_ABI-only" ;;
 esac
 if [ "$VISION" = "1" ]; then
     case "$apk_list" in
