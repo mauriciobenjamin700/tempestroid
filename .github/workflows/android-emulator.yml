@@ -130,6 +130,9 @@ jobs:
           ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
           TEMPEST_ABI: x86_64
+          # env.sh defaults TEMPEST_RUST_TARGET to aarch64 regardless of ABI; the
+          # x86_64 pydantic-core build needs the x86_64 target for the preflight.
+          TEMPEST_RUST_TARGET: x86_64-linux-android
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
