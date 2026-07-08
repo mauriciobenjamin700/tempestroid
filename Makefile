@@ -115,7 +115,7 @@ bump: ## Bump version in pyproject (PART=patch|minor|major, default patch)
 	@PART="$${PART:-patch}" python toolchain/bump_version.py
 
 .PHONY: release
-release: gate docs-sync ## Attach host APK to a vX.Y.Z GitHub release + tag → triggers PyPI publish CI
+release: gate docs-sync apk verify-host ## Rebuild + verify the host APK, then attach it to a vX.Y.Z GitHub release + tag → triggers PyPI publish CI
 	@echo "Releasing v$(VERSION)"
 	@git diff --quiet || { echo "ERROR: working tree dirty — commit first"; exit 1; }
 	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
@@ -124,6 +124,9 @@ release: gate docs-sync ## Attach host APK to a vX.Y.Z GitHub release + tag → 
 	@# it ships as a GitHub release asset that `tempest install`/`deploy` download
 	@# (cached). Create the release WITH the asset, which creates + pushes the tag;
 	@# that single push triggers the publish workflow (lean wheel → PyPI).
+	@# `apk` rebuilds it fresh and `verify-host` asserts its bundled tempest_core
+	@# satisfies tempestroid's imports — so a stale on-disk APK (the v0.15.2 blank-
+	@# screen regression) can never be released again.
 	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' (needs the Android toolchain) before releasing"; exit 1; }
 	cp "$(HOST_APK)" "$(dir $(HOST_APK))$(HOST_ASSET)"
 	gh release create "v$(VERSION)" "$(dir $(HOST_APK))$(HOST_ASSET)" \
@@ -164,15 +167,20 @@ HOST_APK       := $(ANDROID)/app/build/outputs/apk/debug/app-debug.apk
 BUNDLED_HOST   := tempestroid/_assets/host.apk
 HOST_ASSET     := tempest-host-$(VERSION).apk
 
+.PHONY: verify-host
+verify-host: ## Assert the built host APK's bundled tempest_core satisfies tempestroid's imports (guards the v0.15.2 blank-screen regression)
+	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' first"; exit 1; }
+	python3 toolchain/verify_host_apk.py "$(HOST_APK)" --src tempestroid
+
 .PHONY: stage-host
-stage-host: ## Copy the built host APK into the package so the wheel bundles it
+stage-host: verify-host ## Copy the built host APK into the package so the wheel bundles it
 	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' first"; exit 1; }
 	@mkdir -p $(dir $(BUNDLED_HOST))
 	cp "$(HOST_APK)" "$(BUNDLED_HOST)"
 	@echo "staged $(BUNDLED_HOST) — `make build` will bundle it into the wheel"
 
 .PHONY: publish-host
-publish-host: ## Upload the built host APK to the GitHub release (download fallback for unstaged installs)
+publish-host: verify-host ## Upload the built host APK to the GitHub release (download fallback for unstaged installs)
 	@test -f "$(HOST_APK)" || { echo "ERROR: $(HOST_APK) not found — run 'make apk' first"; exit 1; }
 	@gh release view "v$(VERSION)" >/dev/null 2>&1 \
 		|| gh release create "v$(VERSION)" --title "v$(VERSION)" --notes "tempestroid v$(VERSION)"
