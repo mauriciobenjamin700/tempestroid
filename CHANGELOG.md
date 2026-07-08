@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.3] — 2026-07-08
+
 ### Fixed
 
 - **Prebuilt host APK release asset rebuilt with the current engine.** The
@@ -15,9 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the post-0.6.0 surface). So on a real device the default path crashed with
   `ImportError: cannot import name 'Alert' from 'tempest_core'` — the user-reported
   bug that the 0.15.1 `vision` fix only addressed for *from-source* builds. The
-  v0.15.2 host asset is now rebuilt from current staging (`tempest_core` 0.8.1,
-  `Alert` present); verified on the emulator + offscreen render (the famacha-app
-  home + navigation load, matching the desktop simulator).
+  v0.15.2 host asset was hotfixed in place (rebuilt from current staging —
+  `tempest_core` 0.8.1, `Alert` present) and 0.15.3 ships the same rebuilt host
+  in both the wheel-bundled `_assets/host.apk` and the GitHub download fallback;
+  verified on the emulator + offscreen render (the famacha-app home + navigation
+  load, matching the desktop simulator).
 
 - **`make release` can no longer ship a stale host APK (the follow-up above, now
   enforced).** `release` gained `apk verify-host` prerequisites: it **rebuilds**
