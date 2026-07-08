@@ -136,8 +136,14 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          bash toolchain/01_build_wheels.sh       # pydantic_core (also caches the x86_64 CPython tarball)
+          bash toolchain/01_build_wheels.sh       # pydantic_core (also downloads the x86_64 CPython tarball)
           bash toolchain/build_numpy_x86.sh       # numpy
+          # cibuildwheel's cache path varies by version/runner; locate the Android
+          # CPython tarball it downloaded and hand it to the emulator step.
+          tarball="$(find "$HOME" -name 'python-*-x86_64-linux-android.tar.gz' 2>/dev/null | head -1)"
+          [ -n "$tarball" ] || { echo "x86_64 CPython Android tarball not found after wheel build"; exit 1; }
+          echo "TEMPEST_X86_TARBALL=$tarball" >> "$GITHUB_ENV"
+          echo "found CPython tarball: $tarball"
 
       - name: Enable KVM
         run: |
@@ -177,8 +183,8 @@ jobs:
             # runner's AVD is named "test" — point the script at what's running.
             EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"; export EMU_SERIAL
             AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"; export AVD
-            # Reuse the CPython x86_64 tarball cibuildwheel just cached.
-            TEMPEST_X86_TARBALL="$(ls "$HOME"/.cache/cibuildwheel/python-*-x86_64-linux-android.tar.gz | head -1)"; export TEMPEST_X86_TARBALL
+            # TEMPEST_X86_TARBALL is exported into the job env by the wheel-build step.
+            echo "using CPython tarball: ${TEMPEST_X86_TARBALL:-<unset>}"
             VISION=1 bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
 
       - name: Upload emulator screenshot
