@@ -6,14 +6,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-07-08
+
+Stability + validation release: the whole project was verified on a **physical
+arm64 device** (Redmi 12 / `23053RN02A`) — including the **standalone vision APK
+ship path** (`tempest build --feature vision --from-source` → install → launch →
+real squeezenet inference `top1=banana` via the onnxruntime AAR, 886 ms) and a
+sweep of 11 examples (counter, navigation + system-back, overlays, virtualized
+lists, forms, animation, theming/dark/RTL, storybook, native capabilities, todo)
+— zero tracebacks/crashes. Device evidence in `docs/assets/device/`.
+
+### Fixed
+
+- **Storybook category switcher no longer character-wraps.** The 6-category top
+  switcher was an equal-width `Tabs` strip; on a phone each tab was too narrow and
+  its label stacked one character per line. It is now a **horizontally
+  scrollable** strip of content-sized buttons (`examples/storybook/app.py`,
+  `_category_strip`), so every label stays on one line and the strip scrolls. The
+  `Tabs` component is still showcased (Navigation category, short labels). Device-
+  verified on the x86_64 emulator.
+- `examples/storybook` Qt entrypoint passed `run_qt` its arguments in the wrong
+  order (`run_qt(view, make_state())`) — fixed to `run_qt(make_state(), view)`.
+
+### Added
+
+- `examples/visionsmoke/app.py` — a lightweight vision-stack smoke app (imports
+  `numpy` + `ort_vision_sdk`, runs a tiny compute) for a fast device/emulator
+  check separate from the full-inference `visionspike`.
+- `examples/visionspike` prints a machine-readable `VISIONSPIKE_RESULT ok=… top1=…`
+  marker to logcat so a headless harness can assert the actual inference result.
+
 ### Docs
 
-- README: added the **`tempestroid[vision]`** install extra to the install
-  snippets, listed **`vision`** in the `tempest build --feature` CLI-table entry
-  (with its from-source + `ort_vision_sdk`/numpy staging behavior), and
-  documented the `emulator_verify.sh` env flags (`VISION`/`EMU_ABI`/
-  `EMU_SKIP_BUILD`/`EMU_EXPECT`/`EMU_EXPECT_WAIT`) + the `make vision-verify`
-  real-inference gate in the emulator research note.
+- README: `tempestroid[vision]` install extra; `vision` listed in the
+  `tempest build --feature` entry (from-source + `ort_vision_sdk`/numpy staging);
+  a "On-device ML, validated without a phone" note; the "Running on a device from
+  WSL" steps rewritten to the working sequence (`usbipd bind --force`,
+  `sudo chmod -R a+rw /dev/bus/usb`, `pkill -9 adb`) + an emulator fallback.
+- New research note `docs/research/emulator-arm64-on-x86.md` (why an arm64 guest
+  can't boot on an x86_64 host; the CI split build/run; `emulator_verify.sh` flag
+  table + `make vision-verify`).
+- Data & ML guide (PT/EN): the emulator real-inference gate + the arm64 numpy
+  wheel recipe; `docs/guia/dispositivo-wsl.md` gained the USB-node permission fix
+  and troubleshooting rows.
+
+### Tooling (not shipped in the package)
+
+- `toolchain/build_numpy.sh <abi>` (ABI-parametrized) + `build_numpy_arm64.sh` +
+  `make numpy-arm64` — cross-compiles the Android numpy wheel (arm64 uses
+  `IEEE_QUAD_LE`); the arm64 wheel is verified aarch64.
+- `.github/workflows/android-emulator.yml` — CI that cross-compiles + ABI-checks
+  the numpy wheels, runs a **real CV-model inference gate** on a headless x86_64
+  emulator (squeezenet → banana, asserted from logcat), and cross-builds the arm64
+  vision APK; an arm64-runtime job on macOS is best-effort (`continue-on-error`).
+- `emulator_verify.sh` gained `EMU_ABI` / `EMU_SKIP_BUILD` / `EMU_EXPECT` and a
+  `make vision-verify` wrapper.
+
+### Known follow-ups
+
+- `Tabs` (tempest-core) still distributes width equally; a scrollable / single-line
+  strip for many tabs is a design-system follow-up. The storybook works around it
+  at the example level (above).
+- Advanced gestures (swipe-to-delete, pinch-zoom in `examples/gestures`) need a
+  real finger to verify — synthetic `adb input swipe` MotionEvents don't satisfy
+  the Compose gesture detectors (render is fine).
 
 ## [0.15.1] — 2026-07-07
 

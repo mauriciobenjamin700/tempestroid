@@ -15,6 +15,7 @@ Renderer-agnostic — the Qt renderer is imported lazily inside ``main``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from tempestroid import (
@@ -41,6 +42,8 @@ from tempestroid import (
     MetricCard,
     NavBar,
     ProgressBar,
+    Row,
+    ScrollView,
     Size,
     Slider,
     Style,
@@ -262,6 +265,17 @@ def _navigation(theme: Theme, tab: int) -> Widget:
                 key="nb",
             ),
             Divider(theme=theme, key="dv"),
+            # The H5 Tabs component itself, showcased with a few short labels so
+            # its equal-width strip renders cleanly (the top category switcher uses
+            # a scrollable strip instead — see _category_strip).
+            Tabs(
+                tabs=["Home", "Search", "You"],
+                active=tab % 3,
+                on_select=lambda _i: None,
+                color_scheme="primary",
+                theme=theme,
+                key="nav-tabs",
+            ),
         ],
     )
 
@@ -384,16 +398,51 @@ def view(app: App[StoryState]) -> Widget:
                 ],
                 key="bar",
             ),
-            Tabs(
-                tabs=_CATEGORIES,
-                active=tab,
-                on_select=lambda i: app.set_state(lambda _s: StoryState(tab=i)),
-                color_scheme="primary",
-                theme=theme,
-                key="tabs",
+            _category_strip(
+                theme,
+                tab,
+                lambda i: app.set_state(lambda _s: StoryState(tab=i)),
             ),
             bodies[tab],
         ],
+    )
+
+
+def _category_strip(
+    theme: Theme, active: int, on_select: Callable[[int], None]
+) -> Widget:
+    """Build a horizontally-scrollable category switcher.
+
+    The top-level switcher has 6 categories — too many for an equal-width
+    :class:`~tempestroid.Tabs` strip on a phone (the labels would wrap
+    character-by-character). A horizontal :class:`~tempestroid.ScrollView` of
+    content-sized GHOST buttons keeps every label on one line and lets the strip
+    scroll; the active category takes the ``primary`` accent.
+
+    Args:
+        theme: The active design-system theme.
+        active: The selected category index.
+        on_select: Called with a category index when its button is tapped.
+
+    Returns:
+        A scrollable row of category buttons.
+    """
+    buttons = [
+        Button(
+            label=label,
+            variant=Variant.GHOST,
+            size=Size.SM,
+            color_scheme="primary" if index == active else "neutral",
+            theme=theme,
+            on_click=lambda index=index: on_select(index),
+            key=f"cat-{index}",
+        )
+        for index, label in enumerate(_CATEGORIES)
+    ]
+    return ScrollView(
+        horizontal=True,
+        children=[Row(children=buttons, style=Style(gap=4.0))],
+        key="tabs",
     )
 
 
@@ -401,7 +450,7 @@ def main() -> None:
     """Run the storybook in the Qt simulator (lazy import keeps the module clean)."""
     from tempestroid.renderers.qt import run_qt
 
-    run_qt(view, make_state())
+    run_qt(make_state(), view)
 
 
 if __name__ == "__main__":

@@ -131,6 +131,12 @@ tempest serve examples/sklearnspike/app.py
     Lighter smoke (imports + compute only): `examples/visionsmoke/app.py` →
     "VISION OK — numpy … ort_vision_sdk …".
 
+!!! check "Also verified on real arm64 hardware"
+    The **standalone APK flow** (`tempest build examples/visionspike/app.py
+    --feature vision --from-source` → install → launch, **no** `tempest serve`)
+    runs inference on the physical phone (Redmi 12, arm64): **top-1 banana
+    (81.5%), provider=AAR, 886 ms**. Evidence under `docs/assets/device/`.
+
 To run `.onnx` models (classification, detection, segmentation) use the
 [`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk) with
 tempestroid's native backend: the SDK runs inference through the **`onnxruntime-android`
