@@ -117,6 +117,13 @@ tempest serve examples/sklearnspike/app.py
 
 ## Inferência ONNX (visão)
 
+!!! check "Verificado no emulador"
+    `examples/visionsmoke/app.py` importa `numpy` + `ort_vision_sdk` e roda um
+    compute no CPython embarcado. Buildado com `--feature vision` e empurrado via
+    `tempest serve` pro emulador x86_64, renderiza **"VISION OK — numpy 2.4.6
+    dot=14 | ort_vision_sdk 0.4.0"** — prova de que a feature `vision` empacota a
+    stack e o bug `no module named ort_vision_sdk` sumiu.
+
 Para rodar modelos `.onnx` (classificação, detecção, segmentação) use o
 [`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk) com o
 backend nativo do tempestroid: o SDK roda a inferência pelo **AAR
@@ -192,7 +199,7 @@ A stack científica é pesada. O **Trilho G7** corta o que dá com segurança:
 
 | Peça | x86_64 (emulador) | arm64 (ship) |
 |---|---|---|
-| numpy | ✅ import + compute | 🚧 receita pronta (`make numpy-arm64`), build/verificação no device pendente |
+| numpy | ✅ import + compute | 🚧 wheel builda (`make numpy-arm64`, `.so` aarch64), run no device físico pendente |
 | scipy + scikit-learn | ✅ import + `fit`/`predict` | ⏳ rebuild |
 | Polars | ✅ build + `import` (op-path `PySeries` pendente) | ⏳ rebuild |
 | ONNX (ort-vision-sdk via AAR) | ✅ `Classifier` real (squeezenet) | ⏳ device físico |
