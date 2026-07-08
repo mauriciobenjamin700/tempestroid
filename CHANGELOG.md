@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prebuilt host APK release asset rebuilt with the current engine.** The
+  `tempest-host-*.apk` asset (downloaded by the DEFAULT prebuilt path —
+  `tempest deploy` / `install` / `run` / `build --fast`) had been *reused* across
+  releases and still baked an **old `tempest_core` without `Alert`** (and the rest
+  of the post-0.6.0 surface). So on a real device the default path crashed with
+  `ImportError: cannot import name 'Alert' from 'tempest_core'` — the user-reported
+  bug that the 0.15.1 `vision` fix only addressed for *from-source* builds. The
+  v0.15.2 host asset is now rebuilt from current staging (`tempest_core` 0.8.1,
+  `Alert` present); verified on the physical Redmi 12 (an app that imports the
+  modern surface now loads). Follow-up: `make release` must rebuild the host per
+  release instead of reusing a prior asset (do not copy an old
+  `tempest-host-*.apk`).
+
 ## [0.15.2] — 2026-07-08
 
 Stability + validation release: the whole project was verified on a **physical
