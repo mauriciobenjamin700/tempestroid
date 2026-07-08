@@ -56,8 +56,35 @@ caminho de validação confiável.
    - Estrutural (feito no host x86, **na CI**): o job `wheels-abi` cross-compila
      numpy arm64-v8a + x86_64 e afirma o ELF machine dos `.so` (0xB7 / 0x3E),
      pegando regressão de packaging/ABI sem host arm64.
-   - Runtime arm64: **device físico** (`tempest serve`/`deploy` no aparelho) ou um
-     **runner arm64 na CI**. É o único jeito de executar o código aarch64 de fato.
+   - **Build arm64 completo na CI**: `build-arm64-apk` (runner x86_64) cross-compila
+     os wheels arm64 + o `.so` do host + a APK arm64 de visão e sobe como artifact
+     — pega regressão de BUILD arm64 a cada trigger.
+   - Runtime arm64: **device físico** (`tempest serve`/`deploy`) ou um **host arm64
+     com virtualização**. É o único jeito de executar o código aarch64.
+
+## arm64 runtime na CI — o que trava (investigado a fundo)
+
+Fechar o *runtime* arm64 na CI (não só o build) esbarra em limites de
+infraestrutura dos runners hospedados do GitHub — **nenhum é culpa do código**:
+
+- **NDK é x86_64-host-only.** O NDK não tem toolchain linux-aarch64; o `clang` é
+  x86_64 e dá `Exec format error` num runner arm64. ⇒ **build arm64 SEMPRE num host
+  x86_64** (cross), runtime noutro lugar. Por isso o split
+  `build-arm64-apk` (x86) → artifact → job de runtime.
+- **Runner arm64 Linux hospedado (`ubuntu-24.04-arm`) não expõe `/dev/kvm`**
+  (`Failed to open the device 'kvm': Invalid argument`). Sem KVM o emulador arm64
+  só roda em **TCG** (software) — lento demais/instável, boot estoura o timeout.
+- **Runner macOS Apple Silicon (`macos-latest` = macos-26)**: tem virtualização
+  nativa (HVF), o emulador arm64 (36.6.11) **inicia**, mas **trava no backend
+  gráfico gfxstream/swiftshader headless** (`startOpenglesRendererImpl` pendura;
+  a porta 5554 nunca abre). Regressão da imagem de runner/emulador, não do app.
+
+**Estado:** o job `emulator-vision-arm64` (macOS) fica `continue-on-error` — é
+best-effort e volta a passar sozinho quando a imagem do runner estabilizar. As
+formas **garantidas** de runtime arm64 hoje: (a) **device físico** (mecanismo
+`tempest serve`/`deploy` já provado), ou (b) **runner self-hosted arm64 com KVM**.
+A cobertura verde na CI (ABI + build arm64 + runtime x86_64) já pega
+regressão de packaging/ABI/lógica sem depender disso.
 3. **Não perder tempo tentando arm64-em-x86** — o PANIC é definitivo.
 
 ## Reprodução (x86_64, com visão)
