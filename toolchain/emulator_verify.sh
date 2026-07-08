@@ -37,6 +37,12 @@ HOST_PKG="org.tempestroid.host"
 # VISUAL=1 compares the final screenshot to a versioned golden (F8); a missing
 # golden is created (baseline). Off by default so the legacy flow is unchanged.
 VISUAL="${VISUAL:-0}"
+# VISION=1 exercises the Trilho-G vision stack on the emulator: stage the
+# site-packages WITH ort_vision_sdk + numpy (TEMPEST_VISION=1) and build the APK
+# with the `vision` feature (bundles the onnxruntime AAR). Needs the x86_64 numpy
+# wheel staged (toolchain/dist/wheels-x86_64/numpy-*, via build_numpy_x86.sh).
+# Off by default so the lean flow is unchanged.
+VISION="${VISION:-0}"
 
 adb_emu() { adb -s "$EMU_SERIAL" "$@"; }
 
@@ -57,15 +63,57 @@ if ! emu_wait_ready "$EMU_SERIAL" "$READY_WAIT"; then
 fi
 
 echo "==> [2/6] stage x86_64 CPython runtime + site-packages"
+if [ "$VISION" = "1" ]; then
+    # stage_emulator_runtime.sh inherits the env when it invokes 02_stage_deps.sh,
+    # so exporting TEMPEST_VISION=1 here stages ort_vision_sdk + numpy + PIL shim.
+    export TEMPEST_VISION=1
+    echo "    (VISION=1 → staging ort_vision_sdk + numpy + PIL shim)"
+    if ! ls "$ROOT"/toolchain/dist/wheels-x86_64/numpy-*android_*_x86_64.whl >/dev/null 2>&1; then
+        fail "VISION=1 needs the x86_64 numpy wheel — run build_numpy_x86.sh first"
+    fi
+fi
 bash "$ROOT/toolchain/stage_emulator_runtime.sh"
+if [ "$VISION" = "1" ]; then
+    dep_dir="$ROOT/toolchain/dist/site-packages-x86_64"
+    [ -d "$dep_dir/ort_vision_sdk" ] || fail "vision staging missing ort_vision_sdk in $dep_dir"
+    [ -d "$dep_dir/numpy" ] || fail "vision staging missing numpy in $dep_dir"
+fi
 
 echo "==> [3/6] build x86_64 APK"
-make -C "$ROOT" apk-x86 ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+if [ "$VISION" = "1" ]; then
+    ( cd "$ROOT/android-host" && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
+        ./gradlew :app:assembleDebug \
+            -Ptempest.abi=x86_64 \
+            -Ptempest.pythonPrefix=../toolchain/dist/python/x86_64 \
+            -Ptempest.depsDir=../toolchain/dist/site-packages-x86_64 \
+            -Ptempest.features=vision )
+else
+    make -C "$ROOT" apk-x86 ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+fi
 [ -f "$EMU_APK" ] || fail "APK not produced at $EMU_APK"
 echo "    APK: $EMU_APK ($(du -h "$EMU_APK" | cut -f1))"
-# Confirm it's an x86_64-only APK (no arm64 libs leaked in).
-if unzip -l "$EMU_APK" | grep -q 'lib/arm64-v8a/'; then
-    fail "APK contains lib/arm64-v8a — expected x86_64-only"
+# Capture the APK listing ONCE. Do NOT pipe `unzip -l` into `grep -q`: grep -q
+# short-circuits on the first match and closes the pipe, so unzip dies on SIGPIPE
+# (141) — and `set -o pipefail` then reports the pipeline as failed even though
+# the entry WAS found (a false negative on any present entry). Grepping the
+# captured string sidesteps the pipe entirely.
+apk_list="$(unzip -Z1 "$EMU_APK")"
+# Confirm it's an x86_64-only APK (no arm64 libs leaked in). Use pure-bash glob
+# matching (no `| grep -q`): grep -q short-circuits, the upstream cmd dies on
+# SIGPIPE, and `set -o pipefail` then flips a present entry into a false negative.
+case "$apk_list" in
+    *"lib/arm64-v8a/"*) fail "APK contains lib/arm64-v8a — expected x86_64-only" ;;
+esac
+if [ "$VISION" = "1" ]; then
+    case "$apk_list" in
+        *"ort_vision_sdk/__init__.py"*) ;;
+        *) fail "VISION=1 but the APK has no ort_vision_sdk in assets" ;;
+    esac
+    case "$apk_list" in
+        *"lib/x86_64/libonnxruntime.so"*) ;;
+        *) fail "VISION=1 but the APK has no onnxruntime AAR native lib" ;;
+    esac
+    echo "    vision assets confirmed: ort_vision_sdk + libonnxruntime.so"
 fi
 
 echo "==> [4/6] install on $EMU_SERIAL"

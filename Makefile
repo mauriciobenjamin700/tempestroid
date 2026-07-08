@@ -265,7 +265,7 @@ apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
 		-Ptempest.depsDir=../toolchain/dist/site-packages-x86_64
 
 .PHONY: emulator-verify
-emulator-verify: ## End-to-end: boot emulator → stage-x86 → apk-x86 → install → serve APP → screenshot (F7)
+emulator-verify: ## End-to-end: boot emulator → stage-x86 → apk-x86 → install → serve APP → screenshot (F7). VISION=1 adds the ort_vision_sdk+numpy stack.
 	bash toolchain/emulator_verify.sh "$(APP)"
 
 # ---- housekeeping -----------------------------------------------------------
