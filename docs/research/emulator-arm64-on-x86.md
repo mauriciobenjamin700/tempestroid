@@ -47,12 +47,15 @@ caminho de validação confiável.
 
 1. **Validação funcional → x86_64 emulador** (`make emulator-verify [VISION=1]`).
    Cobre tudo que é lógica de framework + o caminho de imports/inferência. Barato,
-   acelerado, sem device. Deve entrar na CI (um job com KVM ou o runner de
-   emulador do GitHub).
+   acelerado, sem device. **Já roda na CI**:
+   `.github/workflows/android-emulator.yml` job `emulator-vision` builda os wheels
+   x86_64, sobe o emulador headless (KVM via `reactivecircus/android-emulator-runner`)
+   e roda `VISION=1 emulator_verify.sh` ponta-a-ponta (screenshot como artifact).
+   Dispara em `workflow_dispatch`, push→main no surface nativo, e cron semanal.
 2. **Validação de ABI dos wheels compilados → estrutural + arm64 real.**
-   - Estrutural (feito no host x86): confirmar que os `.so` são ELF aarch64
-     (`machine == 0xB7`) e que o cross-compile fecha (ex.: `IEEE_QUAD_LE` correto
-     no numpy). Pega erro de packaging/ABI.
+   - Estrutural (feito no host x86, **na CI**): o job `wheels-abi` cross-compila
+     numpy arm64-v8a + x86_64 e afirma o ELF machine dos `.so` (0xB7 / 0x3E),
+     pegando regressão de packaging/ABI sem host arm64.
    - Runtime arm64: **device físico** (`tempest serve`/`deploy` no aparelho) ou um
      **runner arm64 na CI**. É o único jeito de executar o código aarch64 de fato.
 3. **Não perder tempo tentando arm64-em-x86** — o PANIC é definitivo.
