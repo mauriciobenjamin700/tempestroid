@@ -620,6 +620,69 @@ change done; `git-worktree` to isolate any task that may run in parallel.
   full isolation contract for parallel device work. Single-agent work needs nothing
   (the shared 5037 server is the default).
 
+### Getting a device/emulator visible to `adb` on this WSL host (runbook)
+
+WSL2 does **not** see USB by default, and a wedged adb server or a permission gap
+on the USB node both look like "no device". This is the proven sequence — device
+**and** emulator (verified 2026-07-08 on a physical Redmi 12 / `23053RN02A`,
+serial `0d474c147d75`, arm64).
+
+**Physical phone over USB cable:**
+
+1. **Phone:** Developer options → **USB debugging** ON; MIUI/Xiaomi also needs
+   **"Install via USB"** ON (else `INSTALL_FAILED_USER_RESTRICTED`). On connect,
+   tap **Allow** on the "Allow USB debugging?" RSA prompt (check "always").
+2. **Windows (PowerShell as Admin) — attach the USB to WSL via `usbipd-win`:**
+   ```powershell
+   winget install usbipd            # once
+   usbipd list                      # find the phone's BUSID (e.g. 1-7)
+   usbipd bind --force --busid <BUSID>     # --force detaches it from the Windows driver
+   usbipd attach --wsl --busid <BUSID>     # each time you plug in
+   ```
+   "Device busy (exported)" ⇒ Windows still holds it → use `--force` (above) or
+   `taskkill /F /IM adb.exe` first.
+3. **WSL — grant the USB node + (re)start adb:** the attached node comes up
+   `root:plugdev` (our user can't open it → adb both *fails to enumerate* and
+   *hangs on the USB poll thread*). Fix once per attach:
+   ```bash
+   sudo chmod -R a+rw /dev/bus/usb
+   export ANDROID_SDK_ROOT=/usr/lib/android-sdk
+   pkill -9 adb            # clear any wedged server (see below)
+   adb devices -l          # → the phone's serial + `device`
+   ```
+   `unauthorized` ⇒ tap Allow on the phone. Confirm the kernel sees it with
+   `dmesg | grep -i usb` (Xiaomi = `idVendor=2717`); `lsusb` is not installed.
+
+**adb server wedge (any target):** `adb start-server`/`adb devices` hanging (a
+`Terminated`/timeout) is almost always a stale server from a prior session — **not**
+a broken adb. Recover with `pkill -9 adb`; the next `adb` call starts a clean one.
+
+**Emulator (x86_64, headless, KVM):** `/dev/kvm` is present + usable here.
+```bash
+export ANDROID_SDK_ROOT=/usr/lib/android-sdk
+emulator -avd pixel8_api34 -no-window -no-audio -no-boot-anim \
+  -gpu swiftshader_indirect -no-snapshot &      # AVDs: pixel8_api34, xyz (both x86_64)
+adb wait-for-device                              # then poll getprop sys.boot_completed == 1
+```
+`make emulator-verify` / `make vision-verify` drive the whole flow (they call
+`pkill`-based recovery via `toolchain/device_loop.sh`). An **arm64 guest cannot
+boot on this x86_64 host** — the emulator PANICs (`arm64 not supported ... on
+x86_64 host`); use the physical arm64 phone for arm64 runtime. See
+[`docs/research/emulator-arm64-on-x86.md`](docs/research/emulator-arm64-on-x86.md).
+
+**On-device validation once `adb devices` lists the target** (pin `ANDROID_SERIAL`
+when both a phone and an emulator are attached):
+```bash
+# build the ABI-correct vision APK (arm64 for the phone, x86_64 for the emulator)
+cd android-host && ./gradlew :app:assembleDebug -Ptempest.abi=arm64-v8a \
+  -Ptempest.pythonPrefix=../toolchain/dist/python/arm64-v8a \
+  -Ptempest.depsDir=../toolchain/dist/site-packages -Ptempest.features=vision
+adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk   # MIUI: watch for the on-screen install prompt
+ANDROID_SERIAL=<serial> uv run tempest serve examples/visionspike/app.py
+adb -s <serial> logcat -d | grep VISIONSPIKE_RESULT   # → ok=1 top1=banana (real inference)
+adb -s <serial> exec-out screencap -p > /tmp/dev.png
+```
+
 ## Commands
 
 **Prefer the `Makefile` at the repo root** — it wraps every recurring task

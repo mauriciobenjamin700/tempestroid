@@ -423,18 +423,40 @@ surfaced and the happy path stays quiet.
 ### Running on a device from WSL
 
 Connecting a physical Android device to a **WSL 2** session needs USB
-passthrough plus an `adb` workaround for WSL's mirrored networking:
+passthrough plus two `adb` workarounds. Proven sequence (verified on a Redmi 12,
+arm64):
 
-1. **Windows (admin PowerShell)** — install [usbipd-win](https://github.com/dorssel/usbipd-win)
-   (`winget install usbipd`), then `usbipd bind --busid <id>` and
-   `usbipd attach --wsl --busid <id>` (find `<id>` via `usbipd list`).
-2. **Device** — enable USB debugging; on MIUI/HyperOS also enable **"Install via
-   USB"** (else `adb install` fails `INSTALL_FAILED_USER_RESTRICTED`).
-3. **WSL** — under mirrored networking `adb start-server` hangs; start it in the
-   foreground instead and leave it running:
-   `adb nodaemon server &`, then `adb devices` responds normally.
-4. Build + install: `ANDROID_SDK_ROOT=/usr/lib/android-sdk make apk-install`
-   (Gradle wrapper 8.11.1).
+1. **Device** — enable USB debugging; on MIUI/HyperOS also enable **"Install via
+   USB"** (else `adb install` fails `INSTALL_FAILED_USER_RESTRICTED`). Tap
+   **Allow** on the RSA prompt when you connect.
+2. **Windows (admin PowerShell)** — install [usbipd-win](https://github.com/dorssel/usbipd-win)
+   (`winget install usbipd`), find the BUSID with `usbipd list`, then:
+   ```powershell
+   usbipd bind --force --busid <id>     # --force: detach it from the Windows driver ("Device busy")
+   usbipd attach --wsl --busid <id>     # each time you plug in
+   ```
+3. **WSL** — the attached USB node comes up `root:plugdev`, which our user can't
+   open, so `adb` both fails to see the device **and** hangs on its USB poll
+   thread. Grant the node and clear any wedged server once per attach:
+   ```bash
+   sudo chmod -R a+rw /dev/bus/usb        # fixes enumeration + the hang
+   pkill -9 adb                           # clear a stale/wedged adb server
+   export ANDROID_SDK_ROOT=/usr/lib/android-sdk
+   adb devices -l                         # → your serial + `device`
+   ```
+4. Build + install + run: `ANDROID_SDK_ROOT=/usr/lib/android-sdk make apk-install`
+   (Gradle wrapper 8.11.1). For a **CV-model** app, build the vision APK and push
+   the app live:
+   ```bash
+   ANDROID_SERIAL=<serial> uv run tempest serve examples/visionspike/app.py
+   adb -s <serial> logcat -d | grep VISIONSPIKE_RESULT   # → ok=1 top1=banana
+   ```
+
+**No phone? Use the emulator** (x86_64, KVM — sufficient to validate everything
+except arm64-specific runtime): `make emulator-verify` (framework) or
+`make vision-verify` (real ONNX inference: squeezenet → banana, asserted from
+logcat). An arm64 guest can't boot on an x86_64 host — see the
+[emulator research note](docs/research/emulator-arm64-on-x86.md).
 
 Full walkthrough + troubleshooting: **[Running on a device (WSL)](docs/guia/dispositivo-wsl.md)**.
 

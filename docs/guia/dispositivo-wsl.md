@@ -57,12 +57,16 @@ BUSID  VID:PID    DEVICE                     STATE
 Pegue o `BUSID` do aparelho (ex.: `1-7`), então:
 
 ```powershell
-usbipd bind --busid 1-7
+usbipd bind --force --busid 1-7
 usbipd attach --wsl --busid 1-7
 ```
 
 - `bind` só na **primeira vez** (marca o device como compartilhável).
 - `attach` toda vez que reconectar o cabo (anexa o device ao WSL).
+- **`--force`** é o que resolve o erro `Attach ... failed - Device busy
+  (exported)` / `The device appears to be used by Windows`: o driver/adb do
+  Windows ainda segura o aparelho. Com `--force` o `bind` o solta (alternativa:
+  `taskkill /F /IM adb.exe` no PowerShell antes do `attach`).
 
 Confira no WSL que o kernel viu o device:
 
@@ -72,14 +76,35 @@ dmesg | grep -i "Product:\|SerialNumber:" | tail -3
 # usb 1-1: SerialNumber: 0d474c147d75
 ```
 
-## 3. Contorno do adb sob rede *mirrored*
+## 3. Permissão do nó USB + contorno do adb
 
-Sob o modo de rede **mirrored** do WSL 2, `adb start-server` **trava**: o
+### 3a. Liberar o nó USB (causa nº 1 do "não vejo o device")
+
+Após o `attach`, o nó do aparelho sobe como `root:plugdev` em
+`/dev/bus/usb/…`. Se o seu usuário **não** está no grupo `plugdev`, o `adb` não
+consegue abrir o device — ele **não enumera** e ainda **trava** a thread de *poll*
+USB do servidor (parece o mesmo sintoma da rede *mirrored*). Libere o nó uma vez
+por `attach`:
+
+```bash
+sudo chmod -R a+rw /dev/bus/usb
+pkill -9 adb                      # limpa qualquer servidor travado
+export ANDROID_SDK_ROOT=/usr/lib/android-sdk
+adb devices -l                    # → o serial + `device`
+```
+
+`unauthorized` ⇒ toque **Permitir** no aparelho (marque "sempre"). Confira que o
+kernel viu o device (`dmesg | grep -i usb`; `lsusb` não está instalado).
+
+### 3b. Contorno do adb sob rede *mirrored* (se ainda travar)
+
+Sob o modo de rede **mirrored** do WSL 2, `adb start-server` pode **travar**: o
 *handshake* de prontidão do daemon pelo *loopback* `127.0.0.1:5037` não completa
-(o `adb devices`/`adb kill-server` ficam pendurados e expiram).
-
-Contorno: suba o servidor **em primeiro plano** (`nodaemon`) como um processo de
-fundo persistente e deixe os comandos do cliente conversarem com ele:
+(o `adb devices`/`adb kill-server` ficam pendurados e expiram). Na prática, o
+`pkill -9 adb` de 3a resolve a maioria dos casos (servidor travado de sessão
+anterior); se persistir, suba o servidor **em primeiro plano** (`nodaemon`) como
+um processo de fundo persistente e deixe os comandos do cliente conversarem com
+ele:
 
 ```bash
 # 1. inicie o servidor em background (deixe rodando):
@@ -147,7 +172,9 @@ adb shell am start -n org.tempestroid.host/.MainActivity \
 
 | Sintoma | Causa / correção |
 |---|---|
-| `adb start-server`/`devices` trava | Rede *mirrored* do WSL — use o servidor `nodaemon` em background (§3). |
+| `adb start-server`/`devices` trava | (1) nó USB `root:plugdev` sem acesso → `sudo chmod -R a+rw /dev/bus/usb` (§3a); (2) servidor travado → `pkill -9 adb`; (3) rede *mirrored* → servidor `nodaemon` (§3b). |
+| `adb devices` vazio (kernel vê o device no `dmesg`) | Nó USB sem permissão — `sudo chmod -R a+rw /dev/bus/usb` + `pkill -9 adb` (§3a). |
+| `usbipd: Device busy (exported)` no `attach` | Windows segura o device — `usbipd bind --force` (ou `taskkill /F /IM adb.exe`) antes do `attach` (§2). |
 | `vhci_hcd: urb->status -104` no `dmesg` | Reset da conexão usbip — refaça `usbipd attach`, troque a porta USB/cabo. |
 | `INSTALL_FAILED_USER_RESTRICTED` | Ligue **"Instalar via USB"** nas Opções do desenvolvedor (MIUI/HyperOS). |
 | Gradle falha com erro de AGP | Use o **wrapper 8.11.1** (`./gradlew`), não o Gradle global. |
