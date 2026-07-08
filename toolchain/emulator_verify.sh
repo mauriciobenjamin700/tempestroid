@@ -82,38 +82,49 @@ if ! emu_wait_ready "$EMU_SERIAL" "$READY_WAIT"; then
     emu_recover "$AVD" "$EMU_SERIAL" "$EMU_PORT" || fail "emulator $EMU_SERIAL never became ready"
 fi
 
-echo "==> [2/6] stage $EMU_ABI CPython runtime + site-packages"
-if [ "$VISION" = "1" ]; then
-    # The staging scripts inherit the env when they invoke 02_stage_deps.sh, so
-    # exporting TEMPEST_VISION=1 here stages ort_vision_sdk + numpy + PIL shim.
-    export TEMPEST_VISION=1
-    echo "    (VISION=1 → staging ort_vision_sdk + numpy + PIL shim)"
-    ls "$ROOT"/toolchain/dist/wheels-"$EMU_ABI"/numpy-*android_*_"$CIBW_ABI".whl >/dev/null 2>&1 \
-        || fail "VISION=1 needs the $EMU_ABI numpy wheel — build it (build_numpy.sh $EMU_ABI)"
-fi
-if [ "$EMU_ABI" = "x86_64" ]; then
-    bash "$ROOT/toolchain/stage_emulator_runtime.sh"
+# EMU_SKIP_BUILD=1 uses a pre-built APK at $EMU_APK (staging + the Gradle build
+# happened elsewhere) and only installs + runs. This is REQUIRED on an arm64
+# host: the Android NDK ships an x86_64-hosted toolchain only (no linux-aarch64),
+# so an arm64 runner cannot compile the wheels OR the host .so — the arm64 APK is
+# built on an x86_64 runner and handed here as an artifact. See
+# docs/research/emulator-arm64-on-x86.md.
+if [ "${EMU_SKIP_BUILD:-0}" = "1" ]; then
+    echo "==> [2-3/6] EMU_SKIP_BUILD=1 — using pre-built APK at $EMU_APK"
+    [ -f "$EMU_APK" ] || fail "EMU_SKIP_BUILD=1 but no APK at $EMU_APK"
 else
-    # arm64: the official CPython prefix (00_fetch_cpython) + site-packages
-    # (02_stage_deps). The native wheels (pydantic_core + numpy) are pre-built by
-    # the caller into dist/wheels-arm64-v8a / dist/wheels.
-    [ -d "$PY_PREFIX_DIR" ] || ( cd "$ROOT/toolchain" && ./00_fetch_cpython.sh )
-    ( cd "$ROOT/toolchain" && TEMPEST_ABI=arm64-v8a ./02_stage_deps.sh )
-fi
-if [ "$VISION" = "1" ]; then
-    [ -d "$DEP_DIR/ort_vision_sdk" ] || fail "vision staging missing ort_vision_sdk in $DEP_DIR"
-    [ -d "$DEP_DIR/numpy" ] || fail "vision staging missing numpy in $DEP_DIR"
-fi
+    echo "==> [2/6] stage $EMU_ABI CPython runtime + site-packages"
+    if [ "$VISION" = "1" ]; then
+        # The staging scripts inherit the env when they invoke 02_stage_deps.sh, so
+        # exporting TEMPEST_VISION=1 here stages ort_vision_sdk + numpy + PIL shim.
+        export TEMPEST_VISION=1
+        echo "    (VISION=1 → staging ort_vision_sdk + numpy + PIL shim)"
+        ls "$ROOT"/toolchain/dist/wheels-"$EMU_ABI"/numpy-*android_*_"$CIBW_ABI".whl >/dev/null 2>&1 \
+            || fail "VISION=1 needs the $EMU_ABI numpy wheel — build it (build_numpy.sh $EMU_ABI)"
+    fi
+    if [ "$EMU_ABI" = "x86_64" ]; then
+        bash "$ROOT/toolchain/stage_emulator_runtime.sh"
+    else
+        # arm64: the official CPython prefix (00_fetch_cpython) + site-packages
+        # (02_stage_deps). The native wheels (pydantic_core + numpy) are pre-built
+        # by the caller into dist/wheels-arm64-v8a / dist/wheels.
+        [ -d "$PY_PREFIX_DIR" ] || ( cd "$ROOT/toolchain" && ./00_fetch_cpython.sh )
+        ( cd "$ROOT/toolchain" && TEMPEST_ABI=arm64-v8a ./02_stage_deps.sh )
+    fi
+    if [ "$VISION" = "1" ]; then
+        [ -d "$DEP_DIR/ort_vision_sdk" ] || fail "vision staging missing ort_vision_sdk in $DEP_DIR"
+        [ -d "$DEP_DIR/numpy" ] || fail "vision staging missing numpy in $DEP_DIR"
+    fi
 
-echo "==> [3/6] build $EMU_ABI APK"
-feat_arg=""
-[ "$VISION" = "1" ] && feat_arg="-Ptempest.features=vision"
-( cd "$ROOT/android-host" && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
-    ./gradlew :app:assembleDebug \
-        -Ptempest.abi="$EMU_ABI" \
-        -Ptempest.pythonPrefix="$PY_PREFIX_DIR" \
-        -Ptempest.depsDir="$DEP_DIR" \
-        $feat_arg )
+    echo "==> [3/6] build $EMU_ABI APK"
+    feat_arg=""
+    [ "$VISION" = "1" ] && feat_arg="-Ptempest.features=vision"
+    ( cd "$ROOT/android-host" && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
+        ./gradlew :app:assembleDebug \
+            -Ptempest.abi="$EMU_ABI" \
+            -Ptempest.pythonPrefix="$PY_PREFIX_DIR" \
+            -Ptempest.depsDir="$DEP_DIR" \
+            $feat_arg )
+fi
 [ -f "$EMU_APK" ] || fail "APK not produced at $EMU_APK"
 echo "    APK: $EMU_APK ($(du -h "$EMU_APK" | cut -f1))"
 # Capture the APK listing ONCE. Do NOT pipe `unzip -l` into `grep -q`: grep -q

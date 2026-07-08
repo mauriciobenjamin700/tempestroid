@@ -195,12 +195,75 @@ jobs:
           path: docs/assets/emulator/verify.png
           if-no-files-found: warn
 
+  build-arm64-apk:
+    name: build arm64-v8a vision APK (x86_64 host — NDK is x86_64-only)
+    # The Android NDK ships only an x86_64-hosted toolchain (no linux-aarch64), so
+    # arm64 native artifacts (wheels + host .so + APK) MUST be built on an x86_64
+    # host that cross-compiles to arm64. The arm64 runner can only run, not build.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK + NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK ${{ env.TEMPEST_NDK_VERSION }}
+        run: sdkmanager "ndk;${{ env.TEMPEST_NDK_VERSION }}"
+
+      - name: Add Rust android target (pydantic-core wheel)
+        run: rustup target add aarch64-linux-android
+
+      - name: Install cibuildwheel (>= 4.0)
+        run: uv tool install "cibuildwheel>=4.1"
+
+      - name: Build arm64-v8a vision APK (cross-compiled)
+        env:
+          ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          # 1) arm64 native wheels (NDK x86_64 host → arm64 target).
+          TEMPEST_ABI=arm64-v8a bash toolchain/01_build_wheels.sh   # pydantic_core
+          bash toolchain/build_numpy_arm64.sh                       # numpy
+          # 2) official arm64 CPython prefix + vision site-packages.
+          ( cd toolchain && ./00_fetch_cpython.sh )
+          ( cd toolchain && TEMPEST_ABI=arm64-v8a TEMPEST_VISION=1 ./02_stage_deps.sh )
+          # 3) the arm64 vision APK.
+          ( cd android-host && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
+              ./gradlew :app:assembleDebug \
+                -Ptempest.abi=arm64-v8a \
+                -Ptempest.pythonPrefix=../toolchain/dist/python/arm64-v8a \
+                -Ptempest.depsDir=../toolchain/dist/site-packages \
+                -Ptempest.features=vision )
+
+      - name: Upload arm64 vision APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-vision-apk
+          path: android-host/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
   emulator-vision-arm64:
     name: arm64 emulator — vision stack end-to-end (arm64 host)
     # An arm64 GUEST only boots on an arm64 HOST (it PANICs on x86_64). GitHub's
-    # hosted arm64 Linux runner IS that host, so this closes the arm64 runtime gap
-    # the x86_64 job can't. Experimental: KVM on hosted arm64 runners is newer —
-    # allowed to fail without failing the whole workflow until proven stable.
+    # hosted arm64 Linux runner IS that host — it runs the pre-built arm64 APK
+    # (it cannot BUILD it: the NDK is x86_64-only). This closes the arm64 runtime
+    # gap the x86_64 job can't. Experimental (KVM on hosted arm64 runners is new)
+    # → continue-on-error until proven stable.
+    needs: build-arm64-apk
     runs-on: ubuntu-24.04-arm
     continue-on-error: true
     timeout-minutes: 90
@@ -212,7 +275,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sync dependencies
+      - name: Sync dependencies (tempest serve; no NDK/build needed)
         run: uv sync
 
       - name: Set up JDK 21
@@ -224,31 +287,16 @@ jobs:
       - name: Set up Android SDK (skip obsolete 'tools' package)
         uses: android-actions/setup-android@v3
         with:
-          # The default package set includes the removed legacy `tools`, which
-          # exit-1s the action on a fresh arm64 runner (no preinstalled SDK).
           packages: ""
 
-      - name: Install SDK packages + NDK
-        run: |
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" \
-            "ndk;${{ env.TEMPEST_NDK_VERSION }}"
+      - name: Install SDK packages (platform-tools only — no NDK, no compile)
+        run: sdkmanager "platform-tools"
 
-      - name: Add Rust android target (pydantic-core wheel)
-        run: rustup target add aarch64-linux-android
-
-      - name: Install cibuildwheel (>= 4.0)
-        run: uv tool install "cibuildwheel>=4.1"
-
-      - name: Build arm64-v8a native wheels (pydantic-core + numpy)
-        env:
-          ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
-          TEMPEST_ABI: arm64-v8a
-        run: |
-          set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
-          bash toolchain/01_build_wheels.sh       # pydantic_core (arm64)
-          bash toolchain/build_numpy_arm64.sh     # numpy (arm64)
+      - name: Download the pre-built arm64 vision APK
+        uses: actions/download-artifact@v4
+        with:
+          name: arm64-vision-apk
+          path: android-host/app/build/outputs/apk/debug/
 
       - name: Enable KVM
         run: |
@@ -265,11 +313,8 @@ jobs:
             ~/.android/adb*
           key: avd-34-arm64-v8a
 
-      - name: Emulator vision verify (arm64, VISION=1)
+      - name: Emulator vision verify (arm64, install-and-run only)
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
         with:
           api-level: 34
           target: google_apis
@@ -280,7 +325,9 @@ jobs:
             set -eu
             EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"; export EMU_SERIAL
             AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"; export AVD
-            EMU_ABI=arm64-v8a VISION=1 bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
+            # EMU_SKIP_BUILD=1 → use the downloaded arm64 APK; just install + serve.
+            EMU_ABI=arm64-v8a VISION=1 EMU_SKIP_BUILD=1 \
+              bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
 
       - name: Upload arm64 emulator screenshot
         if: always()
