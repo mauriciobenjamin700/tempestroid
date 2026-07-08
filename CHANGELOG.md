@@ -16,10 +16,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ImportError: cannot import name 'Alert' from 'tempest_core'` — the user-reported
   bug that the 0.15.1 `vision` fix only addressed for *from-source* builds. The
   v0.15.2 host asset is now rebuilt from current staging (`tempest_core` 0.8.1,
-  `Alert` present); verified on the physical Redmi 12 (an app that imports the
-  modern surface now loads). Follow-up: `make release` must rebuild the host per
-  release instead of reusing a prior asset (do not copy an old
-  `tempest-host-*.apk`).
+  `Alert` present); verified on the emulator + offscreen render (the famacha-app
+  home + navigation load, matching the desktop simulator).
+
+- **`make release` can no longer ship a stale host APK (the follow-up above, now
+  enforced).** `release` gained `apk verify-host` prerequisites: it **rebuilds**
+  the host APK from current staging every release and then runs a new
+  `verify-host` guard (`toolchain/verify_host_apk.py`) that statically asserts the
+  APK's bundled `tempest_core` exports **every** symbol `tempestroid` imports from
+  it — failing the build with the exact missing names (e.g. `Alert`) instead of
+  crashing on device. `stage-host` and `publish-host` gained the same guard, so
+  neither the wheel-bundled host nor the GitHub download fallback can drift from
+  the engine again.
 
 ## [0.15.2] — 2026-07-08
 
