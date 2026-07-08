@@ -235,11 +235,21 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          # 1) arm64 native wheels (NDK x86_64 host → arm64 target).
+          # 1) arm64 native wheels (NDK x86_64 host → arm64 target). This also
+          #    downloads + caches the official aarch64 CPython Android tarball.
           TEMPEST_ABI=arm64-v8a bash toolchain/01_build_wheels.sh   # pydantic_core
           bash toolchain/build_numpy_arm64.sh                       # numpy
-          # 2) official arm64 CPython prefix + vision site-packages.
-          ( cd toolchain && ./00_fetch_cpython.sh )
+          # 2) arm64 CPython prefix from that cached tarball (00_fetch_cpython is
+          #    manual-only; mirror stage_emulator_runtime's extraction for arm64).
+          tarball="$(find "$HOME" -name 'python-*-aarch64-linux-android.tar.gz' 2>/dev/null | head -1)"
+          [ -n "$tarball" ] || { echo "aarch64 CPython Android tarball not found"; exit 1; }
+          echo "arm64 CPython tarball: $tarball"
+          prefix_dst="toolchain/dist/python/arm64-v8a"
+          rm -rf "$prefix_dst"; mkdir -p "$prefix_dst"
+          tmp="$(mktemp -d)"; tar -xzf "$tarball" -C "$tmp" ./prefix
+          cp -a "$tmp/prefix/include" "$prefix_dst/include"
+          cp -a "$tmp/prefix/lib" "$prefix_dst/lib"
+          # 3) vision site-packages (pure-Python + the arm64 wheels).
           ( cd toolchain && TEMPEST_ABI=arm64-v8a TEMPEST_VISION=1 ./02_stage_deps.sh )
           # 3) the arm64 vision APK.
           ( cd android-host && ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_HOME="$ANDROID_SDK_ROOT" \
