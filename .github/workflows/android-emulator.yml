@@ -168,14 +168,17 @@ jobs:
           # The runner boots the emulator; emulator_verify.sh reuses it
           # (its `make emulator` no-ops when a device is already online).
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          # NOTE: the action runs `script:` with /bin/sh (dash) — no `pipefail`.
+          # Keep this POSIX; the real work is in emulator_verify.sh (bash + its
+          # own pipefail).
           script: |
-            set -euo pipefail
+            set -eu
             # emulator_verify.sh targets emulator-5554 and AVD pixel8_api34; the
             # runner's AVD is named "test" — point the script at what's running.
-            export EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"
-            export AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"
+            EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"; export EMU_SERIAL
+            AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"; export AVD
             # Reuse the CPython x86_64 tarball cibuildwheel just cached.
-            export TEMPEST_X86_TARBALL="$(ls "$HOME"/.cache/cibuildwheel/python-*-x86_64-linux-android.tar.gz | head -1)"
+            TEMPEST_X86_TARBALL="$(ls "$HOME"/.cache/cibuildwheel/python-*-x86_64-linux-android.tar.gz | head -1)"; export TEMPEST_X86_TARBALL
             VISION=1 bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
 
       - name: Upload emulator screenshot
