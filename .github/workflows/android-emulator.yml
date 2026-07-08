@@ -221,11 +221,17 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK + NDK
+      - name: Set up Android SDK (skip obsolete 'tools' package)
         uses: android-actions/setup-android@v3
+        with:
+          # The default package set includes the removed legacy `tools`, which
+          # exit-1s the action on a fresh arm64 runner (no preinstalled SDK).
+          packages: ""
 
-      - name: Install NDK ${{ env.TEMPEST_NDK_VERSION }}
-        run: sdkmanager "ndk;${{ env.TEMPEST_NDK_VERSION }}"
+      - name: Install SDK packages + NDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" \
+            "ndk;${{ env.TEMPEST_NDK_VERSION }}"
 
       - name: Add Rust android target (pydantic-core wheel)
         run: rustup target add aarch64-linux-android
