@@ -1,0 +1,184 @@
+name: Android emulator + wheel ABI
+
+# Heavy Android jobs: they cross-compile native wheels (cibuildwheel + NDK) and
+# boot a headless x86_64 emulator, so they do NOT run on every PR. Triggers:
+#   - manual (workflow_dispatch),
+#   - push to main touching the native/toolchain surface,
+#   - a weekly cron (catch upstream drift in CPython/cibuildwheel/NDK).
+#
+# arm64 note: an arm64 GUEST cannot boot on an x86_64 host (the emulator PANICs —
+# see docs/research/emulator-arm64-on-x86.md). So the emulator job validates the
+# x86_64 runtime end-to-end; the arm64 wheel is validated structurally (ELF check)
+# in `wheels-abi`. True arm64 runtime needs an arm64 host (device / arm64 runner).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "toolchain/**"
+      - "android-host/**"
+      - "tempestroid/native/**"
+      - ".github/workflows/android-emulator.yml"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+concurrency:
+  group: android-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEMPEST_NDK_VERSION: "27.3.13750724"
+
+jobs:
+  wheels-abi:
+    name: cross-compile numpy wheels + assert ABI
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK + NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK ${{ env.TEMPEST_NDK_VERSION }}
+        run: sdkmanager "ndk;${{ env.TEMPEST_NDK_VERSION }}"
+
+      - name: Install cibuildwheel (>= 4.0)
+        run: uv tool install "cibuildwheel>=4.1"
+
+      - name: Cross-compile numpy wheels (arm64-v8a + x86_64)
+        env:
+          ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          bash toolchain/build_numpy.sh arm64-v8a
+          bash toolchain/build_numpy.sh x86_64
+
+      - name: Assert wheel ABIs (aarch64 0xB7 / x86-64 0x3E)
+        run: |
+          uv run python - <<'PY'
+          import glob, zipfile, sys
+          want = {"arm64-v8a": 0xB7, "x86_64": 0x3E}
+          for abi, machine in want.items():
+              cibw = abi.replace("-", "_")
+              hits = glob.glob(f"toolchain/dist/wheels-{abi}/numpy-*android_*_{cibw}.whl")
+              assert hits, f"no numpy wheel for {abi}"
+              z = zipfile.ZipFile(hits[0])
+              so = next(n for n in z.namelist() if n.endswith(".so"))
+              got = z.read(so)[18]
+              print(f"{abi}: {so.split('/')[-1]} ELF machine={got:#x}")
+              assert got == machine, f"{abi}: expected {machine:#x}, got {got:#x}"
+          print("wheel ABIs OK")
+          PY
+
+      - name: Upload numpy wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: numpy-android-wheels
+          path: toolchain/dist/wheels-*/numpy-*.whl
+          if-no-files-found: error
+
+  emulator-vision:
+    name: x86_64 emulator — vision stack end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK + NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK ${{ env.TEMPEST_NDK_VERSION }}
+        run: sdkmanager "ndk;${{ env.TEMPEST_NDK_VERSION }}"
+
+      - name: Add Rust android target (pydantic-core wheel)
+        run: rustup target add x86_64-linux-android
+
+      - name: Install cibuildwheel (>= 4.0)
+        run: uv tool install "cibuildwheel>=4.1"
+
+      - name: Build x86_64 native wheels (pydantic-core + numpy)
+        env:
+          ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
+          TEMPEST_ABI: x86_64
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          bash toolchain/01_build_wheels.sh       # pydantic_core (also caches the x86_64 CPython tarball)
+          bash toolchain/build_numpy_x86.sh       # numpy
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-34-x86_64
+
+      - name: Emulator vision verify (VISION=1)
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_HOME_OVERRIDE: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.TEMPEST_NDK_VERSION }}
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          # The runner boots the emulator; emulator_verify.sh reuses it
+          # (its `make emulator` no-ops when a device is already online).
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            set -euo pipefail
+            # emulator_verify.sh targets emulator-5554 and AVD pixel8_api34; the
+            # runner's AVD is named "test" — point the script at what's running.
+            export EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"
+            export AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"
+            # Reuse the CPython x86_64 tarball cibuildwheel just cached.
+            export TEMPEST_X86_TARBALL="$(ls "$HOME"/.cache/cibuildwheel/python-*-x86_64-linux-android.tar.gz | head -1)"
+            VISION=1 bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
+
+      - name: Upload emulator screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-vision-screenshot
+          path: docs/assets/emulator/verify.png
+          if-no-files-found: warn
