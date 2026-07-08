@@ -308,12 +308,14 @@ jobs:
           name: arm64-vision-apk
           path: android-host/app/build/outputs/apk/debug/
 
-      - name: Enable KVM
+      - name: Enable KVM (best-effort — hosted arm64 runners lack /dev/kvm)
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          if [ -e /dev/kvm ]; then echo "KVM available"; else \
+            echo "NO /dev/kvm on this runner — the arm64 emulator will use TCG (slow)"; fi
 
       - name: AVD cache
         uses: actions/cache@v4
@@ -321,16 +323,18 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-34-arm64-v8a
+          key: avd-30-arm64-atd
 
       - name: Emulator vision verify (arm64, install-and-run only)
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          # AOSP ATD (stripped, headless-tuned) + api 30 boots fastest under TCG,
+          # which is what a no-KVM hosted arm64 runner falls back to.
+          api-level: 30
+          target: aosp_atd
           arch: arm64-v8a
           profile: pixel_6
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -no-accel
           script: |
             set -eu
             EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"; export EMU_SERIAL
