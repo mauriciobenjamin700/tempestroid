@@ -61,6 +61,7 @@ caminho de validação confiável.
      — pega regressão de BUILD arm64 a cada trigger.
    - Runtime arm64: **device físico** (`tempest serve`/`deploy`) ou um **host arm64
      com virtualização**. É o único jeito de executar o código aarch64.
+3. **Não perder tempo tentando arm64-em-x86** — o PANIC é definitivo.
 
 ## arm64 runtime na CI — o que trava (investigado a fundo)
 
@@ -85,7 +86,6 @@ formas **garantidas** de runtime arm64 hoje: (a) **device físico** (mecanismo
 `tempest serve`/`deploy` já provado), ou (b) **runner self-hosted arm64 com KVM**.
 A cobertura verde na CI (ABI + build arm64 + runtime x86_64) já pega
 regressão de packaging/ABI/lógica sem depender disso.
-3. **Não perder tempo tentando arm64-em-x86** — o PANIC é definitivo.
 
 ## Reprodução (x86_64, com visão)
 
@@ -96,4 +96,25 @@ make numpy-x86 2>/dev/null || bash toolchain/build_numpy_x86.sh   # wheel numpy 
 VISION=1 make emulator-verify APP=examples/visionsmoke/app.py
 # → boota o emulador, stage vision, builda APK x86 com --feature vision,
 #   instala, tempest serve, screenshot. Tela: "VISION OK — numpy … ort_vision_sdk …"
+```
+
+Gate de inferência real ponta-a-ponta (afirma a classe no logcat, não só o boot):
+
+```bash
+make vision-verify   # squeezenet → banana.jpg via AAR onnxruntime; PASS quando
+                     # o logcat imprime "VISIONSPIKE_RESULT ok=1 top1=banana"
+```
+
+### Flags do `emulator_verify.sh`
+
+O harness (`toolchain/emulator_verify.sh`, wrapado por `make emulator-verify` /
+`make vision-verify`) é parametrizado por ambiente:
+
+| Flag | Default | O que faz |
+|---|---|---|
+| `VISION` | `0` | `1` estaga `ort_vision_sdk` + numpy (`TEMPEST_VISION=1`) e builda com `--feature vision`. |
+| `EMU_ABI` | `x86_64` | Alvo: `x86_64` (boota no host x86 com KVM) ou `arm64-v8a` (só boota num host arm64). |
+| `EMU_SKIP_BUILD` | `0` | `1` reusa uma APK pré-buildada em `$EMU_APK` (pula stage + Gradle). |
+| `EMU_EXPECT` | — | Substring que o app tem que imprimir no logcat pra PASSar (o gate de inferência real, ex.: `VISIONSPIKE_RESULT ok=1 top1=banana`). Vazio = só valida o mount. |
+| `EMU_EXPECT_WAIT` | `120` | Segundos de polling do logcat atrás do `EMU_EXPECT` após o mount. |
 ```

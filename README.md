@@ -69,6 +69,7 @@ in the Qt simulator and LAN code-push to a device over QR — both shipping toda
 pip install tempestroid            # core
 pip install "tempestroid[qt]"      # + desktop simulator (PySide6 + qasync)
 pip install "tempestroid[icons]"   # + tempest icon (Pillow)
+pip install "tempestroid[vision]"  # + on-device ONNX host tooling (ort-vision-sdk + onnx; tempest optimize)
 ```
 
 Building the Android **APK** (`tempest build apk`) needs only a **JDK + Android
@@ -278,6 +279,15 @@ The generated `pyproject.toml` carries `[tool.tempest] app = "app.py"`, so
 **`dev` / `serve` / `build` / `run` take no app argument inside a project** —
 pass an explicit path (`tempest build path/to/app.py`) only to override.
 
+**On-device ML, validated without a phone.** An app that runs an ONNX model
+(opt in with `[vision]` + `--feature vision`) is validated **end-to-end on a
+headless x86_64 emulator**: CI builds the vision APK, runs a real model
+(squeezenet on a test image) through the `onnxruntime-android` AAR — native image
+decode → `numpy` pre/post → inference — and **asserts the predicted class** from
+logcat, no device required. See the
+[Data & ML on device](https://mauriciobenjamin700.github.io/tempestroid/guia/dados-ml/)
+guide (arm64 wheels, the `vision` feature, the emulator inference gate).
+
 Pick a starting structure with `--template`/`-t`:
 
 - `default` (the default) — a single `app.py`, great for a quick demo.
@@ -397,7 +407,7 @@ surfaced and the happy path stays quiet.
 | `tempest spec` | ✅ | Typed widget/event contract as JSON |
 | `tempest doctor` | ✅ | Check the Android build/run prerequisites (JDK, android-host, SDK, adb, device); build readiness sets the exit code, a missing device is informational (only `run`/`install` need one) |
 | `tempest setup` | ✅ | Configure the build environment: diagnose JDK/SDK/NDK/build-tools/toolchain; `--install` auto-installs the Android SDK + NDK (`--sdk-dir`, `-v`) |
-| `tempest build [apk\|release-apk\|prd]` | ✅ | `apk` (default): a debug, **per-app** APK — its own `applicationId` + launcher label so **any number of tempestroid apps install side by side** (never overwriting). Reuses the prebuilt host natives → needs only **JDK + Android SDK** (no NDK, no CPython toolchain). `release-apk`: a **release-signed standalone** APK to distribute outside the Play Store (`--keystore`, else auto-generated; verify with `apksigner verify`). `prd`: a store-ready release **AAB**. Identity + branding come from **`[tool.tempest]`** (`id`/`name`/`icon`/`splash`/`splash_bg`/`version`/`adaptive_icon`/`icon_bg`) so the command stays short; flags (`--app-id`/`--app-name`/`--icon`/`--adaptive-icon`/`--icon-bg`/…) override. `--adaptive-icon <fg.png> --icon-bg <#rrggbb>` emits a real Android adaptive icon (the launcher masks it). **Heavy native capabilities are opt-in** — `--feature camera\|qr\|push\|video\|maps` (repeatable; also `[tool.tempest] features`) bundles only what the app uses; the lean default ships none, keeping the APK small. Each feature needs a from-source build (SDK/NDK). Advanced: `--fast` (repackage, no SDK, shared id, one app), `--from-source` (stage the CPython toolchain). `-o`, `-v` |
+| `tempest build [apk\|release-apk\|prd]` | ✅ | `apk` (default): a debug, **per-app** APK — its own `applicationId` + launcher label so **any number of tempestroid apps install side by side** (never overwriting). Reuses the prebuilt host natives → needs only **JDK + Android SDK** (no NDK, no CPython toolchain). `release-apk`: a **release-signed standalone** APK to distribute outside the Play Store (`--keystore`, else auto-generated; verify with `apksigner verify`). `prd`: a store-ready release **AAB**. Identity + branding come from **`[tool.tempest]`** (`id`/`name`/`icon`/`splash`/`splash_bg`/`version`/`adaptive_icon`/`icon_bg`) so the command stays short; flags (`--app-id`/`--app-name`/`--icon`/`--adaptive-icon`/`--icon-bg`/…) override. `--adaptive-icon <fg.png> --icon-bg <#rrggbb>` emits a real Android adaptive icon (the launcher masks it). **Heavy native capabilities are opt-in** — `--feature camera\|qr\|push\|video\|maps\|vision` (repeatable; also `[tool.tempest] features`) bundles only what the app uses; the lean default ships none, keeping the APK small. Each feature needs a from-source build (SDK/NDK). **`vision`** (on-device ONNX, Trilho G) additionally bundles the `onnxruntime-android` AAR **and** stages the Python `ort_vision_sdk` (+ numpy) into the device site-packages (`TEMPEST_VISION=1`) — without it an on-device inference app crashes with `no module named ort_vision_sdk`. Advanced: `--fast` (repackage, no SDK, shared id, one app), `--from-source` (stage the CPython toolchain). `-o`, `-v` |
 | `tempest run [app]` | ✅ | `build` + install on a device + launch `<app-id>/…MainActivity` + stream logs (needs the toolchain + adb); `--app-id`, `--app-name`, `--app-version`, `--version-code`, `-v` |
 | `tempest version` | ✅ | Print the framework version (alias of the global `--version`/`-V`) |
 | `tempest clean` | ✅ | Reset the build caches under `~/.tempestroid` (extracted host natives, bundled-host copy, cloned source) — fixes stale-cache build failures after an upgrade; `--keystore` also drops the cached release keystore |

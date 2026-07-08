@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+
+- README: added the **`tempestroid[vision]`** install extra to the install
+  snippets, listed **`vision`** in the `tempest build --feature` CLI-table entry
+  (with its from-source + `ort_vision_sdk`/numpy staging behavior), and
+  documented the `emulator_verify.sh` env flags (`VISION`/`EMU_ABI`/
+  `EMU_SKIP_BUILD`/`EMU_EXPECT`/`EMU_EXPECT_WAIT`) + the `make vision-verify`
+  real-inference gate in the emulator research note.
+
 ## [0.15.1] — 2026-07-07
 
 ### Fixed
