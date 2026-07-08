@@ -187,8 +187,8 @@ jobs:
             echo "using CPython tarball: ${TEMPEST_X86_TARBALL:-<unset>}"
             # Real CV-model inference gate: run squeezenet on banana.jpg through the
             # onnxruntime AAR and assert the correct class (not just that it ran).
-            EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" VISION=1 \
-              bash toolchain/emulator_verify.sh examples/visionspike/app.py
+            # One line — dash mishandles `\` line-continuation in the action's sh -c.
+            EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" VISION=1 bash toolchain/emulator_verify.sh examples/visionspike/app.py
 
       - name: Upload emulator screenshot
         if: always()
@@ -327,9 +327,8 @@ jobs:
             AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"; export AVD
             # EMU_SKIP_BUILD=1 → use the downloaded arm64 APK; just install + serve.
             # Real CV-model inference gate on arm64 (assert the correct class).
-            EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" \
-            EMU_ABI=arm64-v8a VISION=1 EMU_SKIP_BUILD=1 \
-              bash toolchain/emulator_verify.sh examples/visionspike/app.py
+            # One line — dash mishandles `\` line-continuation in the action's sh -c.
+            EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" EMU_ABI=arm64-v8a VISION=1 EMU_SKIP_BUILD=1 bash toolchain/emulator_verify.sh examples/visionspike/app.py
 
       - name: Upload arm64 emulator screenshot
         if: always()
