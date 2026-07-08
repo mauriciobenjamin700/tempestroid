@@ -93,7 +93,7 @@ jobs:
           if-no-files-found: error
 
   emulator-vision:
-    name: x86_64 emulator — vision stack end-to-end
+    name: x86_64 emulator — CV model inference (squeezenet → banana)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -185,7 +185,10 @@ jobs:
             AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"; export AVD
             # TEMPEST_X86_TARBALL is exported into the job env by the wheel-build step.
             echo "using CPython tarball: ${TEMPEST_X86_TARBALL:-<unset>}"
-            VISION=1 bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
+            # Real CV-model inference gate: run squeezenet on banana.jpg through the
+            # onnxruntime AAR and assert the correct class (not just that it ran).
+            EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" VISION=1 \
+              bash toolchain/emulator_verify.sh examples/visionspike/app.py
 
       - name: Upload emulator screenshot
         if: always()
@@ -267,7 +270,7 @@ jobs:
           if-no-files-found: error
 
   emulator-vision-arm64:
-    name: arm64 emulator — vision stack end-to-end (macOS Apple Silicon)
+    name: arm64 emulator — CV model inference (macOS Apple Silicon)
     # An arm64 GUEST needs an arm64 HOST with hardware virtualization. GitHub's
     # hosted arm64 LINUX runners expose no /dev/kvm (TCG-only, unusably slow), so
     # the accelerated path is a macOS Apple-Silicon runner (native HVF). It runs
@@ -323,8 +326,10 @@ jobs:
             EMU_SERIAL="$(adb devices | awk '/emulator/{print $1; exit}')"; export EMU_SERIAL
             AVD="$(${ANDROID_SDK_ROOT}/emulator/emulator -list-avds | head -1)"; export AVD
             # EMU_SKIP_BUILD=1 → use the downloaded arm64 APK; just install + serve.
+            # Real CV-model inference gate on arm64 (assert the correct class).
+            EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" \
             EMU_ABI=arm64-v8a VISION=1 EMU_SKIP_BUILD=1 \
-              bash toolchain/emulator_verify.sh examples/visionsmoke/app.py
+              bash toolchain/emulator_verify.sh examples/visionspike/app.py
 
       - name: Upload arm64 emulator screenshot
         if: always()

@@ -51,6 +51,12 @@ VISION="${VISION:-0}"
 # see docs/research/emulator-arm64-on-x86.md; used by the arm64 CI runner job).
 EMU_ABI="${EMU_ABI:-x86_64}"
 CIBW_ABI="${EMU_ABI//-/_}"
+# EMU_EXPECT: a substring the app must print to logcat for PASS (polled up to
+# EMU_EXPECT_WAIT s after mount). Turns the emulator into a real *inference* gate:
+# e.g. EMU_EXPECT="VISIONSPIKE_RESULT ok=1" asserts a full .onnx run finished
+# (decode → numpy pre/post → onnxruntime AAR), not just that the app mounted.
+EMU_EXPECT="${EMU_EXPECT:-}"
+EXPECT_WAIT="${EMU_EXPECT_WAIT:-120}"
 if [ "$EMU_ABI" = "arm64-v8a" ]; then
     PY_PREFIX_DIR="$ROOT/toolchain/dist/python/arm64-v8a"
     DEP_DIR="$ROOT/toolchain/dist/site-packages"
@@ -212,6 +218,35 @@ logdump="$(adb_emu logcat -d -s tempest:V python:V AndroidRuntime:E 2>/dev/null 
 if echo "$logdump" | grep -qE 'Traceback \(most recent call last\)|FATAL EXCEPTION'; then
     echo "$logdump" | grep -E 'Traceback|Error|Exception' | tail -20 >&2
     fail "Python traceback / fatal exception in logcat"
+fi
+
+# Optional runtime assertion: wait for an expected marker on logcat (async work
+# like model inference finishes after mount). Capture-then-match in pure bash —
+# never `adb logcat | grep -q` (grep -q short-circuits → adb SIGPIPE → pipefail
+# false-negative).
+if [ -n "$EMU_EXPECT" ]; then
+    echo "==> waiting for expected marker in logcat: '$EMU_EXPECT' (up to ${EXPECT_WAIT}s)"
+    ew=0
+    found=0
+    while [ "$ew" -lt "$EXPECT_WAIT" ]; do
+        dump="$(adb_emu logcat -d 2>/dev/null || true)"
+        case "$dump" in
+            *"$EMU_EXPECT"*) found=1; break ;;
+        esac
+        # Surface an explicit inference failure marker immediately (don't wait out
+        # the timeout when the app already reported it failed).
+        case "$dump" in
+            *"VISIONSPIKE_RESULT ok=0"*)
+                echo "$dump" | grep -E "VISIONSPIKE_RESULT|Error|Exception" | tail -10 >&2
+                fail "inference reported failure (VISIONSPIKE_RESULT ok=0)" ;;
+        esac
+        sleep 3
+        ew=$((ew + 3))
+    done
+    [ "$found" = "1" ] || fail "expected marker not found in ${EXPECT_WAIT}s: '$EMU_EXPECT' (serve log: $serve_log)"
+    echo "    found expected marker (${ew}s): '$EMU_EXPECT'"
+    # Refresh the screenshot now the result is on screen (was captured mid-run).
+    adb_emu exec-out screencap -p > "$SHOT" 2>/dev/null || true
 fi
 
 if [ "$VISUAL" = "1" ]; then

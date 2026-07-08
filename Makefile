@@ -268,6 +268,11 @@ apk-x86: ## Build the x86_64 debug APK (emulator target, F7)
 emulator-verify: ## End-to-end: boot emulator → stage-x86 → apk-x86 → install → serve APP → screenshot (F7). VISION=1 adds the ort_vision_sdk+numpy stack.
 	bash toolchain/emulator_verify.sh "$(APP)"
 
+.PHONY: vision-verify
+vision-verify: ## Validate CV-model inference on the emulator: squeezenet → banana via the onnxruntime AAR (asserts the class in logcat)
+	EMU_EXPECT="VISIONSPIKE_RESULT ok=1 top1=banana" VISION=1 \
+		bash toolchain/emulator_verify.sh examples/visionspike/app.py
+
 # ---- housekeeping -----------------------------------------------------------
 .PHONY: clean
 clean: ## Remove build/test/cache artifacts

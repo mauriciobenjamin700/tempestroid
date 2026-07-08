@@ -118,12 +118,18 @@ tempest serve examples/sklearnspike/app.py
 
 ## ONNX inference (vision)
 
-!!! check "Verified on the emulator"
-    `examples/visionsmoke/app.py` imports `numpy` + `ort_vision_sdk` and runs a
-    compute on the embedded CPython. Built with `--feature vision` and pushed via
-    `tempest serve` to the x86_64 emulator, it renders **"VISION OK — numpy 2.4.6
-    dot=14 | ort_vision_sdk 0.4.0"** — proof that the `vision` feature bundles the
-    stack and the `no module named ort_vision_sdk` bug is gone.
+!!! check "The emulator validates real inference — no physical device"
+    **`make vision-verify`** runs `examples/visionspike/app.py` on a headless
+    x86_64 emulator (KVM): it builds the APK with `--feature vision`, pushes it
+    via `tempest serve`, and the APK runs **squeezenet1.1 on `banana.jpg`**
+    through the `onnxruntime-android` AAR (native decode → `numpy` pre/post →
+    inference). The harness **asserts the result in logcat** —
+    `VISIONSPIKE_RESULT ok=1 top1=banana` (not just that the app mounted). So a
+    vision model's port is validated end-to-end on the emulator. Runs **in CI**
+    (job `emulator-vision`, `.github/workflows/android-emulator.yml`).
+
+    Lighter smoke (imports + compute only): `examples/visionsmoke/app.py` →
+    "VISION OK — numpy … ort_vision_sdk …".
 
 To run `.onnx` models (classification, detection, segmentation) use the
 [`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk) with

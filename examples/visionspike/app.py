@@ -208,11 +208,21 @@ async def _classify(app: App[SpikeState]) -> None:
             f"source={source}  model={model_path.name}  provider={provider}  "
             f"latency={elapsed_ms:.0f} ms"
         )
+        # Machine-readable marker on stdout → device logcat. Lets a headless
+        # harness (emulator_verify.sh EMU_EXPECT) assert that REAL inference ran
+        # end-to-end (decode → numpy pre/post → onnxruntime AAR) on the emulator,
+        # not just that the app mounted. Kept a single stable line.
+        print(
+            f"VISIONSPIKE_RESULT ok=1 top1={top1_name} "
+            f"conf={top1_conf:.4f} provider={provider} latency_ms={elapsed_ms:.0f}",
+            flush=True,
+        )
     except Exception as exc:  # noqa: BLE001 — surface ANY failure on screen
         app.state.done = True
         app.state.ok = False
         app.state.title_line = f"{type(exc).__name__}"
         app.state.detail_line = str(exc)[:240]
+        print(f"VISIONSPIKE_RESULT ok=0 error={type(exc).__name__}", flush=True)
     app.request_rebuild()
 
 
