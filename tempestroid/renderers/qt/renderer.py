@@ -11,6 +11,8 @@ patches address widgets by the same path the reconciler used.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import inspect
 import re
 from collections.abc import Awaitable, Callable
@@ -605,6 +607,35 @@ def _to_qt_input_mask(mask: str) -> str:
 #: action that asks for the same name/size/color.
 _ICON_PIXMAP_CACHE: dict[tuple[str, int, int], QPixmap] = {}
 
+
+def _data_uri_pixmap(src: str) -> QPixmap:
+    """Decode a ``data:[<mime>][;base64],<payload>`` URI into a pixmap.
+
+    The device renderer's ``AsyncImage`` and the app's own pipeline both hand the
+    ``Image`` widget an inline ``data:`` URI (a base64-encoded PNG/JPEG produced
+    on-device), so the simulator decodes the same payload rather than treating it
+    as a filesystem path (which would fail and fall back to showing the raw URI
+    as text).
+
+    Args:
+        src: The full ``data:`` URI.
+
+    Returns:
+        The decoded pixmap, or a null :class:`QPixmap` when the URI is malformed
+        or the payload is not a base64 image Qt can read.
+    """
+    header, _, payload = src.partition(",")
+    if not payload:
+        return QPixmap()
+    try:
+        raw = base64.b64decode(payload) if ";base64" in header else payload.encode()
+    except (binascii.Error, ValueError):
+        return QPixmap()
+    pixmap = QPixmap()
+    pixmap.loadFromData(raw)
+    return pixmap
+
+
 def _resolve_icon_name(name: str) -> str:
     """Map a Material-symbol alias to its curated icon name (else return as-is).
 
@@ -927,6 +958,93 @@ class _TextLabel(QLabel):
         if self._flow_align & Qt.AlignmentFlag.AlignBottom:
             return max(0.0, self.height() - total_height)
         return 0.0
+
+    def _flowed_height(self, width: int) -> int:
+        """Height the wrapped text needs at ``width`` under the flow constraints.
+
+        Lays the text out exactly as :meth:`_paint_flowed_text` does — same wrap
+        mode and same ``line_height`` leading — and returns ``advance × lines``
+        (capped at ``max_lines``). Without this a custom ``line_height`` (leading
+        > 1.0) paints taller than the stock ``QLabel`` height hint reserves, so
+        the last line is clipped; reporting the flowed height lets the parent box
+        layout allocate the full block.
+
+        Args:
+            width: The candidate content width in pixels.
+
+        Returns:
+            The pixel height the visible lines occupy.
+        """
+        metrics = QFontMetricsF(self.font())
+        advance = (
+            self._line_height * metrics.height()
+            if self._line_height is not None
+            else metrics.lineSpacing()
+        )
+        option = QTextOption(self._flow_align)
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        layout = QTextLayout(self.text(), self.font())
+        layout.setTextOption(option)
+        count = 0
+        layout.beginLayout()
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(float(max(width, 1)))
+            count += 1
+        layout.endLayout()
+        if self._max_lines is not None:
+            count = min(count, self._max_lines)
+        return int(advance * max(count, 1) + 0.5)
+
+    def hasHeightForWidth(self) -> bool:
+        """Report a width-dependent height when custom text flow is active.
+
+        Returns:
+            ``True`` while custom-painting (the wrapped height tracks the width);
+            otherwise the stock ``QLabel`` answer.
+        """
+        if self._needs_custom_paint():
+            return True
+        return super().hasHeightForWidth()
+
+    def heightForWidth(self, width: int) -> int:
+        """Return the flowed height at ``width`` when custom-painting.
+
+        Args:
+            width: The candidate widget width in pixels.
+
+        Returns:
+            The height the wrapped text needs, or the stock hint otherwise.
+        """
+        if self._needs_custom_paint():
+            return self._flowed_height(width)
+        return super().heightForWidth(width)
+
+    def sizeHint(self) -> QSize:
+        """Preferred size, using the flowed height at the current width.
+
+        Returns:
+            The stock hint width paired with the flowed height (so a box layout
+            that reads ``sizeHint().height()`` directly reserves every line).
+        """
+        base = super().sizeHint()
+        if self._needs_custom_paint():
+            return QSize(base.width(), self._flowed_height(max(self.width(), 1)))
+        return base
+
+    def minimumSizeHint(self) -> QSize:
+        """Minimum size, matching the flowed height so lines are never clipped.
+
+        Returns:
+            The stock minimum width paired with the flowed height when
+            custom-painting; otherwise the stock minimum.
+        """
+        base = super().minimumSizeHint()
+        if self._needs_custom_paint():
+            return QSize(base.width(), self._flowed_height(max(self.width(), 1)))
+        return base
 
 
 def _drop_shadow(shadow: Shadow, parent: QWidget) -> QGraphicsDropShadowEffect:
@@ -3848,10 +3966,44 @@ class QtRenderer:
         scheme = _DARK_PALETTE if dark else _LIGHT_PALETTE
         for role, (r, g, b) in scheme.items():
             palette.setColor(role, QColor(r, g, b))
+        self._overlay_brand_palette(palette)
         app.setPalette(palette)
         # Repaint the whole host so already-styled leaves pick up the new palette
         # roles (QSS rules a node sets still win — the palette is the base).
         self.host.update()
+
+    def _overlay_brand_palette(self, palette: QPalette) -> None:
+        """Paint the app theme's brand accent onto the base light/dark palette.
+
+        The ``_LIGHT_PALETTE`` / ``_DARK_PALETTE`` dicts only carry neutral
+        surface/text roles, so widgets the renderer colours from the palette's
+        *accent* (``Highlight``) — the busy ``QProgressBar`` chunk, selection
+        fills — would otherwise show Qt's stock accent (a purple-blue) rather
+        than the app's brand. This overlays the live :class:`Theme`'s
+        ``primary`` onto ``Highlight`` and ``on_primary`` onto
+        ``HighlightedText`` so those primitives match an app that pinned brand
+        colours via ``make_theme``. A no-op when no app is wired (bare-node unit
+        test), keeping the neutral baseline.
+
+        Args:
+            palette: The palette being built for the current mode, mutated in
+                place before it is applied to the ``QApplication``.
+        """
+        if self._app is None:
+            return
+        theme = self._app.theme
+        primary = theme.primary
+        if primary is not None:
+            palette.setColor(
+                QPalette.ColorRole.Highlight,
+                QColor(primary.r, primary.g, primary.b),
+            )
+        on_primary = theme.on_primary
+        if on_primary is not None:
+            palette.setColor(
+                QPalette.ColorRole.HighlightedText,
+                QColor(on_primary.r, on_primary.g, on_primary.b),
+            )
 
     @staticmethod
     def _system_dark(*, fallback: bool) -> bool:
@@ -6696,6 +6848,14 @@ class QtRenderer:
             widget: The Qt progress bar (or spinner stand-in).
             props: The node's current props (may carry ``color_scheme``).
         """
+        style = cast("Style | None", props.get("style"))
+        if style is not None and style.color is not None:
+            # An explicit ``style.color`` is the app's own brand accent and wins
+            # over the ``color_scheme`` token — the token schemes are the Material
+            # baseline (purple) and do not track ``Theme.primary``, so a brand app
+            # tints the ``::chunk`` directly rather than through the variant table.
+            self._tint_chunk(widget, style.color.to_rgba_string())
+            return
         color_scheme = props.get("color_scheme")
         if not isinstance(color_scheme, str):
             return
@@ -6712,11 +6872,20 @@ class QtRenderer:
         accent = states[ComponentState.DEFAULT].color
         if accent is None:
             return
+        self._tint_chunk(widget, accent.to_rgba_string())
+
+    @staticmethod
+    def _tint_chunk(widget: QProgressBar, rgba: str) -> None:
+        """Scope a ``::chunk`` background-color onto a progress bar / spinner.
+
+        Args:
+            widget: The Qt progress bar (or spinner stand-in).
+            rgba: The chunk fill as a CSS ``rgba(...)`` string.
+        """
         name = widget.objectName() or f"tw_{id(widget):x}"
         widget.setObjectName(name)
         widget.setStyleSheet(
-            f"#{name}::chunk {{ background-color: {accent.to_rgba_string()}; "
-            "border-radius: 3px; }"
+            f"#{name}::chunk {{ background-color: {rgba}; border-radius: 3px; }}"
         )
 
     @staticmethod
@@ -6783,8 +6952,12 @@ class QtRenderer:
         """
         src = cast("str", props.get("src", ""))
         alt = cast("str", props.get("alt", ""))
-        is_local = bool(src) and not src.startswith(("http://", "https://"))
-        pixmap = QPixmap(src) if is_local else QPixmap()
+        if src.startswith("data:"):
+            pixmap = _data_uri_pixmap(src)
+        elif bool(src) and not src.startswith(("http://", "https://")):
+            pixmap = QPixmap(src)
+        else:
+            pixmap = QPixmap()
         if pixmap.isNull():
             widget.setText(alt or src)
             return
