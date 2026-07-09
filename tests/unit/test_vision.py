@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import io
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -33,21 +34,17 @@ def test_encode_image_desktop_is_jpeg() -> None:
     assert raw[:2] == b"\xff\xd8"  # JPEG SOI marker
 
 
-def test_encode_image_device_is_png(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On device ``encode_image`` emits a pure-NumPy PNG (Pillow shim can't encode)."""
+def test_encode_image_device_is_lossless_png(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On device ``encode_image`` emits a pure-NumPy PNG (the Pillow shim can't
+    encode) that is lossless — Pillow reads back the same pixels."""
+    pil = pytest.importorskip("PIL.Image")
     monkeypatch.setattr(vision, "on_device", lambda: True)
-    data, mime = vision.encode_image(_sample_rgb())
+    arr = _sample_rgb()
+    data, mime = vision.encode_image(arr)
     assert mime == "image/png"
     raw = base64.b64decode(data)
     assert raw[:8] == b"\x89PNG\r\n\x1a\n"  # PNG signature
-
-
-def test_png_bytes_roundtrip_matches_array() -> None:
-    """The hand-rolled PNG encoder is lossless — Pillow reads back the same pixels."""
-    pil = pytest.importorskip("PIL.Image")
-    arr = _sample_rgb()
-    png = vision._png_bytes(arr)
-    with pil.open(io.BytesIO(png)) as img:
+    with pil.open(io.BytesIO(raw)) as img:
         decoded = np.asarray(img.convert("RGB"))
     assert decoded.shape == arr.shape
     assert np.array_equal(decoded, arr)
@@ -67,7 +64,7 @@ async def test_decode_image_desktop_roundtrip() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ort_session_desktop_runs_a_model(tmp_path) -> None:  # noqa: ANN001 - pytest tmp_path fixture
+async def test_ort_session_desktop_runs_a_model(tmp_path: Path) -> None:
     """``OrtSession`` builds an onnxruntime session on desktop and runs it."""
     onnx = pytest.importorskip("onnx")
     from onnx import TensorProto, helper
