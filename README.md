@@ -1193,6 +1193,36 @@ fully unit-tested off-device (envelopes, typed results, stream-callback
 registries, the real prefs/SQLite emulation via `tmp_path`); biometrics, FCM,
 WorkManager and real sensors are hardware-gated and validated on a device.
 
+### Vision (`tempestroid.vision`) — Trilho G
+
+Renderer-aware on-device computer vision, so an app expresses only its **domain**
+pipeline (which models, thresholds, crop/label logic) and never branches on
+platform. Three primitives run identically on the Android device (native
+`onnxruntime-android` AAR + `BitmapFactory`; no cross-compiled wheels) and on the
+desktop / Qt simulator (in-process `onnxruntime` + Pillow). Needs the `[vision]`
+extra; `numpy` is imported lazily so a lean install stays NumPy-free.
+
+- **`await OrtSession.create(model_path, *, providers=None) -> OrtSession`** —
+  load an ONNX model on the right backend (AAR on device, `onnxruntime` on
+  desktop). `await session.run({session.input_name: tensor}) -> list[np.ndarray]`;
+  `session.input_name` / `session.output_names`. The CPU-provider default runs
+  fp16 / dynamic-shape graphs the mobile NNAPI EP mis-runs.
+- **`await decode_image(source, *, max_size=None) -> np.ndarray`** — encoded
+  bytes/path → canonical HWC `uint8` RGB (host `BitmapFactory` on device, Pillow
+  on desktop).
+- **`encode_image(arr, *, quality=92) -> (base64, mime)`** — HWC `uint8` RGB →
+  a pure-NumPy PNG on device (the Pillow shim can't encode), JPEG on desktop;
+  feed `f"data:{mime};base64,{data}"` to an `Image`.
+
+```python
+from tempestroid.vision import OrtSession, decode_image, encode_image
+
+session = await OrtSession.create("detector.onnx")
+image = await decode_image(image_bytes)                    # HWC uint8 RGB
+outputs = await session.run({session.input_name: tensor})  # list[np.ndarray]
+b64, mime = encode_image(crop)                             # → data: URI
+```
+
 ---
 
 ## Project layout

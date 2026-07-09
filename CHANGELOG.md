@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-07-09
+
+### Added
+
+- **`tempestroid.vision` — renderer-aware on-device computer vision.** The
+  platform plumbing every vision app re-implemented now lives in the framework,
+  so an app expresses only its domain pipeline and consumes three primitives that
+  run identically on the Android device (native `onnxruntime-android` AAR +
+  `BitmapFactory`) and the desktop / Qt simulator (in-process `onnxruntime` +
+  Pillow):
+  - `OrtSession` — `await OrtSession.create(model_path, *, providers=None)`, then
+    `await session.run(feeds)` / `session.input_name` / `session.output_names`.
+    The backend (AAR vs `onnxruntime`) is chosen at runtime; the CPU-provider
+    default runs fp16 / dynamic-shape graphs the mobile NNAPI EP mis-runs.
+  - `decode_image` — encoded bytes/path → canonical HWC `uint8` RGB.
+  - `encode_image` — HWC `uint8` RGB → `(base64, mime)`: a pure-NumPy PNG on
+    device (the Pillow shim can't encode), JPEG on desktop.
+  Exported from the package root (`from tempestroid import OrtSession,
+  decode_image, encode_image`). `numpy` is imported lazily, so a lean install
+  stays NumPy-free. Validated end-to-end on a physical arm64 device (FAMACHA
+  detector + classifier).
+
 ## [0.16.0] — 2026-07-09
 
 Validated end-to-end on a physical arm64 device (Redmi) running the FAMACHA
