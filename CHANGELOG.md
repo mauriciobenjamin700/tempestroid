@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.4] — 2026-07-08
+
 ### Added
 
 - **`--from-source` now auto-fetches the Android CPython prefix** — heavy
