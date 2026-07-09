@@ -154,7 +154,18 @@ internal object OnnxModule {
         cpuOnly: Boolean = false,
     ): Pair<OrtSession, String> {
         val cpu: Pair<String, () -> OrtSession.SessionOptions> =
-            "CPU" to { OrtSession.SessionOptions() }
+            "CPU" to {
+                OrtSession.SessionOptions().apply {
+                    // A "fake-fp16" model (fp32 I/O, internal float16 via input/output
+                    // Cast) runs correctly on the desktop x86 CPU EP but the ARM CPU EP
+                    // aborts at run time (`ORT_INVALID_ARGUMENT`, a Gather on an empty
+                    // axis) — the crashing Gather is INSERTED by a graph optimization
+                    // (the model's own graph has none). Disabling graph optimizations
+                    // keeps the raw fp16 graph (ORT still inserts the fp16<->fp32 casts
+                    // the CPU kernels need), so the model runs as authored.
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.NO_OPT)
+                }
+            }
         val attempts: List<Pair<String, () -> OrtSession.SessionOptions>> =
             if (cpuOnly) {
                 listOf(cpu)
