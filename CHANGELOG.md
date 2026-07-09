@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-07-09
+
+Validated end-to-end on a physical arm64 device (Redmi) running the FAMACHA
+vision app: gallery → on-device ONNX detect + classify → result, plus the full
+UI in the app's brand colours.
+
+### Added
+
+- **App brand colours reach every Material primitive on device.** The
+  mount/patch envelope now carries `theme_colors` (the `Theme`'s pinned
+  `primary`/`on_primary`/`secondary`/`error` as hex; empty when unset), and the
+  host overlays them onto the Material `colorScheme` via `ColorScheme.copy`
+  (containers blended toward the surface, so pickers/chips read as an on-brand
+  soft tint instead of the stock Material purple). Previously only the widgets an
+  app styled by hand escaped the baseline palette; now filled buttons, the
+  file-picker container, switches, segmented controls and indicators all take the
+  app accent.
+- `AarBackend.provider` exposes the execution provider the host opened a session
+  with (`CPU`/`NNAPI`/`XNNPACK`) for on-device diagnostics.
+
+### Fixed
+
+- **Run fp16 ONNX models on the ARM CPU EP.** A "fake-fp16" model (fp32 I/O,
+  internal float16 — how Ultralytics exports YOLO with `half=True`) runs on the
+  desktop CPU EP but the onnxruntime-android ARM CPU EP aborted at run time
+  (`ORT_INVALID_ARGUMENT`, a `Gather` on an empty axis) — the crashing `Gather`
+  is inserted by a graph optimization, not present in the model. The host now
+  opens CPU sessions with `NO_OPT`, keeping the raw fp16 graph (ORT still inserts
+  the fp16↔fp32 casts its kernels need), so fp16 models run without conversion.
+- **`data:` URI images render on both renderers.** An inline base64 image (e.g.
+  an on-device analysis crop) showed nothing — the Qt `Image` treated the URI as
+  a file path and the Compose `Image` used Coil, which doesn't decode `data:`
+  URIs. Both now decode the payload to a bitmap.
+- **Qt simulator: brand-accent indicators, wrapped-text height.** Spinners /
+  progress bars honour an explicit `style.color`; the theme accent overlays the
+  palette `Highlight`; and a `Text` with a custom `line_height` reports the
+  flowed height (`heightForWidth`/`sizeHint`) so the last wrapped line is no
+  longer clipped.
+
 ## [0.15.6] — 2026-07-09
 
 ### Fixed
