@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-07-09
+
+### Added
+
+- **`tempestroid.vision` overlays** (phase 2 of the CV toolkit) — bake results
+  onto a frame, numpy in/out so it works on device (encode with `encode_image`
+  for a `data:` URI, or annotate a live camera frame):
+  - `draw_boxes(image, boxes, *, color=None, thickness=3)` — stroke rectangle
+    outlines, palette-cycled per box.
+  - `overlay_masks(image, masks, *, colors=None, alpha=0.5)` — alpha-blend
+    instance segmentation masks (from `Segmenter`) with per-instance tints;
+    wrong-sized masks are skipped.
+  For crisp vector boxes **with captions** as a UI layer, the `DetectionOverlay`
+  widget (already shipped, Canvas over an `Image` on both renderers) remains the
+  choice — text needs a font rasteriser absent on device, so `draw_boxes` paints
+  outlines only.
+
 ## [0.18.0] — 2026-07-09
 
 ### Added
