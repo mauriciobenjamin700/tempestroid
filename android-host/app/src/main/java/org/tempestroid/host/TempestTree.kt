@@ -67,6 +67,17 @@ class TempestTree {
         private set
 
     /**
+     * The app's pinned brand colours as Material `role -> #rrggbb` hex (e.g.
+     * `primary`, `onPrimary`, `secondary`, `error`), empty when the theme pins
+     * none. MainActivity overlays these onto the stock Material `colorScheme`
+     * so an app's `make_theme` accent reaches every Material primitive, not just
+     * the widgets the app styles by hand. Re-read on every message like
+     * [themeMode], so a runtime `App.set_theme` recolours on the next patch.
+     */
+    var themeColors by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
+    /**
      * Apply one serialized message (`mount` or `patch`).
      *
      * @param message the parsed message envelope.
@@ -90,6 +101,13 @@ class TempestTree {
         // (default "system" when absent). Re-read on every message so a runtime
         // `App.set_theme` swaps the host's Material colorScheme on the next patch.
         themeMode = message.optString("theme_mode", DEFAULT_THEME_MODE)
+        val colors = message.optJSONObject("theme_colors")
+        themeColors =
+            if (colors != null) {
+                colors.keys().asSequence().associateWith { colors.getString(it) }
+            } else {
+                emptyMap()
+            }
     }
 
     private fun applyPatches(patches: JSONArray) {
