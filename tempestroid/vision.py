@@ -42,7 +42,7 @@ import io
 import os
 import struct
 import zlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from tempestroid.native.dispatch import on_device
@@ -55,7 +55,7 @@ __all__ = ["OrtSession", "decode_image", "encode_image"]
 
 
 @contextlib.contextmanager
-def _suppress_fd(fileno: int) -> Iterator[None]:
+def _suppress_fd(fileno: int) -> Generator[None, None, None]:
     """Silence a C-level file descriptor for the duration of the block.
 
     ``onnxruntime``'s native layer writes a GPU device-discovery warning straight
@@ -141,13 +141,15 @@ class OrtSession:
             return cls(aar=backend)
 
         # Desktop / Qt simulator: the in-process onnxruntime wheel. Import lazily
-        # (it does not exist on device) and quiet its startup chatter.
-        with _suppress_fd(2):
-            import onnxruntime as ort
+        # (it does not exist on device — hence the untyped ``Any`` module) and
+        # quiet its startup chatter.
+        import importlib
 
+        with _suppress_fd(2):
+            ort: Any = importlib.import_module("onnxruntime")
             ort.set_default_logger_severity(3)
 
-        options = ort.SessionOptions()
+        options: Any = ort.SessionOptions()
         options.log_severity_level = 3
 
         def _build() -> Any:  # noqa: ANN401 — onnxruntime.InferenceSession (untyped on device)
