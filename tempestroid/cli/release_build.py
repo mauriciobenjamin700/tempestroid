@@ -322,7 +322,13 @@ def ensure_toolchain(
     prefix = dist / "python" / "arm64-v8a"
     scripts = checkout / "toolchain"
     vision = VISION_FEATURE in features
-    if prefix.is_dir():
+    # A COMPLETE prefix has the CPython headers, not merely the directory: an
+    # interrupted or old-stub run can leave an empty `python/arm64-v8a/` (a bare
+    # `mkdir`), and treating that as "staged" skips `make toolchain` and fails
+    # later in CMake with `fatal error: 'Python.h' file not found`. Gate on the
+    # header so an incomplete prefix re-runs the (now self-fetching) toolchain.
+    prefix_complete = prefix.is_dir() and any(prefix.glob("include/python*/Python.h"))
+    if prefix_complete:
         # CPython + wheels already staged. A lean prior run may have skipped the
         # vision Python stack; re-run only the site-packages staging to add it.
         if vision and not _vision_staged(dist):

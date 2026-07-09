@@ -33,10 +33,16 @@ Variáveis: `export ANDROID_HOME=...`, `export ANDROID_NDK_HOME=$ANDROID_HOME/nd
 
 ## B0 — CPython 3.14 para arm64
 
-**Caminho rápido (recomendado):** baixar o release Android oficial.
+**Caminho rápido (recomendado):** automatizado — `toolchain/00_fetch_cpython.sh`
+(rodado por `make toolchain` / `tempest build --from-source`) baixa e stageia o
+prefix oficial sozinho.
 ```bash
-# https://www.python.org/downloads/android/  (3.14.x, aarch64)
-# Resultado: prefix/ com lib/libpython3.14.so + lib/python3.14/ (stdlib)
+# Automático: baixa python-<full>-<triple>.tar.gz do ftp.python.org e extrai
+# prefix/ → toolchain/dist/python/<abi>/. Idempotente + ABI-aware.
+bash toolchain/00_fetch_cpython.sh official
+# URL pinada por TEMPEST_PYTHON_FULL_VERSION (env.sh); fonte:
+#   https://www.python.org/ftp/python/<full>/python-<full>-<triple>.tar.gz
+# Resultado: prefix/ com include/python3.14/Python.h + lib/libpython3.14.so + stdlib
 ```
 
 **Caminho custom (se precisar de flags/debug):** cross-build com o helper oficial.

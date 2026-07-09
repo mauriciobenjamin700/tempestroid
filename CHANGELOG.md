@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`--from-source` now auto-fetches the Android CPython prefix** — heavy
+  optional features (`--feature vision`, etc.) build from a clean install with
+  no manual toolchain staging. `toolchain/00_fetch_cpython.sh`'s `official` mode
+  was a stub that printed a TODO and left `toolchain/dist/python/<abi>/` empty,
+  so `tempest build --feature vision --from-source` died in CMake with
+  `fatal error: 'Python.h' file not found`. It now downloads the version-pinned
+  python.org Android embeddable prefix (`python-<full>-<triple>.tar.gz`) into a
+  cache, stages `prefix/` into the ABI dir, and validates the headers +
+  interpreter + ELF arch — idempotent and ABI-aware (arm64-v8a → aarch64,
+  x86_64 → x86_64). `env.sh` gains `TEMPEST_PYTHON_FULL_VERSION` (3.14.5).
+
+### Fixed
+
+- **`ensure_toolchain` no longer treats an empty prefix dir as "staged".** It
+  gated on `python/arm64-v8a/` merely *existing*, so a leftover empty dir from
+  an interrupted or old-stub run skipped `make toolchain` and failed later in
+  CMake. It now checks for the CPython header (`include/python*/Python.h`), so an
+  incomplete prefix re-runs the (now self-fetching) toolchain.
+
 ## [0.15.3] — 2026-07-08
 
 ### Fixed

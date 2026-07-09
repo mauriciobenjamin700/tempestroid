@@ -6,6 +6,10 @@
 
 # --- Versions (reconfirm before building — the ecosystem moves fast) ---------
 export TEMPEST_PYTHON_VERSION="${TEMPEST_PYTHON_VERSION:-3.14}"
+# Exact micro version — the python.org Android prefix URL is version-pinned
+# (…/ftp/python/<full>/python-<full>-<triple>.tar.gz), so 00_fetch needs the
+# full X.Y.Z, not just the X.Y used for `libpython3.Y.so` / stdlib dir names.
+export TEMPEST_PYTHON_FULL_VERSION="${TEMPEST_PYTHON_FULL_VERSION:-3.14.5}"
 export TEMPEST_NDK_VERSION="${TEMPEST_NDK_VERSION:-27.3.13750724}"   # NDK r27
 export TEMPEST_ANDROID_API="${TEMPEST_ANDROID_API:-24}"             # 3.14 minimum
 export TEMPEST_ABI="${TEMPEST_ABI:-arm64-v8a}"                       # aarch64

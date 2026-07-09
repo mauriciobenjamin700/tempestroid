@@ -17,18 +17,72 @@ mkdir -p "$TEMPEST_PYTHON_PREFIX/$TEMPEST_ABI"
 
 case "$mode" in
 official)
-    echo "==> Fetching official CPython $TEMPEST_PYTHON_VERSION Android release"
-    echo "    Browse: https://www.python.org/downloads/android/"
-    echo "    Pick the aarch64 tarball for $TEMPEST_PYTHON_VERSION.x and unpack into:"
-    echo "      $TEMPEST_PYTHON_PREFIX/$TEMPEST_ABI/"
-    echo
-    echo "    The release ships a 'prefix' tree:"
-    echo "      lib/libpython${TEMPEST_PYTHON_VERSION}.so      (interpreter, → jniLibs)"
-    echo "      lib/lib*_python.so                              (bundled C deps, → jniLibs)"
-    echo "      lib/python${TEMPEST_PYTHON_VERSION}/            (stdlib, → assets)"
-    echo
-    echo "    TODO: when the exact URL/filename is pinned, wire curl here. Left manual"
-    echo "    on purpose so the version is reconfirmed (see android-runbook.md)."
+    # Download the OFFICIAL python.org Android "embeddable prefix" for this ABI
+    # and stage it into $TEMPEST_PYTHON_PREFIX/$TEMPEST_ABI/. Fully automated so
+    # `tempest build --feature <x> --from-source` works from a clean install —
+    # no manual tarball hunting (that was the old TODO that shipped an empty
+    # prefix → CMake `fatal error: 'Python.h' file not found`).
+    full="$TEMPEST_PYTHON_FULL_VERSION"
+    case "$TEMPEST_ABI" in
+        arm64-v8a) triple="aarch64-linux-android" ;;
+        x86_64)    triple="x86_64-linux-android" ;;
+        *)
+            echo "ERROR: unsupported TEMPEST_ABI '$TEMPEST_ABI' (want arm64-v8a|x86_64)" >&2
+            exit 2
+            ;;
+    esac
+    dest="$TEMPEST_PYTHON_PREFIX/$TEMPEST_ABI"
+    header="$dest/include/python${TEMPEST_PYTHON_VERSION}/Python.h"
+    lib="$dest/lib/libpython${TEMPEST_PYTHON_VERSION}.so"
+
+    # Idempotent: a complete prefix is already staged → nothing to do.
+    if [ -f "$header" ] && [ -f "$lib" ]; then
+        echo "==> CPython $full prefix already staged at $dest — skipping fetch"
+        exit 0
+    fi
+
+    url="https://www.python.org/ftp/python/${full}/python-${full}-${triple}.tar.gz"
+    cache="${TEMPEST_DOWNLOAD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tempestroid}"
+    mkdir -p "$cache"
+    tarball="$cache/python-${full}-${triple}.tar.gz"
+
+    if [ ! -s "$tarball" ]; then
+        echo "==> Downloading official CPython $full Android prefix ($triple)"
+        echo "    $url"
+        curl -fSL --retry 3 --retry-delay 2 -o "$tarball.part" "$url"
+        mv "$tarball.part" "$tarball"
+    else
+        echo "==> Using cached tarball: $tarball"
+    fi
+
+    # The release unpacks to ./prefix/{include,lib,...} plus android.py helpers;
+    # only the prefix/ subtree is the staged runtime + headers.
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    tar -xzf "$tarball" -C "$tmp"
+    if [ ! -d "$tmp/prefix" ]; then
+        echo "ERROR: unexpected tarball layout (no prefix/ in $tarball)" >&2
+        exit 1
+    fi
+    mkdir -p "$dest"
+    cp -a "$tmp/prefix/." "$dest/"
+
+    # Validate: headers + interpreter present, and the .so is the right ABI.
+    if [ ! -f "$header" ] || [ ! -f "$lib" ]; then
+        echo "ERROR: staging incomplete — missing Python.h or libpython in $dest" >&2
+        exit 1
+    fi
+    if command -v file >/dev/null 2>&1; then
+        case "$triple" in
+            aarch64-*) want="aarch64" ;;
+            x86_64-*)  want="x86-64" ;;
+        esac
+        if ! file "$lib" | grep -qiE "$want"; then
+            echo "ERROR: $lib is not a $want ELF (wrong-ABI tarball?)" >&2
+            exit 1
+        fi
+    fi
+    echo "==> Staged CPython $full ($triple) → $dest"
     ;;
 custom)
     echo "==> Custom cross-build via CPython Android/android.py"
