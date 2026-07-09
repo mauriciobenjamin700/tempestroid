@@ -110,7 +110,17 @@ internal object OnnxModule {
             modules.reply(requestId, false, error = "unavailable", message = "no model path")
             return
         }
-        val (session, provider) = openWithProviderChain(path)
+        // A caller may pin CPU via the `providers` hint (e.g. "CPUExecutionProvider").
+        // NNAPI can OPEN a model yet fail at RUN time on ops it doesn't fully
+        // support (dynamic-shape Gather in YOLO detectors → ORT_INVALID_ARGUMENT),
+        // and the open-time chain can't catch that — so honour the hint and go
+        // CPU-only when asked.
+        val providersHint = args.optJSONArray("providers")
+        val cpuOnly = providersHint != null &&
+            (0 until providersHint.length()).any {
+                providersHint.optString(it).contains("cpu", ignoreCase = true)
+            }
+        val (session, provider) = openWithProviderChain(path, cpuOnly)
         val id = "onnx-${nextSessionId++}"
         sessions[id] = session
         sessionProvider[id] = provider
@@ -135,20 +145,32 @@ internal object OnnxModule {
      * and we fall through to the always-present CPU provider.
      *
      * @param path the `.onnx` model path on the device filesystem.
+     * @param cpuOnly when true, skip NNAPI/XNNPACK and open on plain CPU (the
+     *   caller pinned it — e.g. a dynamic-shape model NNAPI mis-runs).
      * @return the open session paired with the provider name used.
      */
-    private fun openWithProviderChain(path: String): Pair<OrtSession, String> {
-        val attempts: List<Pair<String, () -> OrtSession.SessionOptions>> = listOf(
-            "NNAPI" to {
-                OrtSession.SessionOptions().apply { addNnapi() }
-            },
-            "XNNPACK" to {
-                OrtSession.SessionOptions().apply {
-                    addXnnpack(mapOf("intra_op_num_threads" to "2"))
-                }
-            },
-            "CPU" to { OrtSession.SessionOptions() },
-        )
+    private fun openWithProviderChain(
+        path: String,
+        cpuOnly: Boolean = false,
+    ): Pair<OrtSession, String> {
+        val cpu: Pair<String, () -> OrtSession.SessionOptions> =
+            "CPU" to { OrtSession.SessionOptions() }
+        val attempts: List<Pair<String, () -> OrtSession.SessionOptions>> =
+            if (cpuOnly) {
+                listOf(cpu)
+            } else {
+                listOf(
+                    "NNAPI" to {
+                        OrtSession.SessionOptions().apply { addNnapi() }
+                    },
+                    "XNNPACK" to {
+                        OrtSession.SessionOptions().apply {
+                            addXnnpack(mapOf("intra_op_num_threads" to "2"))
+                        }
+                    },
+                    cpu,
+                )
+            }
         var lastError: Throwable? = null
         for ((name, makeOptions) in attempts) {
             try {
