@@ -83,3 +83,94 @@ async def test_ort_session_desktop_runs_a_model(tmp_path: Path) -> None:
     feed = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
     (out,) = await session.run({"x": feed})
     assert np.array_equal(out, feed)
+
+
+def test_crop_box_clamps_and_falls_back() -> None:
+    """``crop_box`` intersects with the image and falls back on a degenerate box."""
+    img = np.arange(10 * 8 * 3, dtype=np.uint8).reshape(10, 8, 3)
+    # In-bounds crop.
+    crop = vision.crop_box(img, 2, 3, 4, 5)
+    assert crop.shape == (5, 4, 3)
+    assert np.array_equal(crop, img[3:8, 2:6])
+    # Spills past the right/bottom edge → clamped to the image extent.
+    clamped = vision.crop_box(img, 6, 7, 100, 100)
+    assert clamped.shape == (3, 2, 3)
+    # Entirely off-image (degenerate) → whole image.
+    assert np.array_equal(vision.crop_box(img, -50, -50, 10, 10), img)
+
+
+def test_mean_luminance_bounds() -> None:
+    """``mean_luminance`` returns 0 for black, ~255 for white, BT.709 for pure R."""
+    white = np.full((4, 4, 3), 255, dtype=np.uint8)
+    red = np.zeros((4, 4, 3), dtype=np.uint8)
+    red[..., 0] = 255
+    assert vision.mean_luminance(np.zeros((4, 4, 3), dtype=np.uint8)) == 0.0
+    assert abs(vision.mean_luminance(white) - 255.0) < 1e-3
+    assert abs(vision.mean_luminance(red) - 0.2126 * 255) < 1e-2
+
+
+def test_top_class_argmax_labels_and_softmax() -> None:
+    """``top_class`` returns the argmax, its label, and (optionally) a softmax prob."""
+    scores = np.array([[0.1, 2.0, 0.3]], dtype=np.float32)
+    index, label, conf = vision.top_class(scores, ["a", "b", "c"])
+    assert (index, label) == (1, "b")
+    assert abs(conf - 2.0) < 1e-5
+    # No labels → fallback name.
+    assert vision.top_class(scores)[1] == "class_1"
+    # Softmax → probability in [0, 1].
+    _, _, prob = vision.top_class(scores, apply_softmax=True)
+    assert 0.0 < prob < 1.0
+
+
+class _FakeTask:
+    """A stand-in ort_vision_sdk task recording what ``async_predict`` received."""
+
+    def __init__(self) -> None:
+        self.received: object = None
+
+    async def async_predict(self, image: object, **_kwargs: object) -> list[str]:
+        self.received = image
+        return ["result"]
+
+
+@pytest.mark.asyncio
+async def test_task_predict_decodes_encoded_source_on_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On device, encoded bytes are decoded to an array before the SDK task runs."""
+    monkeypatch.setattr(vision, "on_device", lambda: True)
+    decoded_from: dict[str, object] = {}
+
+    async def _fake_decode(source: object, **_kw: object) -> np.ndarray:
+        decoded_from["source"] = source
+        return np.zeros((2, 2, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(vision, "decode_image", _fake_decode)
+    fake = _FakeTask()
+    out = await vision.Detector(fake).predict(b"jpeg-bytes")
+    assert decoded_from["source"] == b"jpeg-bytes"
+    assert isinstance(fake.received, np.ndarray)  # the task got the decoded array
+    assert out == ["result"]
+
+
+@pytest.mark.asyncio
+async def test_task_predict_passes_bytes_through_on_desktop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On desktop the SDK decodes in-process, so bytes pass straight through."""
+    monkeypatch.setattr(vision, "on_device", lambda: False)
+    fake = _FakeTask()
+    await vision.Classifier(fake).predict(b"raw")
+    assert fake.received == b"raw"
+
+
+@pytest.mark.asyncio
+async def test_task_predict_array_is_never_decoded_on_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An already-decoded array is forwarded as-is (no decode) on any platform."""
+    monkeypatch.setattr(vision, "on_device", lambda: True)
+    fake = _FakeTask()
+    arr = np.ones((3, 3, 3), dtype=np.uint8)
+    await vision.Segmenter(fake).predict(arr)
+    assert fake.received is arr

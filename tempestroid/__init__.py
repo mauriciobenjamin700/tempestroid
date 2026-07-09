@@ -385,7 +385,17 @@ from tempestroid.native import (
     vibrate,
 )
 from tempestroid.renderers.compose import to_compose
-from tempestroid.vision import OrtSession, decode_image, encode_image
+from tempestroid.vision import (
+    Classifier,
+    Detector,
+    OrtSession,
+    Segmenter,
+    crop_box,
+    decode_image,
+    encode_image,
+    mean_luminance,
+    top_class,
+)
 
 try:
     __version__ = version("tempestroid")
@@ -697,10 +707,16 @@ __all__ = [
     "event_catalog",
     # Compose renderer (Python side, phase B4)
     "to_compose",
-    # Vision (renderer-aware ONNX inference + image codec, Trilho G)
+    # Vision (renderer-aware ONNX inference + image codec + tasks, Trilho G)
+    "Classifier",
+    "Detector",
     "OrtSession",
+    "Segmenter",
+    "crop_box",
     "decode_image",
     "encode_image",
+    "mean_luminance",
+    "top_class",
     # Bridge (Python↔Kotlin boundary, phase B3)
     "BACK_TOKEN",
     "DISMISS_TOKEN_PREFIX",
