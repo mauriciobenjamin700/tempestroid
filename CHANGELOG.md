@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.6] — 2026-07-09
+
+### Fixed
+
+- **On-device ONNX honours a CPU execution-provider hint.** The host
+  `OnnxModule` opened models on the first EP of NNAPI→XNNPACK→CPU that could
+  *load* them — but NNAPI can load a dynamic-shape graph (e.g. a YOLO detector)
+  and then fail at *run* time with `ORT_INVALID_ARGUMENT` (a `Gather` whose
+  indexed dim collapsed to 0), which the load-time chain can't catch, and the
+  caller's `providers` hint was ignored. `doLoad` now reads the hint and opens
+  CPU-only when it contains `"cpu"`, so `AarBackend.create(model,
+  providers=["CPUExecutionProvider"])` runs such models correctly on device.
+
 ## [0.15.5] — 2026-07-08
 
 ### Fixed
