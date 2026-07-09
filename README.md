@@ -1,9 +1,11 @@
 # Tempestroid
 
-> 📖 **Documentação / Docs:** site MkDocs bilíngue em [`docs/`](docs/index.md)
-> com seletor **PT-BR / EN-US** no header — rode `uv run mkdocs serve` e abra
-> <http://127.0.0.1:8000> (PT) ou <http://127.0.0.1:8000/en/> (EN). Guia do
-> usuário, arquitetura e referência da API.
+> 📖 **Documentação / Docs:** site MkDocs bilíngue no GitHub Pages —
+> **[PT-BR](https://mauriciobenjamin700.github.io/tempestroid/)** ·
+> **[EN-US](https://mauriciobenjamin700.github.io/tempestroid/en/)** (seletor de
+> idioma no header). Guia do usuário, arquitetura, **[referência completa da
+> CLI](https://mauriciobenjamin700.github.io/tempestroid/guia/cli/)** e referência
+> da API. Prévia local: `uv run mkdocs serve` → <http://127.0.0.1:8000>.
 >
 > 🤖 **Ler com sua IA / Read with your AI:** o site publica
 > [`/llms.txt`](https://mauriciobenjamin700.github.io/tempestroid/llms.txt) (índice)
