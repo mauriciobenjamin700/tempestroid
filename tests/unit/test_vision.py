@@ -83,3 +83,40 @@ async def test_ort_session_desktop_runs_a_model(tmp_path: Path) -> None:
     feed = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
     (out,) = await session.run({"x": feed})
     assert np.array_equal(out, feed)
+
+
+def test_crop_box_clamps_and_falls_back() -> None:
+    """``crop_box`` intersects with the image and falls back on a degenerate box."""
+    img = np.arange(10 * 8 * 3, dtype=np.uint8).reshape(10, 8, 3)
+    # In-bounds crop.
+    crop = vision.crop_box(img, 2, 3, 4, 5)
+    assert crop.shape == (5, 4, 3)
+    assert np.array_equal(crop, img[3:8, 2:6])
+    # Spills past the right/bottom edge → clamped to the image extent.
+    clamped = vision.crop_box(img, 6, 7, 100, 100)
+    assert clamped.shape == (3, 2, 3)
+    # Entirely off-image (degenerate) → whole image.
+    assert np.array_equal(vision.crop_box(img, -50, -50, 10, 10), img)
+
+
+def test_mean_luminance_bounds() -> None:
+    """``mean_luminance`` returns 0 for black, ~255 for white, BT.709 for pure R."""
+    white = np.full((4, 4, 3), 255, dtype=np.uint8)
+    red = np.zeros((4, 4, 3), dtype=np.uint8)
+    red[..., 0] = 255
+    assert vision.mean_luminance(np.zeros((4, 4, 3), dtype=np.uint8)) == 0.0
+    assert abs(vision.mean_luminance(white) - 255.0) < 1e-3
+    assert abs(vision.mean_luminance(red) - 0.2126 * 255) < 1e-2
+
+
+def test_top_class_argmax_labels_and_softmax() -> None:
+    """``top_class`` returns the argmax, its label, and (optionally) a softmax prob."""
+    scores = np.array([[0.1, 2.0, 0.3]], dtype=np.float32)
+    index, label, conf = vision.top_class(scores, ["a", "b", "c"])
+    assert (index, label) == (1, "b")
+    assert abs(conf - 2.0) < 1e-5
+    # No labels → fallback name.
+    assert vision.top_class(scores)[1] == "class_1"
+    # Softmax → probability in [0, 1].
+    _, _, prob = vision.top_class(scores, apply_softmax=True)
+    assert 0.0 < prob < 1.0

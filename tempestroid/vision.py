@@ -42,7 +42,7 @@ import io
 import os
 import struct
 import zlib
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from tempestroid.native.dispatch import on_device
@@ -51,7 +51,17 @@ from tempestroid.native.image import decode_image as _native_decode_image
 if TYPE_CHECKING:
     import numpy as np
 
-__all__ = ["OrtSession", "decode_image", "encode_image"]
+__all__ = [
+    "OrtSession",
+    "crop_box",
+    "decode_image",
+    "encode_image",
+    "mean_luminance",
+    "top_class",
+]
+
+#: Downsample so the longest edge fits this many pixels before measuring luma.
+_LUMINANCE_SAMPLE_MAX_EDGE = 256
 
 
 @contextlib.contextmanager
@@ -287,3 +297,100 @@ def encode_image(arr: np.ndarray, *, quality: int = 92) -> tuple[str, str]:
     buffer = io.BytesIO()
     Image.fromarray(arr).save(buffer, format="JPEG", quality=quality)
     return base64.b64encode(buffer.getvalue()).decode("ascii"), "image/jpeg"
+
+
+def crop_box(
+    image: np.ndarray, x: float, y: float, width: float, height: float
+) -> np.ndarray:
+    """Crop an axis-aligned box from an HWC image, clamped to its bounds.
+
+    The box (in pixels; floats are truncated) is intersected with the image, so a
+    detector box that spills past an edge still yields a valid crop. A degenerate
+    box (zero/negative area after clamping, e.g. a detection entirely off-image)
+    falls back to the whole image rather than an empty array.
+
+    Args:
+        image: HWC array (any channel count).
+        x: Left edge in pixels.
+        y: Top edge in pixels.
+        width: Box width in pixels.
+        height: Box height in pixels.
+
+    Returns:
+        The cropped (contiguous) sub-array, or the whole image when the clamped
+        box is degenerate.
+    """
+    import numpy as np
+
+    img_h, img_w = image.shape[:2]
+    x1 = max(0, int(x))
+    y1 = max(0, int(y))
+    x2 = min(img_w, int(x + width))
+    y2 = min(img_h, int(y + height))
+    if x2 <= x1 or y2 <= y1:
+        return np.ascontiguousarray(image)
+    return np.ascontiguousarray(image[y1:y2, x1:x2])
+
+
+def mean_luminance(image: np.ndarray) -> float:
+    """Mean BT.709 luma of an HWC ``uint8`` RGB image, in ``[0, 255]``.
+
+    The image is subsampled so its longest edge is at most 256 px for speed, then
+    the per-pixel luma ``0.2126 R + 0.7152 G + 0.0722 B`` is averaged. Pure NumPy
+    (no Pillow), so it runs on device where PIL is a decode-less shim — the exact
+    subsample method is irrelevant to a mean. Apps use it to gate a capture that
+    is too dark to analyse.
+
+    Args:
+        image: HWC ``uint8`` RGB array.
+
+    Returns:
+        Mean luminance in ``[0, 255]``.
+    """
+    import numpy as np
+
+    arr = np.asarray(image, dtype=np.float32)
+    height, width = arr.shape[:2]
+    longest = max(width, height)
+    if longest > _LUMINANCE_SAMPLE_MAX_EDGE:
+        step = int(np.ceil(longest / _LUMINANCE_SAMPLE_MAX_EDGE))
+        arr = arr[::step, ::step]
+    luma = 0.2126 * arr[..., 0] + 0.7152 * arr[..., 1] + 0.0722 * arr[..., 2]
+    return float(luma.mean())
+
+
+def top_class(
+    scores: np.ndarray,
+    labels: Sequence[str] | None = None,
+    *,
+    apply_softmax: bool = False,
+) -> tuple[int, str, float]:
+    """Map a classifier's raw scores to its winning ``(index, label, confidence)``.
+
+    Flattens ``scores``, takes the ``argmax``, and looks the index up in
+    ``labels`` (falling back to ``"class_{index}"`` when unlabelled or
+    out-of-range). With ``apply_softmax=True`` the scores are softmaxed first, so
+    ``confidence`` is a probability in ``[0, 1]``; otherwise ``confidence`` is the
+    raw winning score (already-normalized probabilities pass through unchanged).
+
+    Args:
+        scores: The classifier output (any shape; flattened to 1-D).
+        labels: Optional class labels indexed by class id.
+        apply_softmax: Softmax the scores before picking, for a probability.
+
+    Returns:
+        ``(index, label, confidence)`` for the highest-scoring class.
+    """
+    import numpy as np
+
+    arr = np.asarray(scores, dtype=np.float32).reshape(-1)
+    if apply_softmax:
+        shifted = np.exp(arr - arr.max())
+        arr = shifted / shifted.sum()
+    index = int(np.argmax(arr))
+    confidence = float(arr[index])
+    if labels is not None and index < len(labels):
+        label = str(labels[index])
+    else:
+        label = f"class_{index}"
+    return index, label, confidence
