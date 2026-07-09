@@ -1483,19 +1483,19 @@ wheels = [
 
 [[package]]
 name = "tempest-core"
-version = "0.8.1"
+version = "0.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/ef/81cf51fc89de0900d483f940c7b44611347036d4f9eb4deee95ace7fcbfe/tempest_core-0.8.1.tar.gz", hash = "sha256:af7e916dab731b9e08d515162793cd422a46ba247dbc6d27becbd53cbb349003", size = 275532, upload-time = "2026-06-21T00:49:25.638Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/f8/a14bedc89eb3d4807efea452e4895895bca8dfd472d098c9e355e78f9699/tempest_core-0.9.1.tar.gz", hash = "sha256:750b42ce602c09a67f7d0083c9910160e0a31a477f20dbf287aa41e1480ed724", size = 279973, upload-time = "2026-07-09T01:54:11.254Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/62/c509683bcd65d2628d5df24c920adf0e80f3568d0b101b867f0622dffd54/tempest_core-0.8.1-py3-none-any.whl", hash = "sha256:a155ddd1a6d330c5f1cf61d433c694e777f79063ce874843033e358274acab73", size = 193831, upload-time = "2026-06-21T00:49:24.108Z" },
+    { url = "https://files.pythonhosted.org/packages/99/13/32d4e1c33cc1b9a617cacfff2646221287a041692e0b74cda4a8698c4fd8/tempest_core-0.9.1-py3-none-any.whl", hash = "sha256:a1f3979ca66ed9d5b82b963edf3e409af41cc4f893d9a095113a8a6fc0034666", size = 194404, upload-time = "2026-07-09T01:54:09.679Z" },
 ]
 
 [[package]]
 name = "tempestroid"
-version = "0.15.4"
+version = "0.15.5"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
@@ -1544,7 +1544,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyside6", marker = "extra == 'qt'", specifier = ">=6.7" },
     { name = "qasync", marker = "extra == 'qt'", specifier = ">=0.27" },
-    { name = "tempest-core", specifier = ">=0.8.1" },
+    { name = "tempest-core", specifier = ">=0.9.1" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 provides-extras = ["qt", "icons", "vision", "camera", "qr", "push", "video", "maps", "features"]
