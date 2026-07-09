@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-07-09
+
+### Added
+
+- **`tempestroid.vision` high-level tasks + domain helpers** (phase 1 of the CV
+  toolkit). On top of `OrtSession`/`decode_image`/`encode_image`:
+  - `Detector`, `Classifier`, `Segmenter` — platform-aware wrappers over
+    `ort_vision_sdk` (NMS, mask assembly, label mapping). `await
+    Task.create(model).predict(image)` picks the backend (native AAR on device,
+    `onnxruntime` on desktop) and, on device, decodes encoded bytes/paths through
+    `decode_image` first (the SDK's own decode needs Pillow/cv2, absent on
+    device). Returns the SDK's `DetectionResults` / `ClassificationResults` /
+    `SegmentationResults` — boxes and per-instance masks included.
+  - `crop_box(image, x, y, w, h)` — clamped ROI crop (whole-image fallback on a
+    degenerate box).
+  - `mean_luminance(image)` — BT.709 mean luma in `[0, 255]` (dark-capture gate).
+  - `top_class(scores, labels=None, *, apply_softmax=False)` — argmax →
+    `(index, label, confidence)` with label lookup + `"class_{i}"` fallback.
+  All exported from the package root; `ort_vision_sdk`/`numpy` stay lazily
+  imported so a lean install is unaffected.
+
 ## [0.17.0] — 2026-07-09
 
 ### Added
