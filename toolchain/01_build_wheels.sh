@@ -36,6 +36,16 @@ build_pkg() {
 # The Rust crate — the fire test of the whole runtime (plan §2).
 build_pkg "https://github.com/pydantic/pydantic-core" "pydantic-core"
 
+# numpy (C extension, no prebuilt Android wheel) — a hard dependency of the
+# vision stack (ort_vision_sdk). Its ABI-parametrized recipe lives in
+# build_numpy.sh; the wheel lands in dist/wheels-<abi>/, where 02_stage_deps.sh
+# (TEMPEST_VISION=1) picks it up. Building it here means `--feature vision
+# --from-source` gets numpy for ANY target ABI automatically — previously only
+# the x86_64 wheel was ever built by hand, so arm64 vision APKs shipped without
+# numpy and inference died on device with `No module named 'numpy'`.
+echo "==> building numpy Android wheel ($TEMPEST_ABI)"
+"$here/build_numpy.sh" "$TEMPEST_ABI"
+
 echo
 echo "Wheels in $TEMPEST_WHEELS_DIR:"
 ls -1 "$TEMPEST_WHEELS_DIR" 2>/dev/null || true

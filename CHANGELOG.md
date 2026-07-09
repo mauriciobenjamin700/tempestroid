@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.5] — 2026-07-08
+
+### Fixed
+
+- **Image picker now delivers a readable file to the app (on-device gallery
+  flow).** Two bugs stranded the `ImagePicker` → `on_pick` → work path on a
+  device:
+    1. The Compose `RenderFilePicker` handed the app the raw Android
+       `content://` URI, which app-side Python (`open()`, onnxruntime) cannot
+       read. It now streams the picked bytes into `cacheDir/tempest_picks/` and
+       returns a plain **file path** (like the camera capture already does),
+       falling back to the URI only if the copy fails.
+    2. Combined with the `tempest-core` 0.9.1 fix (an `async` `on_pick` is now
+       awaited), picking a gallery image runs the app's handler end to end —
+       previously it fired, did nothing, and showed no error. Pin bumped to
+       `tempest-core>=0.9.1`.
+- **arm64 `--feature vision` builds now ship numpy.** Only the x86_64 numpy
+  Android wheel had ever been built by hand, so an arm64 vision APK imported
+  `ort_vision_sdk` and died with `No module named 'numpy'` on device.
+  `01_build_wheels.sh` now cross-builds the numpy Android wheel for the target
+  ABI, so `--feature vision --from-source` gets numpy on arm64 automatically.
+
 ## [0.15.4] — 2026-07-08
 
 ### Added

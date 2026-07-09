@@ -232,6 +232,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.delay
+import java.io.File
 import java.time.Instant
 import java.time.ZoneOffset
 import org.json.JSONObject
@@ -2193,8 +2194,14 @@ private fun RenderFilePicker(
         ActivityResultContracts.GetContent(),
     ) { uri: Uri? ->
         if (uri != null) {
-            val payload = JSONObject().put("uri", uri.toString())
             val name = displayName(context, uri) ?: uri.lastPathSegment
+            // The picker hands back a `content://` URI, which app-side Python
+            // (open()/onnxruntime) cannot read. Copy the bytes into the app
+            // cache and hand the app a plain FILE PATH it can open — mirroring
+            // the camera path (which already yields a real file). Fall back to
+            // the raw URI only if the copy fails, so the token is still sent.
+            val localPath = copyPickedToCache(context, uri, name)
+            val payload = JSONObject().put("uri", localPath ?: uri.toString())
             if (name != null) payload.put("name", name)
             handlerToken(node, "on_select")?.let { onEvent(it, payload.toString()) }
         }
@@ -2257,6 +2264,32 @@ private fun neutralTextFieldColors(style: Map<String, Any?>): androidx.compose.m
         focusedTrailingIconColor = text,
         unfocusedTrailingIconColor = text,
     )
+}
+
+/**
+ * Copy a picked `content://` URI into the app cache and return the local file
+ * path, or null on failure.
+ *
+ * The system picker returns an opaque `content://` URI that only the
+ * ContentResolver can read — app-side Python `open()` cannot. Streaming the
+ * bytes into `cacheDir/tempest_picks/` gives the app a real, readable path
+ * (the same shape the camera capture already produces). The pick directory is
+ * cleared on each pick so it never grows unbounded.
+ */
+private fun copyPickedToCache(context: Context, uri: Uri, name: String?): String? {
+    return try {
+        val dir = File(context.cacheDir, "tempest_picks").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val safe = (name ?: "pick").replace(Regex("[^A-Za-z0-9._-]"), "_").ifEmpty { "pick" }
+        val out = File(dir, safe)
+        val ok = context.contentResolver.openInputStream(uri)?.use { input ->
+            out.outputStream().use { input.copyTo(it) }
+            true
+        } ?: false
+        if (ok) out.absolutePath else null
+    } catch (_: Exception) {
+        null
+    }
 }
 
 /** Resolve a content URI's human-readable display name, or null. */
