@@ -73,13 +73,27 @@ __all__ = [
     "Segmenter",
     "crop_box",
     "decode_image",
+    "draw_boxes",
     "encode_image",
     "mean_luminance",
+    "overlay_masks",
     "top_class",
 ]
 
 #: Downsample so the longest edge fits this many pixels before measuring luma.
 _LUMINANCE_SAMPLE_MAX_EDGE = 256
+
+#: Distinct RGB colours cycled per instance when overlaying masks / boxes.
+_OVERLAY_PALETTE: tuple[tuple[int, int, int], ...] = (
+    (255, 56, 56),
+    (56, 178, 255),
+    (66, 214, 108),
+    (255, 178, 44),
+    (170, 108, 255),
+    (255, 108, 184),
+    (44, 222, 214),
+    (214, 214, 66),
+)
 
 
 @contextlib.contextmanager
@@ -581,3 +595,96 @@ class Segmenter:
     def task(self) -> Any:  # noqa: ANN401 — the underlying ort_vision_sdk.Segmenter
         """The wrapped ``ort_vision_sdk`` task, for advanced use."""
         return self._task
+
+
+# --- Overlays (bake boxes / segmentation masks onto an image) --------------
+#
+# These are numpy-in / numpy-out so the annotated frame works everywhere (encode
+# it with encode_image for a data: URI, or feed a live camera frame). For crisp
+# vector boxes WITH text labels as a UI layer, use the tempest_core
+# DetectionOverlay widget (Canvas over an Image, both renderers) instead — text
+# needs a font rasteriser the device has no wheel for, so draw_boxes here paints
+# rectangle outlines only.
+
+
+def draw_boxes(
+    image: np.ndarray,
+    boxes: Sequence[Sequence[float]],
+    *,
+    color: tuple[int, int, int] | None = None,
+    thickness: int = 3,
+) -> np.ndarray:
+    """Paint rectangle outlines for ``boxes`` onto a copy of ``image``.
+
+    Each box is ``(x1, y1, x2, y2)`` in pixels (extra items ignored), clamped to
+    the image. Boxes cycle through a built-in palette unless ``color`` pins one.
+    Outlines only — for captions use the ``DetectionOverlay`` widget.
+
+    Args:
+        image: HWC ``uint8`` RGB array.
+        boxes: Iterable of ``(x1, y1, x2, y2)`` pixel boxes.
+        color: A fixed RGB outline colour, or ``None`` to cycle the palette.
+        thickness: Outline thickness in pixels.
+
+    Returns:
+        A new annotated HWC ``uint8`` RGB array.
+    """
+    import numpy as np
+
+    out = np.ascontiguousarray(image).copy()
+    img_h, img_w = out.shape[:2]
+    thick = max(1, int(thickness))
+    channels = out.shape[2] if out.ndim == 3 else 3
+    for i, box in enumerate(boxes):
+        rgb = color or _OVERLAY_PALETTE[i % len(_OVERLAY_PALETTE)]
+        paint = np.asarray(rgb[:channels], dtype=out.dtype)
+        x1 = max(0, min(img_w, int(box[0])))
+        y1 = max(0, min(img_h, int(box[1])))
+        x2 = max(0, min(img_w, int(box[2])))
+        y2 = max(0, min(img_h, int(box[3])))
+        if x2 <= x1 or y2 <= y1:
+            continue
+        out[y1 : min(img_h, y1 + thick), x1:x2] = paint  # top
+        out[max(0, y2 - thick) : y2, x1:x2] = paint  # bottom
+        out[y1:y2, x1 : min(img_w, x1 + thick)] = paint  # left
+        out[y1:y2, max(0, x2 - thick) : x2] = paint  # right
+    return out
+
+
+def overlay_masks(
+    image: np.ndarray,
+    masks: Sequence[np.ndarray],
+    *,
+    colors: Sequence[tuple[int, int, int]] | None = None,
+    alpha: float = 0.5,
+) -> np.ndarray:
+    """Alpha-blend instance segmentation masks onto a copy of ``image``.
+
+    Each mask is an ``(H, W)`` boolean or ``[0, 1]`` float array the size of the
+    image; its truthy pixels are tinted with a per-instance colour. Masks whose
+    shape does not match the image are skipped (the caller should resize them to
+    the original frame first). Pure NumPy, so it runs on device.
+
+    Args:
+        image: HWC ``uint8`` RGB array.
+        masks: Iterable of ``(H, W)`` masks (bool or ``[0, 1]`` float).
+        colors: Per-instance RGB tints, cycled; defaults to a built-in palette.
+        alpha: Blend strength in ``[0, 1]`` (0 = image, 1 = solid colour).
+
+    Returns:
+        A new annotated HWC ``uint8`` RGB array.
+    """
+    import numpy as np
+
+    out = np.ascontiguousarray(image).astype(np.float32)
+    img_h, img_w = out.shape[:2]
+    palette = colors if colors is not None else _OVERLAY_PALETTE
+    blend = float(min(1.0, max(0.0, alpha)))
+    for i, mask in enumerate(masks):
+        m = np.asarray(mask)
+        if m.shape[:2] != (img_h, img_w):
+            continue
+        selected = m.astype(bool) if m.dtype == bool else m > 0.5
+        tint = np.asarray(palette[i % len(palette)], dtype=np.float32)
+        out[selected] = out[selected] * (1.0 - blend) + tint * blend
+    return np.clip(out, 0, 255).astype(np.uint8)

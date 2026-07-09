@@ -1233,6 +1233,16 @@ absent on device). Same code on both targets:
 - **`top_class(scores, labels=None, *, apply_softmax=False)`** → `(index, label,
   confidence)` (argmax + label lookup, `"class_{i}"` fallback).
 
+**Overlays** bake results onto a frame (numpy in/out — works on device, encode
+with `encode_image` for a `data:` URI or feed a live camera frame):
+
+- **`draw_boxes(image, boxes, *, color=None, thickness=3)`** — stroke rectangle
+  outlines (boxes cycle a palette). For crisp vector boxes **with captions** as a
+  UI layer, use the `DetectionOverlay` widget (Canvas over an `Image`, both
+  renderers) instead — text needs a font rasteriser absent on device.
+- **`overlay_masks(image, masks, *, colors=None, alpha=0.5)`** — alpha-blend
+  instance segmentation masks (from `Segmenter`) with per-instance tints.
+
 ```python
 from tempestroid.vision import Detector, decode_image, crop_box
 
