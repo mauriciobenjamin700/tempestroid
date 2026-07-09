@@ -35,6 +35,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.delay
@@ -53,18 +54,55 @@ import org.json.JSONObject
  * So a dark app under a light OS renders Material primitives (TextField, dropdown,
  * slider, surfaces) dark — matching the app — instead of the prior OS-only mismatch.
  *
+ * When the app pins brand colours (`themeColors`, from `Theme.primary` etc.),
+ * they are overlaid onto the stock scheme via [ColorScheme.copy] so every
+ * Material primitive the renderer colours from a scheme role — filled buttons,
+ * the file-picker container (`secondaryContainer`), switches, indicators — takes
+ * the app's accent instead of the Material baseline (purple). Container roles are
+ * blended toward the scheme's own surface, so the tint adapts to light/dark. The
+ * neutral container (`secondaryContainer`, used by pickers/chips) is derived from
+ * `primary` so it reads as an on-brand soft tint rather than a second accent.
+ * With no pinned colours the stock scheme is returned unchanged.
+ *
  * Pure (no Android framework, no composition) so the JVM unit test pins it.
  *
  * @param themeMode the app's theme mode (`"light"` / `"dark"` / `"system"`).
  * @param systemDark whether the OS is in dark mode (the `"system"` fallback).
+ * @param themeColors the app's pinned brand colours as `role -> #rrggbb` hex.
  * @return the Material color scheme to install.
  */
-internal fun colorSchemeFor(themeMode: String, systemDark: Boolean): ColorScheme =
-    when (themeMode) {
-        "dark" -> darkColorScheme()
-        "light" -> lightColorScheme()
-        else -> if (systemDark) darkColorScheme() else lightColorScheme()
-    }
+internal fun colorSchemeFor(
+    themeMode: String,
+    systemDark: Boolean,
+    themeColors: Map<String, String> = emptyMap(),
+): ColorScheme {
+    val base =
+        when (themeMode) {
+            "dark" -> darkColorScheme()
+            "light" -> lightColorScheme()
+            else -> if (systemDark) darkColorScheme() else lightColorScheme()
+        }
+    if (themeColors.isEmpty()) return base
+    val primary = themeColors["primary"]?.let { parseHexColor(it) }
+    val onPrimary = themeColors["onPrimary"]?.let { parseHexColor(it) }
+    val secondary = themeColors["secondary"]?.let { parseHexColor(it) }
+    val error = themeColors["error"]?.let { parseHexColor(it) }
+    fun container(accent: Color): Color = lerp(accent, base.surface, 0.82f)
+    return base.copy(
+        primary = primary ?: base.primary,
+        onPrimary = onPrimary ?: base.onPrimary,
+        primaryContainer = primary?.let(::container) ?: base.primaryContainer,
+        onPrimaryContainer = primary ?: base.onPrimaryContainer,
+        inversePrimary = primary ?: base.inversePrimary,
+        secondary = secondary ?: base.secondary,
+        secondaryContainer = primary?.let(::container) ?: base.secondaryContainer,
+        onSecondaryContainer = primary ?: base.onSecondaryContainer,
+        tertiary = primary ?: base.tertiary,
+        tertiaryContainer = primary?.let(::container) ?: base.tertiaryContainer,
+        onTertiaryContainer = primary ?: base.onTertiaryContainer,
+        error = error ?: base.error,
+    )
+}
 
 /**
  * Host activity: extracts the bundled Python tree, boots the interpreter on a
@@ -267,7 +305,7 @@ class MainActivity : FragmentActivity() {
             // Option B: derive the scheme from the app's theme_mode (snapshot
             // state, recomposes on a runtime App.set_theme patch), with the OS
             // dark-mode reading as the fallback only for the "system" mode.
-            val colorScheme = colorSchemeFor(tree.themeMode, systemDark)
+            val colorScheme = colorSchemeFor(tree.themeMode, systemDark, tree.themeColors)
             MaterialTheme(colorScheme = colorScheme) {
                 // The host draws edge-to-edge (enableEdgeToEdge above), so the
                 // root content must inset itself off the system bars (status bar

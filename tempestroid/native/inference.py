@@ -130,6 +130,7 @@ class AarBackend:
         output_names: list[str],
         output_shapes: list[tuple[int | str, ...]],
         loop: asyncio.AbstractEventLoop | None = None,
+        provider: str = "",
     ) -> None:
         """Initialize the backend around an already-loaded host session.
 
@@ -143,8 +144,11 @@ class AarBackend:
             output_shapes: The model's output shapes (dynamic dims as strings).
             loop: The event loop the device app runs on, used to bridge the sync
                 :meth:`run` from a worker thread. Defaults to the running loop.
+            provider: The execution provider the host opened the session with
+                (``"CPU"`` / ``"NNAPI"`` / ``"XNNPACK"``); empty when unknown.
         """
         self._session_id = session_id
+        self._provider = provider
         self._input_names = list(input_names)
         self._input_shapes = list(input_shapes)
         self._output_names = list(output_names)
@@ -189,12 +193,18 @@ class AarBackend:
             input_shapes=_to_shape_tuples(data.get("input_shapes", [])),
             output_names=[str(n) for n in data.get("output_names", [])],
             output_shapes=_to_shape_tuples(data.get("output_shapes", [])),
+            provider=str(data.get("provider", "")),
         )
 
     @property
     def session_id(self) -> str:
         """The host-side session id this backend drives."""
         return self._session_id
+
+    @property
+    def provider(self) -> str:
+        """The execution provider the host opened this session with (diagnostics)."""
+        return self._provider
 
     @property
     def input_names(self) -> list[str]:

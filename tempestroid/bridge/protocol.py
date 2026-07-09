@@ -329,6 +329,7 @@ class MountMessage(BaseModel):
     can_pop: bool = False
     has_animations: bool = False
     theme_mode: str = "system"
+    theme_colors: dict[str, str] = {}
 
 
 class PatchMessage(BaseModel):
@@ -356,6 +357,7 @@ class PatchMessage(BaseModel):
     can_pop: bool = False
     has_animations: bool = False
     theme_mode: str = "system"
+    theme_colors: dict[str, str] = {}
 
 
 class EventMessage(BaseModel):

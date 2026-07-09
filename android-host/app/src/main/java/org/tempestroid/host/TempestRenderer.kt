@@ -1,8 +1,12 @@
 package org.tempestroid.host
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -2886,7 +2890,11 @@ private fun RenderSlider(
  */
 @Composable
 private fun RenderProgressBar(node: TempestNode, style: Map<String, Any?>) {
-    val accent = schemeAccentColor(node.props["color_scheme"] as? String)
+    // An explicit `style.color` is the app's own brand accent and wins over the
+    // `color_scheme` token: the Material `colorScheme` is the stock baseline
+    // (purple) and does not track `Theme.primary`, so a brand app tints the
+    // indicator directly rather than through the scheme role.
+    val accent = colorOf(style, "color") ?: schemeAccentColor(node.props["color_scheme"] as? String)
     val track = accent.copy(alpha = 0.24f)
     val indeterminate = node.props["indeterminate"] as? Boolean ?: false
     if (indeterminate) {
@@ -2909,7 +2917,9 @@ private fun RenderProgressBar(node: TempestNode, style: Map<String, Any?>) {
  */
 @Composable
 private fun RenderSpinner(node: TempestNode, style: Map<String, Any?>) {
-    val accent = schemeAccentColor(node.props["color_scheme"] as? String)
+    // Explicit `style.color` wins over the `color_scheme` token — see
+    // [RenderProgressBar] for why a brand app tints the indicator directly.
+    val accent = colorOf(style, "color") ?: schemeAccentColor(node.props["color_scheme"] as? String)
     val size = (node.props["size"] as? Number)?.toFloat()
     val modifier =
         if (size != null) baseModifier(style).size(size.dp) else baseModifier(style)
@@ -2953,7 +2963,13 @@ private fun schemeAccentColor(scheme: String?): Color {
     }
 }
 
-/** An image loaded from `src` (URL/asset) via Coil, scaled per `fit`. */
+/** An image loaded from `src`, scaled per `fit`.
+ *
+ * A `data:` URI (an inline base64 image the app's on-device pipeline produces —
+ * e.g. the analysed crop) is decoded to a bitmap and drawn directly: Coil does
+ * not decode `data:` URIs, so an `AsyncImage` pointed at one would silently show
+ * nothing. Every other scheme (URL/asset/file/content) goes through Coil.
+ */
 @Composable
 private fun RenderImage(node: TempestNode, style: Map<String, Any?>) {
     val scale = when (node.props["fit"] as? String) {
@@ -2961,12 +2977,48 @@ private fun RenderImage(node: TempestNode, style: Map<String, Any?>) {
         "fill" -> ContentScale.FillBounds
         else -> ContentScale.Fit
     }
+    val src = node.props["src"] as? String
+    val alt = node.props["alt"] as? String
+    if (src != null && src.startsWith("data:")) {
+        val bitmap = remember(src) { decodeDataUriBitmap(src) }
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = alt,
+                modifier = sizeModifier(style),
+                contentScale = scale,
+            )
+            return
+        }
+    }
     AsyncImage(
-        model = node.props["src"] as? String,
-        contentDescription = node.props["alt"] as? String,
+        model = src,
+        contentDescription = alt,
         modifier = sizeModifier(style),
         contentScale = scale,
     )
+}
+
+/**
+ * Decode a `data:[<mime>][;base64],<payload>` URI to an [ImageBitmap].
+ *
+ * Returns `null` when the URI carries no payload or the bytes are not a bitmap
+ * Android can decode, so the caller falls back to the Coil path (which then
+ * shows nothing for a `data:` URI — but a malformed one has nothing to show).
+ */
+private fun decodeDataUriBitmap(src: String): androidx.compose.ui.graphics.ImageBitmap? {
+    val comma = src.indexOf(',')
+    if (comma < 0 || comma + 1 >= src.length) return null
+    val header = src.substring(0, comma)
+    val payload = src.substring(comma + 1)
+    return try {
+        val bytes =
+            if (header.contains(";base64")) Base64.decode(payload, Base64.DEFAULT)
+            else payload.toByteArray()
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }
 
 /**

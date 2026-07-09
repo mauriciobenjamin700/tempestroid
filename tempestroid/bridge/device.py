@@ -37,6 +37,34 @@ __all__ = ["Bridge", "LoopbackBridge", "DeviceApp"]
 S = TypeVar("S")
 
 
+def _theme_colors(theme: Theme) -> dict[str, str]:
+    """Serialize the theme's pinned brand colours as ``role -> #rrggbb`` hex.
+
+    The host maps its Material ``colorScheme`` from ``theme_mode`` alone
+    (light/dark), which is the stock Material palette (purple) — it does not
+    track ``Theme.primary``/``secondary``/``error``. Sending the pinned brand
+    colours lets the host overlay them onto the scheme so an app's
+    ``make_theme`` accent reaches every Material primitive (buttons, pickers,
+    switches, indicators) rather than only the widgets the app styles by hand.
+    Only the roles the app actually set (non-``None``) are included, so a theme
+    that pins nothing keeps the stock scheme.
+
+    Args:
+        theme: The app's active theme.
+
+    Returns:
+        A mapping of Material role name to hex colour; empty when the theme
+        pins no brand colours.
+    """
+    roles = {
+        "primary": theme.primary,
+        "onPrimary": theme.on_primary,
+        "secondary": theme.secondary,
+        "error": theme.error,
+    }
+    return {name: color.to_hex() for name, color in roles.items() if color is not None}
+
+
 class Bridge(abc.ABC):
     """A transport that carries serialized messages to the device."""
 
@@ -126,6 +154,7 @@ class DeviceApp(Generic[S]):
                 can_pop=self._app.nav.can_pop,
                 has_animations=self._app.has_animations,
                 theme_mode=self._app.theme.mode.value,
+                theme_colors=_theme_colors(self._app.theme),
             ).model_dump()
         )
 
@@ -183,6 +212,7 @@ class DeviceApp(Generic[S]):
             can_pop=self._app.nav.can_pop,
             has_animations=self._app.has_animations,
             theme_mode=self._app.theme.mode.value,
+            theme_colors=_theme_colors(self._app.theme),
         ).model_dump()
         task = asyncio.get_running_loop().create_task(self._bridge.send(message))
         self._pending.add(task)
