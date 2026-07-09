@@ -19,7 +19,13 @@ This module hides that split behind three primitives so the app only expresses i
 * :func:`encode_image` — HWC ``uint8`` RGB array → ``(base64, mime)``: a
   pure-NumPy PNG on device (the Pillow shim cannot encode), JPEG on the desktop.
 
-``numpy`` is imported lazily inside the functions/methods that need it, so
+For the common case there are also high-level tasks — :class:`Detector`,
+:class:`Classifier`, :class:`Segmenter` — that wrap ``ort_vision_sdk`` (NMS, mask
+assembly, label mapping), pick the backend, and decode encoded inputs on device;
+and domain helpers :func:`crop_box`, :func:`mean_luminance`, :func:`top_class`.
+
+``numpy`` (and ``ort_vision_sdk``) are imported lazily inside the functions /
+methods that need them, so
 importing this module (or ``tempestroid``) never pulls NumPy into a lean install
 that ships no vision feature.
 
@@ -50,9 +56,21 @@ from tempestroid.native.image import decode_image as _native_decode_image
 
 if TYPE_CHECKING:
     import numpy as np
+    from ort_vision_sdk import (
+        ClassificationResults,
+        DetectionResults,
+        InferenceBackend,
+        SegmentationResults,
+    )
+
+    #: What a task's ``predict`` accepts: encoded bytes/path or a decoded array.
+    ImageSource = bytes | str | np.ndarray
 
 __all__ = [
+    "Classifier",
+    "Detector",
     "OrtSession",
+    "Segmenter",
     "crop_box",
     "decode_image",
     "encode_image",
@@ -394,3 +412,172 @@ def top_class(
     else:
         label = f"class_{index}"
     return index, label, confidence
+
+
+# --- High-level tasks (platform-aware ort-vision-sdk wrappers) --------------
+#
+# ``ort_vision_sdk`` already implements Detector/Classifier/Segmenter (NMS,
+# mask assembly, label mapping). These thin wrappers wire the right backend
+# (the native AAR on device, in-process ``onnxruntime`` on desktop) and, on
+# device, decode encoded bytes/paths through ``decode_image`` first — the SDK's
+# own decode uses Pillow/cv2, which the device has no wheel for. So an app does
+# ``det = await Detector.create("m.onnx"); results = await det.predict(image)``
+# with the same code on both targets. ``ort_vision_sdk`` is imported lazily (it
+# pulls NumPy) so a lean, vision-free install stays NumPy-free.
+
+
+async def _make_backend(model_path: str) -> InferenceBackend | None:
+    """The inference backend for the current platform (device AAR, else ``None``).
+
+    Args:
+        model_path: Path to the ``.onnx`` model on the device filesystem.
+
+    Returns:
+        A native ``AarBackend`` (pinned to the CPU EP, which runs fp16 /
+        dynamic-shape graphs the mobile NNAPI EP mis-runs) on device; ``None`` on
+        the desktop, where the SDK task builds its own ``onnxruntime`` session.
+    """
+    if on_device():
+        from tempestroid.native.inference import AarBackend
+
+        return await AarBackend.create(model_path, providers=["CPUExecutionProvider"])
+    return None
+
+
+async def _predict(task: Any, image: ImageSource, /, **kwargs: Any) -> list[Any]:  # noqa: ANN401 — SDK task + its result dataclasses
+    """Run a task's async inference, decoding an encoded source on device first.
+
+    On device the SDK cannot decode encoded bytes/paths (no Pillow/cv2 wheel), so
+    those are turned into an HWC array via :func:`decode_image`; an array (or the
+    desktop, where the SDK decodes in-process) passes straight through.
+
+    Args:
+        task: The underlying ``ort_vision_sdk`` task.
+        image: Encoded bytes/path or a decoded HWC ``uint8`` RGB array.
+        **kwargs: Forwarded to the task's ``async_predict`` (e.g. ``top_k``,
+            ``conf_threshold``).
+
+    Returns:
+        The task's per-image result list.
+    """
+    if on_device() and isinstance(image, (bytes, str)):
+        image = await decode_image(image)
+    return await task.async_predict(image, **kwargs)
+
+
+class Detector:
+    """Object detection — YOLO boxes with class + confidence, on any platform.
+
+    Construct with :meth:`create`; call :meth:`predict` with encoded bytes/path
+    (decoded on device automatically) or a decoded HWC ``uint8`` RGB array.
+    Results are ``ort_vision_sdk`` ``DetectionResults`` (iterate for ``.box`` /
+    ``.class_name`` / ``.confidence`` / ``.cropped_image``).
+    """
+
+    def __init__(self, task: Any) -> None:  # noqa: ANN401 — ort_vision_sdk.Detector
+        """Wrap a built SDK detector (prefer :meth:`create`)."""
+        self._task = task
+
+    @classmethod
+    async def create(cls, model_path: str, **kwargs: Any) -> Detector:  # noqa: ANN401 — forwarded to ort_vision_sdk.Detector
+        """Load a detector on the platform's backend.
+
+        Args:
+            model_path: Path to the detector ``.onnx``.
+            **kwargs: Forwarded to ``ort_vision_sdk.Detector`` (``head``,
+                ``labels``, ``input_size``, ``conf_threshold``, …).
+
+        Returns:
+            A ready :class:`Detector`.
+        """
+        from ort_vision_sdk import Detector as _Detector
+
+        backend = await _make_backend(model_path)
+        if backend is not None:
+            return cls(_Detector(model_path, backend=backend, **kwargs))
+        kwargs.setdefault("providers", ["CPUExecutionProvider"])
+        return cls(_Detector(model_path, **kwargs))
+
+    async def predict(
+        self,
+        image: ImageSource,
+        **kwargs: Any,  # noqa: ANN401 — forwarded to the SDK task
+    ) -> list[DetectionResults]:
+        """Detect objects in one image (see :func:`_predict` for decoding)."""
+        return await _predict(self._task, image, **kwargs)
+
+    @property
+    def task(self) -> Any:  # noqa: ANN401 — the underlying ort_vision_sdk.Detector
+        """The wrapped ``ort_vision_sdk`` task, for advanced use."""
+        return self._task
+
+
+class Classifier:
+    """Image classification — top-k class probabilities, on any platform.
+
+    See :class:`Detector`; results are ``ort_vision_sdk`` ``ClassificationResults``.
+    """
+
+    def __init__(self, task: Any) -> None:  # noqa: ANN401 — ort_vision_sdk.Classifier
+        """Wrap a built SDK classifier (prefer :meth:`create`)."""
+        self._task = task
+
+    @classmethod
+    async def create(cls, model_path: str, **kwargs: Any) -> Classifier:  # noqa: ANN401 — forwarded to ort_vision_sdk.Classifier
+        """Load a classifier on the platform's backend (see :meth:`Detector.create`)."""
+        from ort_vision_sdk import Classifier as _Classifier
+
+        backend = await _make_backend(model_path)
+        if backend is not None:
+            return cls(_Classifier(model_path, backend=backend, **kwargs))
+        kwargs.setdefault("providers", ["CPUExecutionProvider"])
+        return cls(_Classifier(model_path, **kwargs))
+
+    async def predict(
+        self,
+        image: ImageSource,
+        **kwargs: Any,  # noqa: ANN401 — forwarded to the SDK task
+    ) -> list[ClassificationResults]:
+        """Classify one image (see :func:`_predict` for decoding)."""
+        return await _predict(self._task, image, **kwargs)
+
+    @property
+    def task(self) -> Any:  # noqa: ANN401 — the underlying ort_vision_sdk.Classifier
+        """The wrapped ``ort_vision_sdk`` task, for advanced use."""
+        return self._task
+
+
+class Segmenter:
+    """Instance segmentation — boxes + per-instance masks, on any platform.
+
+    See :class:`Detector`; results are ``ort_vision_sdk`` ``SegmentationResults``
+    (iterate for ``.box`` / ``.class_name`` and ``.masks`` for the mask arrays).
+    """
+
+    def __init__(self, task: Any) -> None:  # noqa: ANN401 — ort_vision_sdk.Segmenter
+        """Wrap a built SDK segmenter (prefer :meth:`create`)."""
+        self._task = task
+
+    @classmethod
+    async def create(cls, model_path: str, **kwargs: Any) -> Segmenter:  # noqa: ANN401 — forwarded to ort_vision_sdk.Segmenter
+        """Load a segmenter on the platform's backend (see :meth:`Detector.create`)."""
+        from ort_vision_sdk import Segmenter as _Segmenter
+
+        backend = await _make_backend(model_path)
+        if backend is not None:
+            return cls(_Segmenter(model_path, backend=backend, **kwargs))
+        kwargs.setdefault("providers", ["CPUExecutionProvider"])
+        return cls(_Segmenter(model_path, **kwargs))
+
+    async def predict(
+        self,
+        image: ImageSource,
+        **kwargs: Any,  # noqa: ANN401 — forwarded to the SDK task
+    ) -> list[SegmentationResults]:
+        """Segment one image (see :func:`_predict` for decoding)."""
+        return await _predict(self._task, image, **kwargs)
+
+    @property
+    def task(self) -> Any:  # noqa: ANN401 — the underlying ort_vision_sdk.Segmenter
+        """The wrapped ``ort_vision_sdk`` task, for advanced use."""
+        return self._task

@@ -120,3 +120,57 @@ def test_top_class_argmax_labels_and_softmax() -> None:
     # Softmax → probability in [0, 1].
     _, _, prob = vision.top_class(scores, apply_softmax=True)
     assert 0.0 < prob < 1.0
+
+
+class _FakeTask:
+    """A stand-in ort_vision_sdk task recording what ``async_predict`` received."""
+
+    def __init__(self) -> None:
+        self.received: object = None
+
+    async def async_predict(self, image: object, **_kwargs: object) -> list[str]:
+        self.received = image
+        return ["result"]
+
+
+@pytest.mark.asyncio
+async def test_task_predict_decodes_encoded_source_on_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On device, encoded bytes are decoded to an array before the SDK task runs."""
+    monkeypatch.setattr(vision, "on_device", lambda: True)
+    decoded_from: dict[str, object] = {}
+
+    async def _fake_decode(source: object, **_kw: object) -> np.ndarray:
+        decoded_from["source"] = source
+        return np.zeros((2, 2, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(vision, "decode_image", _fake_decode)
+    fake = _FakeTask()
+    out = await vision.Detector(fake).predict(b"jpeg-bytes")
+    assert decoded_from["source"] == b"jpeg-bytes"
+    assert isinstance(fake.received, np.ndarray)  # the task got the decoded array
+    assert out == ["result"]
+
+
+@pytest.mark.asyncio
+async def test_task_predict_passes_bytes_through_on_desktop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On desktop the SDK decodes in-process, so bytes pass straight through."""
+    monkeypatch.setattr(vision, "on_device", lambda: False)
+    fake = _FakeTask()
+    await vision.Classifier(fake).predict(b"raw")
+    assert fake.received == b"raw"
+
+
+@pytest.mark.asyncio
+async def test_task_predict_array_is_never_decoded_on_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An already-decoded array is forwarded as-is (no decode) on any platform."""
+    monkeypatch.setattr(vision, "on_device", lambda: True)
+    fake = _FakeTask()
+    arr = np.ones((3, 3, 3), dtype=np.uint8)
+    await vision.Segmenter(fake).predict(arr)
+    assert fake.received is arr

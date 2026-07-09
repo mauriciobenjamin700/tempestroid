@@ -1214,13 +1214,38 @@ extra; `numpy` is imported lazily so a lean install stays NumPy-free.
   a pure-NumPy PNG on device (the Pillow shim can't encode), JPEG on desktop;
   feed `f"data:{mime};base64,{data}"` to an `Image`.
 
-```python
-from tempestroid.vision import OrtSession, decode_image, encode_image
+**High-level tasks** wrap `ort_vision_sdk` (NMS, mask assembly, label mapping) and
+wire the platform backend automatically; on device they decode encoded
+bytes/paths through `decode_image` first (the SDK's own decode needs Pillow/cv2,
+absent on device). Same code on both targets:
 
+- **`await Detector.create(model, **kw)`** → `await det.predict(image)` — YOLO
+  boxes (`.box` / `.class_name` / `.confidence` / `.cropped_image`).
+- **`await Classifier.create(model, **kw)`** → top-k class probabilities.
+- **`await Segmenter.create(model, **kw)`** → boxes **+ per-instance masks**.
+
+**Domain helpers** for building a pipeline by hand:
+
+- **`crop_box(image, x, y, w, h)`** — clamped ROI crop (falls back to the whole
+  image on a degenerate box).
+- **`mean_luminance(image)`** — BT.709 mean luma in `[0, 255]` (gate a too-dark
+  capture).
+- **`top_class(scores, labels=None, *, apply_softmax=False)`** → `(index, label,
+  confidence)` (argmax + label lookup, `"class_{i}"` fallback).
+
+```python
+from tempestroid.vision import Detector, decode_image, crop_box
+
+det = await Detector.create("yolo.onnx", labels="coco")
+for r in (await det.predict(image_bytes))[0]:   # bytes decoded on device
+    print(r.class_name, r.confidence, r.box.xyxy)
+
+# or the low-level session + helpers:
+from tempestroid.vision import OrtSession, encode_image, mean_luminance
 session = await OrtSession.create("detector.onnx")
-image = await decode_image(image_bytes)                    # HWC uint8 RGB
-outputs = await session.run({session.input_name: tensor})  # list[np.ndarray]
-b64, mime = encode_image(crop)                             # → data: URI
+if mean_luminance(await decode_image(image_bytes)) >= 70:
+    outputs = await session.run({session.input_name: tensor})
+b64, mime = encode_image(crop)                   # → data: URI
 ```
 
 ---
