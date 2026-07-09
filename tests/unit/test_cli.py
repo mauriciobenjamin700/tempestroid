@@ -940,7 +940,11 @@ def test_ensure_toolchain_restages_vision_when_prefix_exists(
 
     checkout = tmp_path / "checkout"
     dist = checkout / "toolchain" / "dist"
-    (dist / "python" / "arm64-v8a").mkdir(parents=True)  # prefix present → lean run
+    # A COMPLETE prefix (headers present) marks the lean run as already staged;
+    # a bare empty dir would (correctly) re-trigger the full toolchain.
+    header_dir = dist / "python" / "arm64-v8a" / "include" / "python3.14"
+    header_dir.mkdir(parents=True)
+    (header_dir / "Python.h").write_text("")
     (checkout / "toolchain" / "00_fetch_cpython.sh").write_text("#!/bin/sh\n")
 
     captured: dict[str, object] = {}
@@ -972,7 +976,9 @@ def test_ensure_toolchain_skips_restage_when_vision_present(
 
     checkout = tmp_path / "checkout"
     dist = checkout / "toolchain" / "dist"
-    (dist / "python" / "arm64-v8a").mkdir(parents=True)
+    header_dir = dist / "python" / "arm64-v8a" / "include" / "python3.14"
+    header_dir.mkdir(parents=True)
+    (header_dir / "Python.h").write_text("")  # complete prefix → staged
     (dist / "site-packages" / "ort_vision_sdk").mkdir(parents=True)  # vision staged
 
     def fail_run_command(*_a: object, **_k: object) -> None:
