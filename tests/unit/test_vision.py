@@ -174,3 +174,26 @@ async def test_task_predict_array_is_never_decoded_on_device(
     arr = np.ones((3, 3, 3), dtype=np.uint8)
     await vision.Segmenter(fake).predict(arr)
     assert fake.received is arr
+
+
+def test_draw_boxes_paints_outline_only() -> None:
+    """``draw_boxes`` strokes the rectangle border, leaving the interior untouched."""
+    img = np.zeros((20, 20, 3), dtype=np.uint8)
+    out = vision.draw_boxes(img, [(5, 5, 15, 15)], color=(255, 0, 0), thickness=1)
+    assert tuple(out[5, 10]) == (255, 0, 0)  # top edge painted
+    assert tuple(out[10, 10]) == (0, 0, 0)  # interior untouched
+    assert tuple(out[0, 0]) == (0, 0, 0)  # outside the box untouched
+    assert np.array_equal(img, np.zeros((20, 20, 3), dtype=np.uint8))  # input intact
+
+
+def test_overlay_masks_blends_and_skips_mismatched() -> None:
+    """``overlay_masks`` tints truthy mask pixels and skips wrong-sized masks."""
+    img = np.zeros((8, 8, 3), dtype=np.uint8)
+    mask = np.zeros((8, 8), dtype=bool)
+    mask[2:4, 2:4] = True
+    out = vision.overlay_masks(img, [mask], colors=[(200, 0, 0)], alpha=0.5)
+    assert out[2, 2, 0] == 100  # 0*0.5 + 200*0.5
+    assert tuple(out[0, 0]) == (0, 0, 0)  # outside the mask untouched
+    # A mask that doesn't match the image is ignored (no crash, no change).
+    unchanged = vision.overlay_masks(img, [np.ones((3, 3), dtype=bool)])
+    assert np.array_equal(unchanged, img)

@@ -392,8 +392,10 @@ from tempestroid.vision import (
     Segmenter,
     crop_box,
     decode_image,
+    draw_boxes,
     encode_image,
     mean_luminance,
+    overlay_masks,
     top_class,
 )
 
@@ -714,8 +716,10 @@ __all__ = [
     "Segmenter",
     "crop_box",
     "decode_image",
+    "draw_boxes",
     "encode_image",
     "mean_luminance",
+    "overlay_masks",
     "top_class",
     # Bridge (Python↔Kotlin boundary, phase B3)
     "BACK_TOKEN",
