@@ -1483,19 +1483,19 @@ wheels = [
 
 [[package]]
 name = "tempest-core"
-version = "0.9.1"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/f8/a14bedc89eb3d4807efea452e4895895bca8dfd472d098c9e355e78f9699/tempest_core-0.9.1.tar.gz", hash = "sha256:750b42ce602c09a67f7d0083c9910160e0a31a477f20dbf287aa41e1480ed724", size = 279973, upload-time = "2026-07-09T01:54:11.254Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/ad/9f7a2e79ea485cda58129f7804f53d729371fac013340f83e1bfbd53a48f/tempest_core-0.11.0.tar.gz", hash = "sha256:185446c7df85e8afe9867eff44f5c7bd7bc4fe6d9d387f1eb31edc564b8ba702", size = 281252, upload-time = "2026-07-09T17:35:55.167Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/13/32d4e1c33cc1b9a617cacfff2646221287a041692e0b74cda4a8698c4fd8/tempest_core-0.9.1-py3-none-any.whl", hash = "sha256:a1f3979ca66ed9d5b82b963edf3e409af41cc4f893d9a095113a8a6fc0034666", size = 194404, upload-time = "2026-07-09T01:54:09.679Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/89/dd6fdd59ff221f2ae12ce8424e19306330d22a4fcd3535c8a2d8712917df/tempest_core-0.11.0-py3-none-any.whl", hash = "sha256:49def8eb57110da620c0b3adb7016a5fc8e284db4bd95e47bcedd023350e4fc8", size = 195231, upload-time = "2026-07-09T17:35:53.707Z" },
 ]
 
 [[package]]
 name = "tempestroid"
-version = "0.19.0"
+version = "0.20.0"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
@@ -1544,7 +1544,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyside6", marker = "extra == 'qt'", specifier = ">=6.7" },
     { name = "qasync", marker = "extra == 'qt'", specifier = ">=0.27" },
-    { name = "tempest-core", specifier = ">=0.9.1" },
+    { name = "tempest-core", specifier = ">=0.11.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 provides-extras = ["qt", "icons", "vision", "camera", "qr", "push", "video", "maps", "features"]

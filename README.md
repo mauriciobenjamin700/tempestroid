@@ -1243,6 +1243,21 @@ with `encode_image` for a `data:` URI or feed a live camera frame):
 - **`overlay_masks(image, masks, *, colors=None, alpha=0.5)`** — alpha-blend
   instance segmentation masks (from `Segmenter`) with per-instance tints.
 
+**Camera-stream detection.** Wire `CameraPreview(on_frame=…, frame_interval_ms=…)`:
+the device attaches a CameraX `ImageAnalysis` stage and calls the handler with a
+`CameraFrameEvent` per throttled frame. `frame_array(event)` rebuilds the frame
+array to feed a `Detector` / `Segmenter` live (draw boxes/masks back with
+`draw_boxes` / `overlay_masks`, or the `DetectionOverlay` widget).
+
+- **`frame_array(event)`** — `CameraFrameEvent` → HWC `uint8` RGB array.
+
+```python
+async def on_frame(event):                       # CameraPreview on_frame handler
+    results = await detector.predict(frame_array(event))
+    ...  # update state with results[0]
+CameraPreview(on_frame=lambda e: on_frame(e), frame_interval_ms=400)
+```
+
 ```python
 from tempestroid.vision import Detector, decode_image, crop_box
 

@@ -197,3 +197,20 @@ def test_overlay_masks_blends_and_skips_mismatched() -> None:
     # A mask that doesn't match the image is ignored (no crash, no change).
     unchanged = vision.overlay_masks(img, [np.ones((3, 3), dtype=bool)])
     assert np.array_equal(unchanged, img)
+
+
+def test_frame_array_rebuilds_from_event() -> None:
+    """``frame_array`` reconstructs the HWC RGB array from a CameraFrameEvent."""
+    from tempest_core.widgets import CameraFrameEvent
+
+    arr = _sample_rgb()  # (4, 6, 3)
+    event = CameraFrameEvent(
+        width=arr.shape[1],
+        height=arr.shape[0],
+        data=base64.b64encode(arr.tobytes()).decode("ascii"),
+        rotation=0,
+    )
+    out = vision.frame_array(event)
+    assert out.shape == arr.shape
+    assert out.dtype == np.uint8
+    assert np.array_equal(out, arr)

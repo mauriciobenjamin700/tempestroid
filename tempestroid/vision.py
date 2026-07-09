@@ -62,6 +62,7 @@ if TYPE_CHECKING:
         InferenceBackend,
         SegmentationResults,
     )
+    from tempest_core.widgets import CameraFrameEvent
 
     #: What a task's ``predict`` accepts: encoded bytes/path or a decoded array.
     ImageSource = bytes | str | np.ndarray
@@ -75,6 +76,7 @@ __all__ = [
     "decode_image",
     "draw_boxes",
     "encode_image",
+    "frame_array",
     "mean_luminance",
     "overlay_masks",
     "top_class",
@@ -688,3 +690,23 @@ def overlay_masks(
         tint = np.asarray(palette[i % len(palette)], dtype=np.float32)
         out[selected] = out[selected] * (1.0 - blend) + tint * blend
     return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def frame_array(frame: CameraFrameEvent) -> np.ndarray:
+    """Rebuild the HWC ``uint8`` RGB array from a ``CameraPreview`` frame event.
+
+    The device streams each live frame as base64 of the raw ``H × W × 3`` RGB
+    bytes (already rotated upright); this reconstructs the array to feed a
+    :class:`Detector` / :class:`Segmenter` or :func:`draw_boxes`.
+
+    Args:
+        frame: The :class:`~tempest_core.widgets.CameraFrameEvent` from an
+            ``on_frame`` handler.
+
+    Returns:
+        The ``(height, width, 3)`` ``uint8`` RGB frame.
+    """
+    import numpy as np
+
+    raw = base64.b64decode(frame.data)
+    return np.frombuffer(raw, dtype=np.uint8).reshape(frame.height, frame.width, 3)

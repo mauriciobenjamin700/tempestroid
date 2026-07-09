@@ -18,9 +18,14 @@ import androidx.compose.ui.unit.dp
  *
  * @param node the serialized `CameraPreview` node.
  * @param style the resolved Compose style spec.
+ * @param onEvent the host event sink (unused by the stub; matches the real signature).
  */
 @Composable
-fun RenderCameraPreview(node: TempestNode, style: Map<String, Any?>) {
+fun RenderCameraPreview(
+    node: TempestNode,
+    style: Map<String, Any?>,
+    onEvent: (String, String) -> Unit,
+) {
     Box(
         modifier = baseModifier(style)
             .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp))

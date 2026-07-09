@@ -562,7 +562,7 @@ private fun RenderNodeBody(node: TempestNode, onEvent: (String, String) -> Unit)
 
         "Svg" -> RenderSvg(node, style)
 
-        "CameraPreview" -> RenderCameraPreview(node, style)
+        "CameraPreview" -> RenderCameraPreview(node, style, onEvent)
 
         "QrScanner" -> RenderQrScanner(node, style, onEvent)
 

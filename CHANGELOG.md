@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-07-09
+
+### Added
+
+- **Camera-stream detection** (phase 3 of the CV toolkit) — `vision.frame_array`
+  rebuilds a `CameraFrameEvent` (from `tempest_core`'s new `CameraPreview.on_frame`)
+  into an HWC RGB array, so an app runs on-device inference on the live feed:
+  the host attaches a CameraX `ImageAnalysis` stage (keep-only-latest) and emits a
+  throttled frame per `frame_interval_ms`. Validated end-to-end on a physical
+  arm64 device (live `Detector` over the camera feed). Requires `tempest-core >=
+  0.11.0`; the device site-packages staging now pins it too.
+
+### Changed
+
+- The device dependency floor is now `tempest-core >= 0.11.0` (was `0.9.1`).
+
 ## [0.19.0] — 2026-07-09
 
 ### Added
