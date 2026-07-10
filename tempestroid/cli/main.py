@@ -202,11 +202,11 @@ def optimize_cmd(
         typer.Option("--out", help="Output directory (default: next to the model)."),
     ] = None,
 ) -> None:
-    """Optimize an ONNX model for on-device inference (quantize + .ort).
+    r"""Optimize an ONNX model for on-device inference (quantize + .ort).
 
     Runs on the host (build time): INT8/fp16 quantization then conversion to the
     ORT mobile format, shrinking the model the device ships. Needs the vision
-    extra (``pip install tempestroid[vision]``).
+    extra (pip install "tempestroid\[vision]").
     """
     if quantize not in ("none", "int8", "fp16"):
         typer.echo(
