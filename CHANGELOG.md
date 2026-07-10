@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-07-09
+
+### Documentation
+
+- **Build guide** now documents the `vision` build feature (it was missing from
+  the feature table), with a warning that an app importing `numpy`/`ort_vision_sdk`
+  built without `--feature vision` crashes on device with `No module named
+  'numpy'` (PT + EN).
+- **Data/ML guide** rewrites the on-device inference section around the
+  recommended platform-aware `tempestroid.vision` surface — `Classifier` /
+  `Detector` / `Segmenter`, overlays (`draw_boxes` / `overlay_masks`), live
+  camera-stream detection (`frame_array`) and the domain/session helpers — instead
+  of only the low-level `ort_vision_sdk` + `AarBackend` path (PT + EN).
+- **Examples gallery** adds the Track H design-system section (`h1buttons` …
+  `h6gallery` + `storybook`) and surfaces the `polarsspike` / `sklearnspike` /
+  `visionsmoke` data-ML examples that were missing (PT + EN).
+
+### Fixed
+
+- `tempest optimize --help` rendered `pip install tempestroid` without the extra
+  because Typer's rich markup consumed `[vision]` as a style tag; the docstring
+  now escapes the bracket so it prints `pip install "tempestroid[vision]"`.
+
 ## [0.20.0] — 2026-07-09
 
 ### Added
