@@ -244,6 +244,15 @@ tempest build --feature camera --feature qr
 | `push` | push notifications via FCM |
 | `video` | `VideoPlayer` widget |
 | `maps` | `MapView` widget |
+| `vision` | on-device ONNX inference (`ort_vision_sdk` + `numpy` + onnxruntime AAR) |
+
+!!! warning "`vision` bundles pure Python (numpy), not just an AAR"
+    Unlike the others, the `vision` feature also stages **`ort_vision_sdk` +
+    `numpy`** into the APK's site-packages. An app that imports
+    `numpy`/`ort_vision_sdk` built **without** `--feature vision` boots with
+    `ModuleNotFoundError: No module named 'numpy'` on device — the lean APK never
+    ships them. Always build such an app with `tempest build <app> --feature
+    vision`.
 
 !!! info "Each feature needs a from-source build (SDK/NDK)"
     A prebuilt APK cannot receive new Gradle dependencies, so any `--feature`
