@@ -60,17 +60,40 @@ uv run tempest serve examples/<nome>/app.py
 | [`sysverify`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/sysverify/app.py) | Harness de verificação on-device das capacidades que exigem hardware real. | Sensores / biometria / push (device-only). |
 | [`multifile`](https://github.com/mauriciobenjamin700/tempestroid/tree/main/examples/multifile) | Projeto **multi-arquivo** (`main.py` + pacote `widgets/`) — o que `tempest new --template multi` gera. | Bundle do projeto inteiro no `sys.path` (Trilho C). |
 
-## Trilho G — inferência ONNX no device
+## Trilho G — dados e ML no device
 
-Visão no aparelho com o [`ort-vision-sdk`](https://pypi.org/project/ort-vision-sdk/)
-(backend plugável), inferência pela AAR nativa `onnxruntime-android` — **sem
-OpenCV, sem wheel onnxruntime/Pillow**. Exigem o extra `[vision]` + o build com
-`--feature vision`; device-verificados no emulador x86_64.
+O tempestroid roda **CPython de verdade** no aparelho, então a stack científica de
+Python roda **dentro do app** (veja [Dados e ML no dispositivo](dados-ml.md)).
+Todos são device-verificados no emulador x86_64. Os de **visão**
+(`visionspike`/`visionsmoke`) exigem o extra `[vision]` + o build com
+`--feature vision` e usam o
+[`ort-vision-sdk`](https://pypi.org/project/ort-vision-sdk/) pela AAR nativa
+`onnxruntime-android` — **sem OpenCV, sem wheel onnxruntime/Pillow**.
 
 | App | O que mostra | Exercita |
 | --- | --- | --- |
 | [`onnxspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/onnxspike/app.py) | Prova mínima: `import numpy` + um cálculo rodam no interpretador embarcado (tela verde "numpy OK"). | numpy android no device (G0/G1). |
+| [`polarsspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/polarsspike/app.py) | `import polars` + group_by/agregação + round-trip por CSV (`write_csv`→`read_csv`) rodam no interpretador embarcado (tela verde "polars OK"). | Polars (core Rust abi3) no device (G). |
+| [`sklearnspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/sklearnspike/app.py) | `import scipy` + `import sklearn`: um `LogisticRegression().fit(...).predict(...)` roda no device (tela verde "sklearn OK"). | Stack científica (scipy + scikit-learn) no device (G6). |
 | [`visionspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/visionspike/app.py) | Pipeline completo: imagem real (`banana.jpg`) → decode nativo (`BitmapFactory`) → `Classifier` do SDK via `AarBackend` → top-1 + latência. Modelo **embutido** ou **baixado** (`VISIONSPIKE_MODEL_URL`), `.onnx` fp32 ou `.int8.ort` quantizado (`VISIONSPIKE_MODEL`). | G1 (AAR) + G2 (imagem) + G3 (`tempest optimize`) + G4 (entrega). |
+| [`visionsmoke`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/visionsmoke/app.py) | Smoke da stack de visão: `import numpy` + `import ort_vision_sdk` + um cálculo curto — a tela verde prova que a feature `vision` os embarcou. | Imports que a feature `vision` estagia (G1). |
+
+## Trilho H — design system (M3 + API Chakra)
+
+As galerias do design system mostram os componentes estilizados fase-a-fase — cada
+um resolve o visual do `Theme` (superfícies M3 + accent do `color_scheme`), **sem
+cor escrita à mão**. Rodam no simulador Qt; o `storybook` amarra tudo num app
+navegável com toggles light/dark + LTR/RTL ao vivo.
+
+| App | O que mostra | Fase |
+| --- | --- | --- |
+| [`h1buttons`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h1buttons/app.py) | Variantes de `Button` (solid/outline/ghost/link) × tamanho × `color_scheme` + estados (hover/press/disabled/focus). | H1 |
+| [`h2gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h2gallery/app.py) | Kit de ação e entrada: `Button`/`IconButton`/`Input`/`Checkbox`/`Switch`/`Slider`/`Select` + inputs BR. | H2 |
+| [`h3gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h3gallery/app.py) | Superfície e layout: `Card` (elevated/filled/outlined)/`Surface`/`Divider`/`ListTile` + helpers de stack. | H3 |
+| [`h4gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h4gallery/app.py) | Data display e feedback: `Badge`/`Alert`/`Stat`/`ProgressStepper`/`ProgressBar` com famílias de status (success/warning/info). | H4 |
+| [`h5gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h5gallery/app.py) | Navegação estilizada: `AppBar`/`Header`/`Tabs`/`NavBar`/`SearchBar`/`Breadcrumb` — surfaces M3 + accent do item ativo. | H5 |
+| [`h6gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h6gallery/app.py) | Dashboard de visão faux: `DetectionOverlay` + `MetricCard`/`ConfidenceBadge` + `BarChart`/`LineChart` + `DataTable`. | H6 |
+| [`storybook`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/storybook/app.py) | O design system inteiro num app navegável: `Tabs` por categoria + specimen de cada H1–H6, toggles light/dark + LTR/RTL re-skinnando tudo ao vivo. | H7 |
 
 ## Conjunto de widgets atual
 
@@ -119,8 +142,8 @@ teclado numérico por *design* do app, não por limite do renderizador.
 !!! note "Geradas sem aparelho físico"
     A maioria foi renderizada pelo renderizador **Compose** num **emulador x86_64
     headless** (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero
-    hardware; as galerias do design system (`h1buttons`–`h4gallery`) são capturas
-    do simulador Qt. `stopwatch` (animado) fica para uma recaptura como GIF (ver
+    hardware; as galerias do design system (`h1buttons`–`h6gallery` + `storybook`)
+    são capturas do simulador Qt. `stopwatch` (animado) fica para uma recaptura como GIF (ver
     [Animados](#animados)).
 
 | | | |
@@ -134,11 +157,14 @@ teclado numérico por *design* do app, não por limite do renderizador.
 | ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
 | ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
 | ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | ![h3gallery](../assets/examples/h3gallery.png){ width=200 }<br>`h3gallery` |
-| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | | |
+| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | ![h5gallery](../assets/examples/h5gallery.png){ width=200 }<br>`h5gallery` | ![h6gallery](../assets/examples/h6gallery.png){ width=200 }<br>`h6gallery` |
+| ![storybook](../assets/examples/storybook-light.png){ width=200 }<br>`storybook` | | |
 
-Os exemplos `h1buttons` (variantes de `Button`), `h2gallery` (o kit de ação e
-entrada), `h3gallery` (superfície e layout) e `h4gallery` (data display e
-feedback) acompanham o [design system](design-system/variantes.md).
+As galerias do design system (`h1buttons`–`h6gallery` + `storybook`) acompanham o
+[design system](design-system/variantes.md) — veja a tabela do
+[Trilho H](#trilho-h-design-system-m3-api-chakra) acima. O `storybook` também tem
+capturas dark (`storybook-dark.png`) e RTL (`storybook-rtl.png`), provando que os
+toggles re-skinnam o sistema inteiro.
 
 ### Animados
 

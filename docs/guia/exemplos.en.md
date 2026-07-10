@@ -60,17 +60,39 @@ uv run tempest serve examples/<name>/app.py
 | [`sysverify`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/sysverify/app.py) | An on-device verification harness for the capabilities that need real hardware. | Sensors / biometrics / push (device-only). |
 | [`multifile`](https://github.com/mauriciobenjamin700/tempestroid/tree/main/examples/multifile) | A **multi-file** project (`main.py` + a `widgets/` package) — what `tempest new --template multi` generates. | Whole-project bundle on `sys.path` (Track C). |
 
-## Track G — on-device ONNX inference
+## Track G — data & ML on device
 
-On-device vision with [`ort-vision-sdk`](https://pypi.org/project/ort-vision-sdk/)
-(pluggable backend), inference through the native `onnxruntime-android` AAR — **no
-OpenCV, no onnxruntime/Pillow wheel**. They need the `[vision]` extra + a
-`--feature vision` build; device-verified on the x86_64 emulator.
+tempestroid runs **real CPython** on the device, so the Python science stack runs
+**inside the app** (see [Data & ML on device](dados-ml.md)). All are
+device-verified on the x86_64 emulator. The **vision** ones
+(`visionspike`/`visionsmoke`) need the `[vision]` extra + a `--feature vision`
+build and use [`ort-vision-sdk`](https://pypi.org/project/ort-vision-sdk/) through
+the native `onnxruntime-android` AAR — **no OpenCV, no onnxruntime/Pillow wheel**.
 
 | App | What it shows | Exercises |
 | --- | --- | --- |
 | [`onnxspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/onnxspike/app.py) | Minimal proof: `import numpy` + a computation run inside the embedded interpreter (green "numpy OK" screen). | numpy-on-android (G0/G1). |
+| [`polarsspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/polarsspike/app.py) | `import polars` + group_by/aggregate + a CSV round-trip (`write_csv`→`read_csv`) run inside the embedded interpreter (green "polars OK" screen). | Polars (Rust abi3 core) on device (G). |
+| [`sklearnspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/sklearnspike/app.py) | `import scipy` + `import sklearn`: a `LogisticRegression().fit(...).predict(...)` runs on device (green "sklearn OK" screen). | Science stack (scipy + scikit-learn) on device (G6). |
 | [`visionspike`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/visionspike/app.py) | Full pipeline: a real image (`banana.jpg`) → native decode (`BitmapFactory`) → the SDK's `Classifier` via `AarBackend` → top-1 + latency. Model **embedded** or **downloaded** (`VISIONSPIKE_MODEL_URL`), fp32 `.onnx` or quantized `.int8.ort` (`VISIONSPIKE_MODEL`). | G1 (AAR) + G2 (image) + G3 (`tempest optimize`) + G4 (delivery). |
+| [`visionsmoke`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/visionsmoke/app.py) | Vision-stack smoke: `import numpy` + `import ort_vision_sdk` + a tiny compute — the green screen proves the `vision` feature staged them. | Imports the `vision` feature stages (G1). |
+
+## Track H — design system (M3 + Chakra API)
+
+The design-system galleries show the styled components phase by phase — each one
+resolves its look from the `Theme` (M3 surfaces + the `color_scheme` accent), with
+**no hand-set colors**. They run in the Qt simulator; `storybook` ties everything
+into one navigable app with live light/dark + LTR/RTL toggles.
+
+| App | What it shows | Phase |
+| --- | --- | --- |
+| [`h1buttons`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h1buttons/app.py) | `Button` variants (solid/outline/ghost/link) × size × `color_scheme` + states (hover/press/disabled/focus). | H1 |
+| [`h2gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h2gallery/app.py) | Action & input kit: `Button`/`IconButton`/`Input`/`Checkbox`/`Switch`/`Slider`/`Select` + BR inputs. | H2 |
+| [`h3gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h3gallery/app.py) | Surface & layout: `Card` (elevated/filled/outlined)/`Surface`/`Divider`/`ListTile` + stack helpers. | H3 |
+| [`h4gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h4gallery/app.py) | Data display & feedback: `Badge`/`Alert`/`Stat`/`ProgressStepper`/`ProgressBar` with status families (success/warning/info). | H4 |
+| [`h5gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h5gallery/app.py) | Styled navigation: `AppBar`/`Header`/`Tabs`/`NavBar`/`SearchBar`/`Breadcrumb` — M3 surfaces + selected-item accent. | H5 |
+| [`h6gallery`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/h6gallery/app.py) | Faux vision dashboard: `DetectionOverlay` + `MetricCard`/`ConfidenceBadge` + `BarChart`/`LineChart` + `DataTable`. | H6 |
+| [`storybook`](https://github.com/mauriciobenjamin700/tempestroid/blob/main/examples/storybook/app.py) | The whole design system in one navigable app: `Tabs` per category + a specimen of each H1–H6, light/dark + LTR/RTL toggles re-skinning it all live. | H7 |
 
 ## Current widget set
 
@@ -118,7 +140,7 @@ app design, not by a renderer limit.
 !!! note "Captured without a physical device"
     Most were rendered by the **Compose** renderer on a **headless x86_64
     emulator** (`make emulator-verify` / `toolchain/validate_gallery.sh`) — zero
-    hardware; the design-system galleries (`h1buttons`–`h4gallery`) are Qt
+    hardware; the design-system galleries (`h1buttons`–`h6gallery` + `storybook`) are Qt
     simulator captures. `stopwatch` (animated) is left for a GIF re-capture (see
     [Animated](#animated)).
 
@@ -133,11 +155,14 @@ app design, not by a renderer limit.
 | ![platform](../assets/examples/platform.png){ width=200 }<br>`platform` | ![shell](../assets/examples/shell.png){ width=200 }<br>`shell` | ![sysverify](../assets/examples/sysverify.png){ width=200 }<br>`sysverify` |
 | ![tabs](../assets/examples/tabs.png){ width=200 }<br>`tabs` | ![theming](../assets/examples/theming.png){ width=200 }<br>`theming` | ![todo](../assets/examples/todo.png){ width=200 }<br>`todo` |
 | ![h1buttons](../assets/examples/h1buttons.png){ width=200 }<br>`h1buttons` | ![h2gallery](../assets/examples/h2gallery.png){ width=200 }<br>`h2gallery` | ![h3gallery](../assets/examples/h3gallery.png){ width=200 }<br>`h3gallery` |
-| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | | |
+| ![h4gallery](../assets/examples/h4gallery.png){ width=200 }<br>`h4gallery` | ![h5gallery](../assets/examples/h5gallery.png){ width=200 }<br>`h5gallery` | ![h6gallery](../assets/examples/h6gallery.png){ width=200 }<br>`h6gallery` |
+| ![storybook](../assets/examples/storybook-light.png){ width=200 }<br>`storybook` | | |
 
-The `h1buttons` (`Button` variants), `h2gallery` (the action & entry kit),
-`h3gallery` (surface & layout) and `h4gallery` (data display & feedback) examples
-accompany the [design system](design-system/variantes.en.md).
+The design-system galleries (`h1buttons`–`h6gallery` + `storybook`) accompany the
+[design system](design-system/variantes.en.md) — see the
+[Track H](#track-h-design-system-m3-chakra-api) table above. `storybook` also has
+dark (`storybook-dark.png`) and RTL (`storybook-rtl.png`) captures, proving the
+toggles re-skin the whole system.
 
 ### Animated
 

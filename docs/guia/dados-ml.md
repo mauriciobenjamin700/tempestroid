@@ -136,23 +136,92 @@ tempest serve examples/sklearnspike/app.py
     roda a inferência no aparelho físico (Redmi 12, arm64): **top-1 banana
     (81.5%), provider=AAR, 886 ms**. Evidência em `docs/assets/device/`.
 
-Para rodar modelos `.onnx` (classificação, detecção, segmentação) use o
-[`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk) com o
-backend nativo do tempestroid: o SDK roda a inferência pelo **AAR
-`onnxruntime-android`** pela ponte (caminho 2), com o pré/pós em `numpy` no
-Python.
+A API de visão mora em **`tempestroid.vision`** — um wrapper *platform-aware*
+sobre o [`ort-vision-sdk`](https://github.com/mauriciobenjamin700/ort-vision-sdk).
+O app escreve só o **domínio** (quais modelos, thresholds, crop/label) e **nunca
+ramifica por plataforma**: o mesmo código roda no device (AAR
+`onnxruntime-android` + `BitmapFactory`) e no desktop/simulador Qt (`onnxruntime`
+in-process + Pillow). `numpy` é importado *lazy*, então um install enxuto segue
+sem numpy.
+
+### Classificar uma imagem
 
 ```python
-from ort_vision_sdk import Classifier
-from tempestroid.native.inference import AarBackend
+from tempestroid.vision import Classifier
 
-clf = Classifier("squeezenet1.1.onnx", backend=AarBackend())
-result = clf.predict("banana.jpg")[0]   # top-1 no device
+clf = await Classifier.create("squeezenet1.1.onnx")
+result = (await clf.predict("banana.jpg"))[0]   # bytes/caminho decodificados no device
+print(result)                                    # top-k com label + confiança
 ```
 
-O caminho de imagem não precisa de OpenCV: `tempestroid.native.image.decode_image`
-decodifica via `BitmapFactory` do host → `ndarray`. Modelos podem ser **embutidos**
-ou **baixados+cacheados** (`tempestroid.native.model_store.ensure_model`, com
+`create` é assíncrono (carrega o backend certo por plataforma) e `predict` roda a
+inferência **fora da UI thread**. Passe **bytes, caminho ou um `ndarray` HWC uint8
+RGB** — no device os dois primeiros são decodificados por `decode_image` antes (o
+decode do próprio SDK usa Pillow/cv2, ausente no aparelho).
+
+### Detecção (boxes) e segmentação (masks)
+
+`Detector` e `Segmenter` têm a mesma forma do `Classifier`:
+
+```python
+from tempestroid.vision import Detector
+
+det = await Detector.create("yolo.onnx", labels="coco")
+for r in (await det.predict(image_bytes))[0]:
+    print(r.class_name, r.confidence, r.box.xyxy)
+```
+
+`Segmenter` devolve boxes **+ uma máscara por instância** (`.masks`).
+
+### Overlays — pintar o resultado no frame
+
+`draw_boxes` / `overlay_masks` são **numpy-in / numpy-out** (rodam no device):
+
+```python
+from tempestroid.vision import draw_boxes, encode_image
+
+boxes = [r.box.xyxy for r in results]
+annotated = draw_boxes(frame, boxes)            # contornos (cicla uma paleta)
+data, mime = encode_image(annotated)            # → data: URI pra um widget Image
+```
+
+!!! tip "Boxes com legenda = widget `DetectionOverlay`"
+    `draw_boxes` desenha só contornos (texto precisa de um rasterizador de fonte
+    que o device não tem). Para caixas vetoriais **com rótulo**, use o widget
+    `DetectionOverlay` do `tempest_core` (um `Canvas` sobre um `Image`, nos dois
+    renderers).
+
+### Detecção na câmera ao vivo
+
+`CameraPreview(on_frame=…, frame_interval_ms=…)` entrega um `CameraFrameEvent` por
+frame (throttled). `frame_array(event)` reconstrói o `ndarray` pra alimentar um
+`Detector`/`Segmenter` ao vivo:
+
+```python
+from tempestroid.vision import Detector, frame_array
+
+async def on_frame(event):
+    results = (await detector.predict(frame_array(event)))[0]
+    ...  # atualiza o estado com results (desenha de volta com draw_boxes/overlay_masks)
+
+CameraPreview(on_frame=lambda e: on_frame(e), frame_interval_ms=400)
+```
+
+### Helpers de domínio + sessão baixo-nível
+
+- `crop_box(image, x, y, w, h)` — recorte ROI clampado (cai pra imagem inteira num box degenerado).
+- `mean_luminance(image)` — luma médio BT.709 em `[0, 255]` (rejeita captura escura).
+- `top_class(scores, labels=None, *, apply_softmax=False)` → `(index, label, conf)`.
+- `OrtSession` — sessão ONNX crua quando você monta o pré/pós na mão:
+  `session = await OrtSession.create("m.onnx")` → `await session.run({session.input_name: tensor})`.
+
+O escape hatch de baixo nível é `tempestroid.native.inference.AarBackend` (o que os
+wrappers usam por baixo), mas prefira `tempestroid.vision` — é o que roda **igual
+nos dois alvos**.
+
+O caminho de imagem não precisa de OpenCV: `decode_image` decodifica via
+`BitmapFactory` do host → `ndarray`. Modelos podem ser **embutidos** ou
+**baixados+cacheados** (`tempestroid.native.model_store.ensure_model`, com
 verificação sha256, fora da UI thread). `tempest optimize model.onnx -q int8`
 quantiza + converte pra `.ort` no host (build time).
 
