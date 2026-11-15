@@ -53,6 +53,22 @@ clamps its rounded-rect radius; `_TextLabel` paints its box from the (now clampe
 scoped QSS; `_CanvasWidget` draws explicit command geometry with no border-radius,
 so it is unaffected.
 
+**Follow-up fix — first-paint clamp read a stale size.** The clamp above runs at
+mount, but an auto-sized widget (`grow` / no fixed dimension) has no real
+geometry yet, so `_clamp_node_radius` fell back to `widget.width()`/`height()` —
+the host's stale default (~480) — and clamped the pill sentinel to ~240px. Qt
+renders a radius far larger than the box as **square** corners, so pills/circles
+looked square until something forced a relayout (e.g. a tap re-ran
+`_apply_visual`). Symptom: "profile buttons are square, become round when
+clicked"; a squared nav active-bar. **Fix:** a shared `_RadiusReclampFilter`
+(installed via `_track_radius_reclamp` on widgets whose radius is size-dependent —
+radius set, at least one dimension unfixed) re-runs `_apply_radius_clamp` on the
+widget's first (and any later) real `QEvent.Resize`, so the radius tracks the
+true laid-out size. `_apply_radius_clamp` factors the clamp + button state-layer
+re-emit so the mount pass and the resize pass stay identical; `_purge_connections`
+drops the per-widget tracking on teardown. Regression test:
+`test_autosized_pill_radius_reclamps_after_layout`.
+
 ## P1 — Fixed size not honored for flex containers
 
 **Symptom.** A `Container` with `width == height` (icon disc, avatar) renders

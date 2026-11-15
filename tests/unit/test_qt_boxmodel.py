@@ -153,6 +153,45 @@ def test_fixed_square_box_clamps_radius_in_qss():
     assert "999" not in sheet
 
 
+def test_autosized_pill_radius_reclamps_after_layout():
+    """An auto-sized pill re-clamps its radius to its REAL size after layout.
+
+    A ``grow`` box with no fixed dimension has no geometry at mount, so the clamp
+    runs against the host's stale default size and over-rounds (square corners
+    until a relayout). The resize re-clamp filter must fix the radius to
+    ``min(real_w, real_h) / 2`` once the parent lays the box out.
+    """
+    renderer = QtRenderer()
+    tree = build(
+        Column(
+            children=[
+                Container(
+                    style=Style(
+                        background=Color.from_hex("#3366ff"),
+                        radius=999.0,
+                        grow=1.0,
+                    ),
+                )
+            ]
+        )
+    )
+    host = renderer.mount(tree)
+    host.resize(200, 60)
+    host.grab()  # force a real layout pass → resize events → re-clamp
+
+    styled = [
+        w for w in host.findChildren(QWidget) if "border-radius" in w.styleSheet()
+    ]
+    assert styled, "the styled box must carry a border-radius rule"
+    box = styled[0]
+    expected = min(box.width(), box.height()) / 2.0
+    sheet = box.styleSheet()
+    assert f"border-radius: {expected}px" in sheet, sheet
+    # The stale-size over-clamp (host default 480 → 240) must be gone.
+    assert "240" not in sheet
+    assert "999" not in sheet
+
+
 # --- P1: fixed size keeps a square box square ------------------------------
 
 

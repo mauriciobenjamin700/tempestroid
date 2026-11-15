@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Qt renderer:** pills and circles on auto-sized widgets (`grow` / no fixed
+  dimension) no longer render with square corners until the first relayout. The
+  radius clamp ran at mount against a stale size and clamped the pill sentinel
+  to ~240px, which Qt draws as square; a shared event filter now re-runs the
+  clamp on every real resize, so the radius follows the laid-out size.
+
 ## [0.20.1] — 2026-07-09
 
 ### Documentation
