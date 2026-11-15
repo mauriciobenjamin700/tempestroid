@@ -3802,18 +3802,19 @@ class _RadiusReclampFilter(QObject):
     resize so the radius tracks the true size.
     """
 
-    def __init__(self, renderer: QtRenderer) -> None:
-        """Bind the filter to its renderer.
+    def __init__(self, on_resized: Callable[[QWidget], None]) -> None:
+        """Bind the filter to the renderer's re-clamp callback.
 
         The renderer is a plain object (not a ``QObject``), so the filter is
         parentless; the renderer keeps a strong reference to it, which is what
         prevents premature garbage collection.
 
         Args:
-            renderer: The renderer that owns the re-clamp logic and node map.
+            on_resized: Called with each watched widget after a real resize;
+                the renderer passes its bound re-clamp method.
         """
         super().__init__()
-        self._renderer = renderer
+        self._on_resized: Callable[[QWidget], None] = on_resized
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         """Re-clamp ``watched``'s radius on a resize; never consume the event.
@@ -3826,7 +3827,7 @@ class _RadiusReclampFilter(QObject):
             ``False`` always — the event continues to its normal handler.
         """
         if event.type() == QEvent.Type.Resize and isinstance(watched, QWidget):
-            self._renderer._on_radius_widget_resized(watched)
+            self._on_resized(watched)
         return False
 
 
@@ -3905,7 +3906,9 @@ class QtRenderer:
         # Widgets whose pill/circle radius depends on their laid-out size (no fixed
         # dimension): a shared event filter re-clamps them on resize, keyed by id.
         # See ``_RadiusReclampFilter`` and ``_on_radius_widget_resized``.
-        self._reclamp_filter: _RadiusReclampFilter = _RadiusReclampFilter(self)
+        self._reclamp_filter: _RadiusReclampFilter = _RadiusReclampFilter(
+            self._on_radius_widget_resized
+        )
         self._reclamp_nodes: dict[int, _Rendered] = {}
         self._reclamp_sizes: dict[int, tuple[int, int]] = {}
 
@@ -6492,9 +6495,7 @@ class QtRenderer:
                 blocks.append(f"#{name}:{pseudo} {{ {body} }}")
         widget.setStyleSheet("\n".join(blocks))
 
-    def _apply_selection_states(
-        self, widget: QCheckBox, props: dict[str, Any]
-    ) -> None:
+    def _apply_selection_states(self, widget: QCheckBox, props: dict[str, Any]) -> None:
         """Paint the resolved M3 accent/ring/box onto a checkbox or switch.
 
         The engine resolves, per checked state: ``color`` = accent tick,
@@ -6695,7 +6696,8 @@ class QtRenderer:
         name = cast("str", props.get("icon", ""))
         style = cast("Style | None", props.get("style"))
         glyph_size = (
-            int(style.font_size) if style is not None and style.font_size is not None
+            int(style.font_size)
+            if style is not None and style.font_size is not None
             else 20
         )
         color = (
